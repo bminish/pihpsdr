@@ -37,15 +37,14 @@ static float rx_cont_buf[5 * 36];
 static int rx_cont_frames = 0;
 
 // Resamplers
-static void *rx_resampler_i = NULL;
-static void *rx_resampler_q = NULL;
-static void *rx_resampler_audio = NULL;
+#define MAX_RADAE_RX 16
+static void *rx_resampler_audio[MAX_RADAE_RX] = {NULL};
+static void *rx_resampler_iq[MAX_RADAE_RX] = {NULL};
 
 static void *tx_resampler_audio = NULL;
-static void *tx_resampler_i = NULL;
-static void *tx_resampler_q = NULL;
+static void *tx_resampler_iq = NULL;
 
-static int current_rx_sample_rate = 48000;
+static int current_rx_sample_rate[MAX_RADAE_RX] = {0};
 static int current_tx_sample_rate = 48000;
 
 // TX FIR 2.5kHz Bandwidth Filter (1.25kHz Cutoff at 48kHz)
@@ -172,12 +171,13 @@ static float *tx_feat_buf = NULL;
 static RADE_COMP *tx_out_buf = NULL;
 static RADE_COMP *tx_eoo_out = NULL;
 static int tx_feat_idx = 0;
+static int tx_ofdm_n = 0;
+static int rx_ofdm_n = 0;
 
-static void init_tx_filter(void) {
+static void init_tx_filter(double fc, int rate) {
   int N = TX_FILT_TAPS;
   int M = (N - 1) / 2;
-  double fc = 1250.0;
-  double fs = 48000.0;
+  double fs = (double)rate;
   double sum = 0.0;
   for (int n = 0; n < N; n++) {
     double w = 0.54 - 0.46 * cos(2.0 * M_PI * n / (N - 1));
@@ -213,45 +213,42 @@ static void filter_tx_sample(double *i_val, double *q_val) {
   tx_filt_idx = (tx_filt_idx + 1) % TX_FILT_TAPS;
 }
 
-static void recreate_rx_resamplers(int rate) {
-  if (rx_resampler_i) destroy_resampleV(rx_resampler_i);
-  if (rx_resampler_q) destroy_resampleV(rx_resampler_q);
-  if (rx_resampler_audio) destroy_resampleV(rx_resampler_audio);
+static void recreate_rx_resamplers(int rx_id, int rate) {
+  if (rx_id < 0 || rx_id >= MAX_RADAE_RX) return;
+  if (rate <= 0) return;
+  
+  if (rx_resampler_audio[rx_id]) destroy_resampleV(rx_resampler_audio[rx_id]);
+  if (rx_resampler_iq[rx_id]) destroy_resampleV(rx_resampler_iq[rx_id]);
 
-  rx_resampler_i = create_resampleV(rate, 8000);
-  rx_resampler_q = create_resampleV(rate, 8000);
-  rx_resampler_audio = create_resampleV(16000, rate);
-  current_rx_sample_rate = rate;
+  rx_resampler_audio[rx_id] = create_resampleV(16000, rate);
+  rx_resampler_iq[rx_id] = create_resampleV(rate, 8000);
+  current_rx_sample_rate[rx_id] = rate;
 }
 
 static void recreate_tx_resamplers(int rate) {
   if (tx_resampler_audio) destroy_resampleV(tx_resampler_audio);
-  if (tx_resampler_i) destroy_resampleV(tx_resampler_i);
-  if (tx_resampler_q) destroy_resampleV(tx_resampler_q);
+  if (tx_resampler_iq) destroy_resampleV(tx_resampler_iq);
 
-  tx_resampler_audio = create_resampleV(rate, 16000);
-  tx_resampler_i = create_resampleV(8000, rate);
-  tx_resampler_q = create_resampleV(8000, rate);
+  tx_resampler_audio = create_resampleV(48000, 16000);
+  tx_resampler_iq = create_resampleV(8000, rate);
   current_tx_sample_rate = rate;
 }
 
 void radae_init(void) {
   rade_initialize();
-  init_tx_filter();
+  init_tx_filter(1250.0, 8000);
 }
 
 void radae_cleanup(void) {
   if (rade_rx_ctx) { rade_close(rade_rx_ctx); rade_rx_ctx = NULL; }
   if (rade_tx_ctx) { rade_close(rade_tx_ctx); rade_tx_ctx = NULL; }
   if (tx_lpcnet) { lpcnet_encoder_destroy(tx_lpcnet); tx_lpcnet = NULL; }
-  
-  if (rx_resampler_i) { destroy_resampleV(rx_resampler_i); rx_resampler_i = NULL; }
-  if (rx_resampler_q) { destroy_resampleV(rx_resampler_q); rx_resampler_q = NULL; }
-  if (rx_resampler_audio) { destroy_resampleV(rx_resampler_audio); rx_resampler_audio = NULL; }
-  
+  for (int i = 0; i < MAX_RADAE_RX; i++) {
+    if (rx_resampler_audio[i]) { destroy_resampleV(rx_resampler_audio[i]); rx_resampler_audio[i] = NULL; }
+    if (rx_resampler_iq[i]) { destroy_resampleV(rx_resampler_iq[i]); rx_resampler_iq[i] = NULL; }
+  }
   if (tx_resampler_audio) { destroy_resampleV(tx_resampler_audio); tx_resampler_audio = NULL; }
-  if (tx_resampler_i) { destroy_resampleV(tx_resampler_i); tx_resampler_i = NULL; }
-  if (tx_resampler_q) { destroy_resampleV(tx_resampler_q); tx_resampler_q = NULL; }
+  if (tx_resampler_iq) { destroy_resampleV(tx_resampler_iq); tx_resampler_iq = NULL; }
 
   free(rx_feat_buf); rx_feat_buf = NULL;
   free(rx_eoo_buf); rx_eoo_buf = NULL;
@@ -291,47 +288,40 @@ void radae_rx_stop(void) {
 
 void radae_process_rx_iq(RECEIVER *rx, double *iq_in, int count) {
   if (!rade_rx_ctx) return;
+  int id = rx->id;
+  if (id < 0 || id >= MAX_RADAE_RX) return;
 
-  if (rx->sample_rate != current_rx_sample_rate || !rx_resampler_i) {
-    recreate_rx_resamplers(rx->sample_rate);
+  if (!rx_resampler_iq[id] || current_rx_sample_rate[id] != rx->sample_rate) {
+    recreate_rx_resamplers(id, rx->sample_rate);
   }
 
-  // Resample from 48k to 8k
-  double *i_in = malloc(count * sizeof(double));
-  double *q_in = malloc(count * sizeof(double));
-  for (int i = 0; i < count; i++) {
-    i_in[i] = iq_in[2 * i];
-    q_in[i] = iq_in[2 * i + 1];
-  }
+  int out_samps = 0;
+  double *iq_res = malloc((count * 4 + 1024) * 2 * sizeof(double));
+  xresampleV(iq_in, iq_res, count, &out_samps, rx_resampler_iq[id]);
 
-  int out_i = 0, out_q = 0;
-  double *i_res = malloc(count * sizeof(double));
-  double *q_res = malloc(count * sizeof(double));
-  xresampleV(i_in, i_res, count, &out_i, rx_resampler_i);
-  xresampleV(q_in, q_res, count, &out_q, rx_resampler_q);
+  for (int i = 0; i < out_samps; i++) {
+    double r = iq_res[2 * i];
+    double im = iq_res[2 * i + 1];
 
-  for (int i = 0; i < out_i; i++) {
-    RADE_COMP sample;
-    sample.real = (float)i_res[i];
-    sample.imag = (float)q_res[i];
+    double phase = 2.0 * M_PI * 1500.0 * rx_ofdm_n / 8000.0;
+    double c = cos(phase);
+    double s = sin(phase);
+
+    double shifted_r = r * c - im * s;
+    double shifted_im = r * s + im * c;
+
+    RADE_COMP sample = {(float)shifted_r, (float)shifted_im};
     rx_iq_push(sample);
+    rx_ofdm_n = (rx_ofdm_n + 1) % 16;
   }
 
-  free(i_in); free(q_in);
-  free(i_res); free(q_res);
+  free(iq_res);
 
   int nin = rade_nin(rade_rx_ctx);
   while (rx_iq_count() >= nin) {
     RADE_COMP *rx_block = malloc(nin * sizeof(RADE_COMP));
     for (int i = 0; i < nin; i++) {
       rx_block[i] = rx_iq_pop();
-      int invert = (vfo[rx->id].frequency < 10000000LL);
-      if (rade_iq_toggle) {
-        invert = !invert;
-      }
-      if (invert) {
-        rx_block[i].imag = -rx_block[i].imag;
-      }
     }
 
     int has_eoo = 0;
@@ -380,15 +370,18 @@ void radae_process_rx_iq(RECEIVER *rx, double *iq_in, int count) {
         float fpcm[160];
         fargan_synthesize(&rx_fargan, fpcm, feat);
 
-        double in_speech[160];
+        // Interpolate speech from 16k to 48k (complex)
+        double in_speech[320];
         for (int s = 0; s < 160; s++) {
-          in_speech[s] = fpcm[s];
+          in_speech[2 * s] = (double)fpcm[s];
+          in_speech[2 * s + 1] = 0.0; // Q=0
         }
         int out_speech = 0;
-        double out_speech_buf[1000];
+        double out_speech_buf[2000];
         xresampleV(in_speech, out_speech_buf, 160, &out_speech, rx_resampler_audio);
+        
         for (int s = 0; s < out_speech; s++) {
-          rx_audio_push(out_speech_buf[s]);
+          rx_audio_push(out_speech_buf[2 * s]); // I
         }
       }
     }
@@ -471,12 +464,26 @@ static void force_drop_ptt(void) {
   }
 }
 
-void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
+void radae_process_tx_audio(TRANSMITTER *tx, double *mic_in, int mic_count, double *iq_out, int out_count) {
   if (!rade_tx_ctx || !tx_lpcnet) return;
 
-  int tx_rate = active_receiver ? active_receiver->sample_rate : 48000;
-  if (tx_rate != current_tx_sample_rate || !tx_resampler_audio) {
-    recreate_tx_resamplers(tx_rate);
+  static int last_filter_high = -1;
+  static int last_filter_low = -1;
+
+  if (!tx_resampler_audio || current_tx_sample_rate != tx->iq_output_rate) {
+    current_tx_sample_rate = tx->iq_output_rate;
+    recreate_tx_resamplers(tx->iq_output_rate);
+    last_filter_high = tx->filter_high;
+    last_filter_low = tx->filter_low;
+    double new_fc = (tx->filter_high - tx->filter_low) / 2.0;
+    if (new_fc < 500.0) new_fc = 1250.0;
+    init_tx_filter(new_fc, 8000);
+  } else if (last_filter_high != tx->filter_high || last_filter_low != tx->filter_low) {
+    last_filter_high = tx->filter_high;
+    last_filter_low = tx->filter_low;
+    double new_fc = (tx->filter_high - tx->filter_low) / 2.0;
+    if (new_fc < 500.0) new_fc = 1250.0;
+    init_tx_filter(new_fc, 8000);
   }
 
   // Watchdog timer (max 3 seconds in EOO phase)
@@ -490,16 +497,17 @@ void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
   }
 
   if (!tx_eoo_phase) {
-    // Normal transmit: Resample speech from 48k to 16k
-    double *mono_in = malloc(count * sizeof(double));
-    for (int i = 0; i < count; i++) {
-      mono_in[i] = audio_buffer[2 * i];
+    // Normal transmit: Resample speech from 48k to 16k (complex)
+    double *mono_in = malloc(mic_count * 2 * sizeof(double));
+    for (int i = 0; i < mic_count; i++) {
+      mono_in[2 * i] = mic_in[2 * i];
+      mono_in[2 * i + 1] = 0.0;
     }
     int out_samps = 0;
-    double *res_speech = malloc(count * sizeof(double));
-    xresampleV(mono_in, res_speech, count, &out_samps, tx_resampler_audio);
+    double *res_speech = malloc((mic_count + 1024) * 2 * sizeof(double));
+    xresampleV(mono_in, res_speech, mic_count, &out_samps, tx_resampler_audio);
     for (int i = 0; i < out_samps; i++) {
-      tx_speech_push(res_speech[i]);
+      tx_speech_push(res_speech[2 * i]);
     }
     free(mono_in); free(res_speech);
 
@@ -520,45 +528,36 @@ void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
       if (tx_feat_idx >= 12) {
         int n_out = rade_tx(rade_tx_ctx, tx_out_buf, tx_feat_buf);
 
-        // Inversion
-        int invert = (vfo[0].frequency < 10000000LL);
-        if (rade_iq_toggle) {
-          invert = !invert;
-        }
-        if (invert) {
-          for (int i = 0; i < n_out; i++) {
-            tx_out_buf[i].imag = -tx_out_buf[i].imag;
-          }
-        }
-
         // Resample from 8k to 48k
-        double *i_res = malloc(n_out * 6 * sizeof(double));
-        double *q_res = malloc(n_out * 6 * sizeof(double));
-        double *i_in = malloc(n_out * sizeof(double));
-        double *q_in = malloc(n_out * sizeof(double));
+        double *iq_in = malloc(n_out * 2 * sizeof(double));
         for (int i = 0; i < n_out; i++) {
-          i_in[i] = tx_out_buf[i].real;
-          q_in[i] = tx_out_buf[i].imag;
+          double r = tx_out_buf[i].real;
+          double im = tx_out_buf[i].imag;
+
+          double phase = 2.0 * M_PI * 1500.0 * tx_ofdm_n / 8000.0;
+          double c = cos(phase);
+          double s = sin(phase);
+
+          double shifted_r = r * c + im * s;
+          double shifted_im = -r * s + im * c;
+
+          filter_tx_sample(&shifted_r, &shifted_im);
+
+          iq_in[2 * i] = shifted_r;
+          iq_in[2 * i + 1] = shifted_im;
+
+          tx_ofdm_n = (tx_ofdm_n + 1) % 16;
         }
-        int out_i = 0, out_q = 0;
-        xresampleV(i_in, i_res, n_out, &out_i, tx_resampler_i);
-        xresampleV(q_in, q_res, n_out, &out_q, tx_resampler_q);
 
-        for (int i = 0; i < out_i; i++) {
-          RADE_COMP sample;
-          sample.real = (float)i_res[i];
-          sample.imag = (float)q_res[i];
-          
-          double r = sample.real;
-          double im = sample.imag;
-          filter_tx_sample(&r, &im);
-          sample.real = r;
-          sample.imag = im;
+        int out_samps = 0;
+        double *iq_res = malloc((n_out * 24 + 1024) * 2 * sizeof(double));
+        xresampleV(iq_in, iq_res, n_out, &out_samps, tx_resampler_iq);
 
+        for (int i = 0; i < out_samps; i++) {
+          RADE_COMP sample = {(float)iq_res[2 * i], (float)iq_res[2 * i + 1]};
           tx_ofdm_push(sample);
         }
-        free(i_res); free(q_res);
-        free(i_in); free(q_in);
+        free(iq_res); free(iq_in);
 
         tx_feat_idx = 0;
       }
@@ -573,31 +572,35 @@ void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
       if (tx_feat_idx > 0) {
         memset(&tx_feat_buf[tx_feat_idx * 36], 0, (12 - tx_feat_idx) * 36 * sizeof(float));
         int n_out = rade_tx(rade_tx_ctx, tx_out_buf, tx_feat_buf);
-        int invert = (vfo[0].frequency < 10000000LL);
-        if (rade_iq_toggle) invert = !invert;
-        if (invert) {
-          for (int i = 0; i < n_out; i++) tx_out_buf[i].imag = -tx_out_buf[i].imag;
-        }
-        
-        double *i_res = malloc(n_out * 6 * sizeof(double));
-        double *q_res = malloc(n_out * 6 * sizeof(double));
-        double *i_in = malloc(n_out * sizeof(double));
-        double *q_in = malloc(n_out * sizeof(double));
+        double *iq_in = malloc(n_out * 2 * sizeof(double));
         for (int i = 0; i < n_out; i++) {
-          i_in[i] = tx_out_buf[i].real;
-          q_in[i] = tx_out_buf[i].imag;
+          double r = tx_out_buf[i].real;
+          double im = tx_out_buf[i].imag;
+
+          double phase = 2.0 * M_PI * 1500.0 * tx_ofdm_n / 8000.0;
+          double c = cos(phase);
+          double s = sin(phase);
+
+          double shifted_r = r * c + im * s;
+          double shifted_im = -r * s + im * c;
+
+          filter_tx_sample(&shifted_r, &shifted_im);
+
+          iq_in[2 * i] = shifted_r;
+          iq_in[2 * i + 1] = shifted_im;
+
+          tx_ofdm_n = (tx_ofdm_n + 1) % 16;
         }
-        int out_i = 0, out_q = 0;
-        xresampleV(i_in, i_res, n_out, &out_i, tx_resampler_i);
-        xresampleV(q_in, q_res, n_out, &out_q, tx_resampler_q);
-        for (int i = 0; i < out_i; i++) {
-          RADE_COMP sample = {(float)i_res[i], (float)q_res[i]};
-          double r = sample.real, im = sample.imag;
-          filter_tx_sample(&r, &im);
-          sample.real = r; sample.imag = im;
+
+        int out_samps = 0;
+        double *iq_res = malloc((n_out * 24 + 1024) * 2 * sizeof(double));
+        xresampleV(iq_in, iq_res, n_out, &out_samps, tx_resampler_iq);
+
+        for (int i = 0; i < out_samps; i++) {
+          RADE_COMP sample = {(float)iq_res[2 * i], (float)iq_res[2 * i + 1]};
           tx_ofdm_push(sample);
         }
-        free(i_res); free(q_res); free(i_in); free(q_in);
+        free(iq_res); free(iq_in);
         tx_feat_idx = 0;
       }
       
@@ -606,34 +609,38 @@ void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
       
       // Generate EOO Frame
       int n_out = rade_tx_eoo(rade_tx_ctx, tx_eoo_out);
-      int invert = (vfo[0].frequency < 10000000LL);
-      if (rade_iq_toggle) invert = !invert;
-      if (invert) {
-        for (int i = 0; i < n_out; i++) tx_eoo_out[i].imag = -tx_eoo_out[i].imag;
-      }
-      
-      double *i_res = malloc(n_out * 6 * sizeof(double));
-      double *q_res = malloc(n_out * 6 * sizeof(double));
-      double *i_in = malloc(n_out * sizeof(double));
-      double *q_in = malloc(n_out * sizeof(double));
+      double *iq_in = malloc(n_out * 2 * sizeof(double));
       for (int i = 0; i < n_out; i++) {
-        i_in[i] = tx_eoo_out[i].real;
-        q_in[i] = tx_eoo_out[i].imag;
+        double r = tx_eoo_out[i].real;
+        double im = tx_eoo_out[i].imag;
+
+        double phase = 2.0 * M_PI * 1500.0 * tx_ofdm_n / 8000.0;
+        double c = cos(phase);
+        double s = sin(phase);
+
+        double shifted_r = r * c + im * s;
+        double shifted_im = -r * s + im * c;
+
+        filter_tx_sample(&shifted_r, &shifted_im);
+
+        iq_in[2 * i] = shifted_r;
+        iq_in[2 * i + 1] = shifted_im;
+
+        tx_ofdm_n = (tx_ofdm_n + 1) % 16;
       }
-      int out_i = 0, out_q = 0;
-      xresampleV(i_in, i_res, n_out, &out_i, tx_resampler_i);
-      xresampleV(q_in, q_res, n_out, &out_q, tx_resampler_q);
-      for (int i = 0; i < out_i; i++) {
-        RADE_COMP sample = {(float)i_res[i], (float)q_res[i]};
-        double r = sample.real, im = sample.imag;
-        filter_tx_sample(&r, &im);
-        sample.real = r; sample.imag = im;
+
+      int out_samps = 0;
+      double *iq_res = malloc((n_out * 24 + 1024) * 2 * sizeof(double));
+      xresampleV(iq_in, iq_res, n_out, &out_samps, tx_resampler_iq);
+
+      for (int i = 0; i < out_samps; i++) {
+        RADE_COMP sample = {(float)iq_res[2 * i], (float)iq_res[2 * i + 1]};
         tx_ofdm_push(sample);
       }
-      free(i_res); free(q_res); free(i_in); free(q_in);
+      free(iq_res); free(iq_in);
       
       // Add silence buffer (same length as EOO frame) to let RX finish processing before PTT release
-      for (int i = 0; i < out_i; i++) {
+      for (int i = 0; i < out_samps; i++) {
         RADE_COMP silence = {0.0f, 0.0f};
         tx_ofdm_push(silence);
       }
@@ -641,13 +648,13 @@ void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count) {
   }
 
   // Populate output buffer
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < out_count; i++) {
     RADE_COMP sample = {0.0f, 0.0f};
     if (tx_ofdm_count() > 0) {
       sample = tx_ofdm_pop();
     }
-    audio_buffer[2 * i] = sample.real;
-    audio_buffer[2 * i + 1] = sample.imag;
+    iq_out[2 * i] = sample.real;
+    iq_out[2 * i + 1] = sample.imag;
   }
 
   if (tx_eoo_phase && tx_ofdm_count() == 0) {

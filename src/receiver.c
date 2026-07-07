@@ -1346,7 +1346,7 @@ static void rx_full_buffer(RECEIVER *rx) {
     }
 
     if (vfo[rx->id].mode == modeRADE) {
-      radae_process_rx_iq(rx, rx->audio_output_buffer, rx->buffer_size);
+      radae_process_rx_iq(rx, rx->iq_input_buffer, rx->buffer_size);
     }
 
     if (rx->displaying) {

@@ -1671,7 +1671,7 @@ static void tx_full_buffer(TRANSMITTER *tx) {
   }
 
   if (txmode == modeRADE && !tx->tune) {
-    radae_process_tx_audio(tx, tx->iq_output_buffer, tx->output_samples);
+    radae_process_tx_audio(tx, tx->mic_input_buffer, tx->samples, tx->iq_output_buffer, tx->output_samples);
   }
 
   if (tx->displaying && !(tx->puresignal && tx->feedback)) {

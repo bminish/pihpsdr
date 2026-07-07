@@ -22,6 +22,6 @@ void radae_tx_stop(void);
 void radae_tx_start_eoo(void);
 int radae_tx_is_eoo_pending(void);
 int radae_tx_active(void);
-void radae_process_tx_audio(TRANSMITTER *tx, double *audio_buffer, int count);
+void radae_process_tx_audio(TRANSMITTER *tx, double *mic_in, int mic_count, double *iq_out, int out_count);
 
 #endif

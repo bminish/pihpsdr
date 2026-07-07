@@ -81,6 +81,7 @@ sudo apt-get --yes install libgpiod-dev
 sudo apt-get --yes install libpulse-dev
 sudo apt-get --yes install pulseaudio
 sudo apt-get --yes install pipewire-pulse
+sudo apt-get --yes install libpipewire-0.3-dev
 sudo apt-get --yes install libpcap-dev
 sudo apt-get --yes install libopus-dev
 sudo apt-get --yes install libminiupnpc-dev

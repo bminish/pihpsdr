@@ -81,7 +81,7 @@ GIT_COMMIT := $(shell git log --pretty=format:"%h"  -1)
 # Turn off complaints about deprecated functions (new GTK functions are marked deprecated in each
 # release) and against unused parameters (those regularly occur in GTK callbacks).
 #
-CFLAGS?= -O3 -Wall -Wextra -Wimplicit-fallthrough -Wno-unused-parameter -Wno-deprecated-declarations -Wcast-align
+CFLAGS=-g -O3 -Wall -Wextra -Wimplicit-fallthrough -Wno-unused-parameter -Wno-deprecated-declarations -Wcast-align -pthread -I./src $(D_MIDI) $(D_NPSDR) $(D_LOCAL_IP) $(D_PIPEWIRE) $(D_TCI) $(D_HPSDR_DITHER) $(D_PORTFORWARD) $(D_GIT_DATE) $(D_GIT_VERSION) $(D_GIT_COMMIT) `pkg-config --cflags gtk+-3.0` -I./wdsp -I./radae_nopy/src -I./radae_nopy/build/build_opus-prefix/src/build_opus/dnn -I./radae_nopy/build/build_opus-prefix/src/build_opus/include -I./radae_nopy/build/build_opus-prefix/src/build_opus/celt -I./radae_nopy/build/build_opus-prefix/src/build_opus $(D_OPENSSL_CFLAGS) $(D_PIPEWIRE_CFLAGS) $(D_PORTAUDIO_CFLAGS) $(D_SOAPYSDR_CFLAGS) `pkg-config --cflags opus` `pkg-config --cflags zlib` `pkg-config --cflags sqlite3` `pkg-config --cflags libcurl` `pkg-config --cflags miniupnpc`
 LINK?=   $(CC)
 
 #
@@ -655,7 +655,7 @@ src/waterfall.o
 $(PROGRAM):  $(OBJS) $(AUDIO_OBJS) $(USBOZY_OBJS) $(SOAPYSDR_OBJS) \
 		$(MIDI_OBJS) $(STEMLAB_OBJS) $(TTS_OBJS) $(TCI_OBJS)
 	$(COMPILE) -c -o src/version.o src/version.c
-	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake .. && make -j$$(nproc)
+	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$$(nproc)
 	@+make -C libspecbleach
 	@+make -C rnnoise
 	@+make -C wdsp
@@ -797,7 +797,7 @@ DEPEND:
 .PHONY: app
 app:	$(OBJS) $(AUDIO_OBJS) $(USBOZY_OBJS)  $(SOAPYSDR_OBJS) $(TCI_OBJS) \
 		$(MIDI_OBJS) $(STEMLAB_OBJS) $(SERVER_OBJS) $(TTS_OBJS)
-	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake .. && make -j$$(nproc)
+	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$$(nproc)
 	@+make -C libspecbleach
 	@+make -C rnnoise
 	@+make -C wdsp
