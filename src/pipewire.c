@@ -1,0 +1,802 @@
+/* Copyright (C)
+ *  2026 - Antigravity AI Coding Assistant / Google DeepMind
+ *
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ */
+
+#include <gtk/gtk.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdatomic.h>
+
+#include <pipewire/pipewire.h>
+#include <spa/param/audio/format-utils.h>
+#include <spa/utils/result.h>
+#include <spa/pod/builder.h>
+
+#include "audio.h"
+#include "client_server.h"
+#include "message.h"
+#include "mode.h"
+#include "radio.h"
+#include "receiver.h"
+#include "transmitter.h"
+#include "vfo.h"
+#include "atomic.h"
+
+#define RING_BUFFER_SIZE 65536
+#define RING_BUFFER_MASK 65535
+#define MICRINGLEN 8192
+#define MICRINGMASK 8191
+
+#define AUDIO_LAT_TARGET_MS 200
+static const int AUDIO_LAT_TARGET_FRAMES = 48 * AUDIO_LAT_TARGET_MS; // 9600
+
+int n_input_devices;
+int n_output_devices;
+
+AUDIO_DEVICE input_devices[MAX_AUDIO_DEVICES];
+AUDIO_DEVICE output_devices[MAX_AUDIO_DEVICES];
+
+struct audio_ring {
+  double buffer[RING_BUFFER_SIZE * 2];
+  volatile int inpt;
+  volatile int outpt;
+};
+
+struct pipewire_handle {
+  struct pw_thread_loop *loop;
+  struct pw_context *context;
+  struct pw_core *core;
+  struct pw_stream *rx_stream;
+  struct pw_stream *tx_stream;
+  struct pw_stream *stream; // for capture (mic)
+  RECEIVER *rx;
+  TRANSMITTER *tx;
+  int channels;
+  int is_output;
+
+  struct audio_ring tx_ring;
+};
+
+static void on_discovery_timeout(void *data, uint64_t expirations) {
+  struct pw_main_loop *loop = data;
+  pw_main_loop_quit(loop);
+}
+
+static void registry_event_global(void *data, uint32_t id, uint32_t permissions,
+                                  const char *type, uint32_t version,
+                                  const struct spa_dict *props) {
+  if (props == NULL) return;
+  if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0) {
+    const char *media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
+    const char *name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+    const char *desc = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
+    if (media_class && name && desc) {
+      if (strcmp(media_class, "Audio/Sink") == 0) {
+        if (n_output_devices < MAX_AUDIO_DEVICES) {
+          output_devices[n_output_devices].name = g_strdup(name);
+          output_devices[n_output_devices].description = g_strdup(desc);
+          output_devices[n_output_devices].channels = 2;
+          n_output_devices++;
+        }
+      } else if (strcmp(media_class, "Audio/Source") == 0) {
+        if (n_input_devices < MAX_AUDIO_DEVICES) {
+          input_devices[n_input_devices].name = g_strdup(name);
+          input_devices[n_input_devices].description = g_strdup(desc);
+          input_devices[n_input_devices].channels = 1;
+          n_input_devices++;
+        }
+      }
+    }
+  }
+}
+
+void audio_get_cards() {
+  n_input_devices = 0;
+  n_output_devices = 0;
+  pw_init(NULL, NULL);
+
+  struct pw_main_loop *loop = pw_main_loop_new(NULL);
+  if (!loop) return;
+  struct pw_context *context = pw_context_new(pw_main_loop_get_loop(loop), NULL, 0);
+  if (!context) {
+    pw_main_loop_destroy(loop);
+    return;
+  }
+  struct pw_core *core = pw_context_connect(context, NULL, 0);
+  if (!core) {
+    pw_context_destroy(context);
+    pw_main_loop_destroy(loop);
+    return;
+  }
+
+  struct pw_registry *registry = pw_core_get_registry(core, PW_VERSION_REGISTRY, 0);
+  struct spa_hook registry_listener;
+  static const struct pw_registry_events registry_events = {
+    PW_VERSION_REGISTRY_EVENTS,
+    .global = registry_event_global,
+  };
+  pw_registry_add_listener(registry, &registry_listener, &registry_events, NULL);
+
+  struct spa_source *timer = pw_loop_add_timer(pw_main_loop_get_loop(loop), on_discovery_timeout, loop);
+  struct timespec value, interval;
+  value.tv_sec = 0;
+  value.tv_nsec = 150 * 1000 * 1000; // 150ms timeout
+  interval.tv_sec = 0;
+  interval.tv_nsec = 0;
+  pw_loop_update_timer(pw_main_loop_get_loop(loop), timer, &value, &interval, false);
+
+  pw_main_loop_run(loop);
+
+  spa_hook_remove(&registry_listener);
+  pw_proxy_destroy((struct pw_proxy*)registry);
+  pw_core_disconnect(core);
+  pw_context_destroy(context);
+  pw_main_loop_destroy(loop);
+
+  for (int i = 0; i < n_input_devices; i++) {
+    t_print("PipeWire Input: %s (%s)\n", input_devices[i].description, input_devices[i].name);
+  }
+  for (int i = 0; i < n_output_devices; i++) {
+    t_print("PipeWire Output: %s (%s)\n", output_devices[i].description, output_devices[i].name);
+  }
+}
+
+static void on_rx_playback_process(void *data) {
+  struct pipewire_handle *h = data;
+  RECEIVER *rx = h->rx;
+  struct pw_buffer *b;
+  struct spa_buffer *buf;
+  float *samples;
+  uint32_t n_frames;
+
+  if ((b = pw_stream_dequeue_buffer(h->rx_stream)) == NULL) {
+    return;
+  }
+
+  buf = b->buffer;
+  samples = buf->datas[0].data;
+  if (!samples) return;
+
+  uint32_t max_size = buf->datas[0].maxsize;
+  n_frames = max_size / (sizeof(float) * h->channels);
+  if (b->requested && b->requested < n_frames) {
+    n_frames = b->requested;
+  }
+
+  int inpt = rx->audio_buffer_inpt;
+  int outpt = rx->audio_buffer_outpt;
+  int avail = (inpt - outpt) & RING_BUFFER_MASK;
+
+  uint32_t frames_to_write = n_frames;
+  if (frames_to_write > (uint32_t)avail) {
+    frames_to_write = avail;
+  }
+
+  for (uint32_t i = 0; i < frames_to_write; i++) {
+    int idx = (outpt + i) & RING_BUFFER_MASK;
+    for (int c = 0; c < h->channels; c++) {
+      samples[i * h->channels + c] = (float)rx->audio_buffer[idx * h->channels + c];
+    }
+  }
+
+  if (frames_to_write < n_frames) {
+    memset(samples + (frames_to_write * h->channels), 0,
+           (n_frames - frames_to_write) * h->channels * sizeof(float));
+  }
+
+  rx->audio_buffer_outpt = (outpt + frames_to_write) & RING_BUFFER_MASK;
+
+  buf->datas[0].chunk->offset = 0;
+  buf->datas[0].chunk->size = n_frames * sizeof(float) * h->channels;
+  buf->datas[0].chunk->stride = sizeof(float) * h->channels;
+
+  pw_stream_queue_buffer(h->rx_stream, b);
+}
+
+static void on_tx_playback_process(void *data) {
+  struct pipewire_handle *h = data;
+  struct pw_buffer *b;
+  struct spa_buffer *buf;
+  float *samples;
+  uint32_t n_frames;
+
+  if ((b = pw_stream_dequeue_buffer(h->tx_stream)) == NULL) {
+    return;
+  }
+
+  buf = b->buffer;
+  samples = buf->datas[0].data;
+  if (!samples) return;
+
+  uint32_t max_size = buf->datas[0].maxsize;
+  n_frames = max_size / (sizeof(float) * h->channels);
+  if (b->requested && b->requested < n_frames) {
+    n_frames = b->requested;
+  }
+
+  int inpt = h->tx_ring.inpt;
+  int outpt = h->tx_ring.outpt;
+  int avail = (inpt - outpt) & RING_BUFFER_MASK;
+
+  uint32_t frames_to_write = n_frames;
+  if (frames_to_write > (uint32_t)avail) {
+    frames_to_write = avail;
+  }
+
+  for (uint32_t i = 0; i < frames_to_write; i++) {
+    int idx = (outpt + i) & RING_BUFFER_MASK;
+    for (int c = 0; c < h->channels; c++) {
+      samples[i * h->channels + c] = (float)h->tx_ring.buffer[idx * h->channels + c];
+    }
+  }
+
+  if (frames_to_write < n_frames) {
+    memset(samples + (frames_to_write * h->channels), 0,
+           (n_frames - frames_to_write) * h->channels * sizeof(float));
+  }
+
+  h->tx_ring.outpt = (outpt + frames_to_write) & RING_BUFFER_MASK;
+
+  buf->datas[0].chunk->offset = 0;
+  buf->datas[0].chunk->size = n_frames * sizeof(float) * h->channels;
+  buf->datas[0].chunk->stride = sizeof(float) * h->channels;
+
+  pw_stream_queue_buffer(h->tx_stream, b);
+}
+
+static void on_capture_process(void *data) {
+  struct pipewire_handle *h = data;
+  TRANSMITTER *tx = h->tx;
+  struct pw_buffer *b;
+  struct spa_buffer *buf;
+  float *samples;
+  uint32_t n_frames;
+
+  if ((b = pw_stream_dequeue_buffer(h->stream)) == NULL) {
+    return;
+  }
+
+  buf = b->buffer;
+  samples = buf->datas[0].data;
+  if (!samples) {
+    pw_stream_queue_buffer(h->stream, b);
+    return;
+  }
+
+  n_frames = buf->datas[0].chunk->size / (sizeof(float) * h->channels);
+
+  if (tx->audio_buffer != NULL) {
+    int inpt = tx->audio_buffer_inpt;
+    int outpt = tx->audio_buffer_outpt;
+
+    for (uint32_t i = 0; i < n_frames; i++) {
+      double sample = 0.0;
+      for (int c = 0; c < h->channels; c++) {
+        sample += samples[i * h->channels + c];
+      }
+      sample /= h->channels;
+
+      int newpt = (inpt + 1) & MICRINGMASK;
+      if (newpt != outpt) {
+        tx->audio_buffer[inpt] = sample;
+        MEMORY_BARRIER;
+        inpt = newpt;
+      }
+    }
+    tx->audio_buffer_inpt = inpt;
+  }
+
+  pw_stream_queue_buffer(h->stream, b);
+}
+
+int audio_open_output(RECEIVER *rx) {
+  t_print("%s RX%d:%s\n", __func__, rx->id + 1, rx->audio_name);
+
+  int err = 1;
+  for (int i = 0; i < n_output_devices; i++) {
+    if (!strcmp(rx->audio_name, output_devices[i].name)) {
+      rx->local_audio_channels = output_devices[i].channels;
+      err = 0;
+      break;
+    }
+  }
+  if (err) {
+    t_print("%s: not registered: %s\n", __func__, rx->audio_name);
+    return -1;
+  }
+
+  g_mutex_lock(&rx->audio_mutex);
+  rx->audio_handle = NULL;
+  rx->audio_buffer = NULL;
+
+  struct pipewire_handle *h = g_new0(struct pipewire_handle, 1);
+  h->rx = rx;
+  h->channels = rx->local_audio_channels;
+  h->is_output = 1;
+  h->tx_ring.inpt = 0;
+  h->tx_ring.outpt = 0;
+
+  h->loop = pw_thread_loop_new("pihpsdr-playback", NULL);
+  if (!h->loop) {
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  h->context = pw_context_new(pw_thread_loop_get_loop(h->loop), NULL, 0);
+  if (!h->context) {
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  if (pw_thread_loop_start(h->loop) < 0) {
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  pw_thread_loop_lock(h->loop);
+
+  h->core = pw_context_connect(h->context, NULL, 0);
+  if (!h->core) {
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  // RX Stream properties (Deep buffer for RX stability)
+  struct pw_properties *rx_props = pw_properties_new(
+      PW_KEY_MEDIA_TYPE, "Audio",
+      PW_KEY_MEDIA_CATEGORY, "Playback",
+      PW_KEY_MEDIA_ROLE, "DSP",
+      PW_KEY_NODE_NAME, "piHPSDR RX playback",
+      PW_KEY_TARGET_OBJECT, rx->audio_name,
+      PW_KEY_NODE_LATENCY, "2048/48000",
+      NULL
+  );
+
+  static const struct pw_stream_events rx_stream_events = {
+      PW_VERSION_STREAM_EVENTS,
+      .process = on_rx_playback_process,
+  };
+
+  h->rx_stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
+                                      "pihpsdr-rx-playback-stream",
+                                      rx_props,
+                                      &rx_stream_events,
+                                      h);
+
+  // TX Sidetone properties (Ultra-low latency)
+  struct pw_properties *tx_props = pw_properties_new(
+      PW_KEY_MEDIA_TYPE, "Audio",
+      PW_KEY_MEDIA_CATEGORY, "Playback",
+      PW_KEY_MEDIA_ROLE, "DSP",
+      PW_KEY_NODE_NAME, "piHPSDR TX sidetone",
+      PW_KEY_TARGET_OBJECT, rx->audio_name,
+      PW_KEY_NODE_LATENCY, "64/48000",
+      NULL
+  );
+
+  static const struct pw_stream_events tx_stream_events = {
+      PW_VERSION_STREAM_EVENTS,
+      .process = on_tx_playback_process,
+  };
+
+  h->tx_stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
+                                      "pihpsdr-tx-sidetone-stream",
+                                      tx_props,
+                                      &tx_stream_events,
+                                      h);
+
+  if (!h->rx_stream || !h->tx_stream) {
+    if (h->rx_stream) pw_stream_destroy(h->rx_stream);
+    if (h->tx_stream) pw_stream_destroy(h->tx_stream);
+    pw_core_disconnect(h->core);
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  struct spa_audio_info_raw info = {
+      .format = SPA_AUDIO_FORMAT_F32,
+      .rate = 48000,
+      .channels = h->channels,
+  };
+  for (int i = 0; i < h->channels; i++) {
+    info.position[i] = SPA_AUDIO_CHANNEL_MONO + i;
+  }
+
+  uint8_t buffer[1024];
+  struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+  const struct spa_pod *params[1];
+  params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
+
+  int res = pw_stream_connect(h->rx_stream,
+                              PW_DIRECTION_OUTPUT,
+                              PW_ID_ANY,
+                              PW_STREAM_FLAG_AUTOCONNECT |
+                              PW_STREAM_FLAG_MAP_BUFFERS |
+                              PW_STREAM_FLAG_RT_PROCESS,
+                              params, 1);
+  if (res < 0) {
+    pw_stream_destroy(h->rx_stream);
+    pw_stream_destroy(h->tx_stream);
+    pw_core_disconnect(h->core);
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  res = pw_stream_connect(h->tx_stream,
+                          PW_DIRECTION_OUTPUT,
+                          PW_ID_ANY,
+                          PW_STREAM_FLAG_AUTOCONNECT |
+                          PW_STREAM_FLAG_MAP_BUFFERS |
+                          PW_STREAM_FLAG_RT_PROCESS |
+                          PW_STREAM_FLAG_INACTIVE,  // Start inactive
+                          params, 1);
+  if (res < 0) {
+    pw_stream_destroy(h->rx_stream);
+    pw_stream_destroy(h->tx_stream);
+    pw_core_disconnect(h->core);
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&rx->audio_mutex);
+    return -1;
+  }
+
+  pw_thread_loop_unlock(h->loop);
+
+  rx->audio_buffer_offset = 0;
+  rx->audio_buffer_inpt = 0;
+  rx->audio_buffer_outpt = 0;
+  rx->audio_buffer = g_new0(double, rx->local_audio_channels * RING_BUFFER_SIZE);
+
+  rx->audio_handle = h;
+  rx->cwaudio = 5;
+  rx->cwcount = 0;
+  rx->skipcnt = 0;
+  rx->queued = 0;
+
+  g_mutex_unlock(&rx->audio_mutex);
+  return 0;
+}
+
+void audio_close_output(RECEIVER *rx) {
+  t_print("%s RX%d:%s\n", __func__, rx->id + 1, rx->audio_name);
+  g_mutex_lock(&rx->audio_mutex);
+
+  struct pipewire_handle *h = rx->audio_handle;
+  if (h != NULL) {
+    pw_thread_loop_stop(h->loop);
+    if (h->rx_stream) pw_stream_destroy(h->rx_stream);
+    if (h->tx_stream) pw_stream_destroy(h->tx_stream);
+    pw_core_disconnect(h->core);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    rx->audio_handle = NULL;
+  }
+
+  if (rx->audio_buffer != NULL) {
+    g_free(rx->audio_buffer);
+    rx->audio_buffer = NULL;
+  }
+
+  g_mutex_unlock(&rx->audio_mutex);
+}
+
+int audio_open_input(TRANSMITTER *tx) {
+  t_print("%s TX:%s\n", __func__, tx->audio_name);
+
+  int err = 1;
+  for (int i = 0; i < n_input_devices; i++) {
+    if (!strcmp(tx->audio_name, input_devices[i].name)) {
+      err = 0;
+      break;
+    }
+  }
+  if (err) {
+    t_print("%s: not registered: %s\n", __func__, tx->audio_name);
+    return -1;
+  }
+
+  g_mutex_lock(&tx->audio_mutex);
+  tx->audio_handle = NULL;
+  tx->audio_buffer = NULL;
+
+  struct pipewire_handle *h = g_new0(struct pipewire_handle, 1);
+  h->tx = tx;
+  h->channels = 1;
+  h->is_output = 0;
+
+  h->loop = pw_thread_loop_new("pihpsdr-capture", NULL);
+  if (!h->loop) {
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  h->context = pw_context_new(pw_thread_loop_get_loop(h->loop), NULL, 0);
+  if (!h->context) {
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  if (pw_thread_loop_start(h->loop) < 0) {
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  pw_thread_loop_lock(h->loop);
+
+  h->core = pw_context_connect(h->context, NULL, 0);
+  if (!h->core) {
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  struct pw_properties *props = pw_properties_new(
+      PW_KEY_MEDIA_TYPE, "Audio",
+      PW_KEY_MEDIA_CATEGORY, "Capture",
+      PW_KEY_MEDIA_ROLE, "DSP",
+      PW_KEY_NODE_NAME, "piHPSDR capture",
+      PW_KEY_TARGET_OBJECT, tx->audio_name,
+      PW_KEY_NODE_LATENCY, "512/48000",
+      NULL
+  );
+
+  static const struct pw_stream_events stream_events = {
+      PW_VERSION_STREAM_EVENTS,
+      .process = on_capture_process,
+  };
+
+  h->stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
+                                   "pihpsdr-capture-stream",
+                                   props,
+                                   &stream_events,
+                                   h);
+  if (!h->stream) {
+    pw_core_disconnect(h->core);
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  struct spa_audio_info_raw info = {
+      .format = SPA_AUDIO_FORMAT_F32,
+      .rate = 48000,
+      .channels = h->channels,
+  };
+  info.position[0] = SPA_AUDIO_CHANNEL_MONO;
+
+  uint8_t buffer[1024];
+  struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+  const struct spa_pod *params[1];
+  params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
+
+  int res = pw_stream_connect(h->stream,
+                              PW_DIRECTION_INPUT,
+                              PW_ID_ANY,
+                              PW_STREAM_FLAG_AUTOCONNECT |
+                              PW_STREAM_FLAG_MAP_BUFFERS |
+                              PW_STREAM_FLAG_RT_PROCESS,
+                              params, 1);
+  if (res < 0) {
+    pw_stream_destroy(h->stream);
+    pw_core_disconnect(h->core);
+    pw_thread_loop_unlock(h->loop);
+    pw_thread_loop_stop(h->loop);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    g_mutex_unlock(&tx->audio_mutex);
+    return -1;
+  }
+
+  pw_thread_loop_unlock(h->loop);
+
+  tx->audio_buffer = g_new0(double, MICRINGLEN);
+  tx->audio_buffer_inpt = 0;
+  tx->audio_buffer_outpt = 0;
+  tx->audio_handle = h;
+  tx->audio_running = TRUE;
+
+  g_mutex_unlock(&tx->audio_mutex);
+  return 0;
+}
+
+void audio_close_input(TRANSMITTER *tx) {
+  t_print("%s TX:%s\n", __func__, tx->audio_name);
+  tx->audio_running = FALSE;
+
+  g_mutex_lock(&tx->audio_mutex);
+  struct pipewire_handle *h = tx->audio_handle;
+  if (h != NULL) {
+    pw_thread_loop_stop(h->loop);
+    pw_stream_destroy(h->stream);
+    pw_core_disconnect(h->core);
+    pw_context_destroy(h->context);
+    pw_thread_loop_destroy(h->loop);
+    g_free(h);
+    tx->audio_handle = NULL;
+  }
+
+  if (tx->audio_buffer != NULL) {
+    g_free(tx->audio_buffer);
+    tx->audio_buffer = NULL;
+  }
+  g_mutex_unlock(&tx->audio_mutex);
+}
+
+double audio_get_next_mic_sample(TRANSMITTER *tx) {
+  double sample;
+  g_mutex_lock(&tx->audio_mutex);
+
+  if ((tx->audio_buffer == NULL) || (tx->audio_buffer_outpt == tx->audio_buffer_inpt)) {
+    sample = 0.0;
+  } else {
+    int newpt = (tx->audio_buffer_outpt + 1) & MICRINGMASK;
+    sample = tx->audio_buffer[tx->audio_buffer_outpt];
+    MEMORY_BARRIER;
+    tx->audio_buffer_outpt = newpt;
+  }
+
+  g_mutex_unlock(&tx->audio_mutex);
+  return sample;
+}
+
+void audio_write(RECEIVER *rx, double left, double right) {
+  if (rx == active_receiver && radio_is_transmitting() && !duplex) { return; }
+
+  g_mutex_lock(&rx->audio_mutex);
+  struct pipewire_handle *h = rx->audio_handle;
+  if (h == NULL || rx->audio_buffer == NULL) {
+    g_mutex_unlock(&rx->audio_mutex);
+    return;
+  }
+
+  if (rx->cwaudio == 3) {
+    // Transition TX -> RX
+    pw_thread_loop_lock(h->loop);
+    pw_stream_set_active(h->tx_stream, false);
+    pw_stream_flush(h->tx_stream, false);
+
+    rx->audio_buffer_outpt = rx->audio_buffer_inpt;
+
+    int inpt = rx->audio_buffer_inpt;
+    for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
+      for (int c = 0; c < rx->local_audio_channels; c++) {
+        rx->audio_buffer[inpt * rx->local_audio_channels + c] = 0.0;
+      }
+      inpt = (inpt + 1) & RING_BUFFER_MASK;
+    }
+    rx->audio_buffer_inpt = inpt;
+
+    pw_stream_set_active(h->rx_stream, true);
+    pw_thread_loop_unlock(h->loop);
+    rx->cwaudio = 0;
+  }
+
+  if (rx->cwaudio == 5) {
+    int inpt = rx->audio_buffer_inpt;
+    for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
+      for (int c = 0; c < rx->local_audio_channels; c++) {
+        rx->audio_buffer[inpt * rx->local_audio_channels + c] = 0.0;
+      }
+      inpt = (inpt + 1) & RING_BUFFER_MASK;
+    }
+    rx->audio_buffer_inpt = inpt;
+    rx->cwaudio = 0;
+  }
+
+  int inpt = rx->audio_buffer_inpt;
+  int outpt = rx->audio_buffer_outpt;
+  int next_inpt = (inpt + 1) & RING_BUFFER_MASK;
+
+  if (next_inpt != outpt) {
+    if (rx->local_audio_channels == 1) {
+      rx->audio_buffer[inpt] = 0.5 * (left + right);
+    } else {
+      rx->audio_buffer[inpt * 2] = left;
+      rx->audio_buffer[inpt * 2 + 1] = right;
+    }
+    MEMORY_BARRIER;
+    rx->audio_buffer_inpt = next_inpt;
+  }
+
+  g_mutex_unlock(&rx->audio_mutex);
+}
+
+void tx_audio_write(RECEIVER *rx, double sample) {
+  g_mutex_lock(&rx->audio_mutex);
+  struct pipewire_handle *h = rx->audio_handle;
+  if (h == NULL || rx->audio_buffer == NULL) {
+    g_mutex_unlock(&rx->audio_mutex);
+    return;
+  }
+
+  if (rx->cwaudio == 0 || rx->cwaudio == 5) {
+    // Transition RX -> TX: Pause RX playback stream, activate low latency sidetone stream
+    pw_thread_loop_lock(h->loop);
+    pw_stream_set_active(h->rx_stream, false);
+
+    h->tx_ring.inpt = 0;
+    h->tx_ring.outpt = 0;
+
+    pw_stream_flush(h->tx_stream, false);
+    pw_stream_set_active(h->tx_stream, true);
+    pw_thread_loop_unlock(h->loop);
+
+    rx->cwaudio = 3;
+  }
+
+  // Write sample directly to tx_ring (no rate-control adaptation to avoid jitter)
+  int inpt = h->tx_ring.inpt;
+  int outpt = h->tx_ring.outpt;
+  int next_inpt = (inpt + 1) & RING_BUFFER_MASK;
+
+  if (next_inpt != outpt) {
+    for (int c = 0; c < h->channels; c++) {
+      h->tx_ring.buffer[inpt * h->channels + c] = sample;
+    }
+    MEMORY_BARRIER;
+    h->tx_ring.inpt = next_inpt;
+  }
+
+  g_mutex_unlock(&rx->audio_mutex);
+}
