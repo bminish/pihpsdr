@@ -59,6 +59,8 @@
 #define SPEC_VAR_DEFAULT_HIGH  3300
 #define  DRM_VAR_DEFAULT_LOW  -3300
 #define  DRM_VAR_DEFAULT_HIGH  3300
+#define RADE_VAR_DEFAULT_LOW -1000
+#define RADE_VAR_DEFAULT_HIGH 1000
 
 static FILTER filterLSB[FILTERS] = {
   {-5150, -150, "5.0k"},
@@ -237,6 +239,21 @@ static FILTER filterDRM[FILTERS] = {
   {DRM_VAR_DEFAULT_LOW, DRM_VAR_DEFAULT_HIGH, "Var2"}
 };
 
+static FILTER filterRADE[FILTERS] = {
+  {-1250, 1250, "2.5k"},
+  {-1150, 1150, "2.3k"},
+  {-1050, 1050, "2.1k"},
+  {-1000, 1000, "2.0k"},
+  {-950, 950, "1.9k"},
+  {-900, 900, "1.8k"},
+  {-800, 800, "1.6k"},
+  {-1250, 1250, "2.5k"},
+  {-1250, 1250, "2.5k"},
+  {-1250, 1250, "2.5k"},
+  {RADE_VAR_DEFAULT_LOW, RADE_VAR_DEFAULT_HIGH, "Var1"},
+  {RADE_VAR_DEFAULT_LOW, RADE_VAR_DEFAULT_HIGH, "Var2"}
+};
+
 //
 // This FMN filter edges are nowhere used, this data is
 // just there to avoid voids.
@@ -272,7 +289,8 @@ FILTER *filters[MODES] = {
   filterSPEC,
   filterDIGL,
   filterSAM,
-  filterDRM
+  filterDRM,
+  filterRADE
 };
 
 //
@@ -294,7 +312,8 @@ const int var_default_low[MODES] = {
   SPEC_VAR_DEFAULT_LOW,
   DIGL_VAR_DEFAULT_LOW,
   SAM_VAR_DEFAULT_LOW,
-  DRM_VAR_DEFAULT_LOW
+  DRM_VAR_DEFAULT_LOW,
+  RADE_VAR_DEFAULT_LOW
 };
 
 const int var_default_high[MODES] = {
@@ -309,7 +328,8 @@ const int var_default_high[MODES] = {
   SPEC_VAR_DEFAULT_HIGH,
   DIGL_VAR_DEFAULT_HIGH,
   SAM_VAR_DEFAULT_HIGH,
-  DRM_VAR_DEFAULT_HIGH
+  DRM_VAR_DEFAULT_HIGH,
+  RADE_VAR_DEFAULT_HIGH
 };
 
 void filter_save_state(void) {

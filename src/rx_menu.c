@@ -33,6 +33,7 @@
 #include "new_protocol.h"
 #include "profiles.h"
 #include "radio.h"
+#include "radae_handler.h"
 #include "receiver.h"
 #include "rx_menu.h"
 #include "sliders.h"
@@ -142,6 +143,10 @@ static void mute_audio_cb(GtkWidget *widget, gpointer data) {
 
 static void mute_radio_cb(GtkWidget *widget, gpointer data) {
   myrx->mute_radio = gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (widget));
+}
+
+static void rade_iq_toggle_cb(GtkWidget *widget, gpointer data) {
+  rade_iq_toggle = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 }
 
 static void adc_filter_bypass_cb(GtkWidget *widget, gpointer data) {
@@ -433,6 +438,16 @@ void rx_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), myrx->fm_limiter_gain);
   gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 1, 1);
   g_signal_connect(btn, "value-changed", G_CALLBACK(fm_lim_gain_cb), NULL);
+  row++;
+
+  if (vfo[myid].mode == modeRADE) {
+    btn = gtk_check_button_new_with_label("RADE I/Q Invert");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), rade_iq_toggle);
+    gtk_grid_attach(GTK_GRID(grid), btn, 0, row, 2, 1);
+    g_signal_connect(btn, "toggled", G_CALLBACK(rade_iq_toggle_cb), NULL);
+    row++;
+  }
+
   //
   // RX Audio options, hard-wired to rows 1-3 in columns
   lbl = gtk_label_new("RX Audio Out");

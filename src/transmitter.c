@@ -42,6 +42,7 @@
 #include "property.h"
 #include "ps_menu.h"
 #include "radio.h"
+#include "radae_handler.h"
 #include "receiver.h"
 #include "sintab.h"
 #include "sliders.h"
@@ -1667,6 +1668,10 @@ static void tx_full_buffer(TRANSMITTER *tx) {
     if (error != 0) {
       t_print("%s: id=%d fexchange0: error=%d\n", __func__, tx->id, error);
     }
+  }
+
+  if (txmode == modeRADE && !tx->tune) {
+    radae_process_tx_audio(tx, tx->iq_output_buffer, tx->output_samples);
   }
 
   if (tx->displaying && !(tx->puresignal && tx->feedback)) {

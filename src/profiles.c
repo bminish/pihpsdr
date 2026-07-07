@@ -309,6 +309,7 @@ void profiles_restore_state(void) {
       case modeSAM:
       case modeSPEC:
       case modeDRM:
+      case modeRADE:
       case modeFMN:
         RXTXprofile[i].rx.agc      = AGC_MEDIUM;
         RXTXprofile[i].rx.filter   = filterF3; //  8000 Hz

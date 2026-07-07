@@ -143,6 +143,7 @@ static gboolean var_default_cb (GtkWidget *widget, GdkEventButton *event, gpoint
   case modeSAM:
   case modeSPEC:
   case modeDRM:
+  case modeRADE:
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spinlow), (double)(high - low));
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spinhigh), 0.5 * (double)(high + low));
     break;
@@ -248,6 +249,7 @@ static void var_spin_low_cb (GtkWidget *widget, gpointer data) {
   case modeSAM:
   case modeSPEC:
   case modeDRM:
+  case modeRADE:
     //
     // Set new width but keep the current shift
     //
@@ -313,6 +315,7 @@ static void var_spin_high_cb (GtkWidget *widget, gpointer data) {
   case modeSAM:
   case modeSPEC:
   case modeDRM:
+  case modeRADE:
     //
     // Set new shift but keep the current width
     //
@@ -513,6 +516,7 @@ void filter_menu(GtkWidget *parent, int id) {
     case modeSAM:
     case modeSPEC:
     case modeDRM:
+    case modeRADE:
       w = gtk_label_new("Filter Width");
       gtk_widget_set_name(w, "boldlabel");
       gtk_widget_set_halign(w, GTK_ALIGN_START);

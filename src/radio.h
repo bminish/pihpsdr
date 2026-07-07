@@ -232,6 +232,7 @@ extern long long tune_timeout;
 
 extern int meter_type;
 extern int extended_meter;
+extern char station_callsign[32];
 
 extern int vox_enabled;
 extern double vox_threshold;
@@ -308,6 +309,7 @@ extern void   radio_set_voxenable(int state);
 extern void   radio_set_voxlevel(double level);
 extern void   radio_set_ptt_delay(int delay);
 extern void   radio_set_mox(int state);
+extern void   rxtx(int state);
 extern void   radio_toggle_mox(void);
 extern void   radio_toggle_tune(void);
 extern void   radio_save_state(void);

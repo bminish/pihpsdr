@@ -33,6 +33,7 @@ enum _mode_enum {
   modeDIGL,
   modeSAM,
   modeDRM,
+  modeRADE,
   MODES
 };
 

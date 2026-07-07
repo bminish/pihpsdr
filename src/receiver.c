@@ -42,6 +42,7 @@
 #include "property.h"
 #include "radio.h"
 #include "receiver.h"
+#include "radae_handler.h"
 #include "rx_panadapter.h"
 #include "sliders.h"
 #ifdef SOAPYSDR
@@ -1166,6 +1167,13 @@ void rx_mode_changed(RECEIVER *rx) {
   rx_set_mode(rx);
   rx_filter_changed(rx);
   rx_set_offset(rx);         // CW BFO offset
+
+  if (vfo[rx->id].mode == modeRADE) {
+    radae_rx_start();
+  } else {
+    radae_rx_stop();
+  }
+  rade_iq_toggle = 0;
 }
 
 void rx_vfo_changed(RECEIVER *rx) {
@@ -1335,6 +1343,10 @@ static void rx_full_buffer(RECEIVER *rx) {
 
     if (error != 0) {
       t_print("%s: id=%d fexchange0: error=%d\n", __func__, rx->id, error);
+    }
+
+    if (vfo[rx->id].mode == modeRADE) {
+      radae_process_rx_iq(rx, rx->audio_output_buffer, rx->buffer_size);
     }
 
     if (rx->displaying) {

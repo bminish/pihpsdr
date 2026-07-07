@@ -839,6 +839,7 @@ void TXASetupBPFilters (int channel)
 	case TXA_DIGU:
 	case TXA_SPEC:
 	case TXA_DRM:
+	case TXA_RADE:
 		CalcBandpassFilter (txa[channel].bp0.p, txa[channel].f_low, txa[channel].f_high, 2.0);
 		if (txa[channel].compressor.p->run)
 		{

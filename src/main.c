@@ -41,6 +41,7 @@
 #include "gpio.h"
 #include "piHPSDR_logo.h"
 #include "main.h"
+#include "radae_handler.h"
 #include "message.h"
 #include "new_menu.h"
 #include "new_protocol.h"
@@ -117,6 +118,7 @@ static gboolean main_delete (GtkWidget *widget) {
 }
 
 static int init(gpointer data) {
+  radae_init();
   char wisdom_directory[1025];
   char text[1024];
   t_print("%s\n", __func__);

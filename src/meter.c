@@ -28,6 +28,7 @@
 #include "mode.h"
 #include "new_menu.h"
 #include "radio.h"
+#include "radae_handler.h"
 #include "receiver.h"
 #include "theme.h"
 #include "version.h"
@@ -858,31 +859,75 @@ void rxmeter_update(int fps, double rxlvl, double peak, double gain, double out)
     double Y2 =  Y1 + 20.0 * scalfac;
     cairo_set_source_rgba(cr, COLOUR_OK);
     cairo_set_font_size(cr, 16.0 * scalfac);
-    //
-    // RX info on additional meter
-    //
-    snprintf(sf, sizeof(sf), "Mic");
-    cairo_move_to(cr, 5, Y0);
-    cairo_show_text(cr, sf);
-    snprintf(sf, sizeof(sf), "Gain");
-    cairo_move_to(cr, 5, Y1);
-    cairo_show_text(cr, sf);
-    snprintf(sf, sizeof(sf), "Out");
-    cairo_move_to(cr, 5, Y2);
-    cairo_show_text(cr, sf);
-    //
-    snprintf(sf, sizeof(sf), "%d", (int)(max_peak + 0.5));
-    cairo_text_extents(cr, sf, &extents);
-    cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y0);
-    cairo_show_text(cr, sf);
-    snprintf(sf, sizeof(sf), "%d", (int)(max_gain + 0.5));
-    cairo_text_extents(cr, sf, &extents);
-    cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y1);
-    cairo_show_text(cr, sf);
-    snprintf(sf, sizeof(sf), "%d", (int)(max_out + 0.5));
-    cairo_text_extents(cr, sf, &extents);
-    cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y2);
-    cairo_show_text(cr, sf);
+
+    if (vfo[active_receiver->id].mode == modeRADE) {
+      snprintf(sf, sizeof(sf), "SNR");
+      cairo_move_to(cr, 5, Y0);
+      cairo_show_text(cr, sf);
+      
+      snprintf(sf, sizeof(sf), "Sync");
+      cairo_move_to(cr, 5, Y1);
+      cairo_show_text(cr, sf);
+      
+      snprintf(sf, sizeof(sf), "Call");
+      cairo_move_to(cr, 5, Y2);
+      cairo_show_text(cr, sf);
+      
+      if (rx_rade_sync) {
+        snprintf(sf, sizeof(sf), "%d dB", rx_rade_snr);
+      } else {
+        snprintf(sf, sizeof(sf), "N/A");
+      }
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y0);
+      cairo_show_text(cr, sf);
+      
+      if (rx_rade_sync) {
+        cairo_set_source_rgba(cr, COLOUR_ATTN);
+        snprintf(sf, sizeof(sf), "YES");
+      } else {
+        snprintf(sf, sizeof(sf), "NO");
+      }
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y1);
+      cairo_show_text(cr, sf);
+      cairo_set_source_rgba(cr, COLOUR_OK);
+      
+      if (decoded_callsign[0] != '\0') {
+        snprintf(sf, sizeof(sf), "%s", decoded_callsign);
+      } else {
+        snprintf(sf, sizeof(sf), "---");
+      }
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y2);
+      cairo_show_text(cr, sf);
+    } else {
+      //
+      // RX info on additional meter
+      //
+      snprintf(sf, sizeof(sf), "Mic");
+      cairo_move_to(cr, 5, Y0);
+      cairo_show_text(cr, sf);
+      snprintf(sf, sizeof(sf), "Gain");
+      cairo_move_to(cr, 5, Y1);
+      cairo_show_text(cr, sf);
+      snprintf(sf, sizeof(sf), "Out");
+      cairo_move_to(cr, 5, Y2);
+      cairo_show_text(cr, sf);
+      //
+      snprintf(sf, sizeof(sf), "%d", (int)(max_peak + 0.5));
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y0);
+      cairo_show_text(cr, sf);
+      snprintf(sf, sizeof(sf), "%d", (int)(max_gain + 0.5));
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y1);
+      cairo_show_text(cr, sf);
+      snprintf(sf, sizeof(sf), "%d", (int)(max_out + 0.5));
+      cairo_text_extents(cr, sf, &extents);
+      cairo_move_to(cr, ADD_METER_WIDTH - extents.width - 2.0, Y2);
+      cairo_show_text(cr, sf);
+    }
     cairo_stroke(cr);
   }
 

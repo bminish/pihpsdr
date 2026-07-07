@@ -30,5 +30,6 @@ char *mode_string[] = {
   , "DIGL"
   , "SAM"
   , "DRM"
+  , "RADE"
 };
 

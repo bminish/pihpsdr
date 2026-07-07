@@ -56,6 +56,7 @@
 #include "profiles.h"
 #include "property.h"
 #include "radio.h"
+#include "radae_handler.h"
 #include "receiver.h"
 #include "rigctl.h"
 #include "rx_panadapter.h"
@@ -267,6 +268,7 @@ long long tune_timeout;
 
 int meter_type = 1;
 int extended_meter = 1;
+char station_callsign[32] = "NOCALL";
 
 static int pre_tune_mode;
 static int pre_tune_cw_internal;
@@ -1065,6 +1067,7 @@ static void radio_create_visual(void) {
 }
 
 void radio_stop_program(void) {
+  radae_cleanup();
 #ifdef GPIO
   gpio_close();
   t_print("%s: GPIO closed\n", __func__);
@@ -1996,7 +1999,7 @@ void radio_change_sample_rate(int rate) {
   }
 }
 
-static void rxtx(int state) {
+void rxtx(int state) {
   int i;
 
   //
@@ -2015,6 +2018,17 @@ static void rxtx(int state) {
   if (!can_transmit) {
     t_print("%s: WARNING: rxtx called but no transmitter!", __func__);
     return;
+  }
+
+  if (!state) {
+    if (vfo_get_tx_mode() == modeRADE && radae_tx_active()) {
+      radae_tx_start_eoo();
+      mox = 0;
+      vox = 0;
+      transmitter->tune = 0;
+      g_idle_add((GSourceFunc)ext_vfo_update, NULL);
+      return;
+    }
   }
 
   if (!radio_is_remote) {
@@ -2100,6 +2114,10 @@ static void rxtx(int state) {
         tx_ps_mox(transmitter, 1);
       }
 
+      if (vfo_get_tx_mode() == modeRADE) {
+        radae_tx_start();
+      }
+
       tx_on(transmitter);
       tx_set_displaying(transmitter);
 
@@ -2141,6 +2159,10 @@ static void rxtx(int state) {
 
       if (transmitter->puresignal) {
         tx_ps_mox(transmitter, 0);
+      }
+
+      if (vfo_get_tx_mode() == modeRADE) {
+        radae_tx_stop();
       }
 
       tx_off(transmitter);
@@ -2863,7 +2885,12 @@ void radio_set_tune(int state) {
 int radio_is_transmitting(void) {
   int ret = 0;
 
-  if (can_transmit) { ret = mox | vox | transmitter->tune; }
+  if (can_transmit) {
+    ret = mox | vox | transmitter->tune;
+    if (vfo_get_tx_mode() == modeRADE && radae_tx_is_eoo_pending()) {
+      ret = 1;
+    }
+  }
 
   return ret;
 }
@@ -3500,6 +3527,7 @@ static void radio_restore_state(void) {
   GetPropI0("mute_rx_while_transmitting",                    mute_rx_while_transmitting);
   GetPropI0("meter_type",                                    meter_type);
   GetPropI0("extended_meter",                                extended_meter);
+  GetPropS0("station_callsign",                              station_callsign);
   GetPropI0("vox_enabled",                                   vox_enabled);
   GetPropF0("vox_threshold",                                 vox_threshold);
   GetPropF0("vox_hang",                                      vox_hang);
@@ -3736,6 +3764,7 @@ void radio_save_state(void) {
   SetPropI0("mute_rx_while_transmitting",                    mute_rx_while_transmitting);
   SetPropI0("meter_type",                                    meter_type);
   SetPropI0("extended_meter",                                extended_meter);
+  SetPropS0("station_callsign",                              station_callsign);
   SetPropI0("vox_enabled",                                   vox_enabled);
   SetPropF0("vox_threshold",                                 vox_threshold);
   SetPropF0("vox_hang",                                      vox_hang);

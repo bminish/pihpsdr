@@ -42,6 +42,7 @@ enum txaMode
 	TXA_DIGL,
 	TXA_SAM,
 	TXA_DRM,
+	TXA_RADE,
 	TXA_AM_LSB,
 	TXA_AM_USB
 };

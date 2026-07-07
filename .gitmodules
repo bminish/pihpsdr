@@ -1,0 +1,3 @@
+[submodule "radae_nopy"]
+	path = radae_nopy
+	url = https://github.com/drowe67/radae_nopy

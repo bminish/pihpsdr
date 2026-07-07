@@ -924,6 +924,7 @@ void RXAbp1Set (int channel)
 		(rxa[channel].rnnr.p->run == 1) ||	// NR3 + NR4 support (nr3)
 		(rxa[channel].sbnr.p->run == 1) ||	// NR3 + NR4 support (nr4)
 		(rxa[channel].anf.p->run  == 1) ||
+		(rxa[channel].mode        == RXA_RADE) ||
 		(rxa[channel].anr.p->run  == 1))	a->run = 1;
 	else									a->run = 0;
 	if (!old && a->run) flush_bandpass (a);
@@ -956,6 +957,7 @@ void RXAbpsnbaCheck (int channel, int mode, int notch_run)
 		case RXA_AM:
 		case RXA_SAM:
 		case RXA_DSB:
+		case RXA_RADE:
 			f_low  = +a->abs_low_freq;
 			f_high = +a->abs_high_freq;
 			run_notches = 0;
@@ -1011,6 +1013,10 @@ void RXAbpsnbaSet (int channel)
 			break;
 		case RXA_FM:
 			a->run = rxa[channel].snba.p->run;
+			a->position = 1;
+			break;
+		case RXA_RADE:
+			a->run = 1;
 			a->position = 1;
 			break;
 		case RXA_DRM:

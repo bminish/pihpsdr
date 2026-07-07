@@ -41,7 +41,8 @@ enum rxaMode
 	RXA_SPEC,
 	RXA_DIGL,
 	RXA_SAM,
-	RXA_DRM
+	RXA_DRM,
+	RXA_RADE
 };
 
 enum rxaMeterType

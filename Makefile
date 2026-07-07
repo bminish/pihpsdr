@@ -94,6 +94,11 @@ LINK+=-pthread
 PKG_CONFIG = pkg-config
 
 WDSP_INCLUDE=-I./wdsp
+RADE_INCLUDE=-I./radae_nopy/src \
+             -I./radae_nopy/build/build_opus-prefix/src/build_opus/dnn \
+             -I./radae_nopy/build/build_opus-prefix/src/build_opus/include \
+             -I./radae_nopy/build/build_opus-prefix/src/build_opus/celt \
+             -I./radae_nopy/build/build_opus-prefix/src/build_opus
 
 ##############################################################################
 # CPP_DEFINES and CPP_SOURCES are "filled" with all  possible options,
@@ -112,6 +117,8 @@ CPP_INCLUDE= $(WDSP_INCLUDE)
 ##############################################################################
 
 WDSP_LIBS=wdsp/libwdsp.a rnnoise/librnnoise.a libspecbleach/libspecbleach.a \
+	radae_nopy/build/src/librade.a \
+	radae_nopy/build/build_opus-prefix/src/build_opus/.libs/libopus.a \
 	`$(PKG_CONFIG) --libs fftw3` `$(PKG_CONFIG) --libs fftw3f`
 
 ##############################################################################
@@ -402,7 +409,7 @@ OPTIONS=$(MIDI_OPTIONS) $(USBOZY_OPTIONS) \
 	$(PNP_OPTIONS) \
 	-D GIT_DATE='"$(GIT_DATE)"' -D GIT_VERSION='"$(GIT_VERSION)"' -D GIT_COMMIT='"$(GIT_COMMIT)"'
 
-INCLUDES=$(GTK_INCLUDE) $(WDSP_INCLUDE) $(OPENSSL_INCLUDE) $(AUDIO_INCLUDE) \
+INCLUDES=$(GTK_INCLUDE) $(WDSP_INCLUDE) $(RADE_INCLUDE) $(OPENSSL_INCLUDE) $(AUDIO_INCLUDE) \
 	$(STEMLAB_INCLUDE) $(USBOZY_INCLUDE) $(SOAPYSDR_INCLUDE) $(OPUS_INCLUDE) \
 	$(ZLIB_INCLUDE) $(DXCLUSTER_INCLUDE) $(CURL_INCLUDE) $(PNP_INCLUDE)
 
@@ -497,6 +504,7 @@ src/profiles.c \
 src/property.c \
 src/protocols.c \
 src/ps_menu.c \
+src/radae_handler.c \
 src/radio.c \
 src/radio_menu.c \
 src/receiver.c \
@@ -599,6 +607,7 @@ src/profiles.o \
 src/property.o \
 src/protocols.o \
 src/ps_menu.o \
+src/radae_handler.o \
 src/radio.o \
 src/radio_menu.o \
 src/receiver.o \
@@ -646,6 +655,7 @@ src/waterfall.o
 $(PROGRAM):  $(OBJS) $(AUDIO_OBJS) $(USBOZY_OBJS) $(SOAPYSDR_OBJS) \
 		$(MIDI_OBJS) $(STEMLAB_OBJS) $(TTS_OBJS) $(TCI_OBJS)
 	$(COMPILE) -c -o src/version.o src/version.c
+	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake .. && make -j$$(nproc)
 	@+make -C libspecbleach
 	@+make -C rnnoise
 	@+make -C wdsp
@@ -704,6 +714,7 @@ clean:
 	@make -C libspecbleach clean
 	@make -C rnnoise clean
 	@make -C wdsp clean
+	@rm -rf radae_nopy/build
 
 #############################################################################
 #
@@ -763,7 +774,7 @@ DEPEND:
 	rm -f DEPEND
 	touch DEPEND
 	export LC_ALL=C && makedepend -DMIDI -DUSBOZY -DSOAPYSDR -DGPIO \
-		-DPULSEAUDIO  -DPORTAUDIO -DALSA -DPORTFORWARD -DTCI -D__APPLE__ -D__linux__ \
+		-DPULSEAUDIO -DPIPEWIRE -DPORTAUDIO -DALSA -DPORTFORWARD -DTCI -D__APPLE__ -D__linux__ \
 		-f DEPEND -I./src src/*.c src/*.h
 	echo "src/MacTTS.o: src/message.h" >> DEPEND
 #############################################################################
@@ -786,6 +797,7 @@ DEPEND:
 .PHONY: app
 app:	$(OBJS) $(AUDIO_OBJS) $(USBOZY_OBJS)  $(SOAPYSDR_OBJS) $(TCI_OBJS) \
 		$(MIDI_OBJS) $(STEMLAB_OBJS) $(SERVER_OBJS) $(TTS_OBJS)
+	@mkdir -p radae_nopy/build && cd radae_nopy/build && cmake .. && make -j$$(nproc)
 	@+make -C libspecbleach
 	@+make -C rnnoise
 	@+make -C wdsp
@@ -1238,3 +1250,7 @@ src/vfo.o: src/receiver.h src/atomic.h src/mode.h
 src/vox.o: src/transmitter.h src/atomic.h
 src/waterfall.o: src/receiver.h src/atomic.h
 src/MacTTS.o: src/message.h
+src/pipewire.o: src/audio.h src/receiver.h src/atomic.h src/transmitter.h
+src/pipewire.o: src/client_server.h src/mode.h src/message.h src/radio.h
+src/pipewire.o: src/vfo.h
+

@@ -79,6 +79,12 @@ static gboolean save_tx_cb(GtkWidget *widget, GdkEventButton *event, gpointer da
 
 const char *names[NUMPROFILES] = {"Audiophile", "Rag Chew", "Contest", "DX", "Digi", "User1", "User2", "User3" };
 
+static void callsign_changed_cb(GtkEditable *editable, gpointer data) {
+  const char *text = gtk_entry_get_text(GTK_ENTRY(editable));
+  strncpy(station_callsign, text, sizeof(station_callsign) - 1);
+  station_callsign[sizeof(station_callsign) - 1] = '\0';
+}
+
 void profile_menu(GtkWidget *parent) {
   GtkWidget *lbl, *btn, *sep;
   dialog = gtk_dialog_new();
@@ -143,6 +149,22 @@ void profile_menu(GtkWidget *parent) {
       g_signal_connect(btn, "button-press-event", G_CALLBACK(save_tx_cb), GINT_TO_POINTER(p + MODES));
     }
   }
+
+  // Callsign entry box
+  sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_set_size_request(sep, -1, 3);
+  gtk_grid_attach(GTK_GRID(grid), sep, 0, NUMPROFILES + 3, 7, 1);
+
+  lbl = gtk_label_new("Station Callsign");
+  gtk_widget_set_name(lbl, "boldlabel");
+  gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), lbl, 0, NUMPROFILES + 4, 2, 1);
+
+  GtkWidget *callsign_entry = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(callsign_entry), 12);
+  gtk_entry_set_text(GTK_ENTRY(callsign_entry), station_callsign);
+  gtk_grid_attach(GTK_GRID(grid), callsign_entry, 2, NUMPROFILES + 4, 3, 1);
+  g_signal_connect(callsign_entry, "changed", G_CALLBACK(callsign_changed_cb), NULL);
 
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
