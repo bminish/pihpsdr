@@ -25,7 +25,7 @@ Source files:
 | | This implementation | Published spec |
 |---|---|---|
 | Transport | WebSocket via libwebsockets | WebSocket (RFC 6455) |
-| Default port | `tci_port = 40001` (`src/tci.h:25`) | 50001 |
+| Default port | `tci_port = 40001` (declared in `src/tci.h:25`, initialized in `src/tci.c:65`) | 50001 |
 | Subprotocols advertised | `"chat"`, `"superchat"`, `"tci"` | not specified |
 | Max simultaneous clients | `TCI_MAX_CLIENTS = 8` (`src/tci.c:56`) | unspecified, "multiple clients supported" |
 | Device identity sent | `protocol:ExpertSDR3,2.0;` / `device:SunSDR2QRP;` | `protocol:2;` / implementation-chosen name |
@@ -285,7 +285,7 @@ frames are ever sent.
 - Purpose: a timing pulse sent once per TX-audio frame period so the client paces its outgoing TX audio stream; queued from `tci_queue_tx_chrono_frame()`, driven by `tci_tx_chrono_loop()` called once per mic sample consumed.
 - Sent only to the single client currently holding TX-audio ownership (one sender at a time).
 
-### Fragmentation / reassembly
+### Fragmentation / reassembly / alignment
 
 Inbound binary WebSocket frames may arrive fragmented at the LWS layer;
 `tci_handle_binary_lws()` reassembles up to `TCI_BINARY_REASSEMBLY_MAX = 65536`
@@ -294,6 +294,12 @@ WebSocket-level fragmentation, since that's a transport detail outside the
 "frame format" section, but a real client could split a binary message across
 multiple WebSocket fragments depending on its library — this implementation
 handles it, but only up to that 64 KiB cap.
+
+Additionally, to prevent memory alignment faults when casting incoming binary data to float arrays (e.g. for TX audio processing), `tci_handle_binary_lws()` checks the float-alignment of the received buffer:
+```c
+aligned = ((uintptr_t) data & (alignof(float) - 1)) == 0;
+```
+If the buffer is not float-aligned, it is copied into `client->binary_rx_buf` (which is allocated with proper standard alignment) before being handled, ensuring safety.
 
 ---
 
@@ -339,16 +345,21 @@ Legend: ✅ matches spec · ⚠️ implemented but deviates · ❌ not implement
 | `rx_nb_enable` | ✅ | Implemented (NB1 only). |
 | `rx_nb2_enable` | ❌ | Not implemented — only one noise blanker stage exposed. |
 | `rx_bin_enable` / `rx_anf_enable` / `rx_nr_enable` | ⚠️ | Implemented as simple booleans; spec's `rx_nr_enable_ex` (algorithm-select NR1–NR4) has no equivalent — this app's NR is on/off only. |
+| `rx_apf_enable` | ✅ | Implemented. |
+| `rx_nf_enable` | ⚠️ | Setter accepts and echoes state, but getter is hardcoded to return "true"; does not toggle a real filter stage. |
 | `rx_nr_enable_ex` | ❌ | Not implemented. |
-| `agc_auto_ex` | ❌ | Not implemented — no auto/manual AGC distinction; `agc_mode` (off/fast/normal) is the closest analog. |
+| `agc_auto_ex` | ❌ | Not implemented — no auto/manual AGC distinction. |
+| `agc_mode` | ✅ | Implemented (maps `off`/`fast`/`normal` ↔ `AGC_OFF`/`AGC_FAST`/`AGC_MEDIUM`). |
 | `agc_gain` | ✅ | Implemented, range -20..120 dB (vs spec's open-ended "numeric"). |
 | `sql_enable` / `sql_level` | ✅ | Implemented; `sql_level` units are dB derived from an internal 0–100 slider, range -140..0. |
 | `trx` (PTT) | ⚠️ | Implemented but **single-owner exclusivity** (see §6) instead of spec's all-clients-may-set model. |
 | `tune` | ⚠️ | Same single-owner exclusivity as `trx`. |
 | `drive` / `tune_drive` | ✅ | Implemented, 0–100. |
 | `mute` | ⚠️ | Spec defines `mute` as a one-way client→server command with a TRX arg; this app's `mute` is global (no TRX arg) and is bidirectional (also pushed by the server). |
+| `rx_mute` | ✅ | Implemented. |
 | `tx_antenna` / `rx_antenna` | ❌ | Not implemented. |
 | `rx_enable` | ⚠️ | Only ever sent server→client during init (`rx_enable:0,true;`); not present in the dispatch table as a client-settable command. |
+| `volume` | ✅ | Implemented. |
 | `rx_volume` / `mon_enable` / `mon_volume` | ⚠️ | `rx_volume` implemented; `mon_enable`/`mon_volume` are stubs that always answer `false`/`-60` and don't control anything real. |
 | `tx_profiles_ex` / `tx_profile_ex` | ❌ | No TX profile feature at all. |
 | `rx_smeter` | ✅ | Implemented (query + periodic push). |
@@ -356,7 +367,9 @@ Legend: ✅ matches spec · ⚠️ implemented but deviates · ❌ not implement
 | `tx_swr` / `tx_forward_power` | ❌ | Not sent as separate commands; SWR/forward power are folded into `tx_sensors` only. |
 | `rx_channel_sensors` | ❌ | Not implemented. |
 | `run_cat_ex` | ❌ | Not implemented — no CAT pass-through over TCI. |
+| `spot` / `spot_delete` / `spot_clear` | ❌ | Parsed, no-op stubs. |
 | `keepalive` | ⚠️ | Not handled as a text command at all; this server instead relies on binary WebSocket PING/PONG frames (`opPING`/`opPONG`) sent every ~15 s by `tci_reporter`. A client sending the spec's literal `keepalive;` text command would hit "unknown command" handling (harmless, since unknown commands are ignored) rather than being recognized. |
+| `stop` | ✅ | Implemented (clears client sensor flags and PTT ownership). |
 | PTT watchdog | ❌ | Not implemented — see §6 gap note. |
 
 ### pihpsdr-only extensions (➕, no spec equivalent)
