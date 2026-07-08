@@ -67,15 +67,14 @@ struct pipewire_handle {
   struct pw_thread_loop *loop;
   struct pw_context *context;
   struct pw_core *core;
-  struct pw_stream *rx_stream;
-  struct pw_stream *tx_stream;
+  struct pw_stream *playback_stream;
   struct pw_stream *stream; // for capture (mic)
   RECEIVER *rx;
   TRANSMITTER *tx;
   int channels;
   int is_output;
 
-  struct audio_ring tx_ring;
+  struct audio_ring sidetone_ring;
 };
 
 static void on_discovery_timeout(void *data, uint64_t expirations) {
@@ -162,7 +161,7 @@ void audio_get_cards() {
   }
 }
 
-static void on_rx_playback_process(void *data) {
+static void on_playback_process(void *data) {
   struct pipewire_handle *h = data;
   RECEIVER *rx = h->rx;
   struct pw_buffer *b;
@@ -170,7 +169,7 @@ static void on_rx_playback_process(void *data) {
   float *samples;
   uint32_t n_frames;
 
-  if ((b = pw_stream_dequeue_buffer(h->rx_stream)) == NULL) {
+  if ((b = pw_stream_dequeue_buffer(h->playback_stream)) == NULL) {
     return;
   }
 
@@ -184,85 +183,65 @@ static void on_rx_playback_process(void *data) {
     n_frames = b->requested;
   }
 
-  int inpt = rx->audio_buffer_inpt;
-  int outpt = rx->audio_buffer_outpt;
-  int avail = (inpt - outpt) & RING_BUFFER_MASK;
+  // 1. Pull receiver audio
+  int rx_inpt = rx->audio_buffer_inpt;
+  int rx_outpt = rx->audio_buffer_outpt;
+  int rx_avail = (rx_inpt - rx_outpt) & RING_BUFFER_MASK;
 
-  uint32_t frames_to_write = n_frames;
-  if (frames_to_write > (uint32_t)avail) {
-    frames_to_write = avail;
-  }
+  // 2. Pull sidetone audio
+  int st_inpt = h->sidetone_ring.inpt;
+  int st_outpt = h->sidetone_ring.outpt;
+  int st_avail = (st_inpt - st_outpt) & RING_BUFFER_MASK;
 
-  for (uint32_t i = 0; i < frames_to_write; i++) {
-    int idx = (outpt + i) & RING_BUFFER_MASK;
-    for (int c = 0; c < h->channels; c++) {
-      samples[i * h->channels + c] = (float)rx->audio_buffer[idx * h->channels + c];
+  // RX audio is muted if break-in is ON, duplex is OFF, and we are keying (state 3)
+  int mute_rx = (cw_breakin && !duplex && rx->cwaudio == 3);
+
+  for (uint32_t i = 0; i < n_frames; i++) {
+    double rx_left = 0.0;
+    double rx_right = 0.0;
+    double st_sample = 0.0;
+
+    if (!mute_rx && i < (uint32_t)rx_avail) {
+      int idx = (rx_outpt + i) & RING_BUFFER_MASK;
+      if (h->channels == 1) {
+        rx_left = rx->audio_buffer[idx];
+        rx_right = rx_left;
+      } else {
+        rx_left = rx->audio_buffer[idx * 2];
+        rx_right = rx->audio_buffer[idx * 2 + 1];
+      }
+    }
+
+    if (i < (uint32_t)st_avail) {
+      int idx = (st_outpt + i) & RING_BUFFER_MASK;
+      st_sample = h->sidetone_ring.buffer[idx * h->channels];
+    }
+
+    if (h->channels == 1) {
+      samples[i] = (float)(0.5 * (rx_left + rx_right) + st_sample);
+    } else {
+      samples[i * 2] = (float)(rx_left + st_sample);
+      samples[i * 2 + 1] = (float)(rx_right + st_sample);
     }
   }
 
-  if (frames_to_write < n_frames) {
-    memset(samples + (frames_to_write * h->channels), 0,
-           (n_frames - frames_to_write) * h->channels * sizeof(float));
+  if (n_frames < (uint32_t)rx_avail) {
+    rx->audio_buffer_outpt = (rx_outpt + n_frames) & RING_BUFFER_MASK;
+  } else {
+    rx->audio_buffer_outpt = rx_inpt;
   }
 
-  rx->audio_buffer_outpt = (outpt + frames_to_write) & RING_BUFFER_MASK;
+  if (n_frames < (uint32_t)st_avail) {
+    h->sidetone_ring.outpt = (st_outpt + n_frames) & RING_BUFFER_MASK;
+  } else {
+    h->sidetone_ring.outpt = st_inpt;
+  }
 
   buf->datas[0].chunk->offset = 0;
   buf->datas[0].chunk->size = n_frames * sizeof(float) * h->channels;
   buf->datas[0].chunk->stride = sizeof(float) * h->channels;
 
-  pw_stream_queue_buffer(h->rx_stream, b);
-}
-
-static void on_tx_playback_process(void *data) {
-  struct pipewire_handle *h = data;
-  struct pw_buffer *b;
-  struct spa_buffer *buf;
-  float *samples;
-  uint32_t n_frames;
-
-  if ((b = pw_stream_dequeue_buffer(h->tx_stream)) == NULL) {
-    return;
-  }
-
-  buf = b->buffer;
-  samples = buf->datas[0].data;
-  if (!samples) return;
-
-  uint32_t max_size = buf->datas[0].maxsize;
-  n_frames = max_size / (sizeof(float) * h->channels);
-  if (b->requested && b->requested < n_frames) {
-    n_frames = b->requested;
-  }
-
-  int inpt = h->tx_ring.inpt;
-  int outpt = h->tx_ring.outpt;
-  int avail = (inpt - outpt) & RING_BUFFER_MASK;
-
-  uint32_t frames_to_write = n_frames;
-  if (frames_to_write > (uint32_t)avail) {
-    frames_to_write = avail;
-  }
-
-  for (uint32_t i = 0; i < frames_to_write; i++) {
-    int idx = (outpt + i) & RING_BUFFER_MASK;
-    for (int c = 0; c < h->channels; c++) {
-      samples[i * h->channels + c] = (float)h->tx_ring.buffer[idx * h->channels + c];
-    }
-  }
-
-  if (frames_to_write < n_frames) {
-    memset(samples + (frames_to_write * h->channels), 0,
-           (n_frames - frames_to_write) * h->channels * sizeof(float));
-  }
-
-  h->tx_ring.outpt = (outpt + frames_to_write) & RING_BUFFER_MASK;
-
-  buf->datas[0].chunk->offset = 0;
-  buf->datas[0].chunk->size = n_frames * sizeof(float) * h->channels;
-  buf->datas[0].chunk->stride = sizeof(float) * h->channels;
-
-  pw_stream_queue_buffer(h->tx_stream, b);
+  pw_stream_queue_buffer(h->playback_stream, b);
 }
 
 static void on_capture_process(void *data) {
@@ -334,8 +313,8 @@ int audio_open_output(RECEIVER *rx) {
   h->rx = rx;
   h->channels = rx->local_audio_channels;
   h->is_output = 1;
-  h->tx_ring.inpt = 0;
-  h->tx_ring.outpt = 0;
+  h->sidetone_ring.inpt = 0;
+  h->sidetone_ring.outpt = 0;
 
   h->loop = pw_thread_loop_new("pihpsdr-playback", NULL);
   if (!h->loop) {
@@ -373,53 +352,33 @@ int audio_open_output(RECEIVER *rx) {
     return -1;
   }
 
-  // RX Stream properties (Deep buffer for RX stability)
-  struct pw_properties *rx_props = pw_properties_new(
+  char latency_str[32];
+  snprintf(latency_str, sizeof(latency_str), "%d/48000", rx->latency);
+
+  // Playback Stream properties
+  struct pw_properties *props = pw_properties_new(
       PW_KEY_MEDIA_TYPE, "Audio",
       PW_KEY_MEDIA_CATEGORY, "Playback",
       PW_KEY_MEDIA_ROLE, "DSP",
-      PW_KEY_NODE_NAME, "piHPSDR RX playback",
+      PW_KEY_NODE_NAME, "pihpsdr-rx",
+      PW_KEY_NODE_DESCRIPTION, "piHPSDR Playback",
       PW_KEY_TARGET_OBJECT, rx->audio_name,
-      PW_KEY_NODE_LATENCY, "2048/48000",
+      PW_KEY_NODE_LATENCY, latency_str,
       NULL
   );
 
-  static const struct pw_stream_events rx_stream_events = {
+  static const struct pw_stream_events stream_events = {
       PW_VERSION_STREAM_EVENTS,
-      .process = on_rx_playback_process,
+      .process = on_playback_process,
   };
 
-  h->rx_stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
-                                      "pihpsdr-rx-playback-stream",
-                                      rx_props,
-                                      &rx_stream_events,
-                                      h);
+  h->playback_stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
+                                            "pihpsdr-playback",
+                                            props,
+                                            &stream_events,
+                                            h);
 
-  // TX Sidetone properties (Ultra-low latency)
-  struct pw_properties *tx_props = pw_properties_new(
-      PW_KEY_MEDIA_TYPE, "Audio",
-      PW_KEY_MEDIA_CATEGORY, "Playback",
-      PW_KEY_MEDIA_ROLE, "DSP",
-      PW_KEY_NODE_NAME, "piHPSDR TX sidetone",
-      PW_KEY_TARGET_OBJECT, rx->audio_name,
-      PW_KEY_NODE_LATENCY, "64/48000",
-      NULL
-  );
-
-  static const struct pw_stream_events tx_stream_events = {
-      PW_VERSION_STREAM_EVENTS,
-      .process = on_tx_playback_process,
-  };
-
-  h->tx_stream = pw_stream_new_simple(pw_thread_loop_get_loop(h->loop),
-                                      "pihpsdr-tx-sidetone-stream",
-                                      tx_props,
-                                      &tx_stream_events,
-                                      h);
-
-  if (!h->rx_stream || !h->tx_stream) {
-    if (h->rx_stream) pw_stream_destroy(h->rx_stream);
-    if (h->tx_stream) pw_stream_destroy(h->tx_stream);
+  if (!h->playback_stream) {
     pw_core_disconnect(h->core);
     pw_thread_loop_unlock(h->loop);
     pw_thread_loop_stop(h->loop);
@@ -444,7 +403,7 @@ int audio_open_output(RECEIVER *rx) {
   const struct spa_pod *params[1];
   params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &info);
 
-  int res = pw_stream_connect(h->rx_stream,
+  int res = pw_stream_connect(h->playback_stream,
                               PW_DIRECTION_OUTPUT,
                               PW_ID_ANY,
                               PW_STREAM_FLAG_AUTOCONNECT |
@@ -452,29 +411,7 @@ int audio_open_output(RECEIVER *rx) {
                               PW_STREAM_FLAG_RT_PROCESS,
                               params, 1);
   if (res < 0) {
-    pw_stream_destroy(h->rx_stream);
-    pw_stream_destroy(h->tx_stream);
-    pw_core_disconnect(h->core);
-    pw_thread_loop_unlock(h->loop);
-    pw_thread_loop_stop(h->loop);
-    pw_context_destroy(h->context);
-    pw_thread_loop_destroy(h->loop);
-    g_free(h);
-    g_mutex_unlock(&rx->audio_mutex);
-    return -1;
-  }
-
-  res = pw_stream_connect(h->tx_stream,
-                          PW_DIRECTION_OUTPUT,
-                          PW_ID_ANY,
-                          PW_STREAM_FLAG_AUTOCONNECT |
-                          PW_STREAM_FLAG_MAP_BUFFERS |
-                          PW_STREAM_FLAG_RT_PROCESS |
-                          PW_STREAM_FLAG_INACTIVE,  // Start inactive
-                          params, 1);
-  if (res < 0) {
-    pw_stream_destroy(h->rx_stream);
-    pw_stream_destroy(h->tx_stream);
+    pw_stream_destroy(h->playback_stream);
     pw_core_disconnect(h->core);
     pw_thread_loop_unlock(h->loop);
     pw_thread_loop_stop(h->loop);
@@ -509,8 +446,7 @@ void audio_close_output(RECEIVER *rx) {
   struct pipewire_handle *h = rx->audio_handle;
   if (h != NULL) {
     pw_thread_loop_stop(h->loop);
-    if (h->rx_stream) pw_stream_destroy(h->rx_stream);
-    if (h->tx_stream) pw_stream_destroy(h->tx_stream);
+    if (h->playback_stream) pw_stream_destroy(h->playback_stream);
     pw_core_disconnect(h->core);
     pw_context_destroy(h->context);
     pw_thread_loop_destroy(h->loop);
@@ -712,9 +648,8 @@ void audio_write(RECEIVER *rx, double left, double right) {
 
   if (rx->cwaudio == 3) {
     // Transition TX -> RX
-    pw_thread_loop_lock(h->loop);
-    pw_stream_set_active(h->tx_stream, false);
-    pw_stream_flush(h->tx_stream, false);
+    h->sidetone_ring.inpt = 0;
+    h->sidetone_ring.outpt = 0;
 
     rx->audio_buffer_outpt = rx->audio_buffer_inpt;
 
@@ -727,8 +662,6 @@ void audio_write(RECEIVER *rx, double left, double right) {
     }
     rx->audio_buffer_inpt = inpt;
 
-    pw_stream_set_active(h->rx_stream, true);
-    pw_thread_loop_unlock(h->loop);
     rx->cwaudio = 0;
   }
 
@@ -771,31 +704,24 @@ void tx_audio_write(RECEIVER *rx, double sample) {
   }
 
   if (rx->cwaudio == 0 || rx->cwaudio == 5) {
-    // Transition RX -> TX: Pause RX playback stream, activate low latency sidetone stream
-    pw_thread_loop_lock(h->loop);
-    pw_stream_set_active(h->rx_stream, false);
-
-    h->tx_ring.inpt = 0;
-    h->tx_ring.outpt = 0;
-
-    pw_stream_flush(h->tx_stream, false);
-    pw_stream_set_active(h->tx_stream, true);
-    pw_thread_loop_unlock(h->loop);
+    // Transition RX -> TX
+    h->sidetone_ring.inpt = 0;
+    h->sidetone_ring.outpt = 0;
 
     rx->cwaudio = 3;
   }
 
-  // Write sample directly to tx_ring (no rate-control adaptation to avoid jitter)
-  int inpt = h->tx_ring.inpt;
-  int outpt = h->tx_ring.outpt;
+  // Write sample directly to sidetone_ring
+  int inpt = h->sidetone_ring.inpt;
+  int outpt = h->sidetone_ring.outpt;
   int next_inpt = (inpt + 1) & RING_BUFFER_MASK;
 
   if (next_inpt != outpt) {
     for (int c = 0; c < h->channels; c++) {
-      h->tx_ring.buffer[inpt * h->channels + c] = sample;
+      h->sidetone_ring.buffer[inpt * h->channels + c] = sample;
     }
     MEMORY_BARRIER;
-    h->tx_ring.inpt = next_inpt;
+    h->sidetone_ring.inpt = next_inpt;
   }
 
   g_mutex_unlock(&rx->audio_mutex);
