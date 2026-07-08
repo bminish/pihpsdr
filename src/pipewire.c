@@ -648,19 +648,21 @@ void audio_write(RECEIVER *rx, double left, double right) {
 
   if (rx->cwaudio == 3) {
     // Transition TX -> RX
-    h->sidetone_ring.inpt = 0;
-    h->sidetone_ring.outpt = 0;
+    if (cw_breakin && !duplex) {
+      h->sidetone_ring.inpt = 0;
+      h->sidetone_ring.outpt = 0;
 
-    rx->audio_buffer_outpt = rx->audio_buffer_inpt;
+      rx->audio_buffer_outpt = rx->audio_buffer_inpt;
 
-    int inpt = rx->audio_buffer_inpt;
-    for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
-      for (int c = 0; c < rx->local_audio_channels; c++) {
-        rx->audio_buffer[inpt * rx->local_audio_channels + c] = 0.0;
+      int inpt = rx->audio_buffer_inpt;
+      for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
+        for (int c = 0; c < rx->local_audio_channels; c++) {
+          rx->audio_buffer[inpt * rx->local_audio_channels + c] = 0.0;
+        }
+        inpt = (inpt + 1) & RING_BUFFER_MASK;
       }
-      inpt = (inpt + 1) & RING_BUFFER_MASK;
+      rx->audio_buffer_inpt = inpt;
     }
-    rx->audio_buffer_inpt = inpt;
 
     rx->cwaudio = 0;
   }
@@ -705,8 +707,10 @@ void tx_audio_write(RECEIVER *rx, double sample) {
 
   if (rx->cwaudio == 0 || rx->cwaudio == 5) {
     // Transition RX -> TX
-    h->sidetone_ring.inpt = 0;
-    h->sidetone_ring.outpt = 0;
+    if (cw_breakin && !duplex) {
+      h->sidetone_ring.inpt = 0;
+      h->sidetone_ring.outpt = 0;
+    }
 
     rx->cwaudio = 3;
   }
