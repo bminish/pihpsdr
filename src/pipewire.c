@@ -249,7 +249,7 @@ static void on_capture_process(void *data) {
   TRANSMITTER *tx = h->tx;
   struct pw_buffer *b;
   struct spa_buffer *buf;
-  float *samples;
+  const float *samples;
   uint32_t n_frames;
 
   if ((b = pw_stream_dequeue_buffer(h->stream)) == NULL) {

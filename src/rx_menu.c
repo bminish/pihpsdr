@@ -228,7 +228,7 @@ static void audio_channel_cb(GtkWidget *widget, gpointer data) {
 #ifdef PIPEWIRE
 static void pipewire_quantum_cb(GtkWidget *widget, gpointer data) {
   int active = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  int quantums[] = {16, 32, 64, 128, 256, 512, 1024, 2048};
+  const int quantums[] = {16, 32, 64, 128, 256, 512, 1024, 2048};
   int q = quantums[active];
 
   if (myrx->latency != q) {
