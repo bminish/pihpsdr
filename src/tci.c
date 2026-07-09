@@ -112,13 +112,14 @@ typedef struct _client {
   int rxsensor;                 // enable transmit of S meter data
   int txsensor;                 // enable transmit of drive data
   int idle_queued;              // counter
+  int last_trx;                 // last trx command rvcd. from the client
   struct lws *wsi;              // libwebsockets connection
   GQueue *lws_tx_queue;         // queued PAYLOAD objects for LWS writable callback
   int initial_sent;             // initial state already sent via LWS
   int rx_audio_enabled[TCI_RX_AUDIO_MAX_RECEIVERS];
-  guint64 rx_audio_read_count[TCI_RX_AUDIO_MAX_RECEIVERS];
+  unsigned int rx_audio_read_count[TCI_RX_AUDIO_MAX_RECEIVERS];
   int tx_audio_enabled;
-  guint64 tx_audio_rx_count;
+  unsigned int tx_audio_rx_count;
   unsigned char *binary_rx_buf;
   size_t binary_rx_len;
   size_t binary_rx_size;
@@ -138,9 +139,8 @@ static gpointer tci_lws_server (gpointer data);
 static void tci_lws_free_queue (CLIENT *client);
 static void tci_update_audio_global (void);
 static void tci_audio_wakeup (void);
-static void tci_lws_binary_reset (CLIENT *client);
 static void tci_handle_binary_lws (CLIENT *client, const unsigned char* data, size_t len, struct lws *wsi);
-static void tci_handle_binary (CLIENT *client, const unsigned char* data, size_t len);
+static void tci_handle_binary (CLIENT *client, const TCI_STREAM *stream, size_t len);
 
 typedef struct {
   char *cmd;
@@ -447,22 +447,21 @@ static void tci_audio_wakeup (void) {
 }
 
 static void tci_queue_rx_audio_frame (CLIENT *client, int receiver_id) {
-  unsigned char frame[TCI_AUDIO_RX_FRAME_MAX_BYTES];
+  TCI_STREAM stream;
   size_t frame_len;
 
   if (client == NULL || !client->running || !client->rx_audio_enabled[receiver_id]) { return; }
 
-  if (tci_audio_get_frame (receiver_id, &client->rx_audio_read_count[receiver_id], frame, sizeof (frame),
-                           &frame_len) == 0) {
+  if (tci_audio_get_frame (receiver_id, &client->rx_audio_read_count[receiver_id], &stream, sizeof (stream), &frame_len) == 0) {
     return;
   }
 
-  (void) tci_queue_binary_frame (client, frame, frame_len);
+  (void) tci_queue_binary_frame (client, (const unsigned char *)&stream, frame_len);
 }
 
 
 static int tci_queue_tx_chrono_frame (CLIENT *client) {
-  TCI_STREAM_HEADER header;
+  TCI_STREAM_HEADER header;  // only the header will be sent
   int queued;
 
   if (client == NULL || !client->running || !client->tx_audio_enabled) { return 0; }
@@ -474,7 +473,7 @@ static int tci_queue_tx_chrono_frame (CLIENT *client) {
   header.length = TCI_TX_AUDIO_CHRONO_LENGTH;
   header.type = TCI_STREAM_TX_CHRONO;
   header.channels = TCI_AUDIO_CHANNELS;
-  queued = tci_queue_binary_frame (client, (const unsigned char*) &header, sizeof (header));
+  queued = tci_queue_binary_frame (client, (const unsigned char*) &header, sizeof(TCI_STREAM_HEADER));
 
   if (queued) {
   } else if (rigctl_debug) {
@@ -487,33 +486,23 @@ static int tci_queue_tx_chrono_frame (CLIENT *client) {
   return queued;
 }
 
-static void tci_lws_binary_reset (CLIENT *client) {
-  if (client == NULL) { return; }
+static void tci_handle_binary (CLIENT *client, const TCI_STREAM *stream, size_t len) {
 
-  client->binary_rx_len = 0;
-}
+  if (client == NULL || stream == NULL || len < sizeof(TCI_STREAM_HEADER)) { return; }
 
-static void tci_handle_binary (CLIENT *client, const unsigned char* data, size_t len) {
-  TCI_STREAM_HEADER header;
-
-  if (client == NULL || data == NULL || len < sizeof (TCI_STREAM_HEADER)) { return; }
-
-  memcpy (&header, data, sizeof (header));
-
-  switch (header.type) {
+  switch (stream->header.type) {
   case TCI_STREAM_TX_AUDIO:
+    // simply drop if audio no longer enabled
     if (client->tx_audio_enabled) {
       client->tx_audio_rx_count++;
-      tci_audio_handle_tx_frame (data, len);
-    } else if (rigctl_debug) {
-      t_print ("TCI%d TX audio ignored: tx_audio_enabled=0 len=%zu\n", client->seq, len);
+      tci_audio_handle_tx_frame (stream, len);
     }
 
     break;
 
   default:
     if (rigctl_debug) {
-      t_print ("TCI%d binary ignored: type=%u len=%zu\n", client->seq, header.type, len);
+      t_print ("TCI%d binary ignored: type=%u len=%zu\n", client->seq, stream->header.type, len);
     }
 
     break;
@@ -527,40 +516,33 @@ static void tci_handle_binary (CLIENT *client, const unsigned char* data, size_t
 static void tci_handle_binary_lws (CLIENT *client, const unsigned char* data, size_t len, struct lws *wsi) {
   size_t remaining;
   int final;
-  int aligned;
   size_t needed;
-  static int first = 1;
 
   if (client == NULL || data == NULL || wsi == NULL || len == 0) { return; }
 
   //
-  // This is not strictly portable, but works on most platforms.
-  // The assumption is that the alignment requirement is a power of 2
-  // and that data converted to uintptr_t should be a multiple of
-  // that alignment.
+  // My observation is that the binary chunk NEVER comes in one part.
+  // Therefore, we have to "put together" the individual parts in all
+  // cases which means that the binary frame, as put together on
+  // client->binary_rx_buf, is always aligned for all data types.
   //
-  // If we find out that "data" is not aligned for floats, then we
-  // do not directly call tci_handle_binary, but rather memcpy the
-  // data to a newly allocated buffer which is automatically aligned.
+  // Note wsjtx sends 8256 = 64 + 8192 byte frames (in several chunks) although
+  // although only 64 + 4096 bytes are needed for the audio data, thus
+  // wasting half of the bandwidth.
   //
-  // I have found no hint in the libwebsockets documentation, but I think
-  // data is even more strongly aligned.
-  //
-  aligned = ((uintptr_t) data & (alignof(float) -1)) == 0;
 
-  if (!aligned && first) {
-    t_print("TCI%d: binary data from libwebsockets was NOT properly aligned\n", client->seq);
-    first = 0;
+  if (lws_is_first_fragment(wsi)) {
+    //
+    // If this is the first chunk of a multi-chunk message,
+    // reset client->binary_rx_len. This we do to avoid
+    // modifying binary_rx_len *outside* this function
+    // since this may lead to race conditions.
+    //
+    client->binary_rx_len = 0;
   }
 
-  remaining = lws_remaining_packet_payload (wsi);
   final = lws_is_final_fragment (wsi);
-
-  if (client->binary_rx_len == 0 && remaining == 0 && final && aligned) {
-    tci_handle_binary (client, data, len);
-    return;
-  }
-
+  remaining = lws_remaining_packet_payload (wsi);
   needed = client->binary_rx_len + len;
 
   if (needed > TCI_BINARY_REASSEMBLY_MAX) {
@@ -572,15 +554,20 @@ static void tci_handle_binary_lws (CLIENT *client, const unsigned char* data, si
                (size_t) TCI_BINARY_REASSEMBLY_MAX);
     }
 
-    tci_lws_binary_reset (client);
+    client->binary_rx_len = 0;
     return;
   }
 
+  //
+  // Start with a chunk of 8256 bytes (8192 bytes audio data)
+  // and increase in chunks of 8192 bytes, if necessary
+  // Note the max size of a frame is 65536 bytes.
+  //
   if (needed > client->binary_rx_size) {
-    size_t new_size = client->binary_rx_size ? client->binary_rx_size : 8192;
+    size_t new_size = client->binary_rx_size ? client->binary_rx_size : 8256;
 
     while (new_size < needed) {
-      new_size *= 2;
+      new_size += 8192;
     }
 
     client->binary_rx_buf = g_realloc (client->binary_rx_buf, new_size);
@@ -594,8 +581,11 @@ static void tci_handle_binary_lws (CLIENT *client, const unsigned char* data, si
     return;
   }
 
-  tci_handle_binary (client, client->binary_rx_buf, client->binary_rx_len);
-  tci_lws_binary_reset (client);
+  //
+  // Now the whole frame is assembled, so we can process it
+  //
+  tci_handle_binary (client, (TCI_STREAM *)client->binary_rx_buf, client->binary_rx_len);
+  client->binary_rx_len = 0;
 }
 
 static void tci_service_rx_audio (void) {
@@ -2184,6 +2174,25 @@ static void tci_cmd_trx_count (CLIENT *client, const TCI_CMD *cmd) {
   tci_send_trx_count (client);
 }
 
+static int tci_radio_clear_mox(gpointer data) {
+  CLIENT *client = (CLIENT *) data;
+  client->tx_audio_enabled = 0;
+  client->last_trx = 0;
+  radio_set_mox(0);
+  tci_send_mox(client);
+  tci_update_audio_global();
+  //
+  // This is not thread-safe.
+  // A binary frame may be "in the process" when tx_audio_enabled goes to zero,
+  // and processing might not be complete until we reset the ring buffer.
+  // So let's cross fingers and disable tx_audio_enabled as the first, and
+  // reset the ring buffer as the last statement here (radio_set_mox() takes
+  // about 20 msec, so probably no reason to worry).
+  //
+  tci_audio_tx_reset();
+  return G_SOURCE_REMOVE;
+}
+
 static void tci_cmd_trx (CLIENT *client, const TCI_CMD *cmd) {
   int trx = 0;
   int source_tci;
@@ -2219,28 +2228,31 @@ static void tci_cmd_trx (CLIENT *client, const TCI_CMD *cmd) {
           tci_audio_tx_reset();
           client->tx_audio_enabled = 1;
           client->tx_audio_rx_count = 0;
-          tci_lws_binary_reset (client);
           tci_send_text (client, "audio_samplerate:48000;");
           tci_send_text (client, "audio_stream_sample_type:float32;");
           tci_send_text (client, "audio_stream_channels:1;");
           tci_send_text (client, "audio_stream_samples:512;");
-          tci_send_text (client, "tx_stream_audio_buffering:0;");
+          tci_send_text (client, "tx_stream_audio_buffering:50;");
           tci_send_text (client, "audio_start:0;");
         }
 
+        client->last_trx = 1;
         radio_set_mox(1);
+        tci_send_mox (client);
+        tci_update_audio_global();
       } else {
-        client->tx_audio_enabled = 0;
-        tci_audio_tx_reset();
-        tci_lws_binary_reset (client);
-        g_timeout_add(ptt_delay, ext_radio_set_mox, GINT_TO_POINTER(0));
+        int delay = client->tx_audio_enabled ? 50 : 0;
+        // Use a fixed "PTT delay" for TCI audio,
+        // 50 msec if TCI audio was active, no delay if no TCI audio
+        g_timeout_add(delay, tci_radio_clear_mox, client);
       }
-
-      tci_update_audio_global();
     } else {
+      // This is the response to a trx:0 command
+      // for clients that do not "own" the TX
       tci_send_mox (client);
     }
   } else {
+    // This is the response to a query (trx:0) command
     tci_send_mox (client);
   }
 }
@@ -3098,6 +3110,14 @@ static void tci_cmd_stop (CLIENT *client, const TCI_CMD *cmd) {
   if (client->tx_owner) {
     client->tx_owner = 0;
     tci_transmitter_owned = 0;
+    //
+    // If the last trx command from this client was "go TX", then
+    // put piHPSDR into RX mode
+    //
+    if (client->last_trx) {
+      radio_set_mox(0);
+      client->last_trx = 0;
+    }
   }
 }
 
@@ -3346,25 +3366,31 @@ static int tci_init_client (int fd) {
     CLIENT *client = tciclient + c;
 
     if (!client->running) {
-      client->fd              = fd;
-      client->running         = 1;
-      client->tx_owner        = 0;
-      client->seq             = c;
-      client->last_fa         = -1;
-      client->last_fb         = -1;
-      client->last_fx         = -1;
-      client->last_ma         = -1;
-      client->last_mb         = -1;
-      client->last_split      = -1;
-      client->last_mox        = -1;
-      client->count           =  0;
-      client->rxsensor        =  0;
-      client->txsensor        =  0;
-      client->idle_queued     =  0;
-      client->tci_timer       =  0;
-      client->wsi             = NULL;
-      client->lws_tx_queue    = NULL;
-      client->initial_sent    =  0;
+      client->seq               = c;
+      client->fd                = fd;
+      client->running           = 1;
+      client->tx_owner          = 0;
+      client->tci_timer         = 0;
+      client->last_fa           = -1;
+      client->last_fb           = -1;
+      client->last_fx           = -1;
+      client->last_ma           = -1;
+      client->last_mb           = -1;
+      client->last_split        = -1;
+      client->last_mox          = -1;
+      client->count             =  0;
+      client->rxsensor          =  0;
+      client->txsensor          =  0;
+      client->idle_queued       =  0;
+      client->last_trx          =  0;
+      client->wsi               = NULL;
+      client->lws_tx_queue      = NULL;
+      client->initial_sent      =  0;
+      client->tx_audio_enabled  = 0;
+      client->tx_audio_rx_count = 0;
+      client->binary_rx_buf     = NULL;
+      client->binary_rx_len     = 0;
+      client->binary_rx_size    = 0;
 
       for (int i = 0; i < TCI_RX_AUDIO_MAX_RECEIVERS; i++) {
         client->rx_audio_enabled[i] = 0;
@@ -3745,6 +3771,14 @@ static int tci_lws_callback (struct lws *wsi, enum lws_callback_reasons reason,
     client->running = 0;
 
     if (client->tx_owner) {
+      //
+      // If the last trx command from this client was "go TX", then
+      // put piHPSDR into RX mode
+      //
+      if (client->last_trx) {
+        g_idle_add(ext_radio_set_mox,GINT_TO_POINTER(0));
+        client->last_trx = 0;
+      }
       client->tx_owner = 0;
       tci_transmitter_owned = 0;
     }
