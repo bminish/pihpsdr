@@ -813,7 +813,7 @@ index 97c951b2..5d299266 100644
    int cwaudio;   // detect RX/TX transitions in CW
    int cwcount;   // for sample insertion and deletion
 diff --git a/src/rx_menu.c b/src/rx_menu.c
-index 25d00d63..a75a62e2 100644
+index 25d00d63..b2e36d64 100644
 --- a/src/rx_menu.c
 +++ b/src/rx_menu.c
 @@ -221,6 +221,30 @@ static void audio_channel_cb(GtkWidget *widget, gpointer data) {
@@ -847,6 +847,15 @@ index 25d00d63..a75a62e2 100644
  void rx_menu(GtkWidget *parent) {
    int i;
    GtkWidget *btn;
+@@ -272,7 +296,7 @@ void rx_menu(GtkWidget *parent) {
+     rate = 2 * rate;
+   }
+   rate = 48000;
+-  for (int i = 0; i < 10; i++) {
++  for (i = 0; i < 10; i++) {
+     if (rate == myrx->sample_rate) {
+       gtk_combo_box_set_active(GTK_COMBO_BOX(btn), i);
+       break;
 @@ -398,6 +422,7 @@ void rx_menu(GtkWidget *parent) {
    gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), myrx->fm_limiter_gain);
    gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 1, 1);
