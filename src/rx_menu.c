@@ -296,7 +296,7 @@ void rx_menu(GtkWidget *parent) {
     rate = 2 * rate;
   }
   rate = 48000;
-  for (int i = 0; i < 10; i++) {
+  for (i = 0; i < 10; i++) {
     if (rate == myrx->sample_rate) {
       gtk_combo_box_set_active(GTK_COMBO_BOX(btn), i);
       break;
