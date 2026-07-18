@@ -61,7 +61,9 @@
 #include "rx_panadapter.h"
 #include "server_menu.h"
 #include "sliders.h"
-#include "tci.h"
+#ifdef TCI
+  #include "tci.h"
+#endif
 #include "test_menu.h"
 #include "theme.h"
 #include "toolbar.h"
@@ -1530,7 +1532,9 @@ void radio_start_radio(void) {
 #endif
 #ifdef TCI
   if (tci_enable) {
-    launch_tci();
+    if (launch_tci() != 0) {
+      tci_enable = 0;
+    }
   }
 #endif
   if (rigctl_tcp_enable) {
@@ -2984,7 +2988,7 @@ void radio_apply_band_settings(int flag, int id) {
 void radio_tx_vfo_changed(void) {
   //
   // When changing the active receiver or changing the split status,
-  // the VFO that controls the transmitter my flip between VFOA/VFOB.
+  // the VFO that controls the transmitter may flip between VFOA/VFOB.
   // In these cases, we have to update the TX mode,
   // and re-calculate the drive level from the band-specific PA calibration
   // values. For SOAPY, the only thing to do is the update the TX mode.
@@ -3258,6 +3262,12 @@ static void radio_restore_state(void) {
   if (filter_board == N2ADR && !radio_is_remote) {
     radio_n2adr_oc_settings(); // Apply default OC settings for N2ADR board
   }
+  //
+  // If radio is not HPSDR, CW cannot be handled in radio
+  //
+  if (protocol == SOAPYSDR_PROTOCOL || radio_is_remote) {
+    cw_keyer_internal = 0;
+  }
   // Activate font/theme
   theme_set();
   load_font(which_css_font);
@@ -3450,7 +3460,9 @@ int radio_client_start(gpointer data) {
 #endif
 #ifdef TCI
   if (tci_enable) {
-    launch_tci();
+    if (launch_tci() != 0) {
+      tci_enable = 0;
+    }
   }
 #endif
   if (rigctl_tcp_enable) {

@@ -1,8 +1,6 @@
 /* Copyright (C)
 * 2024 - Christoph van Wüllen, DL1YCF
-* 2024,2025, 2026 - Heiko Amft, DL1BZ (heavily extended for project deskHPSDR)
-*
-*   This source code has been forked and was adapted from piHPSDR by DL1YCF to deskHPSDR in October 2024
+* 2024,2025, 2026 - Heiko Amft, DL1BZ (from project deskHPSDR)
 *
 *   This program is free software: you can redistribute it and/or modify
 *   it under the terms of the GNU General Public License as published by
@@ -198,12 +196,27 @@ static double tci_clamp_double(double value, double min, double max) {
 // enabled in the props file, and from the CAT/TCI menu
 // if TCI is enabled there.
 //
-void launch_tci (void) {
+int launch_tci (void) {
   t_print ("---- LAUNCHING TCI LWS SERVER ----\n");
+  //
+  // Verify that a TCI audio stream header has exactly 64 bytes,
+  // and that a TCI audio stream struct has 32832 bytes (if filled completely).
+  // This should ensure that the audio stream data begins exactly 64 bytes
+  // after the header and is thus properly aligned for "float" access.
+  //
+  if (sizeof(TCI_STREAM_HEADER) != 64) {
+    t_print ("TCI cannot start, audio stream header is not 64 bytes long\n");
+    return -1;
+  }
+  if (sizeof(TCI_STREAM) != 32832) {
+    t_print("TCI cannot start, audio stream is not 32832 bytes long\n");
+    return -1;
+  }
   memset(tciclient, 0, sizeof(tciclient));
   tci_audio_set_wakeup_callback (tci_audio_wakeup);
   tci_running = 1;
   tci_server_thread_id = g_thread_new ("tci lws server", tci_lws_server, GINT_TO_POINTER (tci_port));
+  return 0;
 }
 
 static int tci_has_clients(void) {
@@ -235,13 +248,10 @@ void shutdown_tci (void) {
     lws_cancel_service (tci_lws_context);
     for (int i = 0; i < 50 && tci_has_clients(); i++) {
       lws_cancel_service (tci_lws_context);
-      g_usleep(10000);
+      usleep(10000);
     }
   }
   tci_running = 0;
-  if (tci_lws_context != NULL) {
-    lws_cancel_service (tci_lws_context);
-  }
   if (tci_server_thread_id != NULL) {
     if (g_thread_self() != tci_server_thread_id) {
       g_thread_join (tci_server_thread_id);
@@ -510,9 +520,10 @@ static void tci_handle_binary_lws (CLIENT *client, const unsigned char* data, si
     return;
   }
   //
-  // Now the whole frame is assembled, so we can process it
+  // Now the whole frame is assembled, so we can process it. Since client->binary_rx_buf
+  // is a pointer obtained from a malloc(), it is suitably aligned for all data types.
   //
-  tci_handle_binary (client, (TCI_STREAM *)client->binary_rx_buf, client->binary_rx_len);
+  tci_handle_binary (client, (TCI_STREAM *)client->binary_rx_buf, client->binary_rx_len);  // CAST OK
   client->binary_rx_len = 0;
 }
 
@@ -3310,7 +3321,7 @@ static gpointer tci_lws_server (gpointer data) {
       }
     }
     lws_service (tci_lws_context, 0);
-    g_usleep (1000);
+    usleep (1000);
   }
   lws_context_destroy (tci_lws_context);
   tci_lws_context = NULL;
