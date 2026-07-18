@@ -1,0 +1,171 @@
+From a11645dd33c65364e89038e48964e94b2029b4ca Mon Sep 17 00:00:00 2001
+From: Brendan Minish <bminish@gmail.com>
+Date: Tue, 30 Jun 2026 17:57:02 +0100
+Subject: [PATCH] Fix Brick3/ANAN-100D TX relay stuck after TX (opt-in
+ DDC0/DDC1 mirror)
+
+On Brick3 (ANAN-100D clone, Angelia-class Protocol 2 firmware), the TX
+relay/PTT never releases back to RX after a TX cycle unless Diversity
+mode is toggled on. This has been confirmed reproducible and traced to
+root cause on real hardware (see companion project deskHPSDR, commits
+19beb25/d5158ac/5765511/8f6c3d7/164b8ad).
+
+Root cause: Angelia's gateware/STM32 firmware, which drives the
+ALEX/PA-board relay and band-pass-filter selection, tracks the current
+band from DDC0/DDC1's NCO frequency register regardless of whether
+those DDCs are enabled for audio. During TX (PureSignal feedback, or
+Diversity), DDC0/DDC1's frequency word gets written to the TX
+frequency. Plain Angelia RX uses only DDC2/DDC3 and never writes
+DDC0/DDC1's frequency again afterward, so it stays stuck at the last
+TX value and the relay/band-tracking logic never resolves out of that
+state on its own. Only a power-cycle or a fresh DDC0/DDC1 frequency
+write (e.g. enabling Diversity) clears it, which is why toggling
+Diversity "fixes" the symptom even though Diversity itself plays no
+functional role.
+
+Fix: add an opt-in flag, `p2_angelia_ddc0_map` (default off), gated to
+Angelia + Protocol 2 devices, that continuously mirrors the RX1 (and
+RX2) frequency words into the otherwise-unused DDC0/DDC1 slots of the
+High-Priority packet during normal RX -- i.e. not transmitting and not
+already in Diversity mode. This keeps the STM32's band-tracking state
+fresh without touching DDC routing, `receive_specific`, or any
+Diversity-only logic.
+
+- src/radio.h, src/radio.c: declare/define `p2_angelia_ddc0_map`
+  (default 0) and persist it via Get/SetPropI0, following the existing
+  `diversity_enabled` pattern exactly.
+- src/radio_menu.c: add a "Brick3 / ANAN-100D compatibility" checkbox
+  in the radio menu, gated to `device == NEW_DEVICE_ANGELIA &&
+  protocol == NEW_PROTOCOL`, reusing the existing generic `toggle_cb`
+  handler (same pattern as the neighboring "New PA board" checkbox).
+  Placed in the radio menu rather than the discovery dialog because
+  this is a property of the configured radio's hardware revision, not
+  of the discovery/connect step.
+- src/new_protocol.c: in `new_protocol_high_priority()`'s non-diversity
+  branch, after the existing DDC2/DDC3 frequency writes, add the new
+  mirror block gated by `p2_angelia_ddc0_map && device ==
+  NEW_DEVICE_ANGELIA && !xmit && !diversity_enabled`. Explicit `!xmit`
+  and `!diversity_enabled` guards are required even though this is the
+  "else" of `if (diversity_enabled && !xmit)`, since that else branch
+  is also entered whenever transmitting (e.g. TX with Diversity on).
+
+Explicitly untouched: `new_protocol_receive_specific()` (already ruled
+out as insufficient on its own), `update_action_table()`'s DDC routing
+flag (DDC2/DDC3 remain the real audio-routed DDCs throughout), and the
+Diversity-gated ALEX band-pass-filter/attenuation logic elsewhere in
+new_protocol.c.
+
+Default-off, so existing behavior for all other radios/users is
+unchanged. Verified to resolve the stuck-relay symptom on real Brick3
+hardware without needing Diversity mode.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ src/new_protocol.c | 20 ++++++++++++++++++++
+ src/radio.c        |  3 +++
+ src/radio.h        |  1 +
+ src/radio_menu.c   | 17 +++++++++++++++++
+ 4 files changed, 41 insertions(+)
+
+diff --git a/src/new_protocol.c b/src/new_protocol.c
+index 6e4110aa..de12af94 100644
+--- a/src/new_protocol.c
++++ b/src/new_protocol.c
+@@ -825,6 +825,26 @@ static void new_protocol_high_priority(void) {
+       high_priority_buffer_to_radio[15 + (ddc * 4)] = (phase >>  8) & 0xFF;
+       high_priority_buffer_to_radio[16 + (ddc * 4)] = (phase      ) & 0xFF;
+     }
++
++    if (p2_angelia_ddc0_map && device == NEW_DEVICE_ANGELIA && !xmit && !diversity_enabled) {
++      //
++      // Brick3 / ANAN-100D compatibility:
++      // in normal RX, keep the existing Angelia DDC2/DDC3 mapping, but
++      // mirror the RX frequency words into DDC0/DDC1 for STM32 band tracking.
++      // Do not override the Diversity DDC0/DDC1 case or the PureSignal TX case.
++      //
++      phase = (uint32_t)(((double)DDCfrequency[0]) * 34.952533333333333333333333333333);
++      high_priority_buffer_to_radio[ 9] = (phase >> 24) & 0xFF;
++      high_priority_buffer_to_radio[10] = (phase >> 16) & 0xFF;
++      high_priority_buffer_to_radio[11] = (phase >>  8) & 0xFF;
++      high_priority_buffer_to_radio[12] = (phase      ) & 0xFF;
++      phase = (uint32_t)(((double)(receivers > 1 ? DDCfrequency[1] : DDCfrequency[0]))
++                          * 34.952533333333333333333333333333);
++      high_priority_buffer_to_radio[13] = (phase >> 24) & 0xFF;
++      high_priority_buffer_to_radio[14] = (phase >> 16) & 0xFF;
++      high_priority_buffer_to_radio[15] = (phase >>  8) & 0xFF;
++      high_priority_buffer_to_radio[16] = (phase      ) & 0xFF;
++    }
+   }
+ 
+   //
+diff --git a/src/radio.c b/src/radio.c
+index d5d29f25..17cd50ab 100644
+--- a/src/radio.c
++++ b/src/radio.c
+@@ -281,6 +281,7 @@ int cw_key_hit = 0;
+ int n_adc = 1;
+ 
+ int diversity_enabled = 0;
++int p2_angelia_ddc0_map = 0;
+ double div_cos = 1.0;      // I factor for diversity
+ double div_sin = 1.0;      // Q factor for diversity
+ double div_gain = 0.0;     // gain for diversity (in dB)
+@@ -3494,6 +3495,7 @@ static void radio_restore_state(void) {
+     GetPropI0("enable_tx_inhibit",                           enable_tx_inhibit);
+     GetPropI0("radio_sample_rate",                           soapy_radio_sample_rate);
+     GetPropI0("diversity_enabled",                           diversity_enabled);
++    GetPropI0("p2_angelia_ddc0_map",                         p2_angelia_ddc0_map);
+     GetPropF0("diversity_gain",                              div_gain);
+     GetPropF0("diversity_phase",                             div_phase);
+     GetPropF0("diversity_cos",                               div_cos);
+@@ -3726,6 +3728,7 @@ void radio_save_state(void) {
+     SetPropI0("enable_tx_inhibit",                           enable_tx_inhibit);
+     SetPropI0("radio_sample_rate",                           soapy_radio_sample_rate);
+     SetPropI0("diversity_enabled",                           diversity_enabled);
++    SetPropI0("p2_angelia_ddc0_map",                         p2_angelia_ddc0_map);
+     SetPropF0("diversity_gain",                              div_gain);
+     SetPropF0("diversity_phase",                             div_phase);
+     SetPropF0("diversity_cos",                               div_cos);
+diff --git a/src/radio.h b/src/radio.h
+index 2e0376fa..98702076 100644
+--- a/src/radio.h
++++ b/src/radio.h
+@@ -244,6 +244,7 @@ extern int cw_key_hit;
+ extern int n_adc;
+ 
+ extern int diversity_enabled;
++extern int p2_angelia_ddc0_map;
+ extern double div_cos, div_sin;
+ extern double div_gain, div_phase;
+ 
+diff --git a/src/radio_menu.c b/src/radio_menu.c
+index e18f42c2..8349eb22 100644
+--- a/src/radio_menu.c
++++ b/src/radio_menu.c
+@@ -999,6 +999,23 @@ void radio_menu(GtkWidget *parent) {
+     g_signal_connect(Btn, "toggled", G_CALLBACK(toggle_cb), &new_pa_board);
+   }
+ 
++  if (device == NEW_DEVICE_ANGELIA && protocol == NEW_PROTOCOL) {
++    //
++    // Brick3 / ANAN-100D clones: the TX relay/PTT can get stuck after a TX
++    // cycle unless DDC0/DDC1's NCO frequency is kept refreshed during RX.
++    // Enable this if the TX relay fails to release after TX.
++    //
++    row++;
++    hwpanel = 1;
++    Btn = gtk_check_button_new_with_label("Brick3 / ANAN-100D compatibility");
++    gtk_widget_set_halign(Btn, GTK_ALIGN_END);
++    gtk_widget_set_tooltip_text(Btn,
++                                 "Enable if the TX relay fails to release after TX (Brick3/ANAN-100D clones).");
++    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(Btn), p2_angelia_ddc0_map);
++    gtk_grid_attach(GTK_GRID(grid), Btn, 5, row, 2, 1);
++    g_signal_connect(Btn, "toggled", G_CALLBACK(toggle_cb), &p2_angelia_ddc0_map);
++  }
++
+   if (device == SOAPYSDR_USB_DEVICE) {
+     //
+     // SoapySDR radios may have IQ swapped, and we can select
+-- 
+2.54.0
+
