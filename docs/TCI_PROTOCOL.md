@@ -191,7 +191,7 @@ both answer a query and to broadcast state changes to all connected clients.
 
 | Command | Handler | Notes |
 |---|---|---|
-| `trx` | `tci_cmd_trx` | `trx:<0>,<bool>[,<source>];` PTT. **Single-owner exclusivity** — see §6. Accepts an optional `source="tci"` argument to initialize TX-audio-over-TCI for that client. |
+| `trx` | `tci_cmd_trx` | `trx:<0>,<bool>[,<source>];` PTT. **Single-owner exclusivity** — see §6. Accepts an optional `source="tci"` argument to initialize TX-audio-over-TCI for that client. When TX audio via TCI is enabled, the server emits `tx_stream_audio_buffering:50;`. On un-keying (`trx:0,false`), a 50 ms delay (`tci_clearmox_timer`) is applied before clearing MOX to allow remaining TCI audio samples to drain without truncation. |
 | `tune` | `tci_cmd_tune` | Tune/carrier mode; same single-owner exclusivity as `trx`. |
 | `drive` | `tci_cmd_drive` | `drive:0,<0-100>;` |
 | `tune_drive` | `tci_cmd_tune_drive` | `tune_drive:0,<0-100>;` Uses `transmitter->tune_drive` or live drive if `tune_use_drive` is set. |
@@ -285,6 +285,10 @@ frames are ever sent.
 - Purpose: a timing pulse sent once per TX-audio frame period so the client paces its outgoing TX audio stream; queued from `tci_queue_tx_chrono_frame()`, driven by `tci_tx_chrono_loop()` called once per mic sample consumed.
 - Sent only to the single client currently holding TX-audio ownership (one sender at a time).
 
+### Binary framing structures (`TCI_STREAM`)
+
+Binary audio packets use the packed `TCI_STREAM` struct (`src/tci_audio.h`), which wraps the 64-byte `TCI_STREAM_HEADER` and a fixed payload array of `float` samples (`TCI_RX_AUDIO_FRAME_FRAMES * TCI_AUDIO_CHANNELS`).
+
 ### Fragmentation / reassembly / alignment
 
 Inbound binary WebSocket frames may arrive fragmented at the LWS layer;
@@ -299,7 +303,7 @@ Additionally, to prevent memory alignment faults when casting incoming binary da
 ```c
 aligned = ((uintptr_t) data & (alignof(float) - 1)) == 0;
 ```
-If the buffer is not float-aligned, it is copied into `client->binary_rx_buf` (which is allocated with proper standard alignment) before being handled, ensuring safety.
+If the buffer is not float-aligned, it is copied into `client->binary_rx_buf` (which is allocated with proper standard alignment) before being handled, ensuring safety on all CPU architectures.
 
 ---
 
@@ -332,7 +336,7 @@ Legend: ✅ matches spec · ⚠️ implemented but deviates · ❌ not implement
 | `iq_start` / `iq_stop` | ❌ | Parsed, no-op stubs; no IQ data ever flows. |
 | `audio_start` / `audio_stop` | ✅ | Fully implemented per-receiver RX audio streaming. |
 | `audio_stream_sample_type` / `_channels` / `_samples` / `audio_samplerate` | ⚠️ | Implemented as **read-only fixed-value echoes** (`float32`/`2`/`512`/`48000`); spec implies these can be client-negotiated, this server ignores any client-requested values. |
-| `tx_stream_audio_buffering` | ❌ | Not in dispatch table at all; any client sending it gets "unknown command" handling. |
+| `tx_stream_audio_buffering` | ⚠️ | Sent server→client as `tx_stream_audio_buffering:50;` when a client initiates TCI TX audio (`trx:0,true,tci`) to establish the 50 ms audio buffer target. Not implemented as a client-settable command. |
 | `rx_sensors_enable` / `tx_sensors_enable` | ✅ | Implemented. |
 | `vfo` / `dds` / `if` | ✅ | Implemented (`if` is always reported as `0`, no true IF-offset model). |
 | `vfo_lock` / `lock` | ✅ | Implemented, though both ultimately gate off one shared `locked` global rather than independent per-VFO/per-channel locks. |
