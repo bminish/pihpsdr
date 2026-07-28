@@ -1,0 +1,52 @@
+diff --git a/src/receiver.c b/src/receiver.c
+index 979b8c69..bc3d4ed8 100644
+--- a/src/receiver.c
++++ b/src/receiver.c
+@@ -1472,8 +1472,17 @@ void rx_set_filter(RECEIVER *rx) {
+   //
+   int id = rx->id;
+   int m = vfo[id].mode;
++  if (m < 0 || m >= MODES) {
++    m = modeUSB;
++    vfo[id].mode = modeUSB;
++  }
++  int f = vfo[id].filter;
++  if (f < 0 || f >= 10) {
++    f = filterF4;
++    vfo[id].filter = filterF4;
++  }
+   FILTER *mode_filters = filters[m];
+-  const FILTER *filter = &mode_filters[vfo[id].filter]; // ignored in FMN
++  const FILTER *filter = &mode_filters[f]; // ignored in FMN
+   int have_peak = 0;
+ 
+   switch (m) {
+diff --git a/src/vfo.c b/src/vfo.c
+index fb3b1b0e..9fdbbbca 100644
+--- a/src/vfo.c
++++ b/src/vfo.c
+@@ -177,6 +177,13 @@ void vfo_restore_state(void) {
+     GetPropI1("vfo.%d.step", i,             vfo[i].step);
+     GetPropI1("vfo.%d.rit_step", i,         vfo[i].rit_step);
+ 
++    if (vfo[i].mode < 0 || vfo[i].mode >= MODES) {
++      vfo[i].mode = modeUSB;
++    }
++    if (vfo[i].filter < 0 || vfo[i].filter >= 10) {
++      vfo[i].filter = filterF4;
++    }
++
+     // Sanity check: if !ctun, offset must be zero
+     if (!vfo[i].ctun) {
+       vfo[i].offset = 0;
+@@ -430,6 +437,10 @@ void vfo_mode_changed(int m) {
+ }
+ 
+ void vfo_id_mode_changed(int id, int m) {
++  if (m < 0 || m >= MODES) {
++    return;
++  }
++
+   if (radio_is_remote) {
+     send_mode(cl_sock_tcp, id, m);
+     return;
