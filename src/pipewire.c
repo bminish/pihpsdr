@@ -184,7 +184,7 @@ static void on_playback_process(void *data) {
     int oldpt;
 
     oldpt = rx->audio_buffer_outpt;
-    if (oldpt != rx->audio_buffer_inpt) {
+    if ((!radio_is_transmitting() || duplex) && oldpt != rx->audio_buffer_inpt) {
       if (h->channels == 1) {
         rx_left = rx->audio_buffer[oldpt];
       } else {
@@ -682,7 +682,7 @@ void tx_audio_write(RECEIVER *rx, double sample) {
     if (inpt == h->st_outpt) {
       // side tone buffer empty
       for (int i = 0; i < CW_LAT_TARGET_FRAMES; i++) {
-        rx->audio_buffer[inpt] = 0.0;
+        h->st_buffer[inpt] = 0.0;
         inpt = (inpt + 1) & RING_BUFFER_MASK;
       }
       MEMORY_BARRIER;
