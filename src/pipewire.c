@@ -184,7 +184,7 @@ static void on_playback_process(void *data) {
     int oldpt;
 
     oldpt = rx->audio_buffer_outpt;
-    if ((!radio_is_transmitting() || duplex) && oldpt != rx->audio_buffer_inpt) {
+    if ((rx->cwaudio == 0 || duplex) && oldpt != rx->audio_buffer_inpt) {
       if (h->channels == 1) {
         rx_left = rx->audio_buffer[oldpt];
       } else {
