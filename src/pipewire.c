@@ -625,31 +625,6 @@ void audio_write(RECEIVER *rx, double left, double right) {
   int inpt = rx->audio_buffer_inpt;
   int outpt = rx->audio_buffer_outpt;
 
-  if (rx->cwaudio != 0) {
-    // Transition TX -> RX or initial startup
-    // Reset buffer pointers to flush stale pre-TX audio
-    inpt = 0;
-    outpt = 0;
-    rx->audio_buffer_outpt = 0;
-
-    // Pre-fill 2400 samples (50 ms @ 48kHz) of clean silence as turnaround cushion
-    const int prefill_frames = AUDIO_LAT_TARGET_FRAMES / 4;
-    if (rx->local_audio_channels == 1) {
-      for (int i = 0; i < prefill_frames; i++) {
-        rx->audio_buffer[i] = 0.0;
-      }
-    } else {
-      for (int i = 0; i < prefill_frames; i++) {
-        rx->audio_buffer[2 * i] = 0.0;
-        rx->audio_buffer[2 * i + 1] = 0.0;
-      }
-    }
-    inpt = prefill_frames;
-    rx->audio_buffer_inpt = inpt;
-    MEMORY_BARRIER;
-    rx->cwaudio = 0; // Unpause playout with clean 50ms cushion!
-  }
-
   int newpt = (inpt + 1) & RING_BUFFER_MASK;
 
   if (newpt != outpt) {
@@ -661,6 +636,21 @@ void audio_write(RECEIVER *rx, double left, double right) {
     }
     MEMORY_BARRIER;
     rx->audio_buffer_inpt = newpt;
+    inpt = newpt;
+  }
+
+  if (rx->cwaudio != 0) {
+    // Transition TX -> RX or initial startup
+    // Use the halted RX buffer as the head (pre-fill) of the new RX stream!
+    int depth = (inpt - outpt) & RING_BUFFER_MASK;
+
+    // Cap pre-fill depth at AUDIO_LAT_TARGET_FRAMES (9600 samples / 200 ms) to prevent latency drift
+    if (depth > AUDIO_LAT_TARGET_FRAMES) {
+      outpt = (inpt - AUDIO_LAT_TARGET_FRAMES) & RING_BUFFER_MASK;
+      rx->audio_buffer_outpt = outpt;
+    }
+
+    rx->cwaudio = 0; // Unpause playout immediately
   }
 
   g_mutex_unlock(&rx->audio_mutex);
@@ -676,10 +666,7 @@ void tx_audio_write(RECEIVER *rx, double sample) {
 
   int inpt = h->st_inpt;
   if (rx->cwaudio != 3) {
-    // Transition RX -> TX: Reset RX buffer pointers so stale audio is discarded
-    rx->audio_buffer_inpt = 0;
-    rx->audio_buffer_outpt = 0;
-
+    // Transition RX -> TX: Preserve halted rx->audio_buffer as head for next RX
     if (inpt == h->st_outpt) {
       // side tone buffer empty
       for (int i = 0; i < CW_LAT_TARGET_FRAMES; i++) {
