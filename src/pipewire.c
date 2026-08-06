@@ -625,36 +625,17 @@ void audio_write(RECEIVER *rx, double left, double right) {
   int inpt = rx->audio_buffer_inpt;
   int outpt = rx->audio_buffer_outpt;
   if (rx->cwaudio != 0) {
-    // Transition TX -> RX, or first time after audio_open
-
-    if (inpt == rx->audio_buffer_outpt) {
-      //
-      // Buffer empty. Assume we can put in all pre-filling samples
-      // without a buffer-full check
-      //
-      if ( rx->local_audio_channels == 1) {
-        // MONO
-        for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
-          rx->audio_buffer[inpt] = 0.0;
-          inpt = (inpt + 1) & RING_BUFFER_MASK;
-        }
-      } else {
-        // STEREO
-        for (int i = 0; i < AUDIO_LAT_TARGET_FRAMES; i++) {
-          rx->audio_buffer[2 * inpt] = 0.0;
-          rx->audio_buffer[2 * inpt + 1] = 0.0;
-          inpt = (inpt + 1) & RING_BUFFER_MASK;
-        }
-      }
-      MEMORY_BARRIER;
-      rx->audio_buffer_inpt = inpt;
-    }
+    // Transition TX -> RX: Reset receive buffer pointers clean
+    inpt = 0;
+    outpt = 0;
+    rx->audio_buffer_outpt = 0;
+    rx->audio_buffer_inpt = 0;
     rx->cwaudio = 0;
   }
 
   int newpt = (inpt + 1) & RING_BUFFER_MASK;
 
-  if (newpt  != outpt) {
+  if (newpt != outpt) {
     if (rx->local_audio_channels == 1) {
       rx->audio_buffer[inpt] = 0.5 * (left + right);
     } else {
@@ -678,11 +659,14 @@ void tx_audio_write(RECEIVER *rx, double sample) {
 
   int inpt = h->st_inpt;
   if (rx->cwaudio != 3) {
-    // Transition RX -> TX
+    // Transition RX -> TX: Mute & zero receive buffer
+    rx->audio_buffer_inpt = 0;
+    rx->audio_buffer_outpt = 0;
+
     if (inpt == h->st_outpt) {
       // side tone buffer empty
       for (int i = 0; i < CW_LAT_TARGET_FRAMES; i++) {
-        rx->audio_buffer[inpt] = 0.0;
+        h->st_buffer[inpt] = 0.0;
         inpt = (inpt + 1) & RING_BUFFER_MASK;
       }
       MEMORY_BARRIER;
