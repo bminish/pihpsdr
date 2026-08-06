@@ -321,6 +321,10 @@ typedef struct _receiver {
   double eq_freq[11];
   double eq_gain[11];
 
+#ifdef PIPEWIRE
+  int latency;
+#endif
+
 } RECEIVER;
 
 extern RECEIVER *rx_create_pure_signal_receiver(int id, int sample_rate, int pixels, int fps);
