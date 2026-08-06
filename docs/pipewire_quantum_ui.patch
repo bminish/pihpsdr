@@ -1,0 +1,152 @@
+commit 9f35d58c85b30dca58dffab9369f0d3617d37e43
+Author: Brendan Minish <bminish@gmail.com>
+Date:   Thu Aug 6 21:40:12 2026 +0100
+
+    feat(pipewire): set default PipeWire quantum to 128 if not set
+
+diff --git a/src/pipewire.c b/src/pipewire.c
+index 8e0eb346..4e08983b 100644
+--- a/src/pipewire.c
++++ b/src/pipewire.c
+@@ -325,6 +325,12 @@ int audio_open_output(RECEIVER *rx) {
+     return -1;
+   }
+ 
++  if (rx->latency <= 0) {
++    rx->latency = 128;
++  }
++  char latency_str[32];
++  snprintf(latency_str, sizeof(latency_str), "%d/48000", rx->latency);
++
+   // Playback Stream properties
+   struct pw_properties *props = pw_properties_new(
+       PW_KEY_MEDIA_TYPE, "Audio",
+@@ -333,7 +339,7 @@ int audio_open_output(RECEIVER *rx) {
+       PW_KEY_NODE_NAME, "pihpsdr-rx",
+       PW_KEY_NODE_DESCRIPTION, "piHPSDR Playback",
+       PW_KEY_TARGET_OBJECT, rx->audio_name,
+-      PW_KEY_NODE_LATENCY, "128/48000",
++      PW_KEY_NODE_LATENCY, latency_str,
+       NULL
+   );
+ 
+diff --git a/src/receiver.c b/src/receiver.c
+index c3011a7e..e9e52009 100644
+--- a/src/receiver.c
++++ b/src/receiver.c
+@@ -406,6 +406,12 @@ void rx_restore_state(RECEIVER *rx) {
+   if (!radio_is_remote) {
+     GetPropI1("receiver.%d.smetermode", rx->id,                 rx->smetermode);
+     GetPropI1("receiver.%d.low_latency", rx->id,                rx->low_latency);
++#ifdef PIPEWIRE
++    GetPropI1("receiver.%d.pipewire_latency", rx->id,           rx->latency);
++    if (rx->latency <= 0) {
++      rx->latency = 128;
++    }
++#endif
+     GetPropI1("receiver.%d.fft_size", rx->id,                   rx->fft_size);
+     GetPropI1("receiver.%d.sample_rate", rx->id,                rx->sample_rate);
+     //
+@@ -756,6 +762,9 @@ RECEIVER *rx_create_receiver(int id, int width, int height) {
+   rx->dsp_size = 2048;
+   rx->fft_size = 2048;
+   rx->low_latency = 0;
++#ifdef PIPEWIRE
++  rx->latency = 128;
++#endif
+   rx->smetermode = SMETER_AVERAGE;
+   rx->fps = 10;
+   rx->update_timer_id = 0;
+diff --git a/src/receiver.h b/src/receiver.h
+index 61949434..c11ca509 100644
+--- a/src/receiver.h
++++ b/src/receiver.h
+@@ -321,6 +321,10 @@ typedef struct _receiver {
+   double eq_freq[11];
+   double eq_gain[11];
+ 
++#ifdef PIPEWIRE
++  int latency;
++#endif
++
+ } RECEIVER;
+ 
+ extern RECEIVER *rx_create_pure_signal_receiver(int id, int sample_rate, int pixels, int fps);
+diff --git a/src/rx_menu.c b/src/rx_menu.c
+index 1dd9b6ec..0ddd9757 100644
+--- a/src/rx_menu.c
++++ b/src/rx_menu.c
+@@ -221,6 +221,30 @@ static void audio_channel_cb(GtkWidget *widget, gpointer data) {
+   }
+ }
+ 
++#ifdef PIPEWIRE
++static void pipewire_quantum_cb(GtkWidget *widget, gpointer data) {
++  int active = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
++  const int quantums[] = {16, 32, 64, 128, 256, 512, 1024, 2048};
++  int q = quantums[active];
++
++  if (myrx->latency != q) {
++    myrx->latency = q;
++    rx_save_state(myrx);
++
++    // If audio is running, restart it to apply the new quantum immediately
++    if (myrx->local_audio) {
++      myrx->local_audio = 0;
++      audio_close_output(myrx);
++      if (audio_open_output(myrx) < 0) {
++        myrx->local_audio = 0;
++      } else {
++        myrx->local_audio = 1;
++      }
++    }
++  }
++}
++#endif
++
+ void rx_menu(GtkWidget *parent) {
+   GtkWidget *btn;
+   GtkWidget *lbl;
+@@ -435,6 +459,42 @@ void rx_menu(GtkWidget *parent) {
+   }
+   my_combo_attach(GTK_GRID(grid), btn, 2, 3, 1, 1);
+   g_signal_connect(btn, "changed", G_CALLBACK(audio_channel_cb), NULL);
++#ifdef PIPEWIRE
++  lbl = gtk_label_new("PipeWire Quantum:");
++  gtk_widget_set_name(lbl, "boldlabel");
++  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
++  gtk_grid_attach(GTK_GRID(grid), lbl, 1, row, 1, 1);
++
++  btn = gtk_combo_box_text_new();
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "16 (0.3ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "32 (0.7ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "64 (1.3ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "128 (2.7ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "256 (5.3ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "512 (10.7ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "1024 (21.3ms)");
++  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "2048 (42.7ms)");
++
++  int active_idx = 3; // Default 128
++  switch (myrx->latency) {
++    case 16: active_idx = 0; break;
++    case 32: active_idx = 1; break;
++    case 64: active_idx = 2; break;
++    case 128: active_idx = 3; break;
++    case 256: active_idx = 4; break;
++    case 512: active_idx = 5; break;
++    case 1024: active_idx = 6; break;
++    case 2048: active_idx = 7; break;
++    default:
++      active_idx = 3;
++      myrx->latency = 128;
++      break;
++  }
++  gtk_combo_box_set_active(GTK_COMBO_BOX(btn), active_idx);
++  my_combo_attach(GTK_GRID(grid), btn, 2, row, 1, 1);
++  g_signal_connect(btn, "changed", G_CALLBACK(pipewire_quantum_cb), NULL);
++  row++;
++#endif
+   gtk_container_add(GTK_CONTAINER(content), grid);
+   sub_menu = dialog;
+   gtk_widget_show_all(dialog);
