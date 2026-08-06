@@ -477,7 +477,7 @@ void rx_menu(GtkWidget *parent) {
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "1024 (21.3ms)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "2048 (42.7ms)");
 
-  int active_idx = 2; // Default 64
+  int active_idx = 3; // Default 128
   switch (myrx->latency) {
     case 16: active_idx = 0; break;
     case 32: active_idx = 1; break;
@@ -487,6 +487,10 @@ void rx_menu(GtkWidget *parent) {
     case 512: active_idx = 5; break;
     case 1024: active_idx = 6; break;
     case 2048: active_idx = 7; break;
+    default:
+      active_idx = 3;
+      myrx->latency = 128;
+      break;
   }
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), active_idx);
   my_combo_attach(GTK_GRID(grid), btn, 2, row, 1, 1);

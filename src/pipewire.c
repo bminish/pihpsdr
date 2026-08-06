@@ -352,6 +352,9 @@ int audio_open_output(RECEIVER *rx) {
     return -1;
   }
 
+  if (rx->latency <= 0) {
+    rx->latency = 128;
+  }
   char latency_str[32];
   snprintf(latency_str, sizeof(latency_str), "%d/48000", rx->latency);
 

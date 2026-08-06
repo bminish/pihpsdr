@@ -412,6 +412,9 @@ void rx_restore_state(RECEIVER *rx) {
     GetPropI1("receiver.%d.low_latency", rx->id,                rx->low_latency);
 #ifdef PIPEWIRE
     GetPropI1("receiver.%d.pipewire_latency", rx->id,           rx->latency);
+    if (rx->latency <= 0) {
+      rx->latency = 128;
+    }
 #endif
     GetPropI1("receiver.%d.fft_size", rx->id,                   rx->fft_size);
     GetPropI1("receiver.%d.sample_rate", rx->id,                rx->sample_rate);
@@ -764,7 +767,7 @@ RECEIVER *rx_create_receiver(int id, int width, int height) {
   rx->fft_size = 2048;
   rx->low_latency = 0;
 #ifdef PIPEWIRE
-  rx->latency = 64;
+  rx->latency = 128;
 #endif
   rx->smetermode = SMETER_AVERAGE;
   rx->fps = 10;
