@@ -314,6 +314,18 @@ static void update_att_controls(void);
 static void update_visibility(void);
 
 static void diversity_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  //
+  // Only when a person clicked it. The status poll and the client status
+  // path both write this tick to follow the radio, and without this guard
+  // that write calls radio_set_diversity() with the state it already has -
+  // which on the original protocol with one receiver stops and restarts
+  // the protocol, and on a client sends the setting straight back to the
+  // radio that just reported it.
+  //
+  if (updating_from_auto || updating_from_server) { return; }
+
   int state = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   //
   // This starts or stops the analysis thread, so what the controls below
@@ -335,6 +347,29 @@ static void diversity_cb(GtkWidget *widget, gpointer data) {
 // tick would fight an operator holding down a spin button's arrow; the
 // tick box because update_visibility() resizes the dialog.
 //
+//
+// The master Diversity tick, from whatever last changed it.
+//
+// It changes from four places besides this dialog: the DIV action on a
+// toolbar or a MIDI/CAT control, a remote client, radio_set_diversity()
+// being called during a protocol restart, and the radio refusing it when
+// there is only one ADC. update_manual_sensitivity() was already polled
+// for exactly that reason, but it only greys controls - it never wrote
+// the tick's own state back, so the box could sit unticked with the
+// feature running. Guarded on having changed, like the attenuator
+// controls: writing the same value back four times a second would fight
+// an operator mid-click.
+//
+static void update_enable_control(void) {
+  if (diversity_b == NULL) { return; }
+
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(diversity_b)) != (diversity_enabled != 0)) {
+    updating_from_auto = 1;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(diversity_b), diversity_enabled);
+    updating_from_auto = 0;
+  }
+}
+
 static void update_att_controls(void) {
   if (att_spin[0] == NULL) { return; }
 
@@ -749,6 +784,7 @@ static int status_update_cb(gpointer data) {
   // unchanged, so this is six comparisons four times a second.
   //
   update_manual_sensitivity();
+  update_enable_control();
   update_att_controls();
   //
   // Track the automatically determined values in the manual sliders so
@@ -1052,23 +1088,7 @@ gboolean diversity_menu_settings_changed(gpointer data) {
 gboolean diversity_client_set_settings(gpointer data) {
   const DIV_SETTINGS_COMMAND *c = (const DIV_SETTINGS_COMMAND *)data;
   DIV_SETTINGS set;
-  set.mode           = c->mode;
-  set.ref            = c->ref;
-  set.follow_filter  = c->follow_filter;
-  set.weighting      = c->weighting;
-  set.hold           = c->hold;
-  set.centre         = from_double(c->centre);
-  set.width          = from_double(c->width);
-  set.tau            = from_double(c->tau);
-  set.hang           = from_double(c->hang);
-  set.coherence_min  = from_double(c->coherence_min);
-  set.resolution     = from_double(c->resolution);
-  set.band_centre    = from_double(c->band_centre);
-  set.band_width     = from_double(c->band_width);
-  set.carrier_centre = from_double(c->carrier_centre);
-  set.carrier_width  = from_double(c->carrier_width);
-  set.digital_centre = from_double(c->digital_centre);
-  set.digital_width  = from_double(c->digital_width);
+  div_settings_from_command(&set, c);
   diversity_auto_apply_settings(&set, DIV_ACTION_NONE);
   div_populate_from_settings();
   g_free(data);

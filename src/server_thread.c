@@ -891,6 +891,18 @@ static gpointer listen_thread(gpointer arg) {
   listen_socket = -1;
   udp_thread_id = NULL;
   while (server_running) {
+    //
+    // Whatever the last client left set that only it could clear.
+    //
+    // Hold is the one: it is a momentary operator control, it stops the
+    // loop applying anything, and it has no indicator outside the
+    // Diversity menu. A client that ticks it and then disappears - or
+    // whose network does - would leave the radio frozen with nothing on
+    // screen to explain it. The local menu already releases it when the
+    // dialog is closed, for the same reason; this is the remote case.
+    //
+    diversity_auto_set_hold(0);
+
     if (remoteclient.sock_udp >= 0) {
       close(remoteclient.sock_udp);
       remoteclient.sock_udp = -1;
@@ -1213,6 +1225,11 @@ int create_hpsdr_server(void) {
 int destroy_hpsdr_server(void) {
   server_running = FALSE;
   remoteclient.running = FALSE;
+  //
+  // As in listen_thread(): a client cannot be left holding the loop.
+  //
+  diversity_auto_set_hold(0);
+
   if (listen_socket >= 0) {
     shutdown(listen_socket, SHUT_RDWR);
     close(listen_socket);
@@ -2155,23 +2172,7 @@ static int server_command(gpointer data) {
     //
     const DIV_SETTINGS_COMMAND *command = (DIV_SETTINGS_COMMAND *)data;
     DIV_SETTINGS set;
-    set.mode           = command->mode;
-    set.ref            = command->ref;
-    set.follow_filter  = command->follow_filter;
-    set.weighting      = command->weighting;
-    set.hold           = command->hold;
-    set.centre         = from_double(command->centre);
-    set.width          = from_double(command->width);
-    set.tau            = from_double(command->tau);
-    set.hang           = from_double(command->hang);
-    set.coherence_min  = from_double(command->coherence_min);
-    set.resolution     = from_double(command->resolution);
-    set.band_centre    = from_double(command->band_centre);
-    set.band_width     = from_double(command->band_width);
-    set.carrier_centre = from_double(command->carrier_centre);
-    set.carrier_width  = from_double(command->carrier_width);
-    set.digital_centre = from_double(command->digital_centre);
-    set.digital_width  = from_double(command->digital_width);
+    div_settings_from_command(&set, command);
     diversity_auto_apply_settings(&set, command->header.b1);
     //
     // If the radio's own Diversity menu is open, it is now showing the

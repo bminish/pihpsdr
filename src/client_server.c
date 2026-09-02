@@ -828,24 +828,7 @@ void send_div_settings(int s, const DIV_SETTINGS *set, int action) {
   SYNC(command.header.sync);
   command.header.data_type = to_16(CMD_DIV_SETTINGS);
   command.header.b1 = action;
-  command.mode           = set->mode;
-  command.ref            = set->ref;
-  command.follow_filter  = set->follow_filter;
-  command.weighting      = set->weighting;
-  command.hold           = set->hold;
-  memset(command.pad, 0, sizeof(command.pad));
-  command.centre         = to_double(set->centre);
-  command.width          = to_double(set->width);
-  command.tau            = to_double(set->tau);
-  command.hang           = to_double(set->hang);
-  command.coherence_min  = to_double(set->coherence_min);
-  command.resolution     = to_double(set->resolution);
-  command.band_centre    = to_double(set->band_centre);
-  command.band_width     = to_double(set->band_width);
-  command.carrier_centre = to_double(set->carrier_centre);
-  command.carrier_width  = to_double(set->carrier_width);
-  command.digital_centre = to_double(set->digital_centre);
-  command.digital_width  = to_double(set->digital_width);
+  div_settings_to_command(&command, set);
   send_tcp(s, (char *)&command, sizeof(command));
 }
 

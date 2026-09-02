@@ -23,6 +23,7 @@
 #include "vfo.h"
 #include "adc.h"
 #include "diversity_auto.h"
+#include "client_server.h"
 
 static RECEIVER rx0;
 RECEIVER *receiver[8] = { &rx0 };
@@ -76,6 +77,74 @@ static int check(const char *what, int stored, int scheme, int want) {
   return ok;
 }
 
+/*
+ * Every field of DIV_SETTINGS has to survive the wire.
+ *
+ * The failure this exists to catch is silent and has happened twice: a
+ * field is added to DIV_SETTINGS, the three copies of the pack/unpack
+ * field list are not all updated, and the receiver leaves that field
+ * holding whatever was on the stack. Nothing fails to compile; a control
+ * simply stops working at the far end, and only at the far end. The three
+ * lists are now one pair of functions in client_server.h, and this fills
+ * every field with a value it could not arrive at by accident and checks
+ * it comes back.
+ */
+static int test_wire_round_trip(void) {
+  DIV_SETTINGS a, b;
+  DIV_SETTINGS_COMMAND c;
+  //
+  // Distinctive, in range, and different from each other and from zero -
+  // a field left unassigned by the pack or the unpack shows up as 0 and
+  // fails, and one crossed with its neighbour fails too.
+  //
+  memset(&a, 0, sizeof(a));
+  a.mode = DIV_AUTO_BEST;
+  a.ref = DIV_REF_DIGITAL_IQ;
+  a.follow_filter = 1;
+  a.weighting = DIV_WEIGHT_FLAT;
+  a.hold = 1;
+  a.normalise = 1;
+  a.centre = -1234.0;   a.width = 2345.0;
+  a.tau = 7.25;         a.hang = 11.5;
+  a.coherence_min = 0.41;  a.resolution = 6.0;
+  a.band_centre = 101.0;    a.band_width = 202.0;
+  a.carrier_centre = 303.0; a.carrier_width = 404.0;
+  a.digital_centre = 505.0; a.digital_width = 606.0;
+  a.band_cohmin = 0.11; a.carrier_cohmin = 0.22;
+  a.digital_cohmin = 0.33; a.rade_cohmin = 0.44;
+  memset(&c, 0xA5, sizeof(c));          /* so an unwritten field is obvious */
+  div_settings_to_command(&c, &a);
+  memset(&b, 0x5A, sizeof(b));          /* and so is one the unpack forgets */
+  div_settings_from_command(&b, &c);
+  int bad = 0;
+  double worst = 0.0;
+  //
+  // to_double() carries a double as (x + 9e8) * 1e10 in a uint64, which
+  // near 9e18 has a double ulp of about a thousand - so the wire quantises
+  // every one of these to around 1e-7 whatever the field means. That is
+  // the protocol's own resolution and not something this test is checking;
+  // the tolerance is set well inside it and the worst error is printed so
+  // that a real drop-out cannot hide under it.
+  //
+#define CHK_I(f)  do { if (a.f != b.f) { printf("    FAIL %-16s %d -> %d\n", #f, (int)a.f, (int)b.f); bad++; } } while (0)
+#define CHK_D(f)  do { const double e = fabs(a.f - b.f); if (e > worst) { worst = e; } \
+                       if (e > 1.0e-6) { printf("    FAIL %-16s %.12g -> %.12g\n", #f, a.f, b.f); bad++; } } while (0)
+  CHK_I(mode); CHK_I(ref); CHK_I(follow_filter); CHK_I(weighting);
+  CHK_I(hold); CHK_I(normalise);
+  CHK_D(centre); CHK_D(width); CHK_D(tau); CHK_D(hang);
+  CHK_D(coherence_min); CHK_D(resolution);
+  CHK_D(band_centre); CHK_D(band_width);
+  CHK_D(carrier_centre); CHK_D(carrier_width);
+  CHK_D(digital_centre); CHK_D(digital_width);
+  CHK_D(band_cohmin); CHK_D(carrier_cohmin);
+  CHK_D(digital_cohmin); CHK_D(rade_cohmin);
+#undef CHK_I
+#undef CHK_D
+  printf("  %d field(s) wrong out of 22; worst round-trip error %.2g (the wire quantises at ~1e-7)\n",
+         bad, worst);
+  return bad == 0;
+}
+
 int main(void) {
   memset(&rx0, 0, sizeof(rx0));
   memset(vfo, 0, sizeof(vfo));
@@ -93,6 +162,8 @@ int main(void) {
   ok &= check("new carrier",  1, 2, DIV_REF_CARRIER);
   ok &= check("new radev1",   2, 2, DIV_REF_RADE_V1);
   ok &= check("new digital",  3, 2, DIV_REF_DIGITAL_IQ);
+  printf("\nDIV_SETTINGS over the wire\n");
+  ok &= test_wire_round_trip();
   printf("\n%s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }

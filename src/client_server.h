@@ -22,6 +22,7 @@
 
 #include <gtk/gtk.h>
 #include <stdint.h>
+#include <string.h>
 #include <netinet/in.h>
 #include <opus/opus.h>
 
@@ -153,7 +154,7 @@ enum _header_type_enum {
   CLIENT_SERVER_COMMANDS,
 };
 
-#define CLIENT_SERVER_VERSION 0x01300009 // 32-bit version number
+#define CLIENT_SERVER_VERSION 0x0130000A // 32-bit version number
 #define SPECTRUM_DATA_SIZE 4096          // Maximum width of a panadapter
 #define AUDIO_DATA_SIZE 512              // 512 (mono) samples
 
@@ -857,13 +858,24 @@ typedef struct __attribute__((__packed__)) _div_settings_command {
   uint8_t  follow_filter;
   uint8_t  weighting;
   uint8_t  hold;
-  uint8_t  pad[3];
+  uint8_t  normalise;
+  uint8_t  pad[2];
   //
   mydouble centre, width;
   mydouble tau, hang, coherence_min, resolution;
   mydouble band_centre, band_width;
   mydouble carrier_centre, carrier_width;
   mydouble digital_centre, digital_width;
+  //
+  // The coherence threshold is per reference - the four references do not
+  // compare the same quantity - so all four slots travel, not just the
+  // live one. Leaving them off was a real bug: the receiving end filled a
+  // DIV_SETTINGS from the wire, the fields it could not fill kept whatever
+  // was on the stack, and div_settings_load() then took the live threshold
+  // from one of them. A client's Min coherence control did nothing it
+  // could predict.
+  //
+  mydouble band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin;
 } DIV_SETTINGS_COMMAND;
 
 //
@@ -1218,6 +1230,73 @@ static inline void SYNC(uint8_t *sync) {
   *sync++ = 0xFA;
   *sync++ = 0xAF;
   *sync++ = 0xAF;
+}
+
+//
+// DIV_SETTINGS <-> DIV_SETTINGS_COMMAND, in one place.
+//
+// There used to be three copies of this field list - one in
+// send_div_settings() and one at each end that receives - and adding a
+// field to DIV_SETTINGS meant remembering all three. Twice it was not
+// remembered, and the symptom was not a compile error but a control that
+// did nothing predictable at the far end, because the receiver filled the
+// fields it knew about and left the rest holding whatever was on the
+// stack. One list, used by all three, is the fix.
+//
+static inline void div_settings_to_command(DIV_SETTINGS_COMMAND *c, const DIV_SETTINGS *s) {
+  c->mode           = s->mode;
+  c->ref            = s->ref;
+  c->follow_filter  = s->follow_filter;
+  c->weighting      = s->weighting;
+  c->hold           = s->hold;
+  c->normalise      = s->normalise;
+  memset(c->pad, 0, sizeof(c->pad));
+  c->centre         = to_double(s->centre);
+  c->width          = to_double(s->width);
+  c->tau            = to_double(s->tau);
+  c->hang           = to_double(s->hang);
+  c->coherence_min  = to_double(s->coherence_min);
+  c->resolution     = to_double(s->resolution);
+  c->band_centre    = to_double(s->band_centre);
+  c->band_width     = to_double(s->band_width);
+  c->carrier_centre = to_double(s->carrier_centre);
+  c->carrier_width  = to_double(s->carrier_width);
+  c->digital_centre = to_double(s->digital_centre);
+  c->digital_width  = to_double(s->digital_width);
+  c->band_cohmin    = to_double(s->band_cohmin);
+  c->carrier_cohmin = to_double(s->carrier_cohmin);
+  c->digital_cohmin = to_double(s->digital_cohmin);
+  c->rade_cohmin    = to_double(s->rade_cohmin);
+}
+
+static inline void div_settings_from_command(DIV_SETTINGS *s, const DIV_SETTINGS_COMMAND *c) {
+  //
+  // Zeroed first: a field this build does not know about then arrives as
+  // zero rather than as stack contents.
+  //
+  memset(s, 0, sizeof(*s));
+  s->mode           = c->mode;
+  s->ref            = c->ref;
+  s->follow_filter  = c->follow_filter;
+  s->weighting      = c->weighting;
+  s->hold           = c->hold;
+  s->normalise      = c->normalise;
+  s->centre         = from_double(c->centre);
+  s->width          = from_double(c->width);
+  s->tau            = from_double(c->tau);
+  s->hang           = from_double(c->hang);
+  s->coherence_min  = from_double(c->coherence_min);
+  s->resolution     = from_double(c->resolution);
+  s->band_centre    = from_double(c->band_centre);
+  s->band_width     = from_double(c->band_width);
+  s->carrier_centre = from_double(c->carrier_centre);
+  s->carrier_width  = from_double(c->carrier_width);
+  s->digital_centre = from_double(c->digital_centre);
+  s->digital_width  = from_double(c->digital_width);
+  s->band_cohmin    = from_double(c->band_cohmin);
+  s->carrier_cohmin = from_double(c->carrier_cohmin);
+  s->digital_cohmin = from_double(c->digital_cohmin);
+  s->rade_cohmin    = from_double(c->rade_cohmin);
 }
 
 #endif

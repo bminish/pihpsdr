@@ -3048,7 +3048,20 @@ static void div_settings_load(const DIV_SETTINGS *s) {
 // than being sent, so a client need only ship its control state and never
 // has to reason about restarts.
 //
-void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action) {
+static void div_settings_validate(DIV_SETTINGS *s);
+
+void diversity_auto_apply_settings(const DIV_SETTINGS *in, int action) {
+  //
+  // Validate whatever arrives, wherever it arrived from. This is the one
+  // door every settings block comes through - the menu, a client, a
+  // properties restore - and a block that has been over the wire has been
+  // out of this program's hands. Cheaper than trusting each caller, and it
+  // is what stops an out-of-range field becoming a control that behaves
+  // strangely rather than one that is refused.
+  //
+  DIV_SETTINGS vs = *in;
+  div_settings_validate(&vs);
+  const DIV_SETTINGS *s = &vs;
   const int    old_mode   = div_auto_mode;
   const int    old_ref    = div_auto_ref;
   const int    old_follow = div_auto_follow_filter;
