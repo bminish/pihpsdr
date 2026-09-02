@@ -572,7 +572,7 @@ static void update_visibility(void) {
                                 "coherence - so the same percentage asks for less "
                                 "signal here than it does in the other references. "
                                 "Zero, the default, is the behaviour before this "
-                                "reference had a threshold at all."
+                                "reference had a threshold at all - and is what it should stay at. On a marginal signal the pilot quality reads near zero while the modem decodes perfectly well: 72 % of one capture's locked blocks are below 0.05 with the modem in sync on 98 % of frames, so raising this would hold the loop through a working decode."
                                 : "Hold below this coherence. Each reference keeps its "
                                 "own value, because each measures the coherence over "
                                 "different bins: the whole window in Window and "
