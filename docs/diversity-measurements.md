@@ -97,6 +97,21 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 33** is the marginal RADE signal this document has wanted since
+its first findings, and it is decode-scored. On `165826` one antenna
+recovers **176 frames where the other recovers 323**, and the combiner
+329 - the first capture where diversity shows up as frames rescued rather
+than as decibels on frames that were never at risk. It also says something
+uncomfortable about the rest of the document: **the correlator's health
+readings do not track decode.** Sweeping hang moves lock uptime from 38 %
+to 94 % with no measurable change in synced frames, and `use_ratio` from
+2.50 to 3.00 drops uptime twelve points while decode improves. Two
+consequences: the standing recommendation to move `RADE_USE_RATIO` to 3.00
+is **withdrawn** - decode collapses at 3.50, so the headroom is one step,
+not two - and the RADE coherence gate added for Finding 26 must stay at
+zero, because 72 % of this capture's locked blocks read a quality below
+0.05 while the modem holds sync on 98 % of frames.
+
 **Finding 32** answers the operator's complaint that the level rises
 whether or not the SNR does. It does, by **+2.9 to +9.4 dB more than the
 SNR it buys**, and on three captures of six the band gets louder while
@@ -297,6 +312,8 @@ recording.
 | `142026` | 11.65999 | AM | Window, **flat** | **DRM mode B, 10 kHz** - received in `AM` with a +/-6 kHz filter. ADC1 at **23 dB of attenuation**; operator cycles objective, reference and weighting |
 | `142333` | 21.04004 | CWL | Window, coherence | **15 m CW**, nfft 65536, **both attenuators swept 0-4 dB** |
 | `154822` | 14.11781 | USB | Window, coherence | **50 baud FSK, 205 Hz shift**, stops and idles on mark, then a **second source** appears out of band. No operator changes |
+| `165548` | 7.17700 | **LSB** | RADE V1 | 40 m RADE, first capture **outside a DIG mode**, locked 87 %, quality 0.26 |
+| `165826` | 7.17700 | DIGL | RADE V1 | **the marginal one** - quality 0.010, pilot SNR -20 dB, nfft 65536, hang 3.0 s |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -318,6 +335,12 @@ Averaging control while recording. See Findings 17, 18 and 20.
 `115357` is a second 40 m RADE capture at a different dial frequency from
 the 7.047 MHz set, recorded to catch a deliberate slow QSY. See
 Finding 19.
+
+`165548` and `165826` are RADE on 40 m, and `165826` is the **marginal
+signal** this document had been asking for since its first findings: pilot
+quality 0.010 against the previous weakest at 0.15, and the first capture
+where a single antenna fails to recover a large share of the frames. Both
+are decode-scored against librade. See Finding 33.
 
 `154822` is the first capture with **two identified sources in it**, told
 apart by their inter-arm signatures rather than by their frequencies, and
@@ -3436,6 +3459,142 @@ that the correlator path returns before reaching, so `div_norm` stays at
 1.0 there. The level problem is worst on the wideband references, which is
 where an operator meets it, but this is a gap rather than a decision.
 
+## Finding 33: a marginal RADE signal at last — and the correlator's health readings do not track it
+
+Two captures on 7.177 MHz, both RADE V1, both with the attenuators at
+zero and neither touched by the operator during the minute.
+
+| | `165548` | `165826` |
+|---|---|---|
+| mode, filter | **LSB**, -2550..-150 | DIGL, -2500..-500 |
+| block | 170.7 ms (nfft 32768) | **341.3 ms** (nfft 65536) = 2.84 modem frames |
+| averaging, hang | 3.41 s, 5.20 s | 0.84 s, **3.00 s** |
+| lock uptime, replayed | 87 % from 3 acquisitions | **57 % from 2** |
+| mean pilot SNR | -6.4 dB | **-15.9 dB** |
+| mean quality | 0.26 | **0.048** |
+| arm 1 - arm 0, band SNR | -0.9 dB | -0.6 dB |
+| inter-arm noise coherence | 0.69 | 0.74 |
+
+`165548` is the first RADE capture taken in **LSB** rather than a DIGU/DIGL
+mode. `div_rade_side_expected()` derives the pilot bank from the passband
+rather than from the mode name, and it picks bank 0 and locks, which is
+what that design was for; it also means the settings came from the **SSB**
+modal block rather than the DIGITAL one.
+
+`165826` is what this document has been asking for since the first
+findings were written: **a genuinely marginal signal.** Its pilot quality
+median is 0.010 and its pilot SNR median is -20.0 dB, against the
+previous weakest, `202743`, at 0.15 and -5.9 dB.
+
+### Decode, on a signal where sync actually fails
+
+Three librade receivers over `165826`:
+
+| stream | rx frames | in sync | sync % | mean SNR |
+|---|---|---|---|---|
+| arm 0 | 323 | 319 | 98.8 % | -3.0 dB |
+| **arm 1** | **176** | **170** | 96.6 % | -4.7 dB |
+| correlator | **336** | **329** | 97.9 % | -3.5 dB |
+
+**Arm 1 recovered 176 frames where arm 0 recovered 323**, on two antennas
+whose wideband band SNR differs by 0.6 dB. That gap is the first thing in
+this document that only decode could have found - and it is Trap 3 made
+concrete, because the mean SNR column says arm 1 is 1.7 dB worse while the
+frame count says it is missing nearly half the traffic.
+
+The combiner is **+10 synced frames over the better arm** while reading
+-0.6 dB on mean SNR, which is Trap 3 pointing both ways again; the frame
+count is the trusted column and it is positive. Every earlier capture
+decoded at 99 %+ on either antenna alone, so this is the first time the
+combiner's value shows up as frames recovered rather than as decibels on
+frames that were never at risk.
+
+### The correlator's own health readings do not track decode
+
+This is the finding that matters, and it qualifies a good deal of what is
+above it in this document.
+
+Sweeping **hang** on `165826` moves lock uptime enormously and decode not
+at all:
+
+| hang | lock uptime | acquisitions | synced frames vs the better arm |
+|---|---|---|---|
+| 1.0 s | **38 %** | 5 | +22 |
+| 3.0 s (as recorded) | 57 % | 2 | +10 |
+| 5.2 s (the default) | 83 % | 2 | +7 |
+| 10.0 s | **94 %** | 1 | +28 |
+
+**Fifty-six points of lock uptime, and the decode column does not move.**
+Sweeping `use_ratio` says the same thing from the other side: 2.50 to 3.00
+takes lock uptime from 57 % to 45 % while decode goes from +10 to +30
+frames - the wrong way, if uptime meant anything.
+
+How much of that is scatter? Across the eight near-equivalent
+configurations above the correlator's advantage ranges **+7 to +30 frames**
+on a total near 330, so differences under about twenty frames are not
+measurable here. On that reading hang does nothing, `use_ratio` from 2.25
+to 3.00 does nothing, and one point stands well outside: `use_ratio` 3.50
+gives **-53 frames**.
+
+**Averaging does nothing to the detector at all**, as it should - tau is
+the weight's time constant, not the correlator's. Lock uptime is 0.566
+at every setting from 0.2 to 10 s.
+
+So the correlator's uptime, quality and pilot SNR describe the health of
+*the pilot lock*, and this capture shows they can be nearly uncoupled from
+what the modem does with the audio. Every threshold sweep earlier in this
+document is scored on lock uptime; on strong captures that was harmless,
+because everything decoded anyway. On a marginal one it is the wrong
+instrument.
+
+### What that does to the threshold policy
+
+"False alarms" carries a standing assessment that `RADE_USE_RATIO` should
+move from 2.50 to 3.00 - justified by a false-alarm margin of 5 %, held
+back only because the case rested on one mediumwave capture and the set
+had no marginal signal in it. It has one now.
+
+| `use_ratio` | 2.00 | 2.25 | 2.50 | 2.75 | 3.00 | 3.50 | 4.00 |
+|---|---|---|---|---|---|---|---|
+| `165826`, synced frames vs the better arm | -3 | +27 | +10 | +26 | **+30** | **-53** | -11 |
+| `165548`, the same | -12 | -12 | -8 | -12 | -12 | -8 | -8 |
+
+Decode is flat from 2.25 to 3.00 and **collapses at 3.50**. The older
+sweep put the cliff between 3.50 and 4.00; on a marginal signal it is
+between 3.00 and 3.50. So a move to 3.00 would leave **one step** of
+headroom rather than two, and the argument for it - that nothing measurable
+happens between 2.25 and 3.50 - is no longer true of the set.
+
+**The recommendation therefore changes: leave `RADE_USE_RATIO` at 2.50 and
+stop treating 3.00 as pending.** Nothing is gained at 3.00 that is not
+already had at 2.50, and the cliff is closer than it was thought to be.
+
+### And the RADE coherence gate must stay at zero
+
+The per-reference threshold added for Finding 26 gave RADE V1 a gate of its
+own, defaulting to zero because that is what it replaced. This capture is
+the argument for leaving it there. On its locked blocks the quality is
+below **0.05 on 72 %**, below 0.10 on 82 % and below 0.20 on 98 % - while
+the modem holds sync on 98 % of frames. Any non-zero setting would hold
+the loop through most of a working decode.
+
+An operator who raises that control because the quality readout looks bad
+would be acting on the one number this finding shows is uncoupled from the
+result. The menu tooltip says what the quantity is; it does not say that.
+
+### Two smaller things
+
+The alias resolver acts on `165548` and correctly declines on `165826`.
+With `alias_margin` set out of range the first loses 0.42 dB of pilot SNR
+(-6.44 to -6.86) and 0.021 of quality; the second is **bit-identical**,
+so the resolver left the weakest signal in the set alone rather than
+stepping it about. Finding 15 worried that a wrong step is worse than a
+slow one; this is the case that would have shown it.
+
+The zero-weight guard of Finding 11 fires on **neither** capture - 0.0 %
+of blocks at exactly zero, on the two weakest signals recorded. That is
+the ninth and tenth capture it has been checked against.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -3517,6 +3676,16 @@ and 4.00, where the two weakest captures lose 6 and 19 points. `202743`
 matters most here: pilot SNR -5.9 dB, quality 0.15, eight acquisitions in
 a minute. It is the only genuinely marginal capture in the set, and 3.00
 costs it one point.
+
+**Superseded by Finding 33.** The assessment below was written on a set
+with no marginal capture in it and is scored on lock uptime, which that
+finding shows can be nearly uncoupled from decode. On `165826` - pilot
+quality 0.010 - decode is flat from `use_ratio` 2.25 to 3.00 and collapses
+at 3.50, so a move to 3.00 would leave one step of headroom rather than
+two and gains nothing that 2.50 does not already have. **The
+recommendation is now to stay at 2.50 and stop treating 3.00 as pending.**
+The paragraph that follows is left as written, because the false-alarm
+half of it still stands.
 
 **Assessment: a change to 3.00 is justified by the measurements, and is
 not being made yet.** It would put the threshold 26 % above the false
@@ -3638,6 +3807,18 @@ holds is the false-alarm line, and that part stands.
   the radio is listening, so the operator's view of it - a lock that
   settles, then moves 8 Hz a few seconds later, with the menu's frequency
   readout following - can be checked against what the loop should do.
+- **The correlator's health readings are not a proxy for decode, and most
+  of this document's RADE sweeps are scored on one.** Finding 33 moves
+  lock uptime on `165826` by fifty-six points, from 38 % to 94 %, with no
+  measurable change in synced frames; `use_ratio` from 2.50 to 3.00 drops
+  uptime twelve points while decode improves. On the strong captures this
+  never mattered, because everything decoded anyway. What is not known is
+  how much of the earlier threshold, hang and acquisition work would
+  survive being re-scored on decode - the tooling is there
+  (`score_rade --set`), the captures are there, and it is a few hours of
+  compute rather than new measurement. Until that is done, treat every
+  lock-uptime figure in this document as a statement about the pilot lock
+  and not about the audio.
 - **`202743` moved and cannot be checked.** It is the one capture where
   the resolver's step is not corroborated by a quality improvement: mean
   pilot SNR went from -5.92 to -5.85 dB, which is nothing. On a capture
@@ -3682,9 +3863,10 @@ holds is the false-alarm line, and that part stands.
   gap between the on-air and replayed rows in Finding 6 is not understood.
   A voice capture several averaging times long, armed before the loop has
   converged, would settle it.
-- **No capture yet is marginal.** Every over here decoded at 99 %+ on
-  either antenna alone. The case where diversity actually matters is the
-  one that is hard to catch and easy not to bother recording.
+- **Closed: the set now has a marginal capture.** `165826` decodes 176
+  frames on one antenna against 323 on the other and 329 combined, at a
+  pilot quality of 0.010 (Finding 33). What it opened in exchange is
+  larger than what it closed - see the next item.
 
 - **The 20 Hz retune tolerance is measured at its lower end only.**
   Finding 19 closes the original item: on `115357` an 18 Hz walk moved
