@@ -79,6 +79,12 @@ extern double div_auto_hang;            // hold a RADE lock this long after the
                                         // pilot goes away, before re-acquiring
 extern double div_auto_coherence_min;   // hold below this coherence
 extern int    div_auto_weighting;       // DIV_WEIGHT_FLAT / _COHERENCE
+//
+// Hold the combined output at the level of arm 0 alone rather than
+// letting it rise with the array gain. Off by default; Sum and Best only.
+// See DIV_NORM_TAU in diversity_auto.c.
+//
+extern int    div_auto_normalise;
 extern double div_auto_resolution;      // requested bin width, Hz
 
 //
@@ -232,6 +238,7 @@ typedef struct _div_settings {
   int    ref;               // DIV_REF_*
   int    follow_filter;
   int    weighting;
+  int    normalise;
   int    hold;
   double centre, width;
   double tau, hang, coherence_min, resolution;

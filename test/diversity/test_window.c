@@ -34,6 +34,7 @@ int diversity_enabled = 1;
 int radio_is_remote = 0;
 int cw_keyer_sidetone_frequency = 800;
 double div_cos = 1.0, div_sin = 0.0, div_gain = 0.0, div_phase = 0.0;
+double div_norm = 1.0;
 //
 // The engine reads the two step attenuators as part of its analysis
 // context, so a change of either restarts the statistics.
@@ -543,6 +544,110 @@ static int cw_follow_case(int mode, const char *name, double tone, int want_trac
   return ok;
 }
 
+/* ------------------------------------------------------------------ */
+/* 6. the output-level normaliser                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * receiver.c forms z0 + w*z1 with arm 0 at unity gain, so the combined
+ * output is louder than one antenna by whatever the array does to it -
+ * and that rise is not signal. div_norm is meant to take it back out.
+ *
+ * Checked three ways, because each is a different way to get it wrong:
+ * the scale must actually cancel the level rise; it must be exactly 1
+ * when the operator has not asked for it; and it must be exactly 1 in
+ * Null, whose whole purpose is to make the output quieter.
+ */
+static int norm_case(int mode, int on, const char *name, double *level_db) {
+  const int rate = 48000, nfft = 4096;
+  const double hr = 0.62, hi = -0.48;
+  rx0.sample_rate = rate;
+  rx0.filter_low  = -3000;
+  rx0.filter_high = 3000;
+  vfo[0].mode = modeUSB;
+  vfo[0].frequency = 7100000;
+  vfo[0].ctun_frequency = 7100000;
+  vfo[0].offset = 0;
+  div_auto_ref = DIV_REF_BAND;
+  div_auto_mode = mode;
+  div_auto_follow_filter = 1;
+  div_auto_tau = 1.0;
+  div_auto_coherence_min = 0.30;
+  div_auto_weighting = DIV_WEIGHT_FLAT;
+  div_auto_resolution = 12.0;
+  div_auto_normalise = on;
+  div_cos = 1.0;
+  div_sin = 0.0;
+  div_gain = 0.0;
+  div_phase = 0.0;
+  div_norm = 1.0;
+  srand(37);
+  diversity_auto_start();
+  double ph = 0.0;
+  double p0 = 0.0, pout = 0.0;
+  long np = 0;
+
+  for (int b = 0; b < 80; b++) {
+    for (int n = 0; n < nfft; n++) {
+      ph += 2.0 * M_PI * 700.0 / rate;
+      const double s = cos(ph), t2 = sin(ph);
+      const double i0 = s + 0.02 * frand(), q0 = t2 + 0.02 * frand();
+      const double i1 = hr * s - hi * t2 + 0.02 * frand();
+      const double q1 = hr * t2 + hi * s + 0.02 * frand();
+      diversity_auto_sample(i0, q0, i1, q1);
+
+      /* the last twenty blocks, once the loop has settled */
+      if (b >= 60) {
+        const double is = (i0 + (div_cos * i1 - div_sin * q1)) * div_norm;
+        const double qs = (q0 + (div_sin * i1 + div_cos * q1)) * div_norm;
+        p0   += i0 * i0 + q0 * q0;
+        pout += is * is + qs * qs;
+        np++;
+      }
+    }
+
+    settle();
+  }
+
+  g_usleep(300000);
+  const double norm = div_norm;
+  diversity_auto_stop();
+  *level_db = 10.0 * log10(pout / p0);
+  printf("  %-28s div_norm %.4f -> output %+0.2f dB against arm 0 alone\n",
+         name, norm, *level_db);
+  (void)np;
+  return 1;
+}
+
+static int test_normalise(void) {
+  double off = 0.0, on = 0.0, nul = 0.0;
+  norm_case(DIV_AUTO_SUM,  0, "Sum, normaliser off", &off);
+  norm_case(DIV_AUTO_SUM,  1, "Sum, normaliser on",  &on);
+  norm_case(DIV_AUTO_NULL, 1, "Null, normaliser on", &nul);
+  int ok = 1;
+
+  if (!(off > 1.0)) {
+    printf("  FAIL: Sum did not raise the level, so there is nothing to test\n");
+    ok = 0;
+  }
+
+  if (fabs(on) > 0.5) {
+    printf("  FAIL: normaliser left %+0.2f dB of level rise, wanted 0 +/- 0.5\n", on);
+    ok = 0;
+  }
+
+  if (!(nul < -1.0)) {
+    printf("  FAIL: Null was normalised - its output should still be quieter\n");
+    ok = 0;
+  }
+
+  if (ok) {
+    printf("  PASS: %+0.2f dB becomes %+0.2f dB, and Null keeps its %+0.2f dB\n", off, on, nul);
+  }
+
+  return ok;
+}
+
 static int test_cw_follow(void) {
   printf("  window following the filter; sidetone %d Hz\n", cw_keyer_sidetone_frequency);
   printf("  the passband must land about the zero beat, not a pitch away from it\n");
@@ -584,6 +689,8 @@ int main(int argc, char **argv) {
   int d = test_cw_zero();
   printf("\n");
   int e = test_cw_follow();
-  printf("\n%s\n", (a && b && c && d && e) ? "PASS" : "FAIL");
-  return (a && b && c && d && e) ? 0 : 1;
+  printf("\n");
+  int g = test_normalise();
+  printf("\n%s\n", (a && b && c && d && e && g) ? "PASS" : "FAIL");
+  return (a && b && c && d && e && g) ? 0 : 1;
 }

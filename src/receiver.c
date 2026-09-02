@@ -1312,6 +1312,14 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
   //
   double i_sample = i0 + (div_cos * i1 - div_sin * q1);
   double q_sample = q0 + (div_sin * i1 + div_cos * q1);
+  //
+  // ...and hold it at the level of arm 0 alone, if the operator asked
+  // for that. div_norm is 1.0 otherwise, and always in Null. The array
+  // gain is real work but it is not signal, and hearing the band get
+  // louder is not the same as hearing it get better.
+  //
+  i_sample *= div_norm;
+  q_sample *= div_norm;
   rx_add_iq_samples(rx, i_sample, q_sample);
 }
 

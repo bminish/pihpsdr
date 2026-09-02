@@ -243,6 +243,7 @@ extern int n_adc;
 extern int diversity_enabled;
 extern int div_indep_att;              // ADC1 keeps its own step attenuator in DIVERSITY
 extern double div_cos, div_sin;
+extern double div_norm;         // output-level normaliser, 1.0 when off
 extern double div_gain, div_phase;
 
 extern int capture_state;

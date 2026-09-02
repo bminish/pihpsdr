@@ -292,6 +292,13 @@ int diversity_enabled = 0;
 int div_indep_att = 0;
 double div_cos = 1.0;      // I factor for diversity
 double div_sin = 1.0;      // Q factor for diversity
+//
+// Scales the combined output so that it stays at the level of arm 0
+// alone, instead of rising by whatever the array does to it. 1.0 unless
+// the operator turns the normaliser on - see div_auto_normalise and
+// DIV_NORM_TAU in diversity_auto.c.
+//
+double div_norm = 1.0;
 double div_gain = 0.0;     // gain for diversity (in dB)
 double div_phase = 0.0;    // phase for diversity (in degrees, 0 ... 360)
 

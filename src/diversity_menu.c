@@ -85,6 +85,7 @@ static GtkWidget *hang_scale = NULL;
 static GtkWidget *coh_scale = NULL;
 static GtkWidget *res_combo = NULL;
 static GtkWidget *weight_combo = NULL;
+static GtkWidget *norm_b = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
@@ -263,6 +264,7 @@ static void cleanup(void) {
     coh_scale = NULL;
     res_combo = NULL;
     weight_combo = NULL;
+    norm_b = NULL;
     status_label = NULL;
     arm_label = NULL;
     hold_b = NULL;
@@ -998,6 +1000,8 @@ static void div_populate_from_settings(void) {
 
   if (weight_combo) { gtk_combo_box_set_active(GTK_COMBO_BOX(weight_combo), div_auto_weighting); }
 
+  if (norm_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise); }
+
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
 
   if (hang_scale)   { gtk_range_set_value(GTK_RANGE(hang_scale), div_auto_hang); }
@@ -1270,6 +1274,15 @@ static void res_changed_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
+static void norm_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  if (updating_from_auto) { return; }
+
+  div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  div_send_settings(DIV_ACTION_NONE);
+}
+
 static void weight_changed_cb(GtkWidget *widget, gpointer data) {
   div_auto_weighting = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
   diversity_auto_reset();
@@ -1533,6 +1546,20 @@ void diversity_menu(GtkWidget *parent) {
                               "answer. Flat is the older behaviour.");
   gtk_grid_attach(GTK_GRID(grid), weight_combo, 1, 13, 1, 1);
   g_signal_connect(weight_combo, "changed", G_CALLBACK(weight_changed_cb), NULL);
+  norm_b = gtk_check_button_new_with_label("Hold output level (Sum, Best)");
+  gtk_widget_set_tooltip_text(norm_b,
+                              "Keep the combined output at the level of the first "
+                              "antenna alone, instead of letting it rise with the "
+                              "array gain. Measured across the capture set the rise "
+                              "is +1.5 to +8 dB, of which +2.9 to +9.4 dB more than "
+                              "the SNR it buys - so without this, switching diversity "
+                              "on makes the band louder whether or not it made it "
+                              "better. With it, an improvement arrives as the noise "
+                              "floor dropping. Sum and Best only: Null exists to make "
+                              "the output quieter and is left alone.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise);
+  gtk_grid_attach(GTK_GRID(grid), norm_b, 1, 14, 1, 1);
+  g_signal_connect(norm_b, "toggled", G_CALLBACK(norm_cb), NULL);
   GtkWidget *tau_label = gtk_label_new("Averaging (s)");
   gtk_widget_set_tooltip_text(tau_label,
                               "Time constant for the gain/phase estimate. "
@@ -1545,22 +1572,22 @@ void diversity_menu(GtkWidget *parent) {
                               "seconds.");
   gtk_widget_set_name(tau_label, "boldlabel");
   gtk_widget_set_halign(tau_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), tau_label, 0, 14, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), tau_label, 0, 15, 1, 1);
   tau_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, DIV_TAU_STEPS, 1.0);
   gtk_scale_set_digits(GTK_SCALE(tau_scale), 2);
   g_signal_connect(G_OBJECT(tau_scale), "format-value", G_CALLBACK(tau_format_cb), NULL);
   gtk_widget_set_size_request(tau_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau));
-  gtk_grid_attach(GTK_GRID(grid), tau_scale, 1, 14, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), tau_scale, 1, 15, 1, 1);
   g_signal_connect(G_OBJECT(tau_scale), "value_changed", G_CALLBACK(tau_cb), NULL);
   coh_label = gtk_label_new("Min coherence (%)");
   gtk_widget_set_name(coh_label, "boldlabel");
   gtk_widget_set_halign(coh_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 15, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 16, 1, 1);
   coh_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 5.0);
   gtk_widget_set_size_request(coh_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
-  gtk_grid_attach(GTK_GRID(grid), coh_scale, 1, 15, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), coh_scale, 1, 16, 1, 1);
   g_signal_connect(G_OBJECT(coh_scale), "value_changed", G_CALLBACK(coh_cb), NULL);
   hang_label = gtk_label_new("Hang (s)");
   gtk_widget_set_tooltip_text(hang_label,
@@ -1573,11 +1600,11 @@ void diversity_menu(GtkWidget *parent) {
                               "still being applied.");
   gtk_widget_set_name(hang_label, "boldlabel");
   gtk_widget_set_halign(hang_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), hang_label, 0, 16, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), hang_label, 0, 17, 1, 1);
   hang_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 1.0, 30.0, 0.5);
   gtk_widget_set_size_request(hang_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(hang_scale), div_auto_hang);
-  gtk_grid_attach(GTK_GRID(grid), hang_scale, 1, 16, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), hang_scale, 1, 17, 1, 1);
   g_signal_connect(G_OBJECT(hang_scale), "value_changed", G_CALLBACK(hang_cb), NULL);
   //
   // The three things done while listening rather than while setting up,
@@ -1628,7 +1655,7 @@ void diversity_menu(GtkWidget *parent) {
   g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
   gtk_box_pack_start(GTK_BOX(buttons), divcap_b, FALSE, FALSE, 0);
 #endif
-  gtk_grid_attach(GTK_GRID(grid), buttons, 0, 17, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), buttons, 0, 18, 2, 1);
   //
   // The status line spans both columns and is held to exactly
   // DIV_STATUS_CHARS characters, so it fits inside the width the controls
@@ -1647,7 +1674,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_label_set_attributes(GTK_LABEL(status_label), attrs);
     pango_attr_list_unref(attrs);
   }
-  gtk_grid_attach(GTK_GRID(grid), status_label, 0, 18, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), status_label, 0, 19, 2, 1);
   //
   // Second line, same treatment: monospace, the same fixed width, so the
   // two line up and neither can widen the dialog.
@@ -1665,7 +1692,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_label_set_attributes(GTK_LABEL(arm_label), attrs);
     pango_attr_list_unref(attrs);
   }
-  gtk_grid_attach(GTK_GRID(grid), arm_label, 0, 19, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), arm_label, 0, 20, 2, 1);
 
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;

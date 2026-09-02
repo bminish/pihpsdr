@@ -31,6 +31,7 @@ int diversity_enabled = 1;
 int radio_is_remote = 0;
 int cw_keyer_sidetone_frequency = 800;
 double div_cos = 1.0, div_sin = 0.0, div_gain = 0.0, div_phase = 0.0;
+double div_norm = 1.0;   /* the output-level normaliser; receiver.c applies it */
 //
 // The engine reads the two step attenuators as part of its analysis
 // context, so a change of either restarts the statistics.

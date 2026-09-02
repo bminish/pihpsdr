@@ -216,6 +216,38 @@
 #define DIV_NRATIO_WIN      5.0
 
 //
+// The output-level normaliser.
+//
+// receiver.c forms z0 + w*z1 with arm 0 pinned at unity, so the combined
+// output is louder than one antenna by whatever the array does to it -
+// measured at +1.5 to +8.0 dB per block across the capture set, of which
+// +2.9 to +9.4 dB *more* than the SNR it bought. That is a level rise
+// with nothing behind it: an operator switching diversity on hears the
+// band get louder and cannot tell whether anything improved.
+//
+// The correction is one number: divide the output by the square root of
+// its own power ratio against arm 0 alone, so the level stays where it
+// was and an SNR gain arrives as the noise floor dropping instead. The
+// ratio is
+//
+//   P_out / P_arm0 = 1 + |w|^2 * (Syy/Sxx) + 2 Re(conj(w) * Sxy) / Sxx
+//
+// over the analysis window, which is the band the operator listens to -
+// not the whole DDC, where an out-of-band signal would drag it about.
+//
+// Smoothed over DIV_NORM_TAU because the raw ratio steps by up to 7 dB
+// between blocks and would pump; smoothed, its block-to-block movement is
+// under 0.31 dB at the ninetieth percentile on every capture measured.
+// Clamped because nothing downstream should ever see a large gain from
+// here. Off by default: it changes what every operator hears, and the
+// part that decides whether it is an improvement - what the AGC does with
+// it - is downstream of the capture tap and cannot be measured from a
+// recording. See Finding 32 in docs/diversity-measurements.md.
+//
+#define DIV_NORM_TAU        1.0     // seconds
+#define DIV_NORM_MAX        4.0     // +/- 12 dB, a guard rail not a setting
+
+//
 // How far the window power must stand above the tracked floor, on both
 // arms, before that floor is taken to be noise.
 //
@@ -399,6 +431,7 @@ double div_auto_tau            = 2.0;
 double div_auto_hang           = 10.0;
 double div_auto_coherence_min  = 0.30;
 int    div_auto_weighting      = DIV_WEIGHT_COHERENCE;
+int    div_auto_normalise      = 0;
 double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 
 //
@@ -487,6 +520,12 @@ static double arm_pw0 = 0.0, arm_pw1 = 0.0;
 // wideband references have no other source for it - see
 // div_arm_nratio_update().
 //
+//
+// The output-level normaliser. div_norm scales the combined output in
+// receiver.c; the three smoothed window statistics behind it are here.
+//
+static double nrm_xx = 0.0, nrm_yy = 0.0, nrm_xy_re = 0.0, nrm_xy_im = 0.0;
+static int    nrm_valid = 0;
 static double nr_f0 = 0.0, nr_f1 = 0.0;        // its own smoother, seeded
 static int    nr_f_valid = 0;
 static double nr_cur0 = 0.0, nr_cur1 = 0.0;    // minimum over the slot in progress
@@ -739,6 +778,9 @@ static void div_reset_stats(void) {
   arm_floor_valid = 0;
   arm_floor0 = arm_floor1 = 0.0;
   arm_pw0 = arm_pw1 = 0.0;
+  nrm_xx = nrm_yy = nrm_xy_re = nrm_xy_im = 0.0;
+  nrm_valid = 0;
+  div_norm = 1.0;
   nr_f0 = nr_f1 = 0.0;
   nr_f_valid = 0;
   nr_cur0 = nr_cur1 = nr_prev0 = nr_prev1 = 0.0;
@@ -1382,6 +1424,62 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
     arm_nratio = m0 / m1;
     arm_nratio_valid = 1;
   }
+}
+
+//
+// Hold the combined output at the level of arm 0 alone. See DIV_NORM_TAU.
+//
+// Uses the weight actually in force - div_cos, div_sin, after slewing and
+// after any hold - rather than the one the solve just produced, because
+// what has to be normalised is what the samples will actually be
+// multiplied by. Runs whether or not the loop is holding: the weight may
+// be frozen but the powers behind the ratio are not.
+//
+// Null is excluded by construction. That objective exists to make the
+// output quieter, and dividing the drop back out would undo the only
+// thing it does.
+//
+static void div_norm_update(double xx, double yy, double xyre, double xyim) {
+  if (!(xx > 0.0)) { return; }
+
+  if (!nrm_valid) {
+    nrm_xx = xx;
+    nrm_yy = yy;
+    nrm_xy_re = xyre;
+    nrm_xy_im = xyim;
+    nrm_valid = 1;
+  } else {
+    const double a = 1.0 - exp(-blocktime / DIV_NORM_TAU);
+    nrm_xx    += a * (xx   - nrm_xx);
+    nrm_yy    += a * (yy   - nrm_yy);
+    nrm_xy_re += a * (xyre - nrm_xy_re);
+    nrm_xy_im += a * (xyim - nrm_xy_im);
+  }
+
+  if (!div_auto_normalise
+      || (div_auto_mode != DIV_AUTO_SUM && div_auto_mode != DIV_AUTO_BEST)
+      || !(nrm_xx > 0.0)) {
+    div_norm = 1.0;
+    return;
+  }
+
+  //
+  // P_out / P_arm0 with the weight in force. conj(w) because nrm_xy is
+  // accumulated as X0 * conj(X1), the same convention as bin_xy.
+  //
+  const double w2 = div_cos * div_cos + div_sin * div_sin;
+  const double ratio = 1.0 + w2 * (nrm_yy / nrm_xx)
+                       + 2.0 * (div_cos * nrm_xy_re + div_sin * nrm_xy_im) / nrm_xx;
+
+  if (!(ratio > 1.0e-12)) { div_norm = 1.0; return; }
+
+  double g = 1.0 / sqrt(ratio);
+
+  if (g > DIV_NORM_MAX) { g = DIV_NORM_MAX; }
+
+  if (g < 1.0 / DIV_NORM_MAX) { g = 1.0 / DIV_NORM_MAX; }
+
+  div_norm = g;
 }
 
 //
@@ -2272,7 +2370,7 @@ static void div_process_block(void) {
     acc_valid = 1;
   }
 
-  double cur_xx = 0.0, cur_yy = 0.0;
+  double cur_xx = 0.0, cur_yy = 0.0, cur_xy_re = 0.0, cur_xy_im = 0.0;
 
   //
   // Per-bin running spectra. Keeping these per bin rather than as four
@@ -2301,6 +2399,12 @@ static void div_process_block(void) {
     //
     cur_xx += i0 * i0 + q0 * q0;
     cur_yy += i1 * i1 + q1 * q1;
+    //
+    // ...and the cross term over the same bins, which is the third thing
+    // the output-level normaliser needs. See div_norm_update().
+    //
+    cur_xy_re += i0 * i1 + q0 * q1;
+    cur_xy_im += q0 * i1 - i0 * q1;
   }
 
   //
@@ -2418,6 +2522,7 @@ static void div_process_block(void) {
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
+  div_norm_update(cur_xx, cur_yy, cur_xy_re, cur_xy_im);
 
   if (acc_xx <= 0.0 || acc_yy <= 0.0 || wsum <= 0.0) {
     div_auto_coherence = 0.0;
@@ -2748,6 +2853,13 @@ void diversity_auto_stop(void) {
   // see the quit flag.
   //
   div_auto_running = 0;
+  //
+  // The scale goes back to unity with the engine. Left where it was, a
+  // stopped loop would go on quietening the audio by whatever the last
+  // block asked for, which is a control that appears to do nothing until
+  // it is turned off.
+  //
+  div_norm = 1.0;
   g_mutex_lock(&mbox_mutex);
   mbox_quit = 1;
   g_cond_signal(&mbox_cond);
@@ -2863,6 +2975,7 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->ref            = div_auto_ref;
   s->follow_filter  = div_auto_follow_filter;
   s->weighting      = div_auto_weighting;
+  s->normalise      = div_auto_normalise;
   s->hold           = div_auto_hold;
   s->centre         = div_auto_centre;
   s->width          = div_auto_width;
@@ -2893,6 +3006,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_auto_ref           = s->ref;
   div_auto_follow_filter = s->follow_filter;
   div_auto_weighting     = s->weighting;
+  div_auto_normalise     = s->normalise;
   div_auto_centre        = s->centre;
   div_auto_width         = s->width;
   div_auto_tau           = s->tau;
@@ -3217,6 +3331,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   }
 
   s->follow_filter = s->follow_filter ? 1 : 0;
+  s->normalise     = s->normalise ? 1 : 0;
 
   if (s->weighting < DIV_WEIGHT_FLAT || s->weighting > DIV_WEIGHT_COHERENCE) {
     s->weighting = DIV_WEIGHT_COHERENCE;
@@ -3295,6 +3410,7 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
   SetPropI1("diversity_group[%d].ref",            g, s->ref);
   SetPropI1("diversity_group[%d].follow_filter",  g, s->follow_filter);
   SetPropI1("diversity_group[%d].weighting",      g, s->weighting);
+  SetPropI1("diversity_group[%d].normalise",      g, s->normalise);
   SetPropF1("diversity_group[%d].centre",         g, s->centre);
   SetPropF1("diversity_group[%d].width",          g, s->width);
   SetPropF1("diversity_group[%d].tau",            g, s->tau);
@@ -3325,6 +3441,7 @@ static void div_group_restore(int g, DIV_SETTINGS *s) {
   GetPropI1("diversity_group[%d].ref",            g, s->ref);
   GetPropI1("diversity_group[%d].follow_filter",  g, s->follow_filter);
   GetPropI1("diversity_group[%d].weighting",      g, s->weighting);
+  GetPropI1("diversity_group[%d].normalise",      g, s->normalise);
   GetPropF1("diversity_group[%d].centre",         g, s->centre);
   GetPropF1("diversity_group[%d].width",          g, s->width);
   GetPropF1("diversity_group[%d].tau",            g, s->tau);
@@ -3369,6 +3486,7 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_auto_hang",           div_auto_hang);
   SetPropF0("diversity_auto_coherence_min",  div_auto_coherence_min);
   SetPropI0("diversity_auto_weighting",      div_auto_weighting);
+  SetPropI0("diversity_auto_normalise",      div_auto_normalise);
   SetPropF0("diversity_auto_resolution",     div_auto_resolution);
   SetPropF0("diversity_band_cohmin",         div_band_cohmin);
   SetPropF0("diversity_carrier_cohmin",      div_carrier_cohmin);
@@ -3396,6 +3514,7 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_auto_hang",           div_auto_hang);
   GetPropF0("diversity_auto_coherence_min",  div_auto_coherence_min);
   GetPropI0("diversity_auto_weighting",      div_auto_weighting);
+  GetPropI0("diversity_auto_normalise",      div_auto_normalise);
   GetPropF0("diversity_auto_resolution",     div_auto_resolution);
   //
   // A file written before these existed carries none of them, and GetProp
