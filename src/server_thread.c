@@ -153,9 +153,29 @@ static int send_periodic_data(gpointer arg) {
   // these keeps a remote operator looking at the same thing the radio is.
   //
   {
-    DIV_STATUS div_status;
-    diversity_auto_get_status(&div_status);
-    send_div_status(remoteclient.sock_tcp, &div_status);
+    //
+    // Only while the feature is actually doing something. At 115 bytes
+    // every 150 ms this is 6.1 kbit/s, which is under one percent of a
+    // link carrying PCM audio and about a fifth of one carrying Opus at
+    // 32 kbit/s - and it was being sent to every remote operator whether
+    // or not they had ever switched diversity on.
+    //
+    // One further message on the falling edge, so that a client which was
+    // watching does not keep showing the last values from when it was
+    // running. diversity_enabled itself reaches a client in the general
+    // radio data at connect, so a client that arrives with the feature off
+    // is not left guessing.
+    //
+    static int div_was_active = 0;
+    const int div_active = (diversity_enabled || div_auto_running);
+
+    if (div_active || div_was_active) {
+      DIV_STATUS div_status;
+      diversity_auto_get_status(&div_status);
+      send_div_status(remoteclient.sock_tcp, &div_status);
+    }
+
+    div_was_active = div_active;
   }
 
   DISPLAY_DATA disp_data;

@@ -299,6 +299,24 @@ double div_sin = 1.0;      // Q factor for diversity
 // DIV_NORM_TAU in diversity_auto.c.
 //
 double div_norm = 1.0;
+
+//
+// The two step attenuators as they stood before DIVERSITY was switched
+// on, so that they can be put back when it is switched off.
+//
+// Diversity is the one mode where an operator has a reason to move the
+// attenuators a long way and for a reason that does not outlive it: the
+// second antenna is often ten to fifteen decibels hotter than the first,
+// and the measured cure is to attenuate it until the two chains match
+// (see Finding 24 in docs/diversity-measurements.md). Twenty decibels
+// left on ADC1 afterwards is deafness on that antenna in every other
+// mode, with nothing on screen to say why.
+//
+// Only touched on a real transition, so switching diversity on twice does
+// not overwrite the saved pair with the values from the first session.
+//
+static int div_saved_att[2] = { 0, 0 };
+static int div_att_saved = 0;
 double div_gain = 0.0;     // gain for diversity (in dB)
 double div_phase = 0.0;    // phase for diversity (in degrees, 0 ... 360)
 
@@ -2331,6 +2349,18 @@ void radio_set_diversity(int state) {
     send_diversity(cl_sock_tcp, state, div_gain, div_phase);
   } else {
     //
+    // Remember where the attenuators were before this started, and put
+    // them back when it ends. See div_saved_att.
+    //
+    const int div_was_on = diversity_enabled;
+
+    if (state && !div_was_on && have_rx_att) {
+      div_saved_att[0] = adc[0].attenuation;
+      div_saved_att[1] = adc[1].attenuation;
+      div_att_saved = 1;
+    }
+
+    //
     // If we have only one receiver, then changing diversity
     // changes the number of HPSR receivers so we restart the
     // original protocol
@@ -2373,6 +2403,19 @@ void radio_set_diversity(int state) {
       diversity_auto_start();
     } else {
       diversity_auto_stop();
+    }
+
+    //
+    // Put the attenuators back. After diversity_auto_stop() and with
+    // diversity_enabled already zero, so that radio_set_adc_attenuation()
+    // does not hand the change forward to a loop that has finished with
+    // it - and through that setter rather than by assignment, so the
+    // sliders and the hardware follow.
+    //
+    if (!state && div_was_on && div_att_saved) {
+      div_att_saved = 0;
+      radio_set_adc_attenuation(0, div_saved_att[0]);
+      radio_set_adc_attenuation(1, div_saved_att[1]);
     }
   }
 
@@ -3006,6 +3049,22 @@ void radio_set_adc_attenuation(int a, int value) {
   if (radio_is_remote) {
     send_adc_attenuation(cl_sock_tcp, a, value);
     return;
+  }
+
+  //
+  // Tell a connected client, so its ATT slider and the Diversity menu's
+  // spin buttons follow an attenuator moved here.
+  //
+  // This used to happen by accident: the diversity status block carries
+  // att0 and att1 and was sent four times a second whether or not
+  // diversity was running, so it doubled as the notification. That block
+  // is now sent only while the feature is active, which is where the
+  // 6 kbit/s belonged - and this is the channel the change should always
+  // have used. 46 bytes when an attenuator moves, against 767 bytes a
+  // second when nothing does.
+  //
+  if (remoteclient.running) {
+    send_adc_data(remoteclient.sock_tcp, a);
   }
 
   schedule_high_priority();

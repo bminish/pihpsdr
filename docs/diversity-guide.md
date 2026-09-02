@@ -568,7 +568,20 @@ therefore stable within a band and jumps when the band changes.
 
 ---
 
-## 9. Where to look next
+## 9. What it costs on a remote link
+
+The analysis runs on the radio; only its conclusions travel. With the
+feature **running**, the server sends the client a 115-byte status block
+every 150 ms - **6.1 kbit/s**, which is under one percent of a link
+carrying PCM audio and about a fifth of one carrying Opus at 32 kbit/s. It
+rides the tick that was going anyway, and `TCP_NODELAY` is not set on this
+socket, so it adds bytes to an existing packet rather than a new one.
+
+With the feature **off**, nothing periodic is sent at all. Moving a control
+costs one 148-byte message; switching diversity on or off costs 30 bytes.
+
+
+## 10. Where to look next
 
 - [`diversity.md`](diversity.md) — the reference: how each part works,
   every control, measured CPU and timings, and the frequency bookkeeping
