@@ -717,6 +717,7 @@ one block from `track` to `search` when the signal stops.
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 12 / 6 / 3 Hz bins. Finer lifts weak signals out of the noise but halves the update rate each step | all but RADE V1 |
 | **Weighting** | Flat or Coherence (see above) | Window |
+| **Hold output level** | Keeps the combined output at the level of arm 0 alone instead of letting it rise with the array gain. Off by default; Sum and Best only. See Finding 32 in [`diversity-measurements.md`](diversity-measurements.md) | Sum, Best |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
 | **Hang** | 1-30 s. How long a lock outlives the pilot before the correlator searches again | RADE V1 |
 | **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md) | all four |

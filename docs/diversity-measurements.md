@@ -97,6 +97,17 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 32** answers the operator's complaint that the level rises
+whether or not the SNR does. It does, by **+2.9 to +9.4 dB more than the
+SNR it buys**, and on three captures of six the band gets louder while
+getting worse. Three corrections were measured; the one taken divides the
+output by its own power ratio against arm 0, which needs no new estimator,
+never boosts by more than 2.7x, and delivers an improvement as the noise
+floor dropping 0.1 to 2.8 dB instead of everything getting louder. It is
+smoothed over a second, because raw it steps 7.65 dB between blocks, and
+**it ships off**: whether it sounds better is downstream of the tap and no
+recording can say.
+
 **Finding 31** is 50 baud FSK on 20 m that stops, idles on its mark tone,
 fades out, and lets a second signal show through. The two are told apart
 by their inter-arm channels - **+4.4 dB at -161 deg against -0.6 dB at
@@ -3333,6 +3344,98 @@ untouched, is exactly what a two-branch array is for, and it is the first
 time this document has been able to show it on two identified signals
 rather than on a signal against its own noise.
 
+## Finding 32: the output level rises whether or not the SNR does
+
+`receiver.c` forms `z0 + w*z1` with arm 0 pinned at unity gain, so the
+combined output is louder than one antenna by whatever the array does to
+it. That much has been in this document since Finding 22. What had not
+been separated is how much of the rise is *earned*.
+
+Per block, medians, everything against arm 0 alone:
+
+| capture | level | noise | signal | SNR | **unearned** |
+|---|---|---|---|---|---|
+| `002534` voice | +1.54 | +1.18 | +1.66 | -1.27 | **+7.77** |
+| `002710` CW | +2.33 | +1.08 | +2.32 | -0.68 | **+9.33** |
+| `003309` FT8 | +2.80 | +1.98 | +2.80 | -1.44 | **+9.43** |
+| `142026` DRM | +5.45 | +4.88 | +5.45 | +0.52 | +4.46 |
+| `154822` FSK, Window | +7.96 | +5.99 | +9.66 | +4.55 | +6.18 |
+| `154822` FSK, FSK/Digital | +5.66 | +2.75 | +6.13 | +2.43 | **+2.85** |
+
+The last column is the level rise less the SNR gain - the part that bought
+nothing. It runs **+2.9 to +9.4 dB**, and on three of the six the loop
+made the band louder while making it *worse*. An operator switching
+diversity on hears the level jump and has no way to tell which happened.
+
+### Three ways to take it back, measured
+
+Each divides the output by something. **A** by the array gain to the
+wanted signal, `|1 + w*h1/h0|`, holding the signal still. **B** by the
+output's own power ratio against arm 0, holding the level still. **C** by
+the noise gain, holding the noise floor still. Per-block medians again:
+
+| capture | normalise by | level | noise | signal | smallest divisor |
+|---|---|---|---|---|---|
+| `002534` | nothing | +1.54 | +1.18 | +1.66 | 1.000 |
+| | A signal gain | +0.69 | +0.83 | +0.17 | 0.524 |
+| | **B output power** | **+0.00** | **-0.09** | +0.00 | 0.950 |
+| | C noise gain | +0.09 | +0.00 | +0.21 | 1.000 |
+| `154822` Window | nothing | +7.96 | +5.99 | +9.66 | 1.000 |
+| | A signal gain | +0.51 | -1.77 | +0.84 | 0.547 |
+| | **B output power** | **+0.00** | **-2.31** | +0.32 | 0.655 |
+| | C noise gain | +2.31 | +0.00 | +2.84 | 0.962 |
+| `154822` FSK/Digital | nothing | +5.66 | +2.75 | +6.13 | 1.000 |
+| | A signal gain | +0.48 | -2.36 | +0.81 | **0.177** |
+| | **B output power** | **+0.00** | **-2.82** | +0.36 | 0.374 |
+| | C noise gain | +2.82 | +0.00 | +3.47 | 1.000 |
+
+All three remove the unearned rise; they differ in what they hold still
+and in how far they can be pushed.
+
+**B was chosen.** It needs no new estimator - the ratio is closed form
+from the three accumulators the solve already keeps:
+
+`P_out/P_arm0 = 1 + |w|^2 (Syy/Sxx) + 2 Re(conj(w) Sxy) / Sxx`
+
+its divisor stayed between 0.37 and 0.96 on every capture, so it only ever
+applies a modest boost and only where the output genuinely fell; and it is
+the friendliest to what sits downstream. Holding the *level* means an AGC
+does nothing and the improvement arrives as the noise floor dropping -
+**0.1 to 2.8 dB** on these captures. C, which is the most literal reading
+of "the level should only rise when the SNR does", holds the noise and
+lifts the signal instead, which an AGC would pull straight back down; the
+operator might hear nothing at all. A reached a divisor of 0.177 - a
+5.6-fold boost - and goes to zero by construction in Null.
+
+### It has to be smoothed
+
+The raw ratio is not usable. Block-to-block movement of the correction, in
+amplitude dB:
+
+| | median | p90 | max |
+|---|---|---|---|
+| B, raw | 0.02 - 0.34 | 0.06 - 1.91 | **0.99 - 7.65** |
+| **B, smoothed over 1 s** | **0.01 - 0.11** | **0.05 - 0.31** | 0.19 - 3.95 |
+
+Unsmoothed it steps by up to 7.65 dB between blocks, which would be
+audible as pumping. At `DIV_NORM_TAU` = 1 s the ninetieth percentile is
+under a third of a decibel everywhere. The one remaining 3.95 dB step is
+on `002710`, where the operator moved the ADC1 attenuator mid-capture -
+a real level change that should move it.
+
+### What is measured and what is not
+
+The tap is ahead of the AGC, the filter and the audio chain, so
+everything above is the level and the noise as the *engine* sees them.
+Whether holding the level makes diversity sound better is downstream of
+that and no recording can answer it. That is why the control ships **off**
+and why there is no measurement here saying it should be on.
+
+RADE V1 is not covered. The three window statistics come from the bin loop
+that the correlator path returns before reaching, so `div_norm` stays at
+1.0 there. The level problem is worst on the wideband references, which is
+where an operator meets it, but this is a gap rather than a decision.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -3637,19 +3740,17 @@ holds is the false-alarm line, and that part stands.
   tuning: six variants of the estimator were tried against seventeen
   scored points and the mean moved between -0.20 and +1.97 dB, which is a
   set too small to choose on.
-- **The combined output has no gain normalisation.** `receiver.c` pins
-  arm 0 at unity, so the array's gain to the wanted signal,
-  `g = 1 + w * h1/h0`, lands directly on the audio: measured median
-  +0.21, +1.50 and +2.38 dB with the *ideal* weight on the three
-  September captures, and +14.8 dB with the shipping one on `002534`
-  (Finding 22). Dividing the output by `g` would hold the signal at its
-  arm-0 level and let the noise floor fall by the SNR gain instead, which
-  is both what an operator expects and what makes an A/B against
-  diversity-off meaningful. It is one complex divide per block by a
-  quantity the solve already has. What is not known is how it interacts
-  with the slew, with Hold, and with the AGC - a weight that is holding
-  while the channel moves would have a stale `g` - so it wants measuring
-  before it is written.
+- **The output-level normaliser has never been listened to.** Finding 32
+  measures the problem (+2.9 to +9.4 dB of level rise buying nothing) and
+  the fix is in, off by default. What no capture can settle is whether
+  holding the level actually sounds better, because the tap is ahead of
+  the AGC and the audio chain. That wants an operator with the control on
+  and off on the same signal, and it is the only thing standing between
+  this and a default. Two smaller gaps go with it: **RADE V1 is not
+  covered**, because the window statistics come from a bin loop the
+  correlator path returns before reaching, and `DIV_NORM_TAU` is a first
+  number chosen so that the ninetieth-percentile step stays under a third
+  of a decibel - not swept.
 - **The attenuation budget is measured over 4 dB and open beyond it.**
   Finding 28 has the first capture with the settings recorded, and both
   arms track the attenuator one for one to within 0.03 dB over 4 dB, which
@@ -4095,6 +4196,42 @@ What the sweep also found and this does **not** fix: the Carrier
 reference's gate has no discriminating power at any threshold, because it
 averages five bins and `γ̂²` sits near `1/N` on noise. That wants
 `DIV_CARRIER_BINS` or a longer average, and is left alone.
+
+### `src/diversity_auto.c`, `src/receiver.c`, `src/radio.c` — hold the output level
+
+Finding 32. `receiver.c` pinned arm 0 at unity and let the combined output
+rise with the array gain, by +1.5 to +8.0 dB per block across the capture
+set - of which +2.9 to +9.4 dB was *more* than the SNR it bought, and on
+three captures of six the band got louder while it got worse.
+
+`div_norm` now scales the combined output, and `div_norm_update()`
+computes it: the output's own power ratio against arm 0 alone, over the
+analysis window, from the three window statistics the bin loop already
+accumulates plus one new cross term. Smoothed at `DIV_NORM_TAU` = 1 s
+because the raw ratio steps by up to 7.65 dB between blocks and would
+pump; clamped at `DIV_NORM_MAX` so nothing downstream can ever see a large
+gain from here.
+
+Three things it deliberately does not do. It is **off by default**,
+because it changes what every operator hears and the part that decides
+whether that is an improvement - what the AGC makes of it - is downstream
+of the capture tap and cannot be measured from a recording. It is
+**excluded from Null**, whose whole purpose is to make the output quieter.
+And it uses `div_cos`/`div_sin`, the weight actually in force after
+slewing and holding, rather than the one the solve just produced, because
+what has to be normalised is what the samples will really be multiplied
+by; it therefore keeps updating while the loop holds, since the weight is
+frozen but the powers behind the ratio are not.
+
+`test_window` checks the three ways this could be wrong: with the
+normaliser on, a Sum that raised the level +4.16 dB comes out at
+**-0.00 dB**; with it off, `div_norm` is exactly 1; and in Null it is
+exactly 1 and the output keeps its -31.55 dB.
+
+**RADE V1 is not covered.** The window statistics come from the bin loop
+that the correlator path returns before reaching, so `div_norm` stays at
+1.0 in that mode. That is a gap, not a decision - see "What is still
+open".
 
 ### What was thrown away
 
