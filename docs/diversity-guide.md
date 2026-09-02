@@ -304,7 +304,7 @@ Dig 12Hz  track  occ  293Hz   -2.1 dB   +38°
 |---|---|
 | First | The reference, and for the transform modes the bin width actually achieved. A `*` means the window ran past the Nyquist limit for this sample rate and was clamped |
 | Second | `track` adapting · `wait` holding, nothing coherent enough to measure · `HOLD` your Hold · `search` looking — in FSK/Digital that means the region is empty or the signal has stopped · `confrm` confirming a RADE candidate · `LOCK` RADE tracking · `fade` RADE locked but the pilot is too weak to measure from |
-| Third | Coherence, or the carrier frequency, or the RADE sideband and pilot percentage, or in FSK/Digital the occupied width found — `no signal` if the region is empty |
+| Third | Coherence, or the carrier frequency, or the RADE sideband and pilot percentage, or in FSK/Digital the occupied width found — `no signal` if the region is empty. The carrier frequency is measured **from the zero beat**, so a correctly tuned signal reads near zero in every mode including CW, where the sidetone is taken back out first — the same correction the panadapter's carrier line uses |
 | Fourth | The weight. Under Hold this is the value the loop has **tracked to**, not the one being applied — the sliders show what is applied, and seeing the two apart is the point of the control |
 
 Under it is a second line comparing the two antennas:

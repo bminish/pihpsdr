@@ -333,6 +333,15 @@ which is checkable against the darker band on the panadapter, and
 `search` means the region is in the right place but empty - as against
 `wait`, which means something was found and then rejected as incoherent.
 
+In **Carrier** the third field is where the tracker has settled, measured
+from the **zero beat** - so a correctly tuned signal reads near zero in
+every mode. In CW that is not the shifted frame's own zero:
+`rx_set_filter()` folds the sidetone into the passband, so
+`div_auto_carrier` sits one pitch away from the note being listened to and
+`div_window_zero()` takes it back out before the number is shown. The
+panadapter's carrier line has always used the same correction, so the
+reading and the mark agree.
+
 A `*` on the first field means the window ran past the Nyquist limit for
 this sample rate and was clamped. Under **Hold** the weight shown is the
 one the loop has *tracked to*, not the one being applied — the sliders

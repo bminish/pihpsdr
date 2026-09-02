@@ -33,6 +33,7 @@
 #include "radio.h"
 #include "rade_correlator.h"
 #include "receiver.h"
+#include "rx_panadapter.h"
 #include "vfo.h"
 
 static GtkWidget *dialog = NULL;
@@ -830,12 +831,24 @@ static int status_update_cb(gpointer data) {
     } else {
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
       //
+      // Measured from the zero beat, which is the shifted frame's own
+      // zero everywhere but CW. There rx_set_filter() folds the sidetone
+      // into the passband, so div_auto_carrier - which is in the same
+      // frame as filter_low and filter_high - sits one pitch away from
+      // the note the operator is listening to, and the readout would show
+      // 800 Hz for a signal tuned exactly right. The panadapter has always
+      // taken it back out before drawing the carrier line; this is the
+      // same correction, through the same helper div_bin_range() places
+      // the window with, so the number and the mark agree.
+      //
+      const double czero = div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+      const double cf = div_auto_carrier - czero;
+      //
       // One decimal, and none at all past 10 kHz: the field is ten
       // characters and "+400000 Hz" is exactly that.
       //
       snprintf(detail, sizeof(detail),
-               (fabs(div_auto_carrier) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz",
-               div_auto_carrier);
+               (fabs(cf) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz", cf);
     }
 
     break;
@@ -1128,7 +1141,28 @@ gboolean diversity_client_set_status(gpointer data) {
   st.track_gain   = from_double(d->track_gain);
   st.track_phase  = from_double(d->track_phase);
   st.rade_quality = from_double(d->rade_quality);
+  //
+  // Whether the panadapter overlay should be on screen, before and after
+  // adopting this block. rx_panadapter.c draws it when diversity is
+  // enabled and the objective is not Off.
+  //
+  const int overlay_was = (diversity_enabled && div_auto_mode != DIV_AUTO_OFF);
   diversity_auto_apply_status(&st);
+  const int overlay_now = (diversity_enabled && div_auto_mode != DIV_AUTO_OFF);
+
+  //
+  // The panadapter repaints its whole surface every frame, so the overlay
+  // clears itself the moment one is drawn - on the radio, where a frame
+  // follows immediately. A client only draws when a spectrum packet
+  // arrives and it passes the width and displaying tests in
+  // client_thread.c, so switching diversity off at the radio could leave
+  // the last frame, green box and all, on screen until those agreed
+  // again. Repaint once here instead of waiting for that.
+  //
+  if (overlay_was && !overlay_now && receivers > 0 && receiver[0] != NULL
+      && receiver[0]->display_panadapter && receiver[0]->panadapter_surface != NULL) {
+    rx_panadapter_update(receiver[0]);
+  }
 
   //
   // The radio's own panel can turn the whole feature on or off while a
