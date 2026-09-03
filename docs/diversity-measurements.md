@@ -102,6 +102,37 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 42 is the Resolution control on air, and the first pair of
+recordings of one signal at two sample rates.** Six SSB captures on
+3 September - four of a 40 m station at 192 and 48 kHz and 12, 6 and 3 Hz
+bins, two of a 17 m station near the MUF. Four results. **The sample rate
+does not matter and the bin width does**: the same bin width gives the
+same block period and the same bin count at either rate, and the two rates
+land within 0.06 dB of each other at two of three settings. What the rate
+decides is which settings *exist* - at 48 kHz the request rounds up at the
+floor, at 192 kHz it rounds down at the cap, and **at 384 kHz two of the
+menu's three options are the same setting and at 768 kHz all three are.**
+**Sum on SSB wants the coarse end, which is where Null already wanted to
+be**: four of six want the shortest block available, and with Finding 40's
+rows that makes seventeen of twenty for Null, the largest being 6.4 dB on
+`122632`. **An empty band costs nothing in the speech and twelve decibels
+between the overs**: on `122843`, two thirds bare noise, a weight fitted
+on the silence alone is five times too large and 83 degrees away, and
+freezing the loop through the silent blocks leaves the in-speech figure
+unmoved to a hundredth of a decibel while the noise in the gaps falls
+**12.18 dB to -0.02**, exactly the better antenna's own floor. And **flat
+weighting is ahead or level on twenty of twenty-four**, by up to 0.93 dB
+on the weak captures, which is the third independent measurement to say
+so and the first on the signals the control was supposed to help.
+
+**Twenty-two point seven decibels is the attenuator's real limit.**
+`122632` has the operator walking ADC1 from 0 to 16 dB in 1 dB steps, and
+because the recorder now writes both attenuator values the noise can be
+fitted against the setting: band noise plus a constant chain floor, 0.23 dB
+rms over sixteen settings, floor 22.7 dB below the band noise. Sixteen
+decibels is not near the limit, which is what Finding 24 could not say
+(Finding 42).
+
 **Findings 34 to 41** are ten captures taken on the night of 2 September -
 three RADE V1 overs on 160 m, two 80 m and one 17 m voice capture, three
 shortwave broadcasts near 13.7 MHz and a fourth on 4.84 MHz - plus the
@@ -439,6 +470,12 @@ recording.
 | `154822` | 14.11781 | USB | Window, coherence | **50 baud FSK, 205 Hz shift**, stops and idles on mark, then a **second source** appears out of band. No operator changes |
 | `165548` | 7.17700 | **LSB** | RADE V1 | 40 m RADE, first capture **outside a DIG mode**, locked 87 %, quality 0.26 |
 | `165826` | 7.17700 | DIGL | RADE V1 | **the marginal one** - quality 0.010, pilot SNR -20 dB, nfft 65536, hang 3.0 s |
+| `122119` | 7.172948 | LSB | Window, coherence | **40 m voice at 192 kHz, 12 Hz bins**, 28 s, objective changed at block 73 |
+| `122211` | 7.172948 | LSB | Window, coherence | the same signal at **3 Hz bins**, nfft 65536 |
+| `122336` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 12 Hz bins, 14 s |
+| `122353` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 6 Hz bins, 60 s |
+| `122632` | 18.143000 | USB | Window, coherence | **17 m near the MUF**, one side of a QSO, 59 % bare noise; **operator walks ADC1 0 to 16 dB in 1 dB steps** |
+| `122843` | 18.143000 | USB | Window, coherence | the same station at **3 Hz bins**, 67 % bare noise - the capture the combiner loses on |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -5342,6 +5379,381 @@ the acquisition-sigma results on two. Nothing here is a claim about all
 eleven constants on all seven recordings, and the counts above say which
 is which.
 
+## Finding 42: six SSB captures cut two ways - resolution against sample rate, and what an empty band does to the loop
+
+Six captures on 3 September, in two groups of the same signal recorded at
+different Resolution settings and different sample rates. That is the
+first time this document has had the Resolution control varied *on air*
+rather than in replay, and the first time the same signal has been taken
+at two sample rates, which is what separates the two.
+
+| | `122119` | `122211` | `122336` | `122353` | `122632` | `122843` |
+|---|---|---|---|---|---|---|
+| frequency | 7.172948 | 7.172948 | 7.172948 | 7.172948 | 18.143000 | 18.143000 |
+| mode, filter | LSB -3050..-150 | same | same | same | USB +150..+3050 | same |
+| sample rate | 192 kHz | 192 kHz | **48 kHz** | **48 kHz** | 192 kHz | 192 kHz |
+| Resolution setting | 12 Hz | **3 Hz** | 12 Hz | **6 Hz** | 12 Hz | **3 Hz** |
+| nfft, achieved bins | 16384, 11.72 Hz | 65536, 2.93 | 4096, 11.72 | 8192, 5.86 | 16384, 11.72 | 65536, 2.93 |
+| block period | 85.3 ms | 341.3 ms | 85.3 ms | 170.7 ms | 85.3 ms | 341.3 ms |
+| length | 28.4 s | 59.7 s | 14.2 s | 59.9 s | 60.0 s | 59.7 s |
+| bank, averaging | 0, 0.71 s | 0, 0.71 s | 0, 0.71 s | 0, 0.71 s | **1**, 0.32 s | **1**, 0.32 s |
+| dropped blocks | 0 | 0 | 0 | 0 | 0 | 0 |
+
+All six ran the Window reference with coherence weighting, hang 5.2 s and
+the window following the filter. `122119` has the operator changing the
+objective at block 73 and `122632` has the ADC1 attenuator stepped
+sixteen times, which is a separate result and is the last section here.
+Every figure below comes from `run_ref`, so the recorded objective and
+Resolution constrain nothing: each capture is re-run through the whole
+engine at each setting.
+
+**The analysis bins are 23.44 Hz here, not the 93.75 Hz of Findings 34
+to 40.** A sub-block of 2048 samples is 93.75 Hz at 192 kHz and 23.44 Hz
+at 48 kHz, so the fixed sub-block that served every earlier finding cannot
+compare two sample rates. The sub-block is chosen per capture instead -
+8192 at 192 kHz, 2048 at 48 kHz - which holds the analysis bin width
+constant and makes the two rates comparable at the cost of not being
+directly comparable with the earlier tables.
+
+### What the two antennas actually differ by
+
+| | `122119` | `122211` | `122336` | `122353` | `122632` | `122843` |
+|---|---|---|---|---|---|---|
+| arm 0 SNR, in speech | 25.66 dB | 24.92 | 26.35 | 22.28 | **7.98** | **9.09** |
+| arm 1 SNR, in speech | 26.43 | 26.97 | 26.39 | 22.12 | **9.37** | **8.86** |
+| level, arm 0 - arm 1 | +7.68 dB | +6.42 | +8.13 | +7.81 | **-15.53** | **-14.98** |
+| noise, arm 0 - arm 1 | +8.37 dB | +8.44 | +8.13 | +7.22 | **-13.44** | **-15.19** |
+| best fixed weight, over the better arm | +2.90 dB | +1.58 | +2.74 | +2.79 | +0.87 | +1.73 |
+| that weight's magnitude | 2.857 | 3.613 | 2.572 | 2.263 | 0.306 | 0.166 |
+| blocks with signal / bare noise | 213 / 1 | 82 / 0 | 128 / 8 | 307 / 1 | 196 / **418** | 45 / **118** |
+
+**The two antennas differ in level and not in SNR.** On 40 m ADC0 runs 6.4
+to 8.1 dB hotter and its noise runs 7.2 to 8.4 dB hotter, so the SNRs land
+within 0.8 dB of each other on all four. On 17 m the arrangement reverses
+and grows: ADC1 is 15 dB hotter in both signal and noise, and the SNRs are
+again within 1.4 dB. That is six captures in a row where **the level
+difference between the antennas says nothing about which one to listen
+to**, which is Finding 24's conclusion arriving from a different
+direction, and it is why the ceiling here is the two-branch maximum-ratio
+bound: +1.6 to +2.9 dB on 40 m, +0.9 to +1.7 dB on 17 m.
+
+On 40 m the noise-aware combining weight predicts that ceiling exactly.
+Maximum ratio combining wants `conj(h1/h0) * (N0/N1)`; on `122119` that is
+`0.402 * 6.87 = 2.76` against a measured optimum of **2.857**, 0.3 dB
+apart. On the 17 m pair it does not: it predicts 0.061 and 0.102 where the
+measured optima are 0.166 and 0.306, a factor of 2.7. At 8 dB of passband
+SNR the channel-ratio estimate is biased by its own noise and the guard
+bins are not measuring the same noise the passband carries, so the closed
+form stops being usable exactly where the combiner needs it most. The
+measured optimum is used as the reference everywhere below.
+
+### Resolution is a block-period control, and the sample rate only decides which settings exist
+
+`div_choose_nfft()` starts at `DIV_MIN_NFFT` 4096 and doubles while the
+bin width is still coarser than the request, stopping at `DIV_MAX_NFFT`
+65536. Two things follow, and both were run rather than reasoned:
+
+- **The block period depends only on the bin width, not on the rate.**
+  12 Hz gives nfft 16384 at 192 kHz and 4096 at 48 kHz, and the engine
+  prints 85.3 ms for both. 6 Hz gives 170.7 ms at both. The window holds
+  the same number of bins either way. There is no mechanism left by which
+  the sample rate could matter, and none of the measurements below finds
+  one.
+- **The rate decides which settings are reachable, and at both ends the
+  request is silently rounded.** At 48 kHz the floor is hit: asking for
+  24 Hz bins on `122336` gives nfft 4096 and **11.72 Hz**, identical to
+  the 12 Hz setting. At 192 kHz the cap is hit: asking for 1.5 Hz on
+  `122119` gives nfft 65536 and **2.93 Hz**, identical to the 3 Hz
+  setting. Both were confirmed from the engine's own report on real runs.
+
+Carried through the menu's three options, the effect is a table the
+operator is never shown. The 48 and 192 kHz rows are measured; 96, 384 and
+768 kHz follow from `div_choose_nfft()` and are arithmetic:
+
+| sample rate | "12 Hz bins" | "6 Hz bins" | "3 Hz bins" |
+|---|---|---|---|
+| 48 kHz | 11.72 Hz, 85 ms | 5.86, 171 | 2.93, 341 |
+| 96 kHz | 11.72, 85 | 5.86, 171 | 2.93, 341 |
+| 192 kHz | 11.72, 85 | 5.86, 171 | 2.93, 341 |
+| **384 kHz** | 11.72, 85 | 5.86, 171 | **5.86, 171 - the same setting** |
+| **768 kHz** | 11.72, 85 | **11.72, 85** | **11.72, 85 - all three the same** |
+
+At 384 kHz two of the three options do the same thing and at 768 kHz all
+three do. `div_auto_binhz` publishes the achieved width and the status
+line shows it, so the information is on screen; the combo box still offers
+three choices as though they were three.
+
+### Sum on SSB wants the coarse end, which is where Null already wanted to be
+
+Sum gain over the better single arm, in speech, at each block period. The
+43 ms column does not exist at 48 kHz - the request rounds to 85 ms - so
+those two cells repeat the 85 ms run and are marked.
+
+| Sum, dB over the better arm | 43 ms | 85 ms | 171 ms | 341 ms | 683 ms |
+|---|---|---|---|---|---|
+| `122119` 40 m, 192 kHz | **+2.58** | +2.46 | +2.35 | +2.19 | +2.19 |
+| `122211` 40 m, 192 kHz | **+1.16** | +0.99 | +0.95 | +0.42 | +0.42 |
+| `122336` 40 m, 48 kHz | *+2.58* | **+2.58** | +2.11 | +1.36 | +0.90 |
+| `122353` 40 m, 48 kHz | *+2.72* | **+2.72** | +2.36 | +2.21 | +1.64 |
+| `122632` 17 m, 192 kHz | +1.47 | **+1.90** | +1.63 | +0.89 | +0.89 |
+| `122843` 17 m, 192 kHz | -4.50 | -3.83 | -2.80 | **-1.62** | -1.62 |
+
+**Four of the six want the shortest block available, and the spread across
+the reachable settings is 0.4 to 2.9 dB.** Finding 40 measured this
+control on Null and called Sum "a different story and a duller one", with
+the best setting varying and a spread under 1.9 dB. On SSB voice through
+the Window reference it is not duller and it does not vary: the coarse end wins on every capture where
+the combiner is working at all. The two exceptions are both on 17 m and
+both explained in the next section.
+
+Null on the same six, measured on the wanted signal because there is no
+separate interferer:
+
+| Null depth below the better arm | 43 ms | 85 ms | 171 ms | 341 ms | 683 ms |
+|---|---|---|---|---|---|
+| `122632` 17 m | **-15.46** | -14.54 | -10.37 | -9.07 | -9.07 |
+| `122843` 17 m | **-14.41** | -14.06 | -12.47 | -9.79 | -9.79 |
+| `122119` 40 m | **-11.82** | -11.12 | -10.01 | -8.83 | -8.83 |
+| `122336` 40 m | *-11.30* | **-11.30** | -11.26 | -9.58 | -8.74 |
+| `122353` 40 m | *-5.87* | **-5.87** | -4.87 | -3.11 | -1.59 |
+| `122211` 40 m | -6.51 | -6.66 | -6.82 | **-7.02** | -7.02 |
+
+**Five of six go the way Finding 40 said, and one reverses by half a
+decibel.** With Finding 40's twelve rows of fourteen that makes **seventeen
+of twenty**, and the largest movement this control has produced anywhere
+in this document is here: `122632` nulls **6.4 dB deeper** at 43 ms than
+at 341 ms. `122211` is the reversal and it is the smallest movement in the
+table.
+
+So both objectives want the same thing, and the menu's ordering - 12 Hz
+first, 3 Hz last and labelled "weak signals" - points at the end that
+loses. On these six the 3 Hz setting is behind the 12 Hz one by 0.27 to
+1.22 dB on Sum and by 1.7 to 5.5 dB on Null. It is ahead on one capture
+per objective: on `122843` for Sum, where Sum should not be running at
+all, and on `122211` for Null, by 0.36 dB.
+
+### An empty band, and what the loop does with it
+
+The two 17 m captures are what the request called a quiet band: the
+station is one side of a QSO near the MUF, and **59 % and 67 % of their
+blocks contain nothing but band noise.** The 40 m captures have one silent
+block in 333 and one in 351. That difference is the whole of the
+difference between the two groups' behaviour.
+
+A weight fitted on the silent blocks alone is not a degraded version of
+the right weight; it is a different weight:
+
+| fitted on | `122632` | `122843` |
+|---|---|---|
+| the blocks with speech in them | 0.306 | 0.166 |
+| the bare-noise blocks alone | **1.710** | **0.854** |
+| phase between the two | **+92 deg** | **+83 deg** |
+
+Five to six times the magnitude and very nearly a quadrature turn away.
+What the noise-only blocks measure is the spatial signature of the band
+noise, which on these two antennas is a different direction from the
+station's, and applying it does what applying a wrong direction does.
+
+The coherence gate keeps most of it out. It opens on **2 to 7 %** of the
+bare-noise blocks on both 17 m captures and on 65 to 82 % of the blocks
+with signal, at every resolution tried; as a signal-presence detector it
+is good. What leaks through the 2 % is nevertheless visible, because the
+weight the loop is left holding between overs is measurable:
+
+| | `122632` | `122843` |
+|---|---|---|
+| engine weight magnitude, 85 ms | 0.896 | 0.388 |
+| measured optimum | 0.306 | 0.166 |
+| over-weight | **+9.3 dB** | **+7.4 dB** |
+| output noise in silence, over the better arm | +3.1 dB | **+12.2 dB** |
+
+On `122843` the combiner is **12.2 dB noisier than the better antenna
+through the two thirds of the minute with nothing in it**, and that figure
+does not move by more than 0.6 dB across every Resolution, Min coherence
+and Averaging setting tried.
+
+**The cost is entirely in what is heard between overs, and none of it is
+in the speech.** Freezing the weight through the bare-noise blocks - a
+perfect signal-presence gate, which nothing in the radio has - separates
+the two exactly:
+
+| `122843`, 85 ms bins | in-speech gain | noise in silence |
+|---|---|---|
+| the engine as it runs | -3.83 dB | **+12.18 dB** |
+| the same weight, frozen through silence | -3.83 dB | **-0.02 dB** |
+
+The in-speech figure does not move by a hundredth of a decibel and the
+silence noise falls twelve decibels onto the better antenna's own floor,
+to two hundredths. The same experiment on `122632` is worth 0.87 dB at
+85 ms and nothing at 171 ms, and on the four 40 m captures it is worth
+0.00 dB, because they have no silence to gate.
+
+That leaves the other half of `122843`'s problem, which the gate cannot
+touch: **during speech the combiner is still 1.6 to 4.5 dB below the
+better antenna**, because its weight is 7.4 dB too large there too. ADC1's
+noise is 15 dB above ADC0's, and any weight that puts appreciable ADC1
+into the sum brings that noise with it. `div_wideband_sum_scale()` exists
+precisely to divide it out, and on 40 m the engine's weight lands 0.8 to
+7.6 dB *below* the optimum rather than above, which is the direction the
+scaled form goes. On 17 m the arm estimate it depends on is valid on only
+**17 to 42 %** of blocks, because the occupancy split needs both occupied
+and unoccupied bins inside a window that is bare noise most of the time.
+This is Finding 20's defect appearing in the one place its own fix cannot
+reach.
+
+### Which of the sliders earn their place
+
+Each control swept at two resolutions on a strong capture and a weak one,
+everything else at its recorded value:
+
+| control, range swept | `122119` 40 m strong | `122353` 40 m strong | `122632` 17 m weak | `122843` 17 m weak |
+|---|---|---|---|---|
+| Min coherence, 0.30 to 0.75 | **0.00 dB** | 0.12 | 0.83 | **2.87** |
+| Averaging, recorded value to 4.0 s | **0.01** | 0.40 | 0.72 | **3.07** |
+| Weighting, coherence to flat | 0.00 | 0.02 | **0.93** | 0.79 |
+| Resolution, across the reachable settings | 0.39 | 0.51 | 1.01 | 2.88 |
+
+**On a strong SSB signal three of the four controls are inert.** Min
+coherence moves `122119` by nothing at all from 0.30 to 0.75, Averaging by
+a hundredth of a decibel, Weighting by nothing. Only Resolution does
+anything, and only half a decibel. On the weak captures
+every one of them matters and the best settings are not the defaults:
+`122632` wants Min coherence 0.45 (+0.39 dB over 0.30) and Averaging 2.0 s
+(+0.72), `122843` wants Min coherence 0.75 (+2.87) and Averaging 4.0 s
+(+2.88) - both of which are simply instructions to stop updating, and
+neither of which gets it back above the better antenna.
+
+Weighting is the one that now has an answer. Flat against coherence over
+all six captures and four resolutions:
+
+| flat minus coherence | 43 ms | 85 ms | 171 ms | 341 ms |
+|---|---|---|---|---|
+| `122632` 17 m | **+0.93** | +0.45 | +0.07 | +0.18 |
+| `122843` 17 m | **+0.72** | +0.74 | +0.79 | -0.02 |
+| `122211` 40 m | +0.04 | +0.08 | +0.08 | +0.02 |
+| `122119` 40 m | -0.00 | -0.00 | +0.00 | +0.00 |
+| `122336` 40 m | -0.04 | -0.04 | +0.00 | -0.00 |
+| `122353` 40 m | -0.02 | -0.02 | -0.01 | -0.02 |
+
+**Flat is ahead or level on twenty of twenty-four, behind by at most
+0.04 dB on the other four, and ahead by up to 0.93 dB on the two weak
+ones.** Finding 27 showed coherence weighting is a gate bias rather than a
+better estimate; Finding 29 measured flat at 0.20 beating coherence at
+0.30 by 0.18 dB and Finding 40 re-measured it at 0.30 dB. This is the
+third independent measurement to point the same way and the first to do it
+on captures where the weighting was supposed to help - the ones whose
+window is mostly noise.
+
+The Best objective was run on all six for comparison, and it is not the
+answer either. At each capture's own best setting it is level with Sum on
+one of the four 40 m captures and 1.2 to 3.0 dB behind on the other three,
+and on `122843` - where Sum is 1.6 to 4.5 dB *below* the better antenna -
+Best gets to within 0.35 dB of it but never above. It also moves the
+output level far more than Sum does: on `122843` the noise in silence
+reaches **+23.9 dB** over the better arm at 341 ms, because Best's "arm 1
+dominant" limit puts the 15 dB hotter chain in charge. `div_auto_normalise`
+is what would hide that and it is **off by default**.
+
+### Sixteen decibels of attenuator, and the first measurement of a chain's own floor
+
+`122632` has the operator walking ADC1's attenuator from 0 to 16 dB in
+1 dB steps - ten of them between 38.1 and 42.2 s, six more between 52.3
+and 54.4 s. The capture records both attenuator values per block, which it
+could not do before the change recorded below, so for the first time the
+fit Finding 24 wanted has its abscissa.
+
+Arm 1's guard-band noise against the setting, fitted as band noise plus a
+constant chain floor:
+
+| | value |
+|---|---|
+| band noise on ADC1 at 0 dB | -24.93 dB |
+| ADC1 chain noise floor | **-47.64 dB** |
+| band-noise margin at 0 dB | **22.7 dB** |
+| fit residual over 16 settings | **0.23 dB rms** |
+| measured drop, 0 to 16 dB | 15.09 dB against an ideal 16.00 |
+| ADC0's noise, unattenuated, throughout | -40.0 dB, +/- 0.5 |
+
+**Sixteen decibels is not near the limit; 22.7 is.** The whole ramp is
+within 0.9 dB of ideal, the residual is a quarter of a decibel over
+sixteen settings, and at 16 dB the fit attributes 0.84 dB of what is left
+to the chain rather than the band. ADC1 lands on ADC0's noise level at
+16.0 dB, which is where the operator stopped. Finding 24 could bound this
+only between -30 and -14 dB of margin across plausible step sizes; the
+answer on this band and this antenna is **22.7 dB, measured to a quarter
+of a decibel**, and the reason it is measurable now is that the recorder
+writes `att1`.
+
+Two things it does not say. The signal is present for the first half of
+the ramp and gone for the second, so the *SNR* cost of the attenuation
+cannot be read from it - only the noise. And 22.7 dB is a property of this
+chain with this antenna against 17 m band noise at midday; a quieter band
+or a smaller antenna moves it down decibel for decibel.
+
+### What this says about simplifying the menu
+
+Taking these six with Findings 24, 27, 29, 39 and 40:
+
+- **Weighting can go, set to flat.** Findings 27, 29, 40 and 42 agree, and
+  the only finding that ever disagreed - Finding 6 - was overturned by
+  Finding 27 on its own evidence. It is inert on strong signals and worth
+  up to 0.93 dB on weak ones, in the direction the control does not
+  default to.
+- **Resolution should default where it does and offer fewer options.**
+  12 Hz is the best or within 0.17 dB of the best on five of these six for
+  Sum, and both objectives want the coarse end. The 3 Hz option is behind
+  on Sum on five captures of six and behind on Null on five of six - not
+  the same five - is labelled "weak signals", and at 384 kHz and above is
+  not even a distinct setting.
+- **Min coherence and Averaging cannot go, and cannot usefully be left to
+  the operator either.** Together they are worth 0.00 to 0.12 dB on a
+  strong signal and 0.7 to 3.1 dB on a weak one, and the value that wins
+  on the weak captures is whichever one stops the loop updating. Both are
+  proxies for a question the radio can already answer - is there anything
+  in the window - and `div_arm_publish()` keeps the per-arm floor estimate
+  running through held blocks precisely so that it can be answered.
+- **Sample rate does not belong on this menu at all**, and nothing puts it
+  there; what belongs is the achieved bin width, which is already
+  published, and some indication that a request has been rounded.
+
+The one thing none of the four controls can fix is `122843`, where the
+combiner is below the better antenna at every setting of everything. That
+is the branch-noise ratio, it is a solve rather than a slider, and it is
+recorded in the open items rather than changed here.
+
+### What this cannot say
+
+The six are two signals, not six. The four 40 m captures are the same
+station over three minutes and the two 17 m captures the same station over
+two, so the sample size for anything channel-dependent is **two**, not
+six, and the resolution ordering above is a within-capture comparison in
+every row for exactly that reason.
+
+The cross-rate comparison is weaker still: four recordings of one station
+over three minutes, two at each rate. Measured as how far each capture
+falls short of its own fixed-weight ceiling, the two rates agree like
+this:
+
+| shortfall from own ceiling | 192 kHz pair | 48 kHz pair | gap |
+|---|---|---|---|
+| 85 ms bins | -0.52 dB | -0.11 | **0.41** |
+| 171 ms | -0.59 | -0.53 | **0.06** |
+| 341 ms | -0.93 | -0.98 | **0.05** |
+
+Six hundredths of a decibel at two of the three settings and four tenths
+at the third, on two captures a rate - which is consistent with no rate
+effect and could not detect a small one. The structural argument that the
+rate cannot matter, because the same bin width gives the same block period
+and the same bin count either way, is the stronger of the two, and the
+measurement only fails to contradict it.
+
+The scoring is also blind to part of what it is scoring. The weight series
+is sampled once per *recorded* block, so on `122211` and `122843` - 341 ms
+blocks - a weight updating every 43 ms is being read four times too
+slowly. That undersampling can only understate the coarse settings, which
+is the direction the result already points, so the ordering is safe and
+the magnitudes at the coarse end are lower bounds.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -5629,6 +6041,43 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
+- **A signal-presence gate is worth twelve decibels between the overs and
+  nothing has one.** On `122843` - 17 m, one side of a QSO, two thirds of
+  the minute bare band noise - the loop's weight raises the output noise
+  in the gaps by **12.18 dB** over the better antenna, and freezing that
+  weight through the silent blocks brings it to **-0.02 dB** with the
+  in-speech figure unchanged to a hundredth of a decibel. The coherence
+  gate is already a good detector, opening on 2 to 7 % of noise-only
+  blocks; what it does not do is *act* on the 93 % it correctly identifies,
+  because holding leaves the last weight applied rather than standing the
+  combiner down. `div_arm_publish()` keeps the per-arm floor estimate
+  running through held blocks for exactly this kind of decision and no
+  path reaches it - the same structural gap Finding 36 records. This is
+  the highest-value unmade change in the document and it needs a design
+  decision, not a measurement (Finding 42).
+- **The branch-noise ratio cannot be measured when the window is mostly
+  noise, which is where it matters most.** `div_wideband_sum_scale()`
+  divides the noise ratio out of the Sum weight and closes Finding 20's
+  defect wherever the occupancy split can find both occupied and
+  unoccupied bins. On the two 17 m captures it can do so on **17 to 42 %**
+  of blocks, and the weight comes out 7.4 to 9.3 dB above the measured
+  optimum with ADC1's noise 15 dB above ADC0's - so on `122843` the
+  combiner sits 1.6 to 4.5 dB *below* the better antenna during speech at
+  every setting of every control. Neither Best nor any slider recovers it.
+  What would is a noise ratio taken from the silent blocks, which is where
+  it is easiest to measure and where the gate already knows it is looking
+  at noise (Finding 42).
+- **The Resolution menu offers three options that are not always three.**
+  Above 192 kHz `div_choose_nfft()`'s cap collapses them: at 384 kHz "3 Hz
+  bins" and "6 Hz bins" are the same setting, at 768 kHz all three are.
+  The achieved width is published in `div_auto_binhz` and shown in the
+  status line, so the operator can see it if they look; nothing greys out
+  an option that will not do what it says. Alongside that, Findings 40 and
+  42 now agree that both objectives want the coarse end, so the option
+  labelled "3 Hz bins (weak signals)" is behind on both on five captures
+  of six. Retiring it, or relabelling the control by block period rather
+  than bin width, is a menu change this document has the evidence for and
+  has not made (Finding 42).
 - **Two captures where the zero-weight guard fired have no decode score
   after the fix.** Finding 11 is fixed and the change is scored on eight
   captures for zero frames and weight jitter, but only six carry a decode
@@ -5697,7 +6146,13 @@ holds is the false-alarm line, and that part stands.
   the shortest block and is not obvious from a control calibrated in
   hertz. What is still open is the menu: nothing tells the operator that
   Resolution is the binding constraint on a null, and nothing tells them
-  it does the opposite on `011225` (Finding 39).
+  it does the opposite on `011225` (Finding 39). **Finding 42 adds five
+  more null rows going the same way and one more reversal, making it
+  seventeen of twenty, and finds Sum on SSB wanting the same coarse end**,
+  so the two objectives no longer disagree about this control. It also
+  finds the menu worse than described: the three options are not three
+  settings above 192 kHz, and the one labelled for weak signals is behind
+  on both objectives on five captures of six.
 - **The window and averaging questions are untested where they matter.**
   Finding 30 measures them on DRM at 40 dB SNR and finds every setting
   within 0.04 dB, which is the right answer there and says nothing about a
@@ -5814,11 +6269,17 @@ holds is the false-alarm line, and that part stands.
   walks ADC0 from 0 to 14 dB in eleven recorded steps on 160 m at night
   and finds signal and noise both falling 14.95 dB, with the arm's own SNR
   against the untouched arm moving from +5.19 to +5.18 dB.** Fourteen
-  decibels are free on the noisier of two antennas on a noisy band. What
-  is still missing is the far end - 20 or 30 dB, where the curve must
-  bend - and the radio's own ADC overload indication alongside it, because
-  the tap is downstream of the DDC and cannot see headroom at the
-  converter. Neither costs more than a minute.
+  decibels are free on the noisier of two antennas on a noisy band.
+  **Finding 42 finds the far end on one band.** `122632` walks ADC1 from 0
+  to 16 dB in 1 dB steps on 17 m at midday, and the recorded settings let
+  the noise be fitted as band noise plus a constant chain floor: the floor
+  sits **22.7 dB** below the band noise, the fit residual is 0.23 dB rms
+  over sixteen settings, and at 16 dB only 0.84 dB of what is left belongs
+  to the chain. So the curve bends at 22.7 dB on that antenna against that
+  band noise, and 16 dB is not near it. What is still missing is the same
+  number on a quiet band, where it must be smaller, and the radio's own
+  ADC overload indication alongside it, because the tap is downstream of
+  the DDC and cannot see headroom at the converter.
 - **The Carrier reference's coherence gate has no discriminating power.**
   Measured over thirty-two captures it clears 0.30 on 34.7 % of blocks
   that hold a signal and 36.0 % of blocks that hold none, and no threshold
@@ -5975,6 +6436,21 @@ everywhere but `202743`), one real trade is quantified and left open
 this list needs compute any more.
 
 ### The captures, in the order they are worth taking
+
+**0a. A second empty-band pair, and one at 384 kHz.** *Ideal:* two minutes
+on any quiet high band with one side of a QSO in them, so that more than
+half the tape is bare noise, taken twice: once at 192 kHz and once at
+**384 kHz**, both at the "3 Hz bins" setting. *Closes:* two things at
+once. The twelve-decibel silence penalty and the branch-noise ratio
+failing on a mostly-empty window both rest on `122843` alone, which is one
+capture on one band; a second pair turns the strongest unmade change in
+this document from an anecdote into a measurement. And the 384 kHz half
+tests the option collapse directly - at that rate "3 Hz" and "6 Hz" are
+arithmetically the same setting, and a capture would show it in the
+recorded nfft rather than in a derivation. *Compromise:* one capture at
+192 kHz is most of the first half; a quiet band with nobody on it at all
+gives the silence figure but not the in-speech one. Cost: two minutes on
+any band above 14 MHz that is not busy (Finding 42).
 
 **0. A second naturally marginal RADE signal.** *Ideal:* RADE V1 on any
 band, on a path deep enough into fading that one antenna alone loses
@@ -6833,6 +7309,11 @@ Finding 40's three re-runs are, in order:
 
 # 3. Finding 29's grid, re-run
 ./run_ref cap.divc --ref band --mode sum --weighting flat|coherence --cohmin T --out w.csv
+
+# 4. Finding 42: Resolution, weighting, gate and objective on the six SSB captures
+./run_ref cap.divc --ref band --mode sum|null|best --resolution 24|12|6|3|1.5 --out w.csv
+./run_ref cap.divc --ref band --mode sum --resolution R --cohmin 0.30|0.45|0.60|0.75 --out w.csv
+./run_ref cap.divc --ref band --mode sum --resolution R --tau 0.5|1.0|2.0|4.0 --out w.csv
 ```
 
 with the weight series scored in Python against the geometry in the table
@@ -6861,6 +7342,30 @@ tapped frame:
 | `235906` | -3050..-150 | +1000..+3000 | +4000..+6000 |
 | `000232` `000412` `000537` | -5000..+5000 | +5500..+9000 | -9500..-5500 |
 | `011225` | -4000..+4000 | +5500..+9000 | -9500..-5500 |
+
+Finding 42 uses a **rate-matched** sub-block instead - 8192 samples at
+192 kHz, 2048 at 48 kHz, so the analysis bin is 23.44 Hz at both and the
+two sample rates can be compared. Its regions, also in the tapped frame:
+
+| capture | window | score guard |
+|---|---|---|
+| `122119` `122211` `122336` `122353` | +150..+3050 | -6500..-4500 |
+| `122632` `122843` | -3050..-150 | -7500..-3500 |
+
+A block counts as carrying signal when the better arm's passband sits more
+than 6 dB over its own guard and as bare noise below 1 dB; the two 17 m
+captures are 28 % and 26 % signal and 59 % and 67 % noise on that test.
+
+Every Finding 42 figure is an in-speech one: the passband is taken over
+the signal blocks and the guard over **the same blocks**, so a weight that
+misbehaves during silence cannot contaminate the SNR of the speech. The
+silence penalty is reported separately, as the output passband power over
+the bare-noise blocks against the better arm's own power there. Scoring
+the two together - guard over every block - is what makes a silence
+problem look like an SNR problem, and it is worth 12 dB of confusion on
+`122843`. The `--resolution` and `--tau` runs above are what produce the
+sliders table; `--set` plays no part, since none of these captures runs the
+RADE correlator.
 
 The RADE window is trimmed inside the operator's filter deliberately: an
 arm-0-only carrier sits at +2.81 kHz, on the +2500 Hz filter edge, 26 dB
