@@ -102,6 +102,24 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 45 ingests the seven outstanding captures and scores the resync
+search on air, and the score is a lesson in what this set cannot measure.**
+Replayed through all six 80 m recordings and decode-scored through the
+shipping engine the change moves +53 frames on one capture, -29 on another
+and nothing at all on four - inside the scatter - **because arm 0 alone is
+between 97.9 % and 100 % in sync on every one of them**, so there is no
+room for a combiner to help. The detector's own readings move exactly the
+way the mechanism predicts, pilot SNR and quality improving on four of six
+while lock uptime falls on two of them, which is what dropping a stale
+lock and keeping a good one looks like - and Findings 33, 35 and 41 all
+say that is not decode. Five of the six reproduce bit-exactly against the
+build that made them; `193105` cannot, because it opens already locked.
+The seventh capture, `123333`, is **95 % bare band noise, the emptiest in
+the document**, and it is the third to measure the open branch-noise-ratio
+defect: ADC1 15.4 dB hot with a signal-to-noise ratio 3.8 dB *worse*, and
+the loop applying seven decibels more weight than maximum ratio wants and
+raising the output 20.07 dB in the speech.
+
 **Finding 44 is the first look at re-acquisition timing, and it is fixed.** `rade_acquire()` runs only while `tracking`
 is zero and `tracking` stays set for the whole hang, so at a changeover
 the correlator spends ten seconds correlating the station that has already
@@ -506,13 +524,13 @@ recording.
 | `122353` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 6 Hz bins, 60 s |
 | `122632` | 18.143000 | USB | Window, coherence | **17 m near the MUF**, one side of a QSO, 59 % bare noise; **operator walks ADC1 0 to 16 dB in 1 dB steps** |
 | `122843` | 18.143000 | USB | Window, coherence | the same station at **3 Hz bins**, 67 % bare noise - the capture the combiner loses on |
-| `123333` | 18.143000 | USB | Window, coherence | the same station again, nfft 16384 - **not ingested** (Finding 44) |
-| `190516` | 3.65400 | DIGL | RADE V1 | **80 m RADE**, nfft 65536, averaging 0.20 s, two overs - **not ingested** (Finding 44) |
-| `190715` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s - **not ingested** |
-| `190822` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s, opens unlocked for 10.9 s - **not ingested** |
-| `190932` | 3.65400 | DIGL | RADE V1 | the same at averaging **2.05 s**, four searches - **not ingested** |
-| `193007` | 3.65400 | DIGL | RADE V1 | nfft 16384 - **opens with a RADE signal too weak to sync**, four failed confirmations in 22 s, then a strong one - **not ingested** |
-| `193105` | 3.65400 | DIGL | RADE V1 | nfft 16384, **six lock-and-drop cycles in the minute** - the changeover case - **not ingested** |
+| `123333` | 18.143000 | USB | Window, coherence | the same station again, nfft 16384 - **95 % bare noise, the emptiest in the set**, ADC1 15.4 dB hot (Finding 45) |
+| `190516` | 3.65400 | DIGL | RADE V1 | **80 m RADE**, nfft 65536, averaging 0.20 s, two overs |
+| `190715` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s |
+| `190822` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s, opens unlocked for 10.9 s |
+| `190932` | 3.65400 | DIGL | RADE V1 | the same at averaging **2.05 s**, four searches |
+| `193007` | 3.65400 | DIGL | RADE V1 | nfft 16384 - **opens with a RADE signal too weak to sync**, four failed confirmations in 22 s, then a strong one |
+| `193105` | 3.65400 | DIGL | RADE V1 | nfft 16384, **six lock-and-drop cycles in the minute**; **opens already locked, so it does not `--verify`** (Finding 45) |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -6161,6 +6179,170 @@ station Finding 42 took `122632` and `122843` of, made four minutes after
 them and not used there. It is listed with these because it is uningested,
 not because it belongs to this finding.
 
+## Finding 45: the seven captures ingested, and the resync search scored on air
+
+Finding 44 built the resync search and left two things open: an on-air
+score for it, and seven recordings nobody had touched. Both are done here.
+The score does not say what the synthetic case said, and the reason it
+cannot is worth more than the result.
+
+### The harness first: five of six reproduce exactly
+
+The six 80 m captures were recorded by the build that preceded the resync
+search, so `replay_rade` built from that revision must reproduce them
+block for block. Five do - `--verify` reports "replay reproduces the
+recorded run" with no differences on `190516`, `190715`, `190822`,
+`190932` and `193007`.
+
+**`193105` does not, and its own timeline says why**: it opens with the
+radio already locked. The replay starts cold, so from block 0 the two runs
+hold different lock states, and `--from` does not rescue it - the
+timelines never re-converge, because the lock-and-drop cycles are offset
+for the rest of the file. Everything read from `193105` below is therefore
+a *different* timeline over the same samples, not a reproduction of the
+recorded one. It is the first capture in the set with that property and
+the note belongs with it permanently.
+
+### The detector, old path against new
+
+`replay_rade` at the recorded settings, both builds:
+
+| | acquisitions | locked fraction | mean pilot SNR | mean quality |
+|---|---|---|---|---|
+| `190516` | 2 → **4** | 0.846 → 0.714 | -11.36 → -11.37 | 0.102 → 0.101 |
+| `190715` | 2 → **4** | 0.886 → **0.543** | -12.03 → **-11.20** | 0.100 → **0.123** |
+| `190822` | 2 → 3 | 0.754 → 0.789 | -7.69 → **-6.21** | 0.175 → **0.221** |
+| `190932` | 3 → 3 | 0.726 → 0.766 | -9.06 → **-8.19** | 0.125 → **0.142** |
+| `193007` | 1 → 1 | 0.230 → 0.230 | -9.30 → -9.30 | 0.173 → 0.173 |
+| `193105` | 3 → 3 | 0.489 → 0.457 | -14.62 → **-14.15** | 0.050 → **0.056** |
+
+The pattern is consistent and it is the mechanism working: **pilot SNR and
+quality improve on four of six and are unchanged on the other two, while
+lock uptime falls on two of those four.** Fewer locked blocks and better
+locks is what dropping a stale lock looks like. `193007` is untouched
+because its long dead stretch gives the frozen search nothing to find.
+
+But every column in that table is a health reading, and Findings 33, 35
+and 41 spent three captures establishing that health readings do not track
+decode. So:
+
+### Decode, through the shipping engine, and it does not move
+
+`run_ref --ref rade --mode sum` on each build for the weight series - the
+slewed, held weight the radio actually applies, which is Finding 35's
+method and not `score_rade`'s raw `correlator` column - then both series
+scored against the same arms by the same decoder:
+
+| | arm0 sync | arm1 sync | old | new | change |
+|---|---|---|---|---|---|
+| `190516` | 97.9 % | 99.1 % | +19 | **+72** | **+53** |
+| `190715` | 98.3 % | 98.2 % | +88 | **+59** | **-29** |
+| `190822` | 100 % | 100 % | +0 | +0 | 0 |
+| `190932` | 99.2 % | 98.1 % | -2 | -2 | 0 |
+| `193007` | 100 % | 100 % | +0 | +0 | 0 |
+| `193105` | 100 % | 95.8 % | -9 | -9 | 0 |
+
+**Plus fifty-three on one, minus twenty-nine on another, and nothing at
+all on four.** Net +24 frames across six captures on totals of 350 to 460,
+which is inside the scatter Finding 33 established at about twenty frames.
+**On this set the change is not measurable on decode.**
+
+The reason is Finding 42's, and it is visible in the second and third
+columns: **arm 0 alone is between 97.9 % and 100 % in sync on every one of
+the six.** There is no room for a combiner to help, so there is no room
+for a faster re-acquisition to help either. Four of the six are unmoved
+because nothing in them was ever going to move.
+
+### And the noise walk that would have made it measurable does not work here
+
+`--noise` exists to push a capture that decodes at 99 % down to where the
+modem is failing. On `190516` it does not produce an operating point,
+because the arms are too far apart:
+
+| added noise rms | arm0 in sync | arm1 in sync |
+|---|---|---|
+| none | 97.9 % (332 frames) | 99.1 % (223) |
+| 3e-5 | 99.1 % (349) | 96.4 % (111) |
+| 6e-5 | 98.2 % (228) | **0 % (0 frames)** |
+| 1.5e-4 | 95.8 % (48) | 0 % |
+| 2.5e-4 | **0 %** | 0 % |
+
+Arm 1 dies at 6e-5 and arm 0 goes from forty-eight frames to none between
+1.5e-4 and 2.5e-4. **The transition is arm 1 dying and then arm 0 dying,
+with no window in which both are marginal at once** - and a window where
+both are marginal is exactly what a combiner has to be scored in. Equal
+added noise cannot make a lopsided pair marginal together; what would is
+noise scaled per arm, which no tool here offers.
+
+### So what the change is measured on
+
+`test_rade`'s synthetic changeover, and only that: 3.50 s against 13.5 s,
+with the hang no longer entering into it, and a 5.1 s fade of the same
+station keeping its lock. **This set neither confirms it nor contradicts
+it.** What it establishes is that the change costs nothing on six real
+recordings, that the detector's own readings move the way the mechanism
+predicts, and that these six are the wrong captures to settle it on. The
+capture that would settle it is one where a single antenna does *not*
+decode the whole minute - which is item 0 on the list and has been since
+Finding 41.
+
+### `123333`: the emptiest capture in the set, and a third one for the branch-noise ratio
+
+The seventh recording is 17 m `USB`, Window with coherence weighting, and
+it is a third look at the station `122632` and `122843` were taken of four
+minutes earlier.
+
+| | |
+|---|---|
+| speech, against its own quiet 20th percentile | **33 blocks of 703 - 5 %** |
+| bare band noise | **95 %** |
+| arm 1 passband, against arm 0 | **+15.44 dB** |
+| arm 1 guard-band noise, against arm 0 | **+15.23 dB** |
+| arm 0 passband-to-guard in speech | **+34.8 dB** |
+| arm 1 passband-to-guard in speech | +31.0 dB |
+| inter-arm coherence, in speech / in silence | 0.211 / 0.053 |
+
+**Two tenths of a decibel separate the two ratios**, so arm 1 is not
+hearing more, it is a chain 15 dB hotter - and arm 0 is nevertheless the
+better antenna by 3.8 dB of signal-to-noise. That is Finding 13's case in
+its cleanest form: the two look identical on a panadapter and want
+opposite weights.
+
+At 95 % bare noise it is **the emptiest recording in the document**, which
+makes it the strongest available test of the open item that rests on
+`122843`'s 67 %. Running the shipping Sum loop over it:
+
+| | |
+|---|---|
+| `\|w\|` the loop applies, median in speech | **+7.1 dB** |
+| `\|w\|` in silence | -12.5 dB |
+| combined output against arm 0 alone, **in speech** | **+20.07 dB** |
+| combined output against arm 0 alone, in silence | +5.45 dB |
+
+The maximum-ratio optimum here is about **0 dB**: the signal is 15.4 dB up
+on arm 1 and the noise 15.2 dB up with it, so the two nearly cancel. The
+loop applies seven decibels more than that and lands the 15 dB hotter
+chain in charge of a twenty-decibel level rise, on the arm with the worse
+signal-to-noise ratio.
+
+**Seven decibels is the number the open item already carries** - 7.4 to
+9.3 dB above the measured optimum on the two 17 m captures - and this is
+the third capture to produce it, by the mechanism the item names:
+`div_wideband_sum_scale()` needs the occupancy split to find occupied
+*and* unoccupied bins, and a window that is 95 % bare noise has no
+occupied bins to find on nearly every block, so the noise ratio is never
+formed and the weight goes out uncorrected.
+
+**And the sign is the opposite way round from `122843`.** There the
+penalty was in the gaps - 12.18 dB of raised output noise between the
+overs, with the speech unharmed. Here it is in the *speech*, +20.07 dB
+against +5.45 in silence. Same station, same pair of antennas, four
+minutes apart. What differs is that `122843` was recorded with ADC1
+attenuated and this one at 0 dB, so the imbalance the loop has to correct
+is 15 dB rather than nothing - which says the two faces of this defect are
+the same fault seen at two attenuator settings, and that **the operator's
+attenuator is what decides which of them they hear.**
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -6453,7 +6635,11 @@ holds is the false-alarm line, and that part stands.
   the minute bare band noise - the loop's weight raises the output noise
   in the gaps by **12.18 dB** over the better antenna, and freezing that
   weight through the silent blocks brings it to **-0.02 dB** with the
-  in-speech figure unchanged to a hundredth of a decibel. The coherence
+  in-speech figure unchanged to a hundredth of a decibel. `123333` is a
+  second capture of the same station, **95 % bare noise**, and it shows the
+  other face of it: with ADC1 unattenuated and 15.4 dB hot the loop puts
+  `|w|` at +7.1 dB in speech and the output **+20.07 dB** over arm 0, so
+  the penalty lands in the speech rather than in the gaps (Finding 45). The coherence
   gate is already a good detector, opening on 2 to 7 % of noise-only
   blocks; what it does not do is *act* on the 93 % it correctly identifies,
   because holding leaves the last weight applied rather than standing the
@@ -6473,7 +6659,12 @@ holds is the false-alarm line, and that part stands.
   every setting of every control. Neither Best nor any slider recovers it.
   What would is a noise ratio taken from the silent blocks, which is where
   it is easiest to measure and where the gate already knows it is looking
-  at noise (Finding 42).
+  at noise (Finding 42). **`123333` is the third capture to produce the
+  same seven decibels** and the clearest: 95 % of its blocks are bare
+  noise, so the occupancy split finds no occupied bins to pair with them on
+  nearly the whole file, the ratio is never formed, and the loop hands a
+  chain that is 15.2 dB noisier and 3.8 dB worse in signal-to-noise a
+  weight seven decibels above the maximum-ratio optimum (Finding 45).
 - **Mostly closed: the Resolution menu is 24 / 12 / 6 Hz now.**
   Finding 43 takes the change Finding 42 had the evidence for: 3 Hz is
   retired, a 24 Hz setting takes its place, `DIV_MIN_NFFT` drops to 2048
@@ -6560,20 +6751,20 @@ holds is the false-alarm line, and that part stands.
   finds the menu worse than described: the three options are not three
   settings above 192 kHz, and the one labelled for weak signals is behind
   on both objectives on five captures of six.
-- **Built, and not yet scored on air: the resync search.** Finding 44.
-  `rade_acquire()` used to run only while `tracking` was zero and
-  `tracking` stayed set for the whole hang, so at a changeover the
-  correlator spent ten seconds correlating the old station's timing before
-  looking anywhere else. It now searches while frozen and takes a
-  *different* alignment at once, and the averages age through a freeze
-  instead of being held. On the synthetic two-station changeover in
-  `test_rade` that is **3.50 s against 13.5 s**, and a 5.1 s fade of the
-  same station at 31 dB worse SNR keeps its lock and returns to within
-  0.033 of its weight. **What is missing is an on-air score.** `193105`
-  cycles lock and drop six times in a minute and has not been replayed
-  through the new path, and none of the seven captures has a decode
-  column - which is the only column that counts, for Findings 33, 35 and
-  41's reason.
+- **The resync search is built and the on-air set cannot score it.**
+  Findings 44 and 45. It searches while frozen and takes a *different*
+  alignment at once, worth **3.50 s against 13.5 s** on `test_rade`'s
+  synthetic changeover with the hang no longer entering into it. Replayed
+  through all six 80 m captures and decode-scored through the shipping
+  engine it moves +53 frames on one, -29 on another and nothing on four -
+  net +24 across six, inside the scatter - **because arm 0 alone is 97.9
+  to 100 % in sync on every one of them** and there is no room for a
+  combiner to help. `--noise` cannot manufacture the room either: the arms
+  are lopsided enough that arm 1 dies at 6e-5 and arm 0 between 1.5e-4 and
+  2.5e-4, with no window where both are marginal at once. What is wanted
+  is a capture where one antenna does not decode the minute - item 0 on
+  the list - or a `--noise` that scales per arm, which no tool here
+  offers.
 - **Local interference has one capture and it is the un-nullable kind.**
   Finding 43 assesses discriminating local noise by the *stationarity* of
   `h1/h0` - the premise being sound, and both halves of it already
