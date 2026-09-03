@@ -746,7 +746,7 @@ one block from `track` to `search` when the signal stops.
 | Control | Effect | Shown for |
 |---|---|---|
 | **Div** | The whole feature, including the DDC re-plumbing | always |
-| **ATT** | Split ADC0's and ADC1's step attenuators (§1). The split pair is remembered **per band** and put back when you tick this or return to the band — how much hotter one antenna is than the other is a property of the two antennas on that band | two ADCs with a step attenuator |
+| **ATT** | Split ADC0's and ADC1's step attenuators (§1). The split pair is remembered and put back the next time you tick this — how much hotter one antenna is than the other is found by ear once and wanted again every time | two ADCs with a step attenuator |
 | **Level output** | Keeps the combined output at the level of arm 0 alone instead of letting it rise with the array gain. Off by default; Sum and Best only. See Finding 32 in [`diversity-measurements.md`](diversity-measurements.md) | Sum, Best |
 | **Attenuator (dB)** | ADC0 and ADC1, 0-31 dB each | only while split |
 | **Gain / Phase** (coarse, fine) | Manual weight; live when Auto is not driving, and under **Hold** | always |

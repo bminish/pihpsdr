@@ -7169,27 +7169,32 @@ because arming the recorder and then reaching for the Diversity tick was
 the only order available; acquisition and settling have never been
 recorded and now can be.
 
-### `src/band.h`, `src/band.c`, `src/radio.c` — the split attenuators, per band
+### `src/radio.c` — the split attenuators, remembered
 
 Finding 34 measured the attenuation budget on 160 m at 14 dB and Finding
-42 measured a chain's own floor at 22.7 dB on 17 m: the correction a hot
-second antenna wants is a property of the two antennas *on that band*, and
-it does not change between visits. It was being found again by ear every
-time.
+42 measured a chain's own floor at 22.7 dB on 17 m: a hot second antenna
+wants a correction of a size worth finding, and it was being found again
+by ear every time diversity was switched on.
 
-`BAND` gains `div_att[2]` and `div_att_valid`. Every move of either step
-attenuator made while diversity is running with the pair split is filed
-against the current band; the pair is put back when the operator ticks
-**ATT**, when diversity starts with it already ticked, and on a band
-change. A band diversity has never been run on stores nothing and asserts
-nothing, so an untouched band keeps the ATT the operator set by hand.
+`div_last_att[2]` and `div_last_att_valid` hold the pair as it stood the
+last time the two step attenuators were split. Every move of either while
+diversity runs with them split stores both - both, so that an ADC0 from
+one session cannot end up beside an ADC1 from another - and the pair is
+put back when the operator ticks **ATT** and when diversity starts with it
+already ticked. Until they have been set at least once nothing is
+asserted, so an untouched radio keeps the ATT the operator set by hand.
 
 This is separate from `div_saved_att`, which is unchanged: what the
 operator had *before* diversity started is still saved on the way in and
-given back on the way out. `div_band_att_busy` keeps the two from
-colliding - `radio_apply_band_settings()` puts the band's ATT slider value
-on ADC0 on its way through, which without the guard would overwrite
-`div_att[0]` moments before the recall reads it.
+given back on the way out.
+
+**It is one pair, not one per band**, which is a deliberate retreat from
+the first version of this. The imbalance does vary by band, and the
+measurements above say so; carrying it per band costs a field in `BAND`
+and three keys per band in the props file, which is a large change to
+structures the whole radio shares for something two spin buttons already
+correct. Neither is kept across a restart, for the same reason - the
+memory lasts the session, like `div_saved_att`.
 
 ### What was thrown away
 

@@ -1516,11 +1516,10 @@ void diversity_menu(GtkWidget *parent) {
                                 "which the second one cannot hear. The step is fed "
                                 "forward into the weight, so the audio does not jump, "
                                 "and the measurement restarts.\n\n"
-                                "The pair is remembered per band and put back when you "
-                                "split them here or return to the band: what they "
-                                "correct is how much hotter one antenna is than the "
-                                "other, which is a property of the two antennas on "
-                                "that band and does not change between visits.");
+                                "The pair is remembered and put back the next time you "
+                                "split them: what they correct is how much hotter one "
+                                "antenna is than the other, which is found by ear once "
+                                "and wanted again every time.");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(indep_att_b), div_indep_att);
     gtk_box_pack_start(GTK_BOX(topbox), indep_att_b, FALSE, FALSE, 0);
     g_signal_connect(indep_att_b, "toggled", G_CALLBACK(indep_att_cb), NULL);

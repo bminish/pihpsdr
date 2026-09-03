@@ -533,14 +533,14 @@ Ticking it puts an **Attenuator (dB)** row underneath, with a value for
 each ADC; untick it and the row goes away again, because tied they are one
 number the ATT slider already shows.
 
-**The pair is remembered per band.** Tick **ATT** and you get back
-whatever the two attenuators were the last time you ran diversity with
-them split *on this band* — nothing is asserted on a band you have never
-done it on. That is the shape of the problem: how much hotter one antenna
-is than the other is a property of the two antennas on that band, so an
-antenna that wanted 14 dB on 160 m wants it again next time. Changing band
-with **ATT** ticked does the same thing. What you had before diversity
-started is separate and is still given back when you switch it off. Those two spin buttons are the way to
+**The pair is remembered.** Tick **ATT** and you get back whatever the two
+attenuators were the last time you had them split — nothing is asserted
+until you have set them at least once. How much hotter one antenna is than
+the other is something you find by ear once, and it is wanted again every
+time. It is one pair, not one per band: the imbalance does vary by band,
+and two spin buttons is a cheaper way to correct that than a setting per
+band would be. What you had before diversity started is separate and is
+still given back when you switch it off. Those two spin buttons are the way to
 reach ADC1, because the loop makes RX1 the active receiver and the
 ordinary ATT slider follows that.
 

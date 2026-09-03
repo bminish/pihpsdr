@@ -2345,70 +2345,59 @@ void radio_set_diversity_phase(double value) {
 }
 
 //
-// The per-band half of the same idea.
+// The other half of the same idea: the two step attenuators as DIVERSITY
+// last had them with the pair *split*, so that they can be put back the
+// next time it is split.
 //
 // div_saved_att above remembers what the operator had before diversity
-// started, so it can be given back afterwards. This remembers the other
-// thing: what diversity itself settled on, per band, while the two step
-// attenuators were split. The imbalance being corrected is a property of
-// the two antennas on that band - a second antenna that is 14 dB hot on
-// 160 m is 14 dB hot there every time - so re-deriving it by ear on every
-// band change is work the radio can do instead. See Finding 34 in
-// docs/diversity-measurements.md, where the budget is measured.
+// started, and gives it back on the way out. This remembers what
+// diversity itself settled on, and gives that back on the way in - which
+// is the imbalance between the two antennas, found by ear once and then
+// wanted again every time.
 //
-// Stored on every attenuator move made while diversity is running with
-// the pair split, and recalled when the operator splits them, when
-// diversity starts with them already split, and on a band change.
+// One pair, not one per band. The imbalance does vary by band, but
+// carrying it per band means a field in BAND and three keys per band in
+// the props file, which is a large change to shared structures for
+// something the operator can correct with two spin buttons. One pair
+// remembered until they change it is what it is worth.
 //
-// div_band_att_busy is set while the band's own settings are being
-// applied, so that the attenuator moves that happen there are not
-// mistaken for the operator making one.
-// radio_apply_band_settings() puts the band's ATT slider value on ADC0 on
-// its way through, and on a band the operator has never run diversity on
-// that is the right thing to do. On one they have, it arrives *before*
-// the stored pair is read back - so without this the store would file the
-// slider value over div_att[0] and the recall two lines later would find
-// its own answer already overwritten.
-//
-static int div_band_att_busy = 0;
+static int div_last_att[2] = { 0, 0 };
+static int div_last_att_valid = 0;
 
-static void div_band_att_store(int a, int value) {
-  if (div_band_att_busy) { return; }
-
+//
+// Both arms, whenever either moves while the pair is split. Taking the
+// pair rather than the one that moved keeps the two consistent: a stored
+// ADC0 from one session beside an ADC1 from another describes a state the
+// radio was never in.
+//
+static void div_last_att_store(void) {
   if (radio_is_remote || !have_rx_att || n_adc < 2) { return; }
 
   if (!diversity_enabled || !div_indep_att) { return; }
 
-  if (a < 0 || a > 1) { return; }
-
-  BAND *band = band_get_band(vfo[0].band);
-  band->div_att[a] = value;
-  band->div_att_valid = 1;
+  div_last_att[0] = adc[0].attenuation;
+  div_last_att[1] = adc[1].attenuation;
+  div_last_att_valid = 1;
 }
 
-static void div_band_att_recall(void) {
+static void div_last_att_recall(void) {
   if (radio_is_remote || !have_rx_att || n_adc < 2) { return; }
 
   if (!diversity_enabled || !div_indep_att) { return; }
 
-  const BAND *band = band_get_band(vfo[0].band);
-
   //
-  // Nothing recorded here yet. Leaving the attenuators where they are is
-  // the only honest answer: 0/0 is a setting, not an absence of one, and
+  // Nothing settled on yet. Leaving the attenuators where they are is the
+  // only honest answer: 0/0 is a setting, not an absence of one, and
   // asserting it would undo an ATT the operator had set by hand.
   //
-  if (!band->div_att_valid) { return; }
+  if (!div_last_att_valid) { return; }
 
   //
   // Through the setter, so the change is fed forward into the weight and
-  // the sliders follow, exactly as an operator move is - but not back
-  // into the store it was just read from.
+  // the sliders follow, exactly as an operator move is.
   //
-  div_band_att_busy++;
-  radio_set_adc_attenuation(0, band->div_att[0]);
-  radio_set_adc_attenuation(1, band->div_att[1]);
-  div_band_att_busy--;
+  radio_set_adc_attenuation(0, div_last_att[0]);
+  radio_set_adc_attenuation(1, div_last_att[1]);
 }
 
 void radio_set_diversity(int state) {
@@ -2469,11 +2458,11 @@ void radio_set_diversity(int state) {
     if (state) {
       diversity_auto_start();
       //
-      // If the attenuators are already split, this band's last diversity
-      // pair goes back on now. After diversity_auto_start(), so the step
-      // is fed forward into a loop that exists to receive it.
+      // If the attenuators are already split, the last diversity pair goes
+      // back on now. After diversity_auto_start(), so the step is fed
+      // forward into a loop that exists to receive it.
       //
-      div_band_att_recall();
+      div_last_att_recall();
     } else {
       diversity_auto_stop();
     }
@@ -3067,10 +3056,10 @@ void radio_set_indep_att(int state) {
 
   //
   // Splitting them is the operator asking for the second antenna to be
-  // treated on its own, which is the question this band already has an
-  // answer to if diversity has been run here before. Put it back.
+  // treated on its own, which is the question the last split already has
+  // an answer to. Put it back.
   //
-  if (state) { div_band_att_recall(); }
+  if (state) { div_last_att_recall(); }
 
   schedule_high_priority();
 }
@@ -3104,10 +3093,10 @@ void radio_set_adc_attenuation(int a, int value) {
   adc[a].attenuation = value;
   adc[a].gain = 0.0;
   //
-  // Remember it against the band, so that this band's imbalance does not
-  // have to be found again the next time the operator comes back to it.
+  // Remember the pair while they are split, so the imbalance does not have
+  // to be found again the next time they are.
   //
-  div_band_att_store(a, value);
+  div_last_att_store();
 
   //
   // Move the slider through whichever receiver is sitting on this ADC.
@@ -3236,7 +3225,6 @@ void radio_apply_band_settings(int flag, int id) {
   // flag is nonzero if called from a "real" band change
   //
   suppress_popup_sliders++;
-  div_band_att_busy++;
   int rxadc = 0;
   if (id < receivers) {
     rxadc = receiver[id]->adc;
@@ -3273,19 +3261,10 @@ void radio_apply_band_settings(int flag, int id) {
     if (id < receivers && receiver[id]->agc != AGC_FIXED) {
       radio_set_agc_gain(id, rxband->AGCgain);
     }
-
-    //
-    // Last, and only for the receiver diversity runs on: radio_set_attenuation()
-    // above has just put the band's ATT slider value on ADC0, which is the
-    // right answer everywhere except here. With the pair split, both arms
-    // have their own stored value for this band and it supersedes it.
-    //
-    if (id == 0) { div_band_att_recall(); }
   }
   schedule_high_priority();         // possibly update RX/TX antennas, OC settings, ...
   schedule_receive_specific();      // possibly update dither
   schedule_general();               // possibly update PA disable
-  div_band_att_busy--;
   suppress_popup_sliders--;
 }
 
