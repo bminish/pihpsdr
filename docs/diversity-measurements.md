@@ -128,14 +128,20 @@ against librade, with the false-alarm price of each read off eight
 no-signal captures - and a null control that passes: `RADE_MAG_ALPHA`,
 which the code says feeds only the reported health, moves synced frames by
 exactly zero at every value. Three results. **`RADE_ACQ_AT0` can be halved
-from 8 to 4 for nothing**: it takes the worst capture's time to first lock
-from 19.80 s to **1.45 s**, raises its lock uptime from 56 % to 73 %, and
-produces no false lock on any of the eight. **`RADE_USE_RATIO`'s optimum
+from 8 to 4 for almost nothing**: it takes the worst capture's time to
+first lock from 19.80 s to **1.45 s**, raises its lock uptime from 56 % to
+73 %, produces no false lock on any of the eight, and is 5 to 36 synced
+frames ahead of the default on three captures - against 25 frames and
+1.5 s *behind* on `202743`, the weakest pilot in the set, which is the
+only thing measured that argues against it. **`RADE_USE_RATIO`'s optimum
 reverses** - 2.0 under natural fading, 4.0 under added white noise, 213
 frames apart - which is why four separate sweeps have disagreed about it
-and why 2.50, sitting between them, stays. And **three constants are
-inert**: the frequency-loop smoothing does not move decode or even the
-decoder's SNR on the deepest-fading capture in the set.
+and why 2.50, sitting between them, stays. And **two constants are inert
+everywhere they were tried, with a third inert except at the top of its
+range**: the frequency-loop smoothing does not move decode or even the
+decoder's SNR on the deepest-fading capture in the set, while
+`floor_guard` is flat from 4 to 20 and then recovers 5 frames at 32 on
+`232842`.
 
 **Fourteen decibels of step attenuator are free.** `234624` ends with the
 operator walking ADC0 from 0 to 14 dB in eleven recorded steps while ADC1
@@ -5067,12 +5073,13 @@ Eight no-signal captures, acquisitions and percent of the minute locked:
 
 Two things fall out of that table.
 
-**`RADE_ACQ_AT0` can be halved for free.** Eight to four takes about half a
-second off a typical acquisition, 4.1 s off `234624`, and **18.35 s off
-`233241`**, and it produces no false lock on any of the eight no-signal
-captures - including `112151` and `233615`, the only two that have ever
-produced one. It is the single cleanest change this document has found in
-the correlator.
+**`RADE_ACQ_AT0` can be halved without buying a false lock.** Eight to
+four takes about half a second off a typical acquisition, 4.1 s off
+`234624`, and **18.35 s off `233241`**, and it produces no false lock on
+any of the eight no-signal captures - including `112151` and `233615`, the
+only two that have ever produced one. On the false-alarm axis it is the
+single cleanest change this document has found in the correlator. It is
+not free in decode on every capture; see `202743` below.
 
 **`probation` cannot be lowered and should not be raised.** Two frames and
 four both buy a false lock on `112151`; thirty-two buys one on `233615`,
@@ -5099,27 +5106,46 @@ default marked:
 | `acq_at2` | 15 | 302 | 317 | 16 |
 | `acq_sigma0` | 8 | 302 | 310 | 6.0 |
 | `freq_alpha` | **0** | 302 | — | inert |
-| `floor_guard` | **0** | 302 | — | inert |
+| `floor_guard` | **0** | 302 | — | inert here; see below |
 | `mag_alpha` | **0** | 302 | — | inert (control) |
 
 Three results.
 
-**`freq_alpha` and `floor_guard` are inert.** The frequency loop's
-smoothing and the timing guard around the floor estimate change synced
-frames by exactly zero on `165826`, `232842`, `111734` and `234624` - the
-first is the hardest channel in the set and the third is the
-deepest-fading, either of which might have been expected to want a
-different loop bandwidth. On `111734` `freq_alpha` does not even move the
-decoder's mean SNR: **+9.1 dB at every one of the five settings, to the
-decimal**. Whatever limits these captures, it is not the frequency loop.
+**`freq_alpha` is inert; `floor_guard` is inert except at the top of its
+range.** The frequency loop's smoothing changes synced frames by exactly
+zero on all five captures it was swept on - `165826`, `232842`, `111734`,
+`234624` and `202743` - the first is the hardest channel in the set and
+the third is the deepest-fading, either of which might have been expected
+to want a different loop bandwidth. On `111734` `freq_alpha` does not even
+move the decoder's mean SNR: **+9.1 dB at every one of the five settings,
+to the decimal**. Whatever limits these captures, it is not the frequency
+loop.
+
+`floor_guard` is the same story over 4 to 20 and then is not: at **32** it
+recovers 5 synced frames on `232842` and 1 on `234624`, and on `232842`
+those 5 are the whole gap to the better arm - 487 becomes 492, which is
+arm0's count exactly. It is zero at every setting on `165826` and
+`111734`. So it moves two captures in four, by 5 frames and by 1, and the
+5 lands on the strongest and fastest-fading recording in the set rather
+than on either of the weak ones - the opposite of where widening a timing
+guard would be expected to help. Five frames out of 492 on one capture is
+not a basis for changing the default, but it is not the flat line the
+`165826` table alone suggests.
 
 **Nothing bites where the modem is not failing.** On `232842` the *whole*
-eleven-constant set moves decode by 0 to 5 frames; on `111734` and
-`234624` by 0 to 24; on `202743` by 25. Only `165826` shows a real
-response, and only because it is the one capture where the modem is
-dropping frames on its own. That is worth saying plainly: **a benchmark
-made of captures that decode at 99 % cannot measure these constants**, and
-twelve of the thirteen RADE captures in this document are such captures.
+eleven-constant set moves decode by 0 to 5 frames. The other three
+captures were swept over a subset rather than all eleven - six constants
+on `202743`, five on `111734` and `234624` - and move by 0 to 26, 0, and
+0 to 24 respectively. `165826` is the only one with a large response - 96
+frames, a third of its total - and only because it is the one capture
+where the modem is dropping frames on its own. `202743`'s 26 is the next
+largest, and it is the same 296-to-322 band four different ways:
+`use_ratio`, `use_alpha`, `probation` and `acq_at0` each span 25 or 26
+frames on it, while `freq_alpha` and `mag_alpha` are flat - a lock
+timeline that tips between two outcomes, not four separate effects. That is worth
+saying plainly: **a benchmark made of captures that decode at 99 % cannot
+measure these constants**, and twelve of the thirteen RADE captures in
+this document are such captures.
 
 **One direction almost transfers.** `probation` = 32 is the best of its
 five values on `165826` and on the noised `115357` alike, by 49 and 68
@@ -5193,9 +5219,31 @@ said.
 
 `acq_at0` on the two noised captures reads 375, 375, 362, 382, 350 and
 209, 209, 204, 204, 209 for 4, 6, 8, 12 and 16 - no direction, and **4 is
-13 and 5 frames *ahead* of the default** rather than behind it. Combined
-with the false-alarm table above, that is the last thing needed to call
-the change to 4 free: it costs nothing in decode either.
+13 and 5 frames *ahead* of the default** rather than behind it. On
+`165826` it is 36 ahead; on `232842` it is flat.
+
+**`202743` is the exception, and it is the one that matters.** The same
+five values read 296, 321, **321**, 304, 296, so `acq_at0` = 4 is **25
+synced frames behind the default** - 8 % of the capture's frames, and the
+largest decode cost this document has measured for the change. `202743`
+has the weakest pilot in the set - SNR -5.9 dB, quality 0.15, eight
+acquisitions in a minute - even though its modem still decodes at 99.7 %
+on the better arm, so it is the one recording where the *correlator* is
+marginal while the decoder is not. It is also the capture where 4 does
+*not* buy the acquisition time back: first lock goes the wrong way, 9.73 s
+at the default to **11.26 s** at 4, against 19.80 s to 1.45 s on
+`233241`.
+
+So the change to 4 is free in false alarms, worth up to 18 seconds of
+first-lock latency on captures where acquisition is what fails, and mixed
+in decode: **ahead on three captures by 5 to 36 frames, flat on one,
+behind on one by 25**. The three it helps are captures that were noised
+into failure or that lock slowly; the one it hurts is the one whose pilot
+is genuinely weak and re-acquires all minute, where a shorter confirmation
+reach means more locks onto the wrong thing. That is a real trade and not
+a free lunch, and the recommendation stands only because the latency win
+is large, the false-alarm column is clean, and 25 frames on one capture is
+inside the scatter that `use_ratio` shows on the same recording.
 
 ### The benchmark, and what it is good for
 
@@ -5235,9 +5283,16 @@ own built-in rows, not to a weight series handed to it.
 - **`RADE_ACQ_AT0` from 8 to 4.** Halves the time to first lock on most
   captures, takes `233241` from 19.80 s to **1.45 s** and raises its lock
   uptime from 56 % to 73 %, produces **no false lock on any of eight
-  no-signal captures**, and is 13 to 36 synced frames *ahead* of the
-  default on both marginal captures. Nothing measured argues against it.
-  This is the one change this finding recommends.
+  no-signal captures**, and is 5 to 36 synced frames *ahead* of the
+  default on `165826` and on both noised captures. **It is 25 frames and
+  1.5 s behind on `202743`**, the weakest pilot in the set - a signal weak
+  enough to re-acquire eight times a minute is the one case where a
+  shorter confirmation reach locks onto the wrong thing more often. That
+  is the whole of the evidence against, it is one capture out of five, and
+  it is smaller than the scatter `use_ratio` shows on that same recording,
+  so the change is still the one this finding recommends -
+  but it is a trade, not a free lunch, and a second naturally marginal
+  RADE capture is what would settle it.
 - **`RADE_PROBATION` is the one real trade, and it is not resolved.**
   Decode prefers **32** on the two captures that are substantially
   failing - +49 frames on `165826` and +68 on the noised `115357` - which
@@ -5275,6 +5330,17 @@ mode - and the whole result above is that the two want opposite settings.
 path, is what would turn this from two points into a curve.** It is the
 same capture the "What to record next" list already asks for, and it is
 now the most valuable one on it.
+
+**The sweep is not square, either.** All eleven constants were swept on
+`165826` and `232842` only. `202743` was swept over six - `use_ratio`,
+`use_alpha`, `probation`, `acq_at0`, `freq_alpha`, `mag_alpha` - and
+`111734` and `234624` over five, dropping `probation` and `acq_at0` and
+adding `floor_guard`. The two noised operating points, `115357` and
+`233241`, got five each. So a statement like "`freq_alpha` is inert" rests
+on five captures, "`floor_guard` moves `232842` by 5 at 32" on four, and
+the acquisition-sigma results on two. Nothing here is a claim about all
+eleven constants on all seven recordings, and the counts above say which
+is which.
 
 ## False alarms
 
@@ -5903,8 +5969,9 @@ The last piece - decode-scoring the acquisition and tracking constants -
 is **Finding 41**, and it is done. Eleven constants, five values each,
 through the shipping engine against librade, with the false-alarm price of
 each read off eight no-signal captures. One change comes out of it
-(`RADE_ACQ_AT0` 8 to 4, free), one real trade is quantified and left open
-(`RADE_PROBATION`), and three constants are shown to be inert. Nothing on
+(`RADE_ACQ_AT0` 8 to 4, free of false alarms and ahead on decode
+everywhere but `202743`), one real trade is quantified and left open
+(`RADE_PROBATION`), and two constants are shown to be inert. Nothing on
 this list needs compute any more.
 
 ### The captures, in the order they are worth taking
