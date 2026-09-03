@@ -460,6 +460,16 @@ void band_save_state(void) {
     SetPropF1("band.%d.AGCgain", b,            bands[b].AGCgain);
     if (have_rx_att) {
       SetPropI1("band.%d.attenuation", b,        bands[b].attenuation);
+      //
+      // Only once diversity has set them here: an unvisited band writes
+      // nothing, so the props file does not grow three lines per band on
+      // a radio that never runs diversity.
+      //
+      if (bands[b].div_att_valid) {
+        SetPropI1("band.%d.div_att0", b,         bands[b].div_att[0]);
+        SetPropI1("band.%d.div_att1", b,         bands[b].div_att[1]);
+        SetPropI1("band.%d.div_att_valid", b,    bands[b].div_att_valid);
+      }
     }
     if (have_rx_gain) {
       SetPropF1("band.%d.gain", b,               bands[b].RFgain);
@@ -526,6 +536,9 @@ void band_restore_state(void) {
     GetPropF1("band.%d.AGCgain", b,            bands[b].AGCgain);
     if (have_rx_att) {
       GetPropI1("band.%d.attenuation", b,      bands[b].attenuation);
+      GetPropI1("band.%d.div_att0", b,         bands[b].div_att[0]);
+      GetPropI1("band.%d.div_att1", b,         bands[b].div_att[1]);
+      GetPropI1("band.%d.div_att_valid", b,    bands[b].div_att_valid);
     }
     if (have_rx_gain) {
       GetPropF1("band.%d.gain", b,             bands[b].RFgain);

@@ -83,6 +83,18 @@ struct _BAND {
   int preamp;                     // This is to support C25 attenuation storage
   int dither;                     // This is to support C25 attenuation storage
   int attenuation;                // position of the ATT slider
+  //
+  // The two ADC step attenuators as DIVERSITY last had them on this band,
+  // with the pair split (see div_indep_att). Kept per band because what
+  // they correct is per band: the second antenna is hotter than the first
+  // by an amount that is a property of the two antennas on that band, so
+  // an antenna that needs 14 dB on 160 m needs it again the next time the
+  // operator goes there. div_att_valid is 0 until diversity has actually
+  // been run with the pair split here, so that a band never visited in
+  // diversity does not start by asserting 0/0 over the operator's ATT.
+  //
+  int div_att[2];
+  int div_att_valid;
   int alexAttenuation;            // if ALEX: attenuator (0/1/2/3 for 0/10/20/30 dB)
   int panlow;                     // panadapter settings
   int panhigh;

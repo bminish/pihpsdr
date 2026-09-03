@@ -286,6 +286,24 @@ typedef struct _div_status {
 extern void diversity_auto_ref_store(int ref);
 extern void diversity_auto_ref_recall(int ref);
 
+//
+// The lowest threshold worth offering on a reference: the coherence two
+// uncorrelated noises reach 1 % of the time, given the bins the reference
+// accumulates and the effective length of the average. Below it the gate
+// passes noise-only blocks and the loop fits a weight to an accident.
+// Zero on RADE V1, which gates on a pilot signal fraction rather than on
+// a coherence. See the note in diversity_auto.c.
+//
+extern double diversity_auto_coh_floor(int ref);
+
+//
+// Raise the live threshold to that floor if it is under it, and file the
+// result in the selected reference's slot. Returns 1 if it moved, so the
+// menu can put the new value in the widget: what is shown has to be what
+// the gate compares against.
+//
+extern int diversity_auto_clamp_cohmin(void);
+
 extern void diversity_auto_get_settings(DIV_SETTINGS *s);
 extern void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action);
 extern void diversity_auto_get_status(DIV_STATUS *st);

@@ -422,13 +422,32 @@
 //
 // (the enum itself is in diversity_auto.h)
 
+//
+// How long a RADE lock is held after the pilot stops being detectable,
+// before the correlator gives up and searches again.
+//
+// It no longer has a control. Swept from 1 to 10 s on the two captures in
+// the set that can be scored on decode it moves lock uptime from 38 % to
+// 94 % and synced frames by +10, +11, +10, +10 - which is well inside the
+// scatter of the measurement - so the correlator's uptime is telling the
+// truth about the pilot lock and nothing at all about what the modem does
+// with the audio. There is nothing here for an operator to tune. See
+// Findings 33, 35 and 41 in docs/diversity-measurements.md.
+//
+// The long end is the value kept: it re-acquires least often, and the one
+// case that might argue for a short hang - several stations taking turns
+// on one frequency, each wanting its own weight - is not in the capture
+// set and so is not evidence.
+//
+#define DIV_HANG_DEFAULT 10.0
+
 int    div_auto_mode           = DIV_AUTO_OFF;
 int    div_auto_ref            = DIV_REF_BAND;
 int    div_auto_follow_filter  = 1;
 double div_auto_centre         = 0.0;
 double div_auto_width          = 1000.0;
 double div_auto_tau            = 2.0;
-double div_auto_hang           = 10.0;
+double div_auto_hang           = DIV_HANG_DEFAULT;
 double div_auto_coherence_min  = 0.30;
 int    div_auto_weighting      = DIV_WEIGHT_COHERENCE;
 int    div_auto_normalise      = 0;
@@ -2998,6 +3017,139 @@ static double div_cohmin_for_ref(int ref) {
   }
 }
 
+//
+// The lowest threshold that is worth setting on the selected reference.
+//
+// The gate compares a magnitude-squared coherence against a number the
+// operator chooses, and that estimate has a floor of its own: over N
+// independent samples the coherence of two *uncorrelated* noises is not
+// zero but averages 1/N, distributed as Beta(1, N-1). Set the gate below
+// that and it stops being a gate - the loop passes noise-only blocks and
+// fits a weight to whatever the two antennas happen to agree on by
+// accident, which is a weight of random phase and near-unity magnitude.
+// That is worth about 3 dB of added noise on a pair of matched arms.
+//
+// So the slider goes down to no coherence and stops there rather than
+// carrying on into it. "No coherence" here is the value pure noise
+// reaches 1 % of the time,
+//
+//     floor = 1 - 0.01^(1/(N-1))  ~  4.6/N for large N,
+//
+// and N is the number of bins accumulated times the effective number of
+// blocks in the exponential average, (2-alpha)/alpha. Both terms are the
+// point: a wide window at a short averaging time has thousands of
+// samples and a floor of a fraction of a percent - which is why switching
+// the gate off costs nothing there (Finding 38) - while the Carrier
+// reference accumulates five bins and has a floor two orders of magnitude
+// higher. One number could never have served both.
+//
+// Returns 0 for RADE V1, which does not gate on a coherence at all: its
+// control is the pilot signal fraction, whose measured behaviour on a
+// working decode says the setting to leave it at is zero (Finding 33).
+//
+// Computed from the settings rather than from the analysis thread's own
+// state, so that a remote client - where no engine runs - reaches the
+// same answer from the same numbers.
+//
+// One thing it does not model. Under Coherence weighting the bins are not
+// counted equally, so the effective sample count is lower than the bin
+// count and the estimator is biased upward besides (Finding 27) - both of
+// which put the true floor above this one. How far above depends on the
+// signal and is not knowable from the settings. The figure here is
+// therefore a lower bound under that weighting, which is the safe
+// direction for a control that stops the operator going too low; Flat is
+// what the measurements recommend anyway.
+//
+#define DIV_COH_FLOOR_PFA 0.01
+
+double diversity_auto_coh_floor(int ref) {
+  if (ref == DIV_REF_RADE_V1) { return 0.0; }
+
+  //
+  // The achieved bin width, as published by the engine; the requested one
+  // before it has ever run.
+  //
+  double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_auto_resolution;
+
+  if (bhz <= 0.0) { return 0.0; }
+
+  //
+  // A block is one transform, so its period is the reciprocal of the bin
+  // width. See diversity_auto_start().
+  //
+  const double bt = 1.0 / bhz;
+  const double tau = (div_auto_tau > 0.0) ? div_auto_tau : bt;
+  const double alpha = 1.0 - exp(-bt / tau);
+  const double nblk = (alpha > 0.0 && alpha <= 1.0) ? (2.0 - alpha) / alpha : 1.0;
+  double width;
+
+  if (ref == DIV_REF_CARRIER) {
+    //
+    // A fixed handful either side of the tracked peak, whatever the
+    // window controls say.
+    //
+    width = (2.0 * DIV_CARRIER_BINS + 1.0) * bhz;
+  } else if (ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
+    //
+    // Only the occupied bins are accumulated, so those are what the gate
+    // is measured over - not the search region they were found in.
+    //
+    width = div_auto_occ_hi - div_auto_occ_lo;
+  } else if (div_auto_follow_filter && ref != DIV_REF_CARRIER) {
+    width = 0.0;
+
+    if (receivers > 0 && receiver[0] != NULL) {
+      width = (double)receiver[0]->filter_high - (double)receiver[0]->filter_low;
+    }
+
+    if (width <= 0.0) { width = div_auto_width; }
+  } else {
+    width = div_auto_width;
+  }
+
+  double nbins = floor(width / bhz) + 1.0;
+
+  if (nbins < 1.0) { nbins = 1.0; }
+
+  double n = nbins * nblk;
+
+  if (n < 2.0) { n = 2.0; }
+
+  double floorval = 1.0 - pow(DIV_COH_FLOOR_PFA, 1.0 / (n - 1.0));
+
+  //
+  // A floor above the top of the slider would leave nothing to set. It
+  // takes a one-bin window and no averaging at all to get there, which
+  // the controls do not allow, but the clamp costs nothing.
+  //
+  if (floorval > 0.5) { floorval = 0.5; }
+
+  if (floorval < 0.0) { floorval = 0.0; }
+
+  //
+  // Up onto the tenth of a percent the menu's slider steps in, so that the
+  // clamp below and the position the operator can actually reach are the
+  // same number. Nothing else depends on the exact value.
+  //
+  return 0.001 * ceil(1000.0 * floorval);
+}
+
+//
+// Hold the live threshold at or above that floor, and put the result back
+// in the selected reference's own slot, so that what the menu shows, what
+// travels to a client and what the gate actually compares against are one
+// number. Returns 1 if it had to move.
+//
+int diversity_auto_clamp_cohmin(void) {
+  const double f = diversity_auto_coh_floor(div_auto_ref);
+
+  if (div_auto_coherence_min >= f) { return 0; }
+
+  div_auto_coherence_min = f;
+  diversity_auto_ref_store(div_auto_ref);
+  return 1;
+}
+
 void diversity_auto_ref_store(int ref) {
   if (ref == DIV_REF_CARRIER) {
     div_carrier_centre = div_auto_centre;
@@ -3440,13 +3592,13 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   if (s->tau > 30.0) { s->tau = 30.0; }
 
   //
-  // Both ends match the slider. Zero is deliberately not allowed: the
-  // hang has to outlast the gate that feeds it, which averages over
-  // about a second, or a single noisy frame would end a lock.
+  // Pinned, not ranged. There is no control for it any more and it is not
+  // a setting an operator can improve on - see DIV_HANG_DEFAULT - so a
+  // value left in a props file by an older build, or sent by an older
+  // client, is replaced rather than merely clamped. The field stays on
+  // the wire and in the file so that neither has to change shape.
   //
-  if (s->hang < 1.0)  { s->hang = 1.0; }
-
-  if (s->hang > 30.0) { s->hang = 30.0; }
+  s->hang = DIV_HANG_DEFAULT;
 
   if (s->resolution < 3.0)  { s->resolution = 3.0; }
 

@@ -82,7 +82,6 @@ static double div_tau_to_pos(double tau) {
 }
 
 static GtkWidget *tau_scale = NULL;
-static GtkWidget *hang_scale = NULL;
 static GtkWidget *coh_scale = NULL;
 static GtkWidget *res_combo = NULL;
 static GtkWidget *weight_combo = NULL;
@@ -107,7 +106,6 @@ static GtkWidget *width_label = NULL;
 static GtkWidget *res_label = NULL;
 static GtkWidget *weight_label = NULL;
 static GtkWidget *coh_label = NULL;
-static GtkWidget *hang_label = NULL;
 
 //
 // The "Measure on" list.
@@ -200,6 +198,11 @@ static int updating_from_auto = 0;
 //
 static int updating_ref = 0;
 
+static void update_manual_sensitivity(void);
+static void update_enable_control(void);
+static void update_att_controls(void);
+static void update_visibility(void);
+
 #ifdef DIVERSITY_CAPTURE
 //
 // ===================================================================
@@ -227,11 +230,38 @@ extern int diversity_auto_capture_start(void);
 
 static void divcap_cb(GtkWidget *widget, gpointer data) {
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    //
+    // Switch the feature on if it is not already, with whatever settings
+    // are in the dialog, and record from there.
+    //
+    // The interesting part of a capture is the part that used to be
+    // impossible to record: acquisition and settling. Arming the recorder
+    // first and then reaching for the Diversity tick meant the loop was
+    // always already converged by the time the first block was written,
+    // so every capture in the set starts mid-track. This one starts cold.
+    //
+    const int started_here = !diversity_enabled;
+
+    if (started_here) {
+      radio_set_diversity(1);
+      update_enable_control();
+      update_manual_sensitivity();
+    }
+
     if (!diversity_auto_capture_start()) {
       //
-      // No analysis thread running, or the file would not open. Come back
-      // out rather than sit there looking armed.
+      // No analysis thread running - the objective is Off, so there is
+      // nothing to record - or the file would not open. Come back out
+      // rather than sit there looking armed, and leave the radio as it was
+      // found rather than switching diversity on for a capture that never
+      // happened.
       //
+      if (started_here) {
+        radio_set_diversity(0);
+        update_enable_control();
+        update_manual_sensitivity();
+      }
+
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
     }
   } else {
@@ -261,7 +291,6 @@ static void cleanup(void) {
     centre_spin = NULL;
     width_spin = NULL;
     tau_scale = NULL;
-    hang_scale = NULL;
     coh_scale = NULL;
     res_combo = NULL;
     weight_combo = NULL;
@@ -291,7 +320,6 @@ static void cleanup(void) {
     res_label = NULL;
     weight_label = NULL;
     coh_label = NULL;
-    hang_label = NULL;
     //
     // Hold is an operating state with no indicator outside this dialog,
     // so leaving it set with the dialog shut would silently stop the loop
@@ -309,10 +337,6 @@ static gboolean close_cb(void) {
   cleanup();
   return TRUE;
 }
-
-static void update_manual_sensitivity(void);
-static void update_att_controls(void);
-static void update_visibility(void);
 
 static void diversity_cb(GtkWidget *widget, gpointer data) {
   (void)data;
@@ -543,6 +567,54 @@ static void div_show_row(GtkWidget *label, GtkWidget *widget, gboolean on) {
   if (widget) { gtk_widget_set_visible(widget, on); }
 }
 
+//
+// The threshold slider is a different control on each reference, so its
+// range is not a constant either.
+//
+// On the three coherence references the bottom of the travel is the
+// coherence two uncorrelated noises reach by accident, which depends on
+// how many bins the reference accumulates and how long the average is -
+// a fraction of a percent on a wide window, a couple of percent on the
+// five bins the carrier tracker uses. The slider goes down to that and
+// stops: below it the gate passes noise-only blocks and the loop fits a
+// weight to an accident, which on a matched pair of arms adds about 3 dB
+// of noise for no signal. See diversity_auto_coh_floor().
+//
+// On RADE V1 it is not a coherence at all but the pilot signal fraction,
+// which reads far lower: 72 % of one marginal capture's locked blocks are
+// under 5 % while the modem holds sync on 98 % of frames (Finding 33).
+// The old 0 to 95 in steps of 5 put every reachable non-zero setting in
+// the range that holds the loop through a working decode. It spans the
+// measured range instead - 0.010 on the weakest capture in the set, 0.15
+// on a marginal one, 0.51 to 0.82 on strong ones - with a step fine
+// enough to sit under the weak end.
+//
+#define DIV_QUALITY_MAX 25.0
+
+static void update_coh_range(void) {
+  if (coh_scale == NULL) { return; }
+
+  const double lo = 100.0 * diversity_auto_coh_floor(div_auto_ref);
+  const double hi = (div_auto_ref == DIV_REF_RADE_V1) ? DIV_QUALITY_MAX : 95.0;
+  //
+  // Before the widget, not after: gtk_range_set_range() clamps the value
+  // it is holding into the new range, and if the setting were left where
+  // it was the slider would then show one number and the gate compare
+  // against another.
+  //
+  // It raises and does not remember what it raised from, so narrowing the
+  // window far enough to push the floor above the setting and then
+  // widening it again leaves a higher threshold than it started with. That
+  // is the honest outcome - the old value was one this window could not
+  // support - and the slider can be taken back down by hand.
+  //
+  (void)diversity_auto_clamp_cohmin();
+  updating_from_auto = 1;
+  gtk_range_set_range(GTK_RANGE(coh_scale), lo, hi);
+  gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
+  updating_from_auto = 0;
+}
+
 static void update_visibility(void) {
   const int ref = div_auto_ref;
   //
@@ -578,13 +650,14 @@ static void update_visibility(void) {
   //
   const gboolean wide = is_band;
   //
-  // Only the pilot correlator holds a lock that can be given up and
-  // re-acquired, so only it has a hang time. The wideband references have
-  // nothing to re-acquire: they stop accumulating when the signal goes
-  // and pick the next one up as it arrives, over the averaging time.
+  // There is no Hang row any more. Only the pilot correlator ever had one
+  // - it is the only reference holding a lock that can be given up and
+  // re-acquired - and swept on the two captures that can be scored on
+  // decode it does nothing: 1 to 10 s moves lock uptime from 38 % to 94 %
+  // and synced frames by +10, +11, +10, +10, which is inside the scatter.
+  // It stays at DIV_HANG_DEFAULT. See Findings 33, 35 and 41 in
+  // docs/diversity-measurements.md.
   //
-  const gboolean has_lock = (ref == DIV_REF_RADE_V1);
-
   if (follow_b) { gtk_widget_set_visible(follow_b, follows); }
 
   div_show_row(centre_label, centre_spin, placeable);
@@ -606,20 +679,41 @@ static void update_visibility(void) {
                                 ? "Hold below this pilot quality. RADE V1 measures "
                                 "acc_sig/(acc_sig+noise) - a signal fraction, not a "
                                 "coherence - so the same percentage asks for less "
-                                "signal here than it does in the other references. "
+                                "signal here than it does in the other references, "
+                                "and the slider is scaled to the range the quantity "
+                                "actually occupies: 1 % on the weakest capture "
+                                "measured, 15 % on a marginal one, 50 to 80 % on "
+                                "strong ones.\n\n"
                                 "Zero, the default, is the behaviour before this "
-                                "reference had a threshold at all - and is what it should stay at. On a marginal signal the pilot quality reads near zero while the modem decodes perfectly well: 72 % of one capture's locked blocks are below 0.05 with the modem in sync on 98 % of frames, so raising this would hold the loop through a working decode."
+                                "reference had a threshold at all - and is what it "
+                                "should stay at. On a marginal signal the pilot "
+                                "quality reads near zero while the modem decodes "
+                                "perfectly well: 72 % of one capture's locked blocks "
+                                "are below 5 % with the modem in sync on 98 % of "
+                                "frames, so raising this would hold the loop through "
+                                "a working decode."
                                 : "Hold below this coherence. Each reference keeps its "
                                 "own value, because each measures the coherence over "
                                 "different bins: the whole window in Window and "
-                                "Carrier, only the occupied ones in FSK/Digital. A "
-                                "window of pure noise still reports roughly 1/N for N "
-                                "averages, so a narrow window needs a higher setting "
-                                "than a wide one.");
+                                "Carrier, only the occupied ones in FSK/Digital.\n\n"
+                                "The bottom of the slider is not zero but the "
+                                "coherence two uncorrelated noises reach by accident "
+                                "one block in a hundred, which is what the estimator "
+                                "reports on an empty window. It moves with the window "
+                                "and the averaging time - a fraction of a percent on "
+                                "a wide window at a short average, a couple of "
+                                "percent on the few bins the carrier tracker uses - "
+                                "and the slider will not go below it, because a gate "
+                                "set inside the noise passes noise-only blocks and "
+                                "lets the loop fit a weight to an accident.");
   }
 
+  //
+  // The range is a function of the reference, the window and the averaging
+  // time, so it is re-derived here rather than fixed at build time.
+  //
+  update_coh_range();
   div_show_row(coh_label,    coh_scale,   TRUE);
-  div_show_row(hang_label,   hang_scale,  has_lock);
   //
   // Not a function of the reference like the rows above, but the same
   // treatment for the same reason: two numbers that mean nothing while
@@ -1053,8 +1147,6 @@ static void div_populate_from_settings(void) {
 
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
 
-  if (hang_scale)   { gtk_range_set_value(GTK_RANGE(hang_scale), div_auto_hang); }
-
   if (coh_scale)    { gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min); }
 
   if (hold_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(hold_b), div_auto_hold); }
@@ -1192,11 +1284,12 @@ static void div_window_store(int ref) {
 static void div_window_recall(int ref) {
   diversity_auto_ref_recall(ref);
 
-  if (coh_scale) {
-    updating_from_auto = 1;
-    gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
-    updating_from_auto = 0;
-  }
+  //
+  // The threshold slider is not moved here. Its range changes with the
+  // reference as well as its value, and update_coh_range() - reached
+  // through update_visibility() at the end of ref_changed_cb() - sets
+  // both together, which is the only way the two cannot disagree.
+  //
 
   if (centre_spin) {
     updating_from_auto = 1;
@@ -1246,6 +1339,11 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 
 static void follow_cb(GtkWidget *widget, gpointer data) {
   div_auto_follow_filter = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  //
+  // The window is now the RX filter's, or the operator's again, so the
+  // number of bins the gate is measured over has changed with it.
+  //
+  update_coh_range();
   diversity_auto_reset();
   div_send_settings(DIV_ACTION_NONE);
   update_manual_sensitivity();
@@ -1266,13 +1364,12 @@ static void width_cb(GtkWidget *widget, gpointer data) {
 
   div_auto_width = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
   div_window_store(div_auto_ref);
+  //
+  // Fewer bins in a narrower window, so the noise floor of the coherence
+  // estimate - and with it the bottom of the threshold slider - rises.
+  //
+  update_coh_range();
   diversity_auto_reset();
-  div_send_settings(DIV_ACTION_NONE);
-}
-
-static void hang_cb(GtkWidget *widget, gpointer data) {
-  (void)data;
-  div_auto_hang = gtk_range_get_value(GTK_RANGE(widget));
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1291,6 +1388,11 @@ static gchar *tau_format_cb(GtkScale *scale, gdouble value, gpointer data) {
 
 static void tau_cb(GtkWidget *widget, gpointer data) {
   div_auto_tau = div_tau_from_pos(gtk_range_get_value(GTK_RANGE(widget)));
+  //
+  // A shorter average is fewer independent blocks, which is the other half
+  // of the sample count the threshold floor is computed from.
+  //
+  update_coh_range();
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1325,6 +1427,11 @@ static void res_changed_cb(GtkWidget *widget, gpointer data) {
   // The transform length changes, so the engine has to be rebuilt.
   //
   diversity_auto_restart();
+  //
+  // ...and with it the bin width, which decides both how many bins the
+  // window holds and how long a block lasts.
+  //
+  update_coh_range();
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1388,13 +1495,18 @@ void diversity_menu(GtkWidget *parent) {
   // this dialog controls: whether the two ADCs share a step attenuator.
   //
   GtkWidget *topbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-  diversity_b = gtk_check_button_new_with_label("Diversity");
+  diversity_b = gtk_check_button_new_with_label("Div");
+  gtk_widget_set_tooltip_text(diversity_b,
+                              "Switch the whole feature on. The two ADC step "
+                              "attenuators are saved on the way in and put back on "
+                              "the way out, so whatever diversity needs of them does "
+                              "not outlive it.");
   gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (diversity_b), diversity_enabled);
   gtk_box_pack_start(GTK_BOX(topbox), diversity_b, FALSE, FALSE, 0);
   g_signal_connect(diversity_b, "toggled", G_CALLBACK(diversity_cb), NULL);
 
   if (have_rx_att && n_adc > 1) {
-    indep_att_b = gtk_check_button_new_with_label("ADC attenuators");
+    indep_att_b = gtk_check_button_new_with_label("ATT");
     gtk_widget_set_tooltip_text(indep_att_b,
                                 "Split the two ADC step attenuators. Normally both run "
                                 "on ADC0's while diversity is on, so that changing it "
@@ -1403,12 +1515,36 @@ void diversity_menu(GtkWidget *parent) {
                                 "source strong enough to overload the main antenna "
                                 "which the second one cannot hear. The step is fed "
                                 "forward into the weight, so the audio does not jump, "
-                                "and the measurement restarts.");
+                                "and the measurement restarts.\n\n"
+                                "The pair is remembered per band and put back when you "
+                                "split them here or return to the band: what they "
+                                "correct is how much hotter one antenna is than the "
+                                "other, which is a property of the two antennas on "
+                                "that band and does not change between visits.");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(indep_att_b), div_indep_att);
     gtk_box_pack_start(GTK_BOX(topbox), indep_att_b, FALSE, FALSE, 0);
     g_signal_connect(indep_att_b, "toggled", G_CALLBACK(indep_att_cb), NULL);
   }
 
+  //
+  // Third of the three things that are switched rather than tuned, so it
+  // belongs with them rather than buried among the sliders that set the
+  // estimate up. It changes what you hear, not what is measured.
+  //
+  norm_b = gtk_check_button_new_with_label("Level output");
+  gtk_widget_set_tooltip_text(norm_b,
+                              "Keep the combined output at the level of the first "
+                              "antenna alone, instead of letting it rise with the "
+                              "array gain. Measured across the capture set the rise "
+                              "is +1.5 to +8 dB, of which +2.9 to +9.4 dB more than "
+                              "the SNR it buys - so without this, switching diversity "
+                              "on makes the band louder whether or not it made it "
+                              "better. With it, an improvement arrives as the noise "
+                              "floor dropping. Sum and Best only: Null exists to make "
+                              "the output quieter and is left alone.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise);
+  gtk_box_pack_start(GTK_BOX(topbox), norm_b, FALSE, FALSE, 0);
+  g_signal_connect(norm_b, "toggled", G_CALLBACK(norm_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), topbox, 1, 0, 1, 1);
 
   //
@@ -1600,20 +1736,6 @@ void diversity_menu(GtkWidget *parent) {
                               "answer. Flat is the older behaviour.");
   gtk_grid_attach(GTK_GRID(grid), weight_combo, 1, 13, 1, 1);
   g_signal_connect(weight_combo, "changed", G_CALLBACK(weight_changed_cb), NULL);
-  norm_b = gtk_check_button_new_with_label("Hold output level (Sum, Best)");
-  gtk_widget_set_tooltip_text(norm_b,
-                              "Keep the combined output at the level of the first "
-                              "antenna alone, instead of letting it rise with the "
-                              "array gain. Measured across the capture set the rise "
-                              "is +1.5 to +8 dB, of which +2.9 to +9.4 dB more than "
-                              "the SNR it buys - so without this, switching diversity "
-                              "on makes the band louder whether or not it made it "
-                              "better. With it, an improvement arrives as the noise "
-                              "floor dropping. Sum and Best only: Null exists to make "
-                              "the output quieter and is left alone.");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise);
-  gtk_grid_attach(GTK_GRID(grid), norm_b, 1, 14, 1, 1);
-  g_signal_connect(norm_b, "toggled", G_CALLBACK(norm_cb), NULL);
   GtkWidget *tau_label = gtk_label_new("Averaging (s)");
   gtk_widget_set_tooltip_text(tau_label,
                               "Time constant for the gain/phase estimate. "
@@ -1638,28 +1760,21 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_name(coh_label, "boldlabel");
   gtk_widget_set_halign(coh_label, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 16, 1, 1);
-  coh_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 5.0);
+  //
+  // A tenth of a percent of rounding and half a percent a step. The old
+  // 5 % step could not reach either end of what this control now spans:
+  // not the floor on a wide window, which is a fraction of a percent, and
+  // not the bottom of the RADE quality range, where every reachable
+  // non-zero setting held the loop through a working decode. The bounds
+  // themselves are set by update_coh_range(), which knows which reference
+  // is selected.
+  //
+  coh_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 0.5);
+  gtk_scale_set_digits(GTK_SCALE(coh_scale), 1);
   gtk_widget_set_size_request(coh_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
   gtk_grid_attach(GTK_GRID(grid), coh_scale, 1, 16, 1, 1);
   g_signal_connect(G_OBJECT(coh_scale), "value_changed", G_CALLBACK(coh_cb), NULL);
-  hang_label = gtk_label_new("Hang (s)");
-  gtk_widget_set_tooltip_text(hang_label,
-                              "How long a RADE lock is held after the pilot stops "
-                              "being detectable, before the correlator gives up and "
-                              "searches again. Long rides out a fade on one station. "
-                              "Short is what a frequency several stations take turns "
-                              "on wants: each has its own best gain and phase, and "
-                              "until the lock is dropped the previous station's is "
-                              "still being applied.");
-  gtk_widget_set_name(hang_label, "boldlabel");
-  gtk_widget_set_halign(hang_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), hang_label, 0, 17, 1, 1);
-  hang_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 1.0, 30.0, 0.5);
-  gtk_widget_set_size_request(hang_scale, 300, 25);
-  gtk_range_set_value(GTK_RANGE(hang_scale), div_auto_hang);
-  gtk_grid_attach(GTK_GRID(grid), hang_scale, 1, 17, 1, 1);
-  g_signal_connect(G_OBJECT(hang_scale), "value_changed", G_CALLBACK(hang_cb), NULL);
   //
   // The three things done while listening rather than while setting up,
   // on one row of their own.
@@ -1766,7 +1881,6 @@ void diversity_menu(GtkWidget *parent) {
       res_label,    res_combo,
       weight_label, weight_combo,
       coh_label,    coh_scale,
-      hang_label,   hang_scale,
       att_label,    att_box
     };
 

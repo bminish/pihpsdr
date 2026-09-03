@@ -32,7 +32,7 @@ coherent and identically configured; no weighting happens in the FPGA.
 
 ## 1. Quick start
 
-1. **Diversity** in the Diversity menu. This re-plumbs the DDCs, so
+1. **Div** in the Diversity menu. This re-plumbs the DDCs, so
    expect a moment's interruption.
 2. Set **Auto** to `Sum` to combine both antennas for the best signal, or
    `Null` to cancel the strongest thing the two have in common.
@@ -210,10 +210,9 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | **Window centre / width** | Where to look, measured from the signal you are tuned to — the zero-beat note in CW. Kept separately for Window, Carrier and FSK/Digital, so aiming the carrier tracker does not destroy your wideband window |
 | **Resolution** | 12 / 6 / 3 Hz bins. Finer bins lift a weak signal out of the per-bin noise floor — a different thing from Averaging, which reduces the variance of an estimate rather than improving the SNR it is made from. Each step halves the update rate |
 | **Weighting** | `Coherence` weights each bin by how well the two antennas agree in it. On speech it roughly halves the gain error, because the noise-only parts of a wide window stop diluting the answer. `Flat` is the older behaviour, kept for comparison |
-| **Hold output level** | The combined output is louder than one antenna by whatever the array does to it — measured at +1.5 to +8 dB, of which +2.9 to +9.4 dB *more* than the SNR it buys. Tick this and the level stays where it was, so an improvement arrives as the noise floor dropping rather than as everything getting louder. Off by default, because whether it sounds better depends on your AGC and no recording could settle it. Sum and Best only — Null exists to make the output quieter |
+| **Level output** | The combined output is louder than one antenna by whatever the array does to it — measured at +1.5 to +8 dB, of which +2.9 to +9.4 dB *more* than the SNR it buys. Tick this and the level stays where it was, so an improvement arrives as the noise floor dropping rather than as everything getting louder. Off by default, because whether it sounds better depends on your AGC and no recording could settle it. Sum and Best only — Null exists to make the output quieter |
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. A weak AM carrier or an HF RADE path usually wants several seconds; a fast path (20 m near the MUF, or the low bands) wants a fraction of one, and Null wants the shortest setting that still holds a lock |
-| **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing — in RADE V1 the row reads *Min quality* and gates the pilot's signal fraction, which asks for about 4.5 dB less signal at the same percentage. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.30 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence |
-| **Hang** | 1–30 s, `RADE V1 pilot` only. How long a lock is held after the pilot goes before the correlator gives up and searches again. Long rides out a fade on one station; short is what a frequency several stations take turns on wants |
+| **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing — in RADE V1 the row reads *Min quality* and gates the pilot's signal fraction, which asks for about 4.5 dB less signal at the same percentage. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.30 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — and the slider now says so, because it will not go below that reading. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. In RADE V1 it spans 0–25 % instead, which is where the pilot signal fraction actually lives — 1 % on the weakest signal recorded, 15 % on a marginal one, 50–80 % on strong ones — and **0 is still the right setting**: on a marginal signal the quality reads near nothing while the modem decodes perfectly well |
 | **Restart averaging** | Throw away the statistics and start again |
 | **Hold** | Stop *applying* the answer without stopping the loop |
 | **Invert** | Swap Null and Sum. Greyed out under Best, which has no opposite |
@@ -261,7 +260,7 @@ a time average, so once no single block spans the hole it is unaffected.
 deliberate. Its lock is a timing as well as a frequency, and a hole of
 unknown length in the sample stream moves the pilot underneath it; left to
 track through, it held a dead lock and a frozen weight for the whole
-**Hang** time — up to thirty seconds — before it noticed. Expect
+hang time — ten seconds — before it noticed. Expect
 `search` → `confrm` → `LOCK` again a second or two into the other
 station's over. MOX, VOX and Tune are all covered.
 
@@ -365,14 +364,17 @@ wrong, and with the passband on the wrong sideband it will never lock.
 Averaging several seconds. Expect `search` → `confrm` → `LOCK` within a
 few seconds of the transmission starting.
 
-Set **Hang** for the company you are keeping. Working one station on a
-fading path, leave it long: a fade is when the combining weight is worth
-the most, and a lock dropped in one has to be bought back on the signal
-at its weakest. On a net or a roundtable, bring it down to two or three
-seconds. Each station arrives over its own path with its own best gain
-and phase, and until the lock on the last one is given up the new one is
-being combined with the wrong weight — which on two antennas is not
-neutral, it can be subtracting. At 2 s the lock is dropped about three
+There is no **Hang** control any more, and nothing to set. A lock is held
+ten seconds after the pilot goes before the correlator searches again.
+That used to be a slider, and it was removed because swept from 1 to 10 s
+on the two recordings that can be scored on actual decodes it changes lock
+uptime from 38 % to 94 % and changes the number of decoded frames by
+nothing at all. The lock indicator is a true statement about the pilot and
+very nearly unrelated to whether the modem is working, so there was
+nothing here you could have set better than the radio does. The argument
+that used to be made for a short setting — a net or a roundtable, where
+each station arrives over its own path with its own best gain and phase —
+is not in the recordings and so is not evidence. At 2 s the lock was dropped about three
 and a half seconds after the changeover and re-made about two seconds
 after that.
 
@@ -519,7 +521,7 @@ attenuator. It does not notice an antenna change, which also shifts the
 relationship between the arms; there the estimate re-converges over a few
 time constants instead. **Restart averaging** if you do not want to wait.
 
-**ADC attenuators**, the tick box beside **Diversity** at the top of the
+**ATT**, the tick box beside **Div** at the top of the
 menu, lets you attenuate one antenna without the other. Normally both
 ADCs run on ADC0's step attenuator while diversity is on, so that changing
 it cannot move the weight. The reason to split them is headroom on one
@@ -529,7 +531,16 @@ antenna keeps the sensitivity it did not need to give up.
 
 Ticking it puts an **Attenuator (dB)** row underneath, with a value for
 each ADC; untick it and the row goes away again, because tied they are one
-number the ATT slider already shows. Those two spin buttons are the way to
+number the ATT slider already shows.
+
+**The pair is remembered per band.** Tick **ATT** and you get back
+whatever the two attenuators were the last time you ran diversity with
+them split *on this band* — nothing is asserted on a band you have never
+done it on. That is the shape of the problem: how much hotter one antenna
+is than the other is a property of the two antennas on that band, so an
+antenna that wanted 14 dB on 160 m wants it again next time. Changing band
+with **ATT** ticked does the same thing. What you had before diversity
+started is separate and is still given back when you switch it off. Those two spin buttons are the way to
 reach ADC1, because the loop makes RX1 the active receiver and the
 ordinary ATT slider follows that.
 

@@ -74,7 +74,7 @@ because an attenuator change moves the relative gain between the arms and
 so invalidates whatever weight is in force — including a manual one the
 operator set by hand.
 
-**ADC attenuators**, the tick box beside **Diversity** at the top of the
+**ATT**, the tick box beside **Div** at the top of the
 menu, unties them, and puts an **Attenuator (dB)** row with a value for
 each ADC underneath — a row that is there only while they are split. The
 reason to want it is headroom on one antenna alone: a local source strong
@@ -245,6 +245,26 @@ the floor could not be measured. Because Best selects rather than steers,
 Fit quality is the magnitude-squared coherence
 `γ² = |Sxy|²/(Sxx·Syy)`. Below that reference's **Min coherence** the loop
 holds rather than chasing noise, and the status line says `HOLD`.
+
+That control has a floor, and the floor is not zero. Over *N* independent
+samples the `γ²` of two *uncorrelated* noises averages `1/N` and is
+distributed as `Beta(1, N-1)`, so a gate set under that stops being a gate:
+noise-only blocks pass it and the loop fits a weight to whatever the two
+antennas agreed on by accident — near-unity magnitude and random phase,
+about 3 dB of added noise on a matched pair of arms. `diversity_auto_coh_floor()`
+returns the value pure noise reaches one block in a hundred,
+
+    floor = 1 − 0.01^(1/(N−1))  ≈  4.6/N,
+
+with *N* the accumulated bin count times the effective length of the
+exponential average, `(2−α)/α`. Both terms matter. A 3 kHz window at 12 Hz
+bins and 2 s of averaging has thousands of samples and a floor of **0.1 %**
+— which is why switching the gate off costs nothing there (Finding 38) —
+while the Carrier reference accumulates five bins and reaches **1.6 %** at
+the same averaging and **15 %** at 0.2 s. The slider's lower bound is that
+number, recomputed whenever the reference, the window, the resolution or
+the averaging time moves, and a stored setting below it is raised to it so
+that what is displayed is what the gate compares against.
 
 ### Noticing that the signal has stopped
 
@@ -435,7 +455,7 @@ block after an over spliced pre-TX and post-TX samples into one transform
 while `lock_a` went on advancing by one modem frame against a ring that
 had skipped an arbitrary number of samples. The correlator tracked
 straight through into a dead lock, holding a frozen weight for the whole
-**Hang** time — 10 s by default, up to 30 — before it started searching
+hang time — 10 s — before it started searching
 again. It now re-acquires deliberately after every over, which costs the
 searching load in §7 for a second or two.
 
@@ -603,12 +623,21 @@ references the two objectives here really are a sign flip.
 
 Unlike every other reference, this one holds a *lock* - a timing, a
 frequency and a pilot bank it keeps returning to - so it is the only one
-with something to give up. The **Hang** control decides when: how long
-the lock outlives the pilot before the correlator searches again. Long
-rides out a fade on a single station, which is when the weight is worth
-the most; short is what a frequency several stations take turns on wants,
-where each arrives over its own path and until the lock is dropped the
-new one is being combined with the old one's answer. See
+with something to give up. `DIV_HANG_DEFAULT` decides when: how long the
+lock outlives the pilot before the correlator searches again, fixed at
+10 s.
+
+**It used to be a slider and is not one any more.** Swept from 1 to 10 s
+on the two captures that can be scored on decode it moves lock uptime from
+38 % to 94 % and synced frames by +10, +11, +10, +10 — inside the scatter
+of the measurement either way. The correlator's uptime is a true statement
+about the pilot lock and very nearly uncoupled from what the modem does
+with the audio, so there was nothing here for an operator to tune. The long
+end is what is kept, because it re-acquires least often; the one case that
+might have argued for a short hang — several stations taking turns on one
+frequency, each wanting its own weight — is not in the capture set, so it
+is not evidence. See Findings 33, 35 and 41 in
+[`diversity-measurements.md`](diversity-measurements.md) and
 [`diversity-rade.md`](diversity-rade.md).
 
 The wideband **RADE passband** reference that used to sit alongside it has
@@ -716,8 +745,9 @@ one block from `track` to `search` when the signal stops.
 
 | Control | Effect | Shown for |
 |---|---|---|
-| **Diversity** | The whole feature, including the DDC re-plumbing | always |
-| **ADC attenuators** | Split ADC0's and ADC1's step attenuators (§1) | two ADCs with a step attenuator |
+| **Div** | The whole feature, including the DDC re-plumbing | always |
+| **ATT** | Split ADC0's and ADC1's step attenuators (§1). The split pair is remembered **per band** and put back when you tick this or return to the band — how much hotter one antenna is than the other is a property of the two antennas on that band | two ADCs with a step attenuator |
+| **Level output** | Keeps the combined output at the level of arm 0 alone instead of letting it rise with the array gain. Off by default; Sum and Best only. See Finding 32 in [`diversity-measurements.md`](diversity-measurements.md) | Sum, Best |
 | **Attenuator (dB)** | ADC0 and ADC1, 0-31 dB each | only while split |
 | **Gain / Phase** (coarse, fine) | Manual weight; live when Auto is not driving, and under **Hold** | always |
 | **Auto** | Off / Null / Sum / Best — the objective | always |
@@ -726,10 +756,8 @@ one block from `track` to `search` when the signal stops.
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 12 / 6 / 3 Hz bins. Finer lifts weak signals out of the noise but halves the update rate each step | all but RADE V1 |
 | **Weighting** | Flat or Coherence (see above) | Window |
-| **Hold output level** | Keeps the combined output at the level of arm 0 alone instead of letting it rise with the array gain. Off by default; Sum and Best only. See Finding 32 in [`diversity-measurements.md`](diversity-measurements.md) | Sum, Best |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
-| **Hang** | 1-30 s. How long a lock outlives the pilot before the correlator searches again | RADE V1 |
-| **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md) | all four |
+| **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md). **The range is not fixed**: the three coherence references go from their own noise floor (§4) to 95 %, and *Min quality* spans 0-25 % in ½ % steps, which is the range the pilot signal fraction actually occupies | all four |
 | **Restart averaging** | Discards the accumulated statistics | always |
 | **Hold** | Stops applying the loop's answer without stopping the loop | always |
 | **Invert** | Swaps Null and Sum | always; inactive under Best |
@@ -989,7 +1017,7 @@ Run it yourself with `make -C test/diversity bench`.
 | **RADE V1 acquisition** | **1-5 s** of continuous signal |
 | RADE V1 confirmation ("probation") | ~1 s of that |
 | RADE V1 freeze when the pilot goes | ~1 s |
-| RADE V1 lock drop | the **Hang** control, 1-30 s, plus the ~1 s the freeze gate takes |
+| RADE V1 lock drop | `DIV_HANG_DEFAULT`, 10 s, plus the ~1 s the freeze gate takes |
 
 RADE V1 acquisition is in two parts. The search scores its grid at 8, 16
 and 32 passes of a 120 ms modem frame, with the threshold coming down as

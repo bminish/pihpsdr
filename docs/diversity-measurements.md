@@ -7121,6 +7121,76 @@ that the correlator path returns before reaching, so `div_norm` stays at
 1.0 in that mode. That is a gap, not a decision - see "What is still
 open".
 
+### `src/diversity_menu.c` — the menu, simplified against these measurements
+
+Five changes, none of which moves a number the engine computes.
+
+**The three switches are together at the top and the labels are short.**
+`Diversity` reads `Div`, `ADC attenuators` reads `ATT`, and `Hold output
+level` moves up beside them as `Level output`. They are the three things
+that are switched rather than tuned; the rest of the dialog sets an
+estimate up.
+
+**The Hang slider is gone and `DIV_HANG_DEFAULT` is 10 s.** Findings 33,
+35 and 41: swept from 1 to 10 s it moves lock uptime from 38 % to 94 % and
+synced frames by +10, +11, +10, +10 on `234624` and +22, +10, +7, +28 on
+`165826`, both inside the scatter. The setting travels and is stored as
+before - the wire format and the props file do not change shape - but
+`div_settings_validate()` now pins it rather than range-checking it, so a
+value left by an older build or sent by an older client is replaced.
+
+**The threshold slider's bottom is the estimator's own noise floor**, not
+zero. `diversity_auto_coh_floor()` returns `1 − 0.01^(1/(N−1))`, the `γ²`
+two uncorrelated noises reach one block in a hundred, with `N` the
+accumulated bin count times `(2−α)/α`. It is 0.1 % on a 3 kHz window at
+12 Hz bins and 2 s of averaging, 5.5 % on a 200 Hz window at 0.2 s, 1.6 %
+on Carrier at 2 s and 15 % at 0.2 s - which is Finding 26's `1/N` remark
+made into a bound. The slider is re-ranged whenever the reference, the
+window, the resolution or the averaging time moves, and
+`diversity_auto_clamp_cohmin()` raises a stored value that is under the new
+floor and files it back in that reference's slot, so the number displayed
+and the number the gate compares against cannot differ. Finding 38's
+result is preserved: on a wide window the floor is a tenth of a percent,
+so switching the gate effectively off is still reachable.
+
+**Min quality is scaled to the quantity it gates.** RADE V1's threshold
+spans 0 to 25 % in ½ % steps instead of 0 to 95 % in fives. The pilot
+signal fraction reads 0.010 on the weakest capture in the set, 0.15 on a
+marginal one and 0.51 to 0.82 on strong ones, and Finding 33 measured 72 %
+of one working decode's locked blocks below 0.05 - so every reachable
+non-zero setting on the old scale was in the range that holds the loop
+through a decode. Zero remains the default and the recommendation.
+
+**Capture switches diversity on first.** Under `DIVCAP=1`, pressing
+Capture with the feature off now enables it with the settings in the
+dialog and records from there, backing both out again if the engine
+declines to start. Every capture in this document begins mid-track,
+because arming the recorder and then reaching for the Diversity tick was
+the only order available; acquisition and settling have never been
+recorded and now can be.
+
+### `src/band.h`, `src/band.c`, `src/radio.c` — the split attenuators, per band
+
+Finding 34 measured the attenuation budget on 160 m at 14 dB and Finding
+42 measured a chain's own floor at 22.7 dB on 17 m: the correction a hot
+second antenna wants is a property of the two antennas *on that band*, and
+it does not change between visits. It was being found again by ear every
+time.
+
+`BAND` gains `div_att[2]` and `div_att_valid`. Every move of either step
+attenuator made while diversity is running with the pair split is filed
+against the current band; the pair is put back when the operator ticks
+**ATT**, when diversity starts with it already ticked, and on a band
+change. A band diversity has never been run on stores nothing and asserts
+nothing, so an untouched band keeps the ATT the operator set by hand.
+
+This is separate from `div_saved_att`, which is unchanged: what the
+operator had *before* diversity started is still saved on the way in and
+given back on the way out. `div_band_att_busy` keeps the two from
+colliding - `radio_apply_band_settings()` puts the band's ATT slider value
+on ADC0 on its way through, which without the guard would overwrite
+`div_att[0]` moments before the recall reads it.
+
 ### What was thrown away
 
 The FSK/Digital occupancy guard written for Finding 8. It moved the score

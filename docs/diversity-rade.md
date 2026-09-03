@@ -330,8 +330,8 @@ measured off-pilot in the same frame. That is a ratio, so it does not
 depend on signal level and cannot ratchet. A working lock reads about 6 on
 this reference, so there is real margin; a ratio of 1 would mean the pilot
 correlates no better than anything else in the frame does. How long the
-ratio has to stay down before the lock is given up is the **Hang** control
-- see below.
+ratio has to stay down before the lock is given up is the hang time - see
+below.
 
 Fixing this also improved the synthetic interferer result from -26.5 dB
 to -36.8 dB, simply because tracking now runs on every frame instead of
@@ -497,7 +497,7 @@ arbitrary number of samples. That is exactly the failure the gap mechanism
 exists to prevent, arriving by a route that did not use it.
 
 On a RADE QSO it happened after every over: a dead lock, a frozen weight,
-and the full **Hang** - 10 s by default and up to 30 - before the
+and the full hang - 10 s - before the
 correlator started searching again.
 
 `diversity_auto_gap()` routes the transmit gap into that mechanism
@@ -522,12 +522,12 @@ alternative is the dead lock it replaces.
 `RADE V1 pilot` is the only reference that holds a *lock* - a timing, a
 frequency and a pilot bank it keeps returning to. The other references
 measure whatever is in the window this block and forget it over the
-averaging time; there is nothing for them to give up. So the **Hang**
-control appears only for this one.
+averaging time; there is nothing for them to give up. So the hang applies
+to this one alone.
 
 It sets how long a lock survives after the pilot stops being detectable,
-before the correlator gives up and searches again. The range is 1 to 30
-seconds and the default is 10.
+before the correlator gives up and searches again. It is `DIV_HANG_DEFAULT`,
+fixed at 10 seconds.
 
 The trade is straightforward in one direction and less obvious in the
 other. Long is what a single station on a fading path wants: a fade is
@@ -535,12 +535,32 @@ exactly when the combining weight is worth the most, and a lock given up
 in a fade has to be bought back with a fresh acquisition on a signal that
 is, at that moment, at its weakest.
 
-Short is what a frequency several stations are taking turns on wants, and
-that case is the reason the control exists. Each station arrives over its
-own path and has its own best gain and phase; until the lock on the last
-one is given up, the new one is being combined with the wrong weight, and
-the wrong weight on a two-antenna combiner is not neutral - it can be
-subtracting.
+Short is what a frequency several stations are taking turns on wants. Each
+station arrives over its own path and has its own best gain and phase;
+until the lock on the last one is given up, the new one is being combined
+with the wrong weight, and the wrong weight on a two-antenna combiner is
+not neutral - it can be subtracting.
+
+### Why it is no longer a control
+
+That second case was the reason the slider existed, and it is not
+supported by anything recorded. On the two captures in
+[`diversity-measurements.md`](diversity-measurements.md) that can be scored
+on actual decodes, sweeping the hang from 1 to 10 s moves lock uptime from
+38 % to 94 % and moves synced frames by +22, +10, +7, +28 on one and by
++10, +11, +10, +10 on the other - a spread smaller than the scatter of the
+measurement in both cases. Sweeping `RADE_USE_RATIO` says the same thing
+from the other side: uptime falls from 57 % to 45 % while decode *improves*.
+
+The correlator's uptime, quality and pilot SNR describe the health of the
+pilot lock accurately and are very nearly uncoupled from what the modem
+does with the audio. An operator setting this control was therefore acting
+on a number that does not predict the result, and could reach a worse
+outcome than the default but not a better one. The long end is kept
+because it re-acquires least often. The roundtable case remains
+unmeasured - there is no capture of one - and if one is ever recorded it
+is the evidence that would bring the control back. See Findings 33, 35 and
+41 in [`diversity-measurements.md`](diversity-measurements.md).
 
 ### What it replaced
 
@@ -576,7 +596,9 @@ starts:
 | 10 s | 11.5 s after the changeover | 2.0 s later |
 
 Eight seconds more hang cost 7.9 seconds more before the drop, so the
-setting is what decides. The roughly 1.5 s on top of it in both rows is
+value is what decides. (`test_rade` still sweeps it, which is how this row
+is produced; what went away is the operator's access to it, not the
+mechanism.) The roughly 1.5 s on top of it in both rows is
 the fast gate's own averaging, which has to run down before the count can
 start.
 
