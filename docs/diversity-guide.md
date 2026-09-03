@@ -251,10 +251,14 @@ the key is down.
 
 ### When you transmit
 
-Both protocols stop feeding the analysis for the whole over, so there is a
-hole in what it sees. The weight you had stays applied throughout, and
-Window, Carrier and FSK/Digital lose nothing at all — a cross spectrum is
-a time average, so once no single block spans the hole it is unaffected.
+The analysis is blind for the whole over, and that is by design: while
+you transmit, the radio needs both receive chains for the PureSignal
+feedback, so it stops sending the second antenna. There is no setting
+that changes this and nothing is wrong when it happens.
+
+The weight you had stays applied throughout, and Window, Carrier and
+FSK/Digital lose nothing at all — a cross spectrum is a time average, so
+once no single block spans the hole it is unaffected.
 
 **RADE V1 gives its lock up and re-acquires after every over.** That is
 deliberate. Its lock is a timing as well as a frequency, and a hole of

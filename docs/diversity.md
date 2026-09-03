@@ -164,6 +164,54 @@ The analysis never sits in the audio path. The weight is applied to every
 sample exactly as it was before, and the loop just changes what that
 weight is, roughly twelve times a second.
 
+### The queue
+
+Four block buffers, in the style of the DDC packet rings in
+`src/new_protocol.c`: a single-producer/single-consumer ring with no
+mutex anywhere on it.
+
+The protocol RX thread owns `q_head` and the worker owns `q_tail`, both
+`volatile atomic_int`. The producer fills the slot at `q_head`, writes
+the block's `q_gap[]` entry, issues a `MEMORY_BARRIER` (`src/atomic.h`)
+and only then publishes the new `q_head` — so the worker cannot see a
+head without also seeing the payload that goes with it. The worker
+barriers again after its last read from a slot and before handing it back
+through `q_tail`. One slot is always the one being filled, so the head
+can never catch the tail and `q_head == q_tail` unambiguously means
+empty; at most three blocks are ever waiting, which is what the old
+`q_count < DIV_QUEUE - 1` test allowed too.
+
+A semaphore is posted once per block enqueued, and once by
+`diversity_auto_stop()` to wake the worker so it can see `worker_run` go
+to zero. It is created on the first start and never destroyed: the sample
+path tests `div_auto_running` without a lock and can still be inside
+`sem_post()` after `diversity_auto_stop()` has returned, so destroying it
+there would be the same use-after-free that the never-freed sample
+buffers avoid. `new_protocol_menu_stop()` can destroy its semaphores
+because it has joined every thread that posts them; we cannot, because
+the protocol thread keeps running. Instead the count is drained at start
+and the worker checks the ring pointers before it acts on a wake — the
+count is a hint, not an invariant.
+
+Two things reach the queue from other threads, and both arrive as
+generation counters rather than flags:
+
+| Word | Bumped by | Acted on by |
+|---|---|---|
+| `gap_seq` | `rxtx()` (`diversity_auto_gap()`) | the sample path, on its next sample |
+| `reset_seq` | the menu and the remote settings path (`diversity_auto_reset()`) | the worker, between blocks |
+
+The thread that acts on one only ever writes its own private `*_seen`
+copy. A test-and-clear flag has a lost-update window — a request raised
+between the read and the clear is erased — and a counter does not, since
+any change of value is what the reader responds to.
+
+Everything else is single-owner. `fillptr`, `q_pending_drop`, `gap_seen`
+and `fill0`/`fill1` belong to the sample path; `work0`/`work1` and
+`reset_seen` belong to the worker. That is only true because
+`diversity_auto_gap()` no longer does the discard itself — see §4's
+transmit-gap note below.
+
 ### Block cadence
 
 `div_choose_nfft()` picks the transform length to land near the requested
@@ -459,13 +507,43 @@ station moves kilohertz and still resets. See Finding 15's neighbourhood in
 
 **A transmit gap is not a retune, and is handled separately.** Both
 protocols stop feeding `rx_add_div_iq_samples()` for the whole over — P2
-only sets `RXACTION_DIV` when not transmitting, duplex included, and P1
-guards the mixer the same way — so the analysis stream acquires a hole
-that nothing in the context comparison can see. `rxtx()` calls
-`diversity_auto_gap()`, the one funnel every TX/RX transition goes
-through, so MOX, VOX and Tune are all covered. It discards the partly
-filled block and marks the next complete one as following a gap, which is
-the flag the worker already uses to call `rade_corr_reset()`.
+only sets `RXACTION_DIV` when not transmitting, duplex included
+(`update_action_table()`), and P1 guards the mixer on
+`!radio_is_transmitting()`.
+
+That stop is required, not incidental. On P2 the two receive chains the
+diversity pair uses are DDC0 and DDC1, and those are exactly the
+synchronised pair the radio needs for the PURESIGNAL feedback while
+transmitting; with PureSignal on they are additionally retuned to the
+transmit frequency
+(`new_protocol.c`, the `xmit && transmitter->puresignal` block in the
+high-priority packet). P1 reserves the same two chains the same way.
+There is no arrangement in which two antennas keep arriving during an
+over, and none is wanted — the diversity weight is not being measured
+while the operator is talking.
+
+So the analysis stream has a hole in it, and nothing in the context
+comparison can see it: `div_context_changed()` does not watch PTT, and
+`q_pending_drop` counts only blocks lost to a full queue. Reporting it is
+all `diversity_auto_gap()` does. It is called from `rxtx()`, the one
+funnel every TX/RX transition goes through, so MOX, VOX and Tune are all
+covered, and it is called on **both** edges. It bumps a generation
+counter; the sample path picks that up on its next sample, discards the
+partly filled block and marks the next complete one as following a gap,
+which is the flag the worker already uses to call `rade_corr_reset()`.
+
+The discard belongs to the sample path rather than to `rxtx()` for two
+reasons. It keeps `fillptr` and `q_pending_drop` private to one thread,
+which is what lets the queue run without a mutex at all (see "The queue"
+in §4); and it is more accurate, because a store from the GTK thread
+could land in the middle of a block the protocol thread was still
+writing. It also puts the discard at the right instant: samples still in
+flight from the last DDC packet when `rxtx()` runs are pre-TX samples,
+and they are thrown away with the block they belong to instead of being
+spliced onto post-TX ones. The TX→RX edge is the one that does that work,
+and it is guaranteed to arrive first — every caller of `rxtx(0)` clears
+`mox`/`vox`/`tune` only after it returns, so `radio_is_transmitting()` is
+still true for the whole call and both protocol gates are still shut.
 
 That matters only to RADE V1, and it matters a lot: without it the first
 block after an over spliced pre-TX and post-TX samples into one transform
@@ -1017,9 +1095,10 @@ Reading these:
 - RADE V1 once locked scales with the sample rate, because what remains is
   the decimator.
 
-On the protocol receive thread the added cost is four float stores per
-sample pair plus one mutex acquisition per block — well under 1 % of a
-core at 384 kHz, and **no added audio latency**.
+On the protocol receive thread the added cost is four float stores and
+one atomic load per sample pair, plus one `sem_post()` per block — well
+under 1 % of a core at 384 kHz, and **no added audio latency**. There is
+no mutex on that path at all; see "The queue" in §4.
 
 Run it yourself with `make -C test/diversity bench`.
 

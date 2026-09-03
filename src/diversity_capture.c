@@ -36,12 +36,17 @@
 //
 
 #include <gtk/gtk.h>
+#include <semaphore.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include "atomic.h"
 #include "diversity_capture.h"
 #include "discovered.h"
+#ifdef __APPLE__
+  #include "MacOS.h"        // for apple_sem()
+#endif
 #include "message.h"
 #include "radio.h"
 
@@ -49,29 +54,48 @@
 // Slots in the ring. Sixteen blocks is about 1.4 s at any sample rate
 // (the analysis block is ~85 ms at all of them), which is far more than
 // a buffered write to a local disk needs and cheap enough not to think
-// about: 1 MB at 48 kHz, 8 MB at 384 kHz.
+// about: 1 MB at 48 kHz, 8 MB at 384 kHz. One slot is always the one
+// being filled, so fifteen of the sixteen are usable.
 //
 #define DIVCAP_QUEUE 16
 
-int div_capture_active = 0;
+volatile int div_capture_active = 0;
 
 static FILE      *fp = NULL;
 static GThread   *writer = NULL;
-static GMutex     cap_mutex;
-static GCond      cap_cond;
-static int        cap_quit = 0;
+static volatile atomic_int cap_run = 0;
 
+//
+// Raised once per block queued, and once by diversity_capture_stop() to
+// wake the writer for the last time. Created once and never destroyed:
+// the analysis thread posts it and is not joined here, exactly as in
+// diversity_auto.c.
+//
+static int        cap_sem_created = 0;
+#ifdef __APPLE__
+  static sem_t   *cap_sem = NULL;
+  #define CAP_SEM   cap_sem
+#else
+  static sem_t    cap_sem;
+  #define CAP_SEM   (&cap_sem)
+#endif
+
+//
+// A single-producer/single-consumer ring: the analysis thread fills at
+// cap_head, the writer thread drains at cap_tail, and a memory barrier
+// on each side is all the ordering it needs. See the ring in
+// src/new_protocol.c, which this follows.
+//
 static struct divcap_block  slot_meta[DIVCAP_QUEUE];
 static float               *slot_data[DIVCAP_QUEUE];
-static int        cap_head = 0;      // next slot to fill
-static int        cap_tail = 0;      // next slot to write
-static int        cap_count = 0;
+static volatile atomic_int cap_head = 0;      // next slot to fill
+static volatile atomic_int cap_tail = 0;      // next slot to write
 
 static int        cap_nfft = 0;
 static size_t     cap_payload = 0;   // bytes of float payload per block
 static guint32    cap_seq = 0;
-static guint32    cap_blocks = 0;    // blocks actually written
-static guint32    cap_skipped = 0;   // blocks lost to a full ring
+static volatile guint32 cap_blocks = 0;    // blocks actually written
+static volatile guint32 cap_skipped = 0;   // blocks lost to a full ring
 static guint32    cap_max_blocks = 0;
 static gint64     cap_t0 = 0;
 static char       cap_path[512];
@@ -79,9 +103,12 @@ static char       cap_path[512];
 //
 // Close the file and stamp the trailer. Called from the writer thread
 // when the block budget is reached and from diversity_capture_stop()
-// otherwise, so it has to be idempotent. The caller holds cap_mutex.
+// otherwise, so it has to be idempotent - hence the fp test.
 //
-static void divcap_close_locked(void) {
+// No lock, and none needed: the two callers cannot overlap, because
+// diversity_capture_stop() joins the writer before it calls this.
+//
+static void divcap_close(void) {
   if (fp == NULL) { return; }
 
   struct divcap_trailer tr;
@@ -102,17 +129,21 @@ static gpointer divcap_writer_thread(gpointer data) {
   t_print("%s: diversity capture writer running\n", __func__);
 
   for (;;) {
-    g_mutex_lock(&cap_mutex);
+    sem_wait(CAP_SEM);
 
-    while (cap_count == 0 && !cap_quit) {
-      g_cond_wait(&cap_cond, &cap_mutex);
+    //
+    // Drain before quitting, so that a capture is complete on disk: each
+    // queued block carries its own post, and the post from
+    // diversity_capture_stop() gives one final wake that finds the ring
+    // empty.
+    //
+    if (cap_tail == cap_head) {
+      if (!cap_run) { break; }
+
+      continue;                     // stale post from a previous capture
     }
 
-    if (cap_count == 0) {           // woken to quit, nothing left to drain
-      g_mutex_unlock(&cap_mutex);
-      break;
-    }
-
+    MEMORY_BARRIER;
     const int slot = cap_tail;
     //
     // The slot is not handed back until the write finishes, so the ring
@@ -120,8 +151,6 @@ static gpointer divcap_writer_thread(gpointer data) {
     // the analysis thread finds it full and skips a block rather than
     // waiting behind the disk.
     //
-    g_mutex_unlock(&cap_mutex);
-
     int ok = 1;
 
     if (fp != NULL) {
@@ -130,13 +159,11 @@ static gpointer divcap_writer_thread(gpointer data) {
       if (ok && fwrite(slot_data[slot], 1, cap_payload, fp) != cap_payload) { ok = 0; }
     }
 
-    g_mutex_lock(&cap_mutex);
-
     if (fp != NULL) {
       if (!ok) {
         t_print("%s: write failed, stopping capture\n", __func__);
         div_capture_active = 0;
-        divcap_close_locked();
+        divcap_close();
       } else {
         cap_blocks++;
 
@@ -147,14 +174,13 @@ static gpointer divcap_writer_thread(gpointer data) {
           // if nobody is watching the menu.
           //
           div_capture_active = 0;
-          divcap_close_locked();
+          divcap_close();
         }
       }
     }
 
-    cap_count--;
+    MEMORY_BARRIER;
     cap_tail = (cap_tail + 1) % DIVCAP_QUEUE;
-    g_mutex_unlock(&cap_mutex);
   }
 
   t_print("%s: diversity capture writer stopped\n", __func__);
@@ -246,9 +272,25 @@ int diversity_capture_start(int sample_rate, int nfft) {
     return 0;
   }
 
-  cap_head = cap_tail = cap_count = 0;
+  //
+  // Created once and never destroyed - see the declaration - then
+  // drained, because a writer that exited on cap_run without consuming
+  // the post that woke it leaves a count behind.
+  //
+  if (!cap_sem_created) {
+#ifdef __APPLE__
+    cap_sem = apple_sem(0);
+#else
+    (void)sem_init(&cap_sem, 0, 0);
+#endif
+    cap_sem_created = 1;
+  }
+
+  while (sem_trywait(CAP_SEM) == 0) { }
+
+  cap_head = 0;
+  cap_tail = 0;
   cap_seq = cap_blocks = cap_skipped = 0;
-  cap_quit = 0;
   cap_t0 = g_get_monotonic_time();
   //
   // The budget is in blocks because that is what the writer counts. One
@@ -259,6 +301,7 @@ int diversity_capture_start(int sample_rate, int nfft) {
 
   if (cap_max_blocks < 1) { cap_max_blocks = 1; }
 
+  cap_run = 1;                    // before the thread, or it can exit at once
   writer = g_thread_new("divcap", divcap_writer_thread, NULL);
   div_capture_active = 1;
   t_print("%s: %s rate=%d nfft=%d limit=%us (%u blocks, %.0f MB)\n", __func__,
@@ -271,19 +314,21 @@ void diversity_capture_stop(void) {
   if (writer == NULL && fp == NULL) { return; }
 
   div_capture_active = 0;
-  g_mutex_lock(&cap_mutex);
-  cap_quit = 1;
-  g_cond_signal(&cap_cond);
-  g_mutex_unlock(&cap_mutex);
+  cap_run = 0;
+
+  if (cap_sem_created) {
+    sem_post(CAP_SEM);
+  }
 
   if (writer != NULL) {
     g_thread_join(writer);
     writer = NULL;
   }
 
-  g_mutex_lock(&cap_mutex);
-  divcap_close_locked();
-  g_mutex_unlock(&cap_mutex);
+  //
+  // After the join, so this cannot race the writer's own call to it.
+  //
+  divcap_close();
 
   for (int i = 0; i < DIVCAP_QUEUE; i++) {
     g_free(slot_data[i]);
@@ -296,9 +341,10 @@ void diversity_capture_block(const float *arm0, const float *arm1,
   if (!div_capture_active) { return; }
 
   const size_t half = (size_t)cap_nfft * 2u * sizeof(float);
-  g_mutex_lock(&cap_mutex);
+  const int slot  = cap_head;
+  const int nhead = (slot + 1) % DIVCAP_QUEUE;
 
-  if (cap_count >= DIVCAP_QUEUE) {
+  if (nhead == cap_tail) {
     //
     // The writer is behind. Drop this block rather than block the
     // analysis thread - see the note at the top - and count it so the
@@ -306,20 +352,20 @@ void diversity_capture_block(const float *arm0, const float *arm1,
     //
     cap_skipped++;
     cap_seq++;
-    g_mutex_unlock(&cap_mutex);
     return;
   }
 
-  const int slot = cap_head;
-  cap_head = (cap_head + 1) % DIVCAP_QUEUE;
-  cap_count++;
   slot_meta[slot] = *meta;
   slot_meta[slot].rec_magic = DIVCAP_REC_MAGIC;
   slot_meta[slot].seq       = cap_seq++;
   memcpy(slot_data[slot],                    arm0, half);
   memcpy((char *)slot_data[slot] + half,     arm1, half);
-  g_cond_signal(&cap_cond);
-  g_mutex_unlock(&cap_mutex);
+  //
+  // The slot is complete before the writer can be told it exists.
+  //
+  MEMORY_BARRIER;
+  cap_head = nhead;
+  sem_post(CAP_SEM);
 }
 
 void diversity_capture_status(char *buf, size_t len) {

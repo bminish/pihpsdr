@@ -1864,6 +1864,14 @@ static void rxtx(int state) {
     t_print("%s: WARNING: rxtx called but no transmitter!", __func__);
     return;
   }
+  //
+  // The diversity sample stream stops for the whole over, in duplex as
+  // well, because both protocols need the two receive chains for the
+  // PURESIGNAL feedback while transmitting. Tell the auto-phasing
+  // analysis, on both edges, that its input has a hole in it. The weight
+  // in force is kept. See diversity_auto_gap().
+  //
+  diversity_auto_gap();
   if (!radio_is_remote) {
     //
     // Abort any running Capture, Transmit, Replay
@@ -1887,12 +1895,6 @@ static void rxtx(int state) {
     //
     // Perform RX->TX transition
     //
-    //
-    // The diversity sample stream stops for the whole over, in duplex as
-    // well, so tell the auto-phasing analysis that its input is about to
-    // acquire a hole. The weight in force is kept.
-    //
-    diversity_auto_gap();
     if (!radio_is_remote) {
       RECEIVER *rx_feedback = receiver[PS_RX_FEEDBACK];
       RECEIVER *tx_feedback = receiver[PS_TX_FEEDBACK];

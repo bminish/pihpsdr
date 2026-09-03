@@ -17,11 +17,16 @@
 
 #include <gtk/gtk.h>
 #include <math.h>
+#include <semaphore.h>
 #include <string.h>
 #include <fftw3.h>
 
+#include "atomic.h"
 #include "diversity_auto.h"
 #include "diversity_menu.h"
+#ifdef __APPLE__
+  #include "MacOS.h"        // for apple_sem()
+#endif
 #include "message.h"
 #include "mode.h"
 #include "property.h"
@@ -616,18 +621,43 @@ static int             have_plans = 0;
 #define DIV_QUEUE 4
 
 static float          *qbuf0[DIV_QUEUE], *qbuf1[DIV_QUEUE];
-static int             q_head = 0;      // slot being filled
-static int             q_tail = 0;      // slot being processed
-static int             q_count = 0;     // slots waiting
+
+//
+// Ring pointers, in the style of the protocol ring buffers - see the
+// DDC packet queue in new_protocol.c. q_head is written only by the
+// sample path and q_tail only by the worker, so with a memory barrier
+// on each side this is a single-producer/single-consumer ring and needs
+// no mutex. One slot is always the block being filled, so the head can
+// never catch the tail and q_head == q_tail is unambiguously "empty".
+//
+static volatile atomic_int q_head = 0;  // slot being filled
+static volatile atomic_int q_tail = 0;  // slot being processed
+
+//
+// Owned by the sample path. diversity_auto_start() initialises these
+// before it sets div_auto_running, and nothing else writes them while
+// the engine is running.
+//
 static float          *fill0 = NULL, *fill1 = NULL;
-static float          *work0 = NULL, *work1 = NULL;
 static int             fillptr = 0;
 
 //
-// Blocks the sample path had to throw away because the queue was full.
-// Read and cleared by the worker: a gap in the sample stream invalidates
-// RADE V1's pilot timing, so it has to re-acquire rather than carry on
-// against a pilot that has silently moved.
+// Owned by the worker.
+//
+static float          *work0 = NULL, *work1 = NULL;
+
+//
+// Discontinuities in the sample stream: blocks the sample path had to
+// throw away because the queue was full, and partial blocks it threw
+// away at a transmit gap. Read by the worker, because a discontinuity
+// invalidates RADE V1's pilot timing and it has to re-acquire rather
+// than carry on against a pilot that has silently moved.
+//
+// q_gap[] is written by the sample path immediately before it publishes
+// q_head, and read by the worker after it has seen that q_head, so the
+// publication orders it and it needs no atomics of its own. It stays a
+// plain int[] so that the memset in diversity_auto_start() remains
+// legal, which it would not be on an array of atomics.
 //
 //
 // A gap in the sample stream is recorded against the slot that follows
@@ -641,18 +671,40 @@ static int             fillptr = 0;
 // the pilot slides by a non-multiple of the modem frame and the lock dies
 // a few seconds later - that this mechanism exists to prevent.
 //
-static int             q_pending_drop = 0;   // dropped since the last enqueue
-static int             q_gap[DIV_QUEUE];     // gap ahead of each queued slot
+static int             q_pending_drop = 0;   // discontinuities since the last enqueue
+static int             q_gap[DIV_QUEUE];     // discontinuities ahead of each queued slot
 
 //
-// Set by diversity_auto_reset() on the GTK thread, consumed by the worker
-// between blocks. See the note there.
+// Requests from other threads, carried as generations rather than as
+// flags. The thread that acts on a request only ever writes its own
+// *_seen copy, so acknowledging one request cannot erase another that
+// arrived while it was being acknowledged - which a test-and-clear flag
+// can do, and did.
 //
-static int             reset_requested = 0;
+// Two threads bumping the same generation may lose an increment, but
+// never a request: any change of value is what the reader acts on.
+//
+static volatile atomic_int gap_seq   = 0;    // rxtx()  -> sample path
+static int             gap_seen = 0;         // sample path private
+static volatile atomic_int reset_seq = 0;    // GTK/net -> worker
+static int             reset_seen = 0;       // worker private
 
-static GMutex          mbox_mutex;
-static GCond           mbox_cond;
-static int             mbox_quit = 0;
+//
+// Raised once per block enqueued, and once by diversity_auto_stop() to
+// wake the worker so that it can see worker_run go to zero. Created on
+// the first start and never destroyed - see the note in
+// diversity_auto_start().
+//
+static int             div_sem_created = 0;
+#ifdef __APPLE__
+  static sem_t        *div_sem = NULL;
+  #define DIV_SEM        div_sem
+#else
+  static sem_t         div_sem;
+  #define DIV_SEM        (&div_sem)
+#endif
+
+static volatile atomic_int worker_run = 0;
 static GThread        *worker = NULL;
 
 //
@@ -912,7 +964,7 @@ void diversity_auto_reset(void) {
   // the worker between blocks instead.
   //
   div_reset_stats();
-  reset_requested = 1;
+  reset_seq++;
 }
 
 //
@@ -2674,26 +2726,35 @@ static gpointer div_worker_thread(gpointer data) {
   (void) data;
   t_print("%s: diversity auto-phasing analysis thread running\n", __func__);
 
-  for (;;) {
-    g_mutex_lock(&mbox_mutex);
+  while (worker_run) {
+    sem_wait(DIV_SEM);
 
-    while (q_count == 0 && !mbox_quit) {
-      g_cond_wait(&mbox_cond, &mbox_mutex);
-    }
+    //
+    // Woken to quit rather than woken by data.
+    //
+    if (!worker_run) { break; }
 
-    if (mbox_quit) {
-      g_mutex_unlock(&mbox_mutex);
-      break;
-    }
+    //
+    // The semaphore count says there may be work; the ring pointers say
+    // whether there is. They can disagree - a post left over from a
+    // previous run that the drain in diversity_auto_start() did not
+    // catch, or an interrupted wait - so swallow the difference, the way
+    // the keyer thread swallows a stale cw_event.
+    //
+    if (q_tail == q_head) { continue; }
 
+    //
+    // The sample path published q_head after a barrier, so having seen
+    // it we are guaranteed the block and its q_gap[] entry are complete.
+    //
+    MEMORY_BARRIER;
     work0 = qbuf0[q_tail];
     work1 = qbuf1[q_tail];
     int dropped = q_gap[q_tail];
-    q_gap[q_tail] = 0;
-    g_mutex_unlock(&mbox_mutex);
+    int seq = reset_seq;
 
-    if (reset_requested) {
-      reset_requested = 0;
+    if (seq != reset_seen) {
+      reset_seen = seq;
       rade_corr_reset();
     }
 
@@ -2712,15 +2773,22 @@ static gpointer div_worker_thread(gpointer data) {
       // pilot is refers to a clock that has just skipped, so start again
       // rather than track something that has moved.
       //
-      t_print("%s: dropped %d analysis block(s), re-acquiring\n", __func__, dropped);
+      // The count is the number of discontinuities charged to this
+      // block, not the number of holes: a transmit gap contributes one
+      // for each edge of the over, so a clean over reads 2.
+      //
+      t_print("%s: sample stream discontinuity, re-acquiring (%d)\n",
+              __func__, dropped);
       rade_corr_reset();
     }
 
     div_process_block();
-    g_mutex_lock(&mbox_mutex);
-    q_count--;
+    //
+    // The slot is not handed back until everything has been read out of
+    // it, which is what the barrier says.
+    //
+    MEMORY_BARRIER;
     q_tail = (q_tail + 1) % DIV_QUEUE;
-    g_mutex_unlock(&mbox_mutex);
   }
 
   t_print("%s: diversity auto-phasing analysis thread stopped\n", __func__);
@@ -2732,6 +2800,28 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
   // Called once per sample pair from rx_add_div_iq_samples(), on the
   // protocol receive thread. Nothing but stores happens here.
   //
+  //
+  // A transmit gap is consumed here rather than performed by rxtx().
+  // Two reasons. It keeps fillptr and q_pending_drop private to this
+  // thread, which is what lets the queue below be a plain SPSC ring with
+  // no mutex at all; and it is the more accurate placement, because the
+  // partial block is discarded by the first sample that arrives after
+  // the transition rather than by a store from another thread into a
+  // block this one may be part way through writing.
+  //
+  // It has to be per sample and not at the block boundary. Checking only
+  // when fillptr reaches nfft would let post-TX samples splice onto the
+  // pre-TX partial block, which is the failure the whole mechanism
+  // exists to prevent.
+  //
+  int seq = gap_seq;
+
+  if (seq != gap_seen) {
+    gap_seen = seq;
+    fillptr = 0;
+    q_pending_drop++;
+  }
+
   fill0[2 * fillptr    ] = (float)i0;
   fill0[2 * fillptr + 1] = (float)q0;
   fill1[2 * fillptr    ] = (float)i1;
@@ -2741,45 +2831,80 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
   if (fillptr < nfft) { return; }
 
   fillptr = 0;
-  g_mutex_lock(&mbox_mutex);
-
   //
   // One slot is always reserved for filling, so the most that can be
   // waiting is DIV_QUEUE-1 and the head never collides with the tail.
   //
-  if (q_count < DIV_QUEUE - 1) {
+  int nhead = (q_head + 1) % DIV_QUEUE;
+
+  if (nhead != q_tail) {
     //
-    // This block is the first one after any gap, so it carries the count.
+    // This block is the first one after any discontinuity, so it carries
+    // the count. Stored before the barrier: the worker must not be able
+    // to see the new head without also seeing the flag that goes with
+    // it. The slot is still ours until q_head moves, so the worker
+    // cannot have looked at it.
     //
     q_gap[q_head] = q_pending_drop;
     q_pending_drop = 0;
-    q_count++;
-    q_head = (q_head + 1) % DIV_QUEUE;
-    g_cond_signal(&mbox_cond);
+    MEMORY_BARRIER;
+    q_head = nhead;
+    sem_post(DIV_SEM);
   } else {
+    //
+    // The worker is DIV_QUEUE-1 blocks behind. Throw this one away and
+    // keep filling the same slot; the count is carried into the next
+    // block that does get through.
+    //
     q_pending_drop++;
   }
 
+  //
+  // Re-read q_head rather than reuse nhead. If diversity_auto_start()
+  // has reset the ring under a call still in flight from the previous
+  // run, this picks up the new head and the stream re-synchronises after
+  // at most one block of stale data.
+  //
   fill0 = qbuf0[q_head];
   fill1 = qbuf1[q_head];
-  g_mutex_unlock(&mbox_mutex);
 }
 
 //
-// Called from rxtx() when the radio is about to transmit.
+// Called from rxtx() on every transmit/receive transition, in both
+// directions.
 //
-// Both protocols stop feeding rx_add_div_iq_samples() for the whole over:
-// new_protocol only sets RXACTION_DIV when !xmit - duplex included, see
-// update_action_table() - and old_protocol guards the diversity mixer on
-// !radio_is_transmitting(). So the analysis stream acquires a hole that
-// nothing else reports. q_pending_drop counts only blocks lost to a full
-// queue, and no context has changed, so without this the correlator would
-// track straight through it: the first block after the over would splice
-// pre-TX and post-TX samples into one transform, and lock_a would keep
-// advancing by RADE_CORR_NMF against a ringtotal that has skipped an
-// arbitrary number of samples. That is exactly the failure the gap
-// mechanism exists to prevent, so route the transmit gap into it and let
-// the worker re-acquire off the first clean block.
+// Both protocols stop feeding rx_add_div_iq_samples() for the whole
+// over, duplex included: new_protocol only sets RXACTION_DIV when !xmit
+// - see update_action_table() - and old_protocol guards the diversity
+// mixer on !radio_is_transmitting().
+//
+// That is not a defect to be worked around. For P2 it is necessary:
+// DDC0 and DDC1 are used as a synchronised pair for the PURESIGNAL
+// feedback during TX, and with PureSignal on they are retuned to the
+// transmit frequency as well, so they are simply not available to carry
+// two antennas while the radio is transmitting. P1 reserves the same two
+// receive chains the same way. So the analysis stream acquires a hole,
+// and all this function has to do is report it.
+//
+// It has to, because nothing else does. q_pending_drop counts only
+// blocks lost to a full queue, and div_context_changed() does not watch
+// PTT, so without this the correlator would track straight through: the
+// first block after the over would splice pre-TX and post-TX samples
+// into one transform, and lock_a would keep advancing by RADE_CORR_NMF
+// against a ringtotal that has skipped an arbitrary number of samples.
+// That is exactly the failure the gap mechanism exists to prevent, so
+// route the transmit gap into it and let the worker re-acquire off the
+// first clean block.
+//
+// Both edges are signalled. The TX->RX edge is the one that does the
+// necessary work: the sample path consumes the generation on its next
+// sample, so the RX->TX bump is taken by whatever pre-TX samples were
+// still in flight from the last DDC packet, and without a second bump
+// that pre-TX remnant would still be sitting in the fill buffer when the
+// first post-TX sample arrived. The signal is guaranteed to get there
+// first - every caller of rxtx(0) clears mox/vox/tune only after it
+// returns, so radio_is_transmitting() is still true for the whole call
+// and both protocol gates are still shut.
 //
 // Nothing here touches the applied weight. div_cos/div_sin are written
 // only by div_apply_weight(), and every path that has no answer to give
@@ -2788,12 +2913,11 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
 // produces a better fit. That is deliberate: they may not be ideal for
 // the returning signal, but they are a great deal better than nothing.
 //
-// Racing the sample path is harmless, so this needs no lock of its own
-// for fillptr. Storing zero can only move the fill position backwards
-// within the buffer, never outside it, so the worst case is one mangled
-// block - and that is the very block being flagged as following a gap,
-// whose correlator state the worker discards before processing it.
-// q_pending_drop is taken under the mutex, as it is on the sample path.
+// Only a generation counter is bumped here. Discarding the partial block
+// and counting the discontinuity are done by the sample path itself, on
+// its next sample, which keeps fillptr and q_pending_drop private to
+// that one thread - and that is what lets the queue be a plain
+// single-producer/single-consumer ring with no mutex at all.
 //
 void diversity_auto_gap(void) {
   //
@@ -2804,10 +2928,7 @@ void diversity_auto_gap(void) {
   //
   if (!div_auto_running || radio_is_remote) { return; }
 
-  fillptr = 0;
-  g_mutex_lock(&mbox_mutex);
-  q_pending_drop++;
-  g_mutex_unlock(&mbox_mutex);
+  gap_seq++;
 }
 
 void diversity_auto_start(void) {
@@ -2856,6 +2977,35 @@ void diversity_auto_start(void) {
     fftout1 = fftwf_malloc(sizeof(fftwf_complex) * DIV_MAX_NFFT);
   }
 
+  //
+  // The semaphore is created once and never destroyed, for the same
+  // reason the buffers above are never freed. The RX sample path tests
+  // div_auto_running without any lock and can still be inside
+  // diversity_auto_sample() - and so inside sem_post() - after
+  // diversity_auto_stop() has returned, so destroying it on stop would
+  // be a use-after-free. new_protocol_menu_stop() can destroy its
+  // semaphores because it has joined every thread that posts them; we
+  // have not, and cannot, because the protocol thread keeps running.
+  //
+  if (!div_sem_created) {
+#ifdef __APPLE__
+    div_sem = apple_sem(0);
+#else
+    (void)sem_init(&div_sem, 0, 0);
+#endif
+    div_sem_created = 1;
+  }
+
+  //
+  // Discard any count left over from the previous run. That is the
+  // normal case, not an edge case: a worker that was inside
+  // div_process_block() when the stop came returns to its loop test,
+  // sees worker_run clear and exits without ever consuming the post that
+  // woke it. The worker's empty-ring test would swallow these anyway;
+  // draining here keeps the count meaning what it says.
+  //
+  while (sem_trywait(DIV_SEM) == 0) { }
+
   div_make_window();
   //
   // Plan creation is not thread safe, so it happens here, before the
@@ -2867,20 +3017,31 @@ void diversity_auto_start(void) {
   plan1 = fftwf_plan_dft_1d(nfft, fftin1, fftout1, FFTW_FORWARD, FFTW_ESTIMATE);
   have_plans = 1;
   //
-  // Under the mutex: a sample-path call that was still in flight when the
-  // previous stop cleared div_auto_running could otherwise enqueue a
-  // stale block after these were reset.
+  // No lock. The worker does not exist yet, and the only words it will
+  // ever share with the sample path are q_head and q_tail. A sample-path
+  // call still in flight from the previous run can still publish into
+  // the ring after this, exactly as it can still store into a buffer
+  // that is deliberately never freed - and the cost is the same one
+  // block of stale data, because the sample path re-reads q_head rather
+  // than caching it and so re-synchronises on the very next block.
   //
-  g_mutex_lock(&mbox_mutex);
+  // Taking the mutex here never prevented that either: it made this
+  // reset atomic against the producer's enqueue section, not against its
+  // per-sample stores.
+  //
+  // Adopting the current generations rather than zeroing them means a
+  // gap or reset raised while the engine was stopped is not acted on as
+  // a spurious re-acquire on the first block of the new run.
+  //
   fillptr = 0;
-  q_head = q_tail = q_count = 0;
+  q_head = 0;
+  q_tail = 0;
   q_pending_drop = 0;
   memset(q_gap, 0, sizeof(q_gap));
-  reset_requested = 0;
-  mbox_quit = 0;
+  gap_seen   = gap_seq;
+  reset_seen = reset_seq;
   fill0 = qbuf0[0];
   fill1 = qbuf1[0];
-  g_mutex_unlock(&mbox_mutex);
   div_reset_stats();
   div_get_context(&lastctx);
   t_print("%s: nfft=%d bin=%0.2f Hz block=%0.1f ms rate=%d\n", __func__,
@@ -2900,6 +3061,14 @@ void diversity_auto_start(void) {
     }
   }
 
+  //
+  // Before g_thread_new(), or the new thread can lose the race and exit
+  // on its very first loop test. div_auto_running cannot double as the
+  // loop condition the way P2running does in new_protocol.c, because it
+  // is set after the thread is spawned and is also written from the
+  // client status path.
+  //
+  worker_run = 1;
   worker = g_thread_new("div_auto", div_worker_thread, NULL);
   //
   // Set last: the sample path tests this without any lock.
@@ -2959,15 +3128,22 @@ void diversity_auto_stop(void) {
   // it is turned off.
   //
   div_norm = 1.0;
-  g_mutex_lock(&mbox_mutex);
-  mbox_quit = 1;
-  g_cond_signal(&mbox_cond);
-  g_mutex_unlock(&mbox_mutex);
+  worker_run = 0;
+
+  if (div_sem_created) {
+    sem_post(DIV_SEM);
+  }
 
   if (worker != NULL) {
     g_thread_join(worker);
     worker = NULL;
   }
+
+  //
+  // No sem_destroy()/sem_close() here, and no wait to make one safe: see
+  // the note in diversity_auto_start(). Everything below is ordered by
+  // the join, which is stronger than the mutex this used to hold.
+  //
 
   if (have_plans) {
     fftwf_destroy_plan(plan0);

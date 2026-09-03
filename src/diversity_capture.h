@@ -214,9 +214,11 @@ struct divcap_trailer {
 
 //
 // Read once per block by the analysis thread, with no lock, exactly as
-// div_auto_running is read by the sample path.
+// div_auto_running is read by the sample path. Written by the GTK thread
+// and by the writer thread when the block budget runs out, hence the
+// volatile.
 //
-extern int div_capture_active;
+extern volatile int div_capture_active;
 
 //
 // Arm/disarm. Safe to call from the GTK thread; both are idempotent.

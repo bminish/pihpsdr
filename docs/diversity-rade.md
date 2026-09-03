@@ -487,14 +487,21 @@ The lock is given up and re-acquired after every over, deliberately.
 
 Both protocols stop feeding `rx_add_div_iq_samples()` while transmitting -
 P2 only sets `RXACTION_DIV` when not transmitting, duplex included, and P1
-guards the mixer on `!radio_is_transmitting()` - so the analysis stream
-acquires a hole that nothing reports. `q_pending_drop` counts only blocks
-lost to a full queue, and `div_context_changed()` does not watch PTT, so
-the correlator used to track straight through: the first block after the
-over spliced pre-TX and post-TX samples into one transform, and `lock_a`
-kept advancing by `RADE_CORR_NMF` against a ring total that had skipped an
-arbitrary number of samples. That is exactly the failure the gap mechanism
-exists to prevent, arriving by a route that did not use it.
+guards the mixer on `!radio_is_transmitting()`. That is necessary rather
+than unfortunate: the diversity pair on P2 is DDC0/DDC1, and those are the
+synchronised pair the radio needs for the PURESIGNAL feedback during TX,
+retuned to the transmit frequency when PureSignal is on. P1 reserves the
+same two chains. Two antennas cannot keep arriving during an over, and
+there is no reason to want them to.
+
+What does need saying is that nothing else reports the hole.
+`q_pending_drop` counts only blocks lost to a full queue, and
+`div_context_changed()` does not watch PTT, so the correlator used to
+track straight through: the first block after the over spliced pre-TX and
+post-TX samples into one transform, and `lock_a` kept advancing by
+`RADE_CORR_NMF` against a ring total that had skipped an arbitrary number
+of samples. That is exactly the failure the gap mechanism exists to
+prevent, arriving by a route that did not use it.
 
 On a RADE QSO it happened after every over: a dead lock, a frozen weight,
 and the full hang - 10 s - before the
@@ -502,10 +509,20 @@ correlator started searching again.
 
 `diversity_auto_gap()` routes the transmit gap into that mechanism
 instead. It is called from `rxtx()`, the one funnel every TX/RX transition
-goes through, so MOX, VOX and Tune are all covered. It discards the partly
-filled block and bumps `q_pending_drop`, so the first complete block after
-the over carries the flag and the worker calls `rade_corr_reset()` before
-processing it.
+goes through, so MOX, VOX and Tune are all covered, and it is called on
+both edges. All it does is bump a generation counter. The sample path
+picks that up on its next sample, discards the partly filled block and
+bumps `q_pending_drop`, so the first complete block after the over carries
+the flag and the worker calls `rade_corr_reset()` before processing it.
+
+Consuming the request on the sample path rather than acting on it in
+`rxtx()` is what keeps `fillptr` and `q_pending_drop` private to a single
+thread, and therefore what lets the analysis queue be a plain
+single-producer/single-consumer ring with no mutex - see "The queue" in
+[`diversity.md`](diversity.md). It also places the discard correctly:
+samples still in flight from the last DDC packet when `rxtx()` ran are
+pre-TX samples, and they now go with the block they belong to instead of
+being spliced onto post-TX ones by a store from another thread.
 
 The weight in force is kept. `div_cos`/`div_sin` are written only by
 `div_apply_weight()`, and every path with no answer to give sets
