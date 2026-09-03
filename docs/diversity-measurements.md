@@ -102,6 +102,19 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 44 is the first look at re-acquisition timing, and it needed no
+capture to find the cause.** `rade_acquire()` runs only while `tracking`
+is zero and `tracking` stays set for the whole hang, so at a changeover
+the correlator spends ten seconds correlating the station that has already
+stopped before it looks anywhere else. Measured on twenty completed
+searches across six new 80 m captures, the search itself takes a median
+2.9 s and confirmation 0.8 - so of the 13.7 s a changeover costs, **ten
+are a timeout with the search switched off**. Searching while frozen and
+accepting a *different* timing alignment is designed under that finding
+and not built. **Seven captures are recorded there and not yet ingested**,
+including one that opens with a RADE signal visible on the waterfall and
+too weak to sync.
+
 **Finding 43 answers two questions from the captures already taken.** The
 Resolution menu was offering a coarsest setting that is not the coarsest
 the engine can produce: the 43 ms column in Finding 42's own sweep is
@@ -491,6 +504,13 @@ recording.
 | `122353` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 6 Hz bins, 60 s |
 | `122632` | 18.143000 | USB | Window, coherence | **17 m near the MUF**, one side of a QSO, 59 % bare noise; **operator walks ADC1 0 to 16 dB in 1 dB steps** |
 | `122843` | 18.143000 | USB | Window, coherence | the same station at **3 Hz bins**, 67 % bare noise - the capture the combiner loses on |
+| `123333` | 18.143000 | USB | Window, coherence | the same station again, nfft 16384 - **not ingested** (Finding 44) |
+| `190516` | 3.65400 | DIGL | RADE V1 | **80 m RADE**, nfft 65536, averaging 0.20 s, two overs - **not ingested** (Finding 44) |
+| `190715` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s - **not ingested** |
+| `190822` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s, opens unlocked for 10.9 s - **not ingested** |
+| `190932` | 3.65400 | DIGL | RADE V1 | the same at averaging **2.05 s**, four searches - **not ingested** |
+| `193007` | 3.65400 | DIGL | RADE V1 | nfft 16384 - **opens with a RADE signal too weak to sync**, four failed confirmations in 22 s, then a strong one - **not ingested** |
+| `193105` | 3.65400 | DIGL | RADE V1 | nfft 16384, **six lock-and-drop cycles in the minute** - the changeover case - **not ingested** |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -5956,6 +5976,148 @@ without needing a detector. That gives two numbers:
   building. If it comes back like `233615` at 0.2 to 0.4, no amount of
   correct identification recovers more than a decibel.
 
+## Finding 44: re-acquisition waits for a timeout before it starts looking
+
+Reported from the air: the correlator is slow to notice that one operator
+has stopped and another has started, and is several seconds behind FreeDV
+at acquiring. Seven captures were taken to record the case. The cause
+needs none of them - it is visible in the code - but they measure what it
+costs.
+
+### The hang does not merely hold the weight, it gates the search
+
+`rade_corr_process()` calls `rade_acquire()` **only when `tracking` is
+zero**. `tracking` is set when a candidate is found and cleared only by
+`rade_corr_reset()`, and `rade_track()` calls that after `drop_count`
+reaches `hang / RADE_FRAME_SECS` frames of the pilot being below
+`RADE_USE_RATIO`. `rade_corr_locked` is cleared in the same place.
+
+So for the whole of the hang the correlator correlates one pilot
+hypothesis - the old station's timing and frequency - finds nothing there,
+and **does not look anywhere else**. The status line reads `fade`, which
+is accurate about what it knows and misleading about what it is doing.
+
+That also means the lock timelines below read the opposite way to the
+obvious one: the hang is inside the `LOCK` run, not the unlocked one, and
+the unlocked stretches are pure search.
+
+### What it costs, from the six 80 m captures
+
+The block records carry the correlator's state entering every block, so
+this needs no replay - only the recorded `live_locked` and
+`live_confirming`:
+
+| | |
+|---|---|
+| completed searches across the six | **20** |
+| search until a candidate | min **2.6 s**, median **2.9 s**, max 21.8 s |
+| confirmation (`RADE_PROBATION`, 8 frames) | 0.7 to 1.0 s |
+| hang, as recorded in all six | **10.0 s** |
+| engine resets (`DIVCAP_FLAG_ENGINE_RESET`) in the six files | **0** |
+
+**Zero engine resets is the load-bearing row.** `diversity_auto_gap()`
+never fired, so the operator was listening to a QSO rather than taking
+part in it and nothing shortened the hang. That is the ordinary monitoring
+case, and it is the one the report is about: an operator working the
+station gets the gap reset for free at every over of their own, and an
+operator listening to two others does not.
+
+So a changeover costs about
+
+    10.0 s hang  +  2.9 s search  +  0.8 s probation  =  13.7 s
+
+before the new station's weight is in force, and **ten of those thirteen
+seconds are a timeout with the search switched off**. Taking the timeout
+out from in front of the search leaves about 3.7 s.
+
+The 2.6 to 2.9 s cluster is the search's own latency rather than the
+signal's timing, and the two block sizes say so: it is 2.6 s on the 85 ms
+captures and 2.7 s on the 341 ms ones, which is what it should be, because
+the search is rate-limited to once per modem frame and not once per
+analysis block. What is *not* separated here is how much of any individual
+gap is the new station not having started yet; that wants the
+signal-presence measurement these captures have not been given.
+
+### The proposal: search while frozen, and treat a new alignment as evidence
+
+A new sync alignment found while the old lock is frozen is a **positive
+detection** where the hang is only a timeout, and it is the better
+statistic for exactly the reason the hang is a poor one: it says something
+has arrived, rather than that nothing has been heard for a while.
+
+Five constraints, each of which the existing measurements bear on:
+
+1. **Only while frozen.** Not while the pilot is present. This costs no
+   new peak CPU - the search is already what runs for the 2.9 s that
+   follows, so it is the same work moved earlier, and the frames it would
+   run in currently do one pilot correlation and return.
+2. **The full acquisition ladder**, `rade_acq_at` 8/16/32 at sigma
+   7.5/6.75/4.8, not a cheaper test. Finding 41 measured the three sigmas
+   as the only constants that buy false alarms while moving lock uptime
+   not at all, so they are the wrong place to economise.
+3. **Accept only a *different* alignment.** The same one recovering is a
+   fade, which is what the hang exists for, and it should keep its lock
+   and its averages.
+4. **Timing is the discriminant, not frequency.** Finding 15: the lock
+   points are one modem frame rate apart, 8.33 Hz, and the frequency
+   loop's unambiguous range is +/-4.17 Hz - so a frequency difference is
+   ambiguous by construction. `lock_a` modulo `RADE_CORR_NMF` is not.
+5. **A confirmed new alignment drops the diversity statistics too.** The
+   channel belongs to the new station; keeping an average fitted to the
+   previous one is the same error `div_context_changed()` already resets
+   for on a retune. That needs something the correlator can raise and
+   `diversity_auto.c` can act on, which does not exist today.
+
+### What this cannot say
+
+**No capture in the set has two RADE stations alternating with a known
+changeover time**, so the end-to-end gain above is assembled from parts
+that were each measured and is not itself measured. `193105` is the
+closest: six lock-and-drop cycles in one minute.
+
+**The risk to weigh against it is a false candidate taken during a deep
+fade of the same station**, which would throw away a good lock and the
+averages with it. Constraints 2, 3 and 4 are what bound that, and the
+false-alarm table already measures the ladder on five no-signal captures -
+but not with the search running *while a lock is held*, which is a
+configuration nothing here has tested.
+
+**And it must be scored on decode.** Findings 33, 35 and 41 all say lock
+uptime is very nearly uncoupled from what the modem does with the audio,
+and a change that improves re-acquisition time will improve uptime by
+construction. None of these seven captures has a decode column yet.
+
+### The seven captures, recorded for later
+
+Six on 80 m RADE and one that completes Finding 42's 17 m pair. **They
+have not been ingested** - nothing above uses anything but the recorded
+lock state - and they are listed here so the context is not lost.
+
+All 3.654000 MHz `DIGL`, filter -2500..-500, RADE V1, Sum, both
+attenuators at zero, 192 kHz, one minute each, taken 3 September 19:05 to
+19:31. All six carry **hang 10.0 s**, so they are the first captures
+recorded under the pinned default of Finding 43.
+
+| | nfft, block | averaging | what is in it |
+|---|---|---|---|
+| `190516` | 65536, 341 ms | 0.20 s | two overs; searches of 2.7 and 5.5 s |
+| `190715` | 65536, 341 ms | 0.20 s | two overs; 2.7 and 2.7 s |
+| `190822` | 65536, 341 ms | 0.20 s | opens unlocked for 10.9 s, then two overs |
+| `190932` | 65536, 341 ms | **2.05 s** | four searches - 5.5, 2.7, 2.7, 2.7 s - the same signal at a long average |
+| `193007` | 16384, 85 ms | 0.34 s | **opens with a RADE signal too weak to sync** - four candidates confirm and fail over the first 22 s, visible on the waterfall throughout - then silence, then a stronger station that locks at 45.7 s and holds |
+| `193105` | 16384, 85 ms | 0.34 s | **six lock-and-drop cycles in the minute** - the changeover case, and the nearest thing in the set to two stations alternating |
+
+`193007` is the one worth taking first. A signal that is visible, present
+and *below* the acquisition threshold is the regime Finding 41's constants
+were tuned in without a real example, and the capture carries both that
+and a strong signal in the same minute for comparison.
+
+The seventh is `123333`: 18.143000 MHz `USB`, Window with coherence
+weighting, nfft 16384, averaging 0.32 s - a third recording of the 17 m
+station Finding 42 took `122632` and `122843` of, made four minutes after
+them and not used there. It is listed with these because it is uningested,
+not because it belongs to this finding.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -6355,6 +6517,23 @@ holds is the false-alarm line, and that part stands.
   finds the menu worse than described: the three options are not three
   settings above 192 kHz, and the one labelled for weak signals is behind
   on both objectives on five captures of six.
+- **Re-acquisition is gated by a timeout and the fix is designed but not
+  built.** Finding 44: `rade_acquire()` runs only while `tracking` is
+  zero, and `tracking` stays set for the whole hang - so at a changeover
+  the correlator spends 10 s correlating the old station's timing before
+  it looks anywhere else, against a search that then takes 2.9 s and a
+  confirmation that takes 0.8. Measured on twenty completed searches
+  across the six new 80 m captures, none of which fired an engine reset,
+  because the operator was listening rather than transmitting. Searching
+  while frozen and accepting a *different* alignment would take a
+  changeover from about 13.7 s to about 3.7 s. What holds it back is that
+  **nothing in the set has two RADE stations alternating with a known
+  changeover time**, so the end-to-end figure is assembled from parts, and
+  that the risk it runs - a false candidate taken during a deep fade of
+  the same station, throwing away a good lock and its averages - is a
+  configuration the false-alarm table has never measured, because it never
+  runs the search while a lock is held. It must be scored on synced
+  frames, not on lock uptime, for Findings 33, 35 and 41's reason.
 - **Local interference has one capture and it is the un-nullable kind.**
   Finding 43 assesses discriminating local noise by the *stationarity* of
   `h1/h0` - the premise being sound, and both halves of it already
