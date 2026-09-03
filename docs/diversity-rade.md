@@ -541,6 +541,42 @@ until the lock on the last one is given up, the new one is being combined
 with the wrong weight, and the wrong weight on a two-antenna combiner is
 not neutral - it can be subtracting.
 
+### It no longer gates the search
+
+The hang used to decide when re-acquisition *started*, not merely how long
+the weight was held. `rade_acquire()` runs only while `tracking` is zero,
+and `tracking` is cleared only when the hang expires - so at a changeover
+the correlator spent the whole hang correlating one hypothesis belonging
+to a transmission that had already ended, and looked nowhere else.
+
+The search now runs during the freeze as well, once per modem frame, and a
+candidate at a **different timing alignment** is taken at once: a fresh
+sync is a positive detection where the hang is only a timeout. The same
+alignment found again is this station coming back out of a fade, which is
+what the hang is for, and keeps its lock and its averages.
+
+Timing decides that and not frequency, for Finding 15's reason: the lock
+points are one modem frame rate apart and the frequency loop's unambiguous
+range is half that, so two stations can differ by an amount the loop
+cannot tell from zero. `RADE_RESYNC_DA` is four samples of nine hundred
+and sixty.
+
+Measured on `test_rade`'s two-station changeover, at the shipping hang:
+
+| | before | after |
+|---|---|---|
+| lock on the first station dropped | 11.52 s | **2.90 s** |
+| re-locked on the second | 2.0 s later | **0.60 s later** |
+| total | **13.5 s** | **3.50 s** |
+
+The re-lock is faster as well as the drop, because by the time the
+candidate is taken the acquisition grid has already integrated its passes
+and only `RADE_PROBATION` remains.
+
+A 5.1 s fade of the *same* station at 31 dB worse SNR keeps its lock and
+returns to within 0.033 of its weight, which is the case this must not get
+wrong.
+
 ### Why it is no longer a control
 
 That second case was the reason the slider existed, and it is not
@@ -596,9 +632,11 @@ starts:
 | 10 s | 11.5 s after the changeover | 2.0 s later |
 
 Eight seconds more hang cost 7.9 seconds more before the drop, so the
-value is what decides. (`test_rade` still sweeps it, which is how this row
-is produced; what went away is the operator's access to it, not the
-mechanism.) The roughly 1.5 s on top of it in both rows is
+value was what decided. **That table is the *old* behaviour**, kept
+because it is what the resync search above is measured against: the same
+test now drops at 2.82 s with a 2 s hang and 2.90 s with a 10 s one, and
+the setting no longer enters into it. What the hang still governs is a
+fade of the station already locked. The roughly 1.5 s on top of it in both rows is
 the fast gate's own averaging, which has to run down before the count can
 start.
 

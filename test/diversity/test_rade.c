@@ -382,6 +382,122 @@ static int solo(double hr, double hi, int seed, double *g, double *p) {
   return blocks;
 }
 
+/*
+ * The other side of the resync search: one station fading and coming back.
+ *
+ * The search now runs while the lock is frozen, so it has to be able to
+ * say no. A fade of the station already locked is exactly the case the
+ * hang exists for - the alignment the search finds is the one already
+ * held, and the lock and its averages must survive. Getting this wrong
+ * would throw away a good lock and a settled weight every time a signal
+ * dipped, which is worse than the slow changeover the search fixes.
+ *
+ * The same buffer at a much worse SNR, fed from a running position so the
+ * pilot stays where the correlator expects it, for well under the hang.
+ * Returns 1 if the lock was held throughout.
+ */
+static int fadeback(double *recovered) {
+  rx0.sample_rate = RATE;
+  rx0.filter_low = -2800;
+  rx0.filter_high = -200;
+  vfo[0].mode = modeDIGL;
+  vfo[0].frequency = 7100000;
+  vfo[0].ctun_frequency = 7100000;
+  vfo[0].offset = 0;
+  div_auto_ref = DIV_REF_RADE_V1;
+  div_auto_mode = DIV_AUTO_SUM;
+  div_auto_tau = 2.0;
+  div_auto_hang = 10.0;
+  div_auto_coherence_min = 0.1;
+  div_cos = 1.0;
+  div_sin = 0.0;
+  div_gain = 0.0;
+  div_phase = 0.0;
+  float *bufa = NULL, *buff = NULL;
+  srand(7);
+  long nda = gen_h(&bufa, -1, 0.0, 0.01, 0.62, -0.48);
+  //
+  // The same station and the same channel under a noise floor 31 dB
+  // higher, which is a fade as far as the pilot-to-floor ratio is
+  // concerned and leaves the timing untouched.
+  //
+  srand(7);
+  long ndf = gen_h(&buff, -1, 0.0, 0.35, 0.62, -0.48);
+  long pos = 0;
+  int locked_at = -1, lost = 0;
+  diversity_auto_start();
+
+  for (int b = 0; b < 400; b++) {
+    for (int n = 0; n < NFFT; n++) {
+      diversity_auto_sample(bufa[4 * pos + 0], bufa[4 * pos + 1],
+                            bufa[4 * pos + 2], bufa[4 * pos + 3]);
+      pos = (pos + 1) % nda;
+    }
+
+    g_usleep(12000);
+
+    if (rade_corr_locked) { locked_at = b; break; }
+  }
+
+  if (locked_at < 0) {
+    diversity_auto_stop();
+    free(bufa);
+    free(buff);
+    return -1;
+  }
+
+  for (int b = 0; b < 80; b++) {
+    for (int n = 0; n < NFFT; n++) {
+      diversity_auto_sample(bufa[4 * pos + 0], bufa[4 * pos + 1],
+                            bufa[4 * pos + 2], bufa[4 * pos + 3]);
+      pos = (pos + 1) % nda;
+    }
+
+    g_usleep(12000);
+  }
+
+  g_usleep(200000);
+  const double ga = div_gain, pa = div_phase;
+
+  //
+  // Fade. 60 blocks is 5.1 s, comfortably inside the 10 s hang, and
+  // comfortably longer than the freeze gate takes to engage.
+  //
+  for (int b = 0; b < 60; b++) {
+    for (int n = 0; n < NFFT; n++) {
+      diversity_auto_sample(buff[4 * pos + 0], buff[4 * pos + 1],
+                            buff[4 * pos + 2], buff[4 * pos + 3]);
+      pos = (pos + 1) % ndf;
+    }
+
+    g_usleep(12000);
+
+    if (!rade_corr_locked) { lost = 1; }
+  }
+
+  //
+  // Back, at the same alignment.
+  //
+  for (int b = 0; b < 60; b++) {
+    for (int n = 0; n < NFFT; n++) {
+      diversity_auto_sample(bufa[4 * pos + 0], bufa[4 * pos + 1],
+                            bufa[4 * pos + 2], bufa[4 * pos + 3]);
+      pos = (pos + 1) % nda;
+    }
+
+    g_usleep(12000);
+
+    if (!rade_corr_locked) { lost = 1; }
+  }
+
+  g_usleep(200000);
+  *recovered = wdist(div_gain, div_phase, ga, pa);
+  diversity_auto_stop();
+  free(bufa);
+  free(buff);
+  return !lost;
+}
+
 static int roundtable(double hang, struct rt_result *r) {
   rx0.sample_rate = RATE;
   rx0.filter_low = -2800;
@@ -763,22 +879,44 @@ int main(int argc, char **argv) {
       ok = 0;
     } else {
       //
-      // The hang is counted off a gate that averages over about a second,
-      // so expect the setting plus roughly that, plus the time to search
-      // again from nothing. What must hold is that the setting is what
-      // dominates: ten seconds has to cost about eight more than two.
+      // The hang used to be what decided this, and no longer is.
+      //
+      // Before the resync search, the lock on A was held until the hang
+      // ran out - 3.58 s at a 2 s setting and 11.52 s at 10 s, so the
+      // setting was worth almost exactly the eight seconds between them,
+      // and this test asserted that it scaled. It now asserts the
+      // opposite, which is the point of the change: the search runs while
+      // the lock is frozen, B's alignment is half a modem frame from A's,
+      // and finding it drops A at once however much hang is left. See
+      // RADE_RESYNC_DA in rade_correlator.c and Finding 44.
+      //
+      // What is no longer covered here is the case the hang still governs
+      // - the same station fading and returning, where the search finds
+      // the alignment it already has and the lock is kept. The weight
+      // check below is the part of that this scenario can still see.
       //
       const double t1 = secs(fast.drop), t2 = secs(slow.drop);
-      const double want = 10.0 - 2.0;
-      const int scales = fabs((t2 - t1) - want) < 2.0;
+      //
+      // Both settings drop at about the same time, because what drops the
+      // lock is a detection and not a timeout.
+      //
+      const int independent = fabs(t2 - t1) < 1.5;
+      //
+      // ...and well inside the long setting, which is where the seconds
+      // come from.
+      //
+      const int quick = t2 < 6.0;
       printf("  hang  2 s: dropped after %5.2f s, re-locked %5.2f s later\n",
              t1, secs(fast.relock - fast.drop));
       printf("  hang 10 s: dropped after %5.2f s, re-locked %5.2f s later\n",
              t2, secs(slow.relock - slow.drop));
-      printf("  the setting is what decides (%+0.2f s for +8 s of hang)   %s\n",
-             t2 - t1, scales ? "OK" : "FAIL");
+      printf("  the changeover costs %0.2f s at 2 s of hang and %0.2f s at 10 s\n",
+             secs(fast.relock), secs(slow.relock));
+      printf("  a detection decides it, not the timeout (%+0.2f s for +8 s "
+             "of hang, drop at %0.2f s)   %s\n",
+             t2 - t1, t2, (independent && quick) ? "OK" : "FAIL");
 
-      if (!scales) { ok = 0; }
+      if (!independent || !quick) { ok = 0; }
 
       //
       // Held, not tracked, once the freeze gate has engaged. This is the
@@ -794,6 +932,26 @@ int main(int argc, char **argv) {
       // It costs nothing that lasts, because the re-lock that follows
       // starts the estimate again from nothing.
       //
+      //
+      // And the case the hang still governs: a fade of the station
+      // already locked must not be mistaken for a new one.
+      //
+      {
+        double back = 0.0;
+        int held_through = fadeback(&back);
+
+        if (held_through < 0) {
+          printf("  fade: never locked on the first station   FAIL\n");
+          ok = 0;
+        } else {
+          printf("  fade  5.1 s at 31 dB worse SNR: lock %s, weight back to "
+                 "within %0.3f   %s\n",
+                 held_through ? "held" : "DROPPED", back,
+                 (held_through && back < 0.25) ? "OK" : "FAIL");
+
+          if (!held_through || back >= 0.25) { ok = 0; }
+        }
+      }
       const int held = fabs(slow.drift_g) < 0.5 && fabs(slow.drift_p) < 5.0;
       printf("  gate engaging:  weight kicked %+0.2f dB %+0.1f deg\n",
              slow.kick_g, slow.kick_p);
