@@ -111,15 +111,41 @@ static void set_context(const struct divcap_block *m) {
   }
 }
 
+/*
+ * The engine's own rule for turning a requested bin width into a
+ * transform size - div_choose_nfft() in diversity_auto.c, which is
+ * static. Duplicated rather than exported because src/ must not grow a
+ * symbol for the benefit of this tool; if the rule there ever changes,
+ * the check in main() that compares the answer with the capture's own
+ * nfft is what will say so.
+ */
+#define RR_MIN_NFFT 4096
+#define RR_MAX_NFFT 65536
+
+static int rr_choose_nfft(int sample_rate, double target_hz) {
+  int n = RR_MIN_NFFT;
+
+  if (target_hz < 0.5) { target_hz = 0.5; }
+
+  while (n < RR_MAX_NFFT && (double)sample_rate / (double)n > target_hz) {
+    n <<= 1;
+  }
+
+  return n;
+}
+
 int main(int argc, char **argv) {
   const char *path = NULL, *outp = NULL, *refname = "rade";
   double noise = 0.0, tau = 0.0, hang = 0.0, cohmin = -1.0;
   double centre = 0.0, width = 0.0;
+  double resolution = 0.0;
   int    follow = -1;
   unsigned seed = 0;
   int usleep_us = 12000;
   int weighting = -1;
   int mode = -1;
+  const char *sets[16];
+  int nset = 0;
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-v")) { verbose = 1; }
@@ -141,6 +167,30 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--follow") && i + 1 < argc) { follow  = atoi(argv[++i]); }
     else if (!strcmp(argv[i], "--hang")  && i + 1 < argc) { hang    = atof(argv[++i]); }
     else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
+    /*
+     * Bin width in Hz, i.e. the Resolution control. Defaults to whatever
+     * the capture was taken at, which is the only setting that reproduces
+     * the recorded run; give it a value to sweep the control instead.
+     */
+    else if (!strcmp(argv[i], "--resolution") && i + 1 < argc) { resolution = atof(argv[++i]); }
+    /*
+     * A correlator constant, as replay_rade takes it. The tunable copy is
+     * linked here too, and without this the only way to sweep one of them
+     * was through replay_rade - which applies the correlator's answer
+     * directly, with no slew, no Hold and no objective. Those three turn
+     * out to matter more than most of the constants, so a sweep that
+     * cannot be run through the whole engine is a sweep of the wrong
+     * thing. Collected into a list and applied after
+     * rade_tuning_defaults(), which would otherwise undo them.
+     */
+    else if (!strcmp(argv[i], "--set") && i + 1 < argc) {
+      if (nset >= (int)(sizeof(sets) / sizeof(sets[0]))) {
+        fprintf(stderr, "%s: too many --set options\n", argv[0]);
+        return 2;
+      }
+
+      sets[nset++] = argv[++i];
+    }
     else if (!strcmp(argv[i], "--mode") && i + 1 < argc) {
       /* null|sum|best, overriding the objective the capture recorded */
       const char *a = argv[++i];
@@ -168,8 +218,9 @@ int main(int argc, char **argv) {
       fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital --out W.csv\n"
               "       [--mode null|sum|best] [--weighting flat|coherence]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
-              "       [--noise RMS] [--seed N]\n"
-              "       [--tau S] [--hang S] [--pace US] [-v]\n", argv[0]);
+              "       [--noise RMS] [--seed N] [--resolution HZ]\n"
+              "       [--set name=value]... [--tau S] [--hang S] [--pace US] [-v]\n",
+              argv[0]);
       return 2;
     } else { path = argv[i]; }
   }
@@ -234,7 +285,67 @@ int main(int argc, char **argv) {
   div_auto_width  = (width > 0.0) ? width  : m.width;
   div_auto_tau  = (tau  > 0.0) ? tau  : m.tau;
   div_auto_hang = (hang > 0.0) ? hang : m.hang;
+
+  /*
+   * The Resolution control, which nothing here used to set.
+   *
+   * Everything else about the operator's context comes out of the block
+   * records; div_auto_resolution does not, so the engine ran at its
+   * compiled default of 12 Hz bins - nfft 16384 at 192 kHz - no matter
+   * what the radio was using. Two things followed, and both were silent:
+   * the analysis window was two to four times shorter than the recorded
+   * one on every capture taken at a finer setting, and a whole recorded
+   * block then decomposed into two or four engine blocks pushed back to
+   * back, which overran the four-deep queue. The drop path calls
+   * rade_corr_reset(), so on an nfft 65536 capture "--ref rade" never
+   * acquired at all.
+   *
+   * Deriving the target from the capture puts the engine on the recorded
+   * transform size, which makes it one engine block per recorded block
+   * and the pacing below sufficient again.
+   */
+  div_auto_resolution = (resolution > 0.0)
+                        ? resolution
+                        : (double)h.sample_rate / (double)h.nfft;
+  const int eng_nfft = rr_choose_nfft(h.sample_rate, div_auto_resolution);
+
+  if (resolution <= 0.0 && eng_nfft != (int)h.nfft) {
+    /*
+     * Only reachable if div_choose_nfft()'s rule has moved away from the
+     * copy above, or if the capture was taken outside the engine's own
+     * nfft range. Either way the run will not reproduce the recording,
+     * and saying so is the whole point of checking.
+     */
+    fprintf(stderr, "%s: WARNING capture nfft %u, engine will use %d - "
+            "this run does not reproduce the recorded resolution\n",
+            path, h.nfft, eng_nfft);
+  }
+
+  printf("%s: %u Hz, capture nfft %u, engine nfft %d (%.2f Hz bins, %.1f ms)\n",
+         path, h.sample_rate, h.nfft, eng_nfft,
+         (double)h.sample_rate / (double)eng_nfft,
+         1000.0 * eng_nfft / (double)h.sample_rate);
   rade_tuning_defaults();
+
+  for (int i = 0; i < nset; i++) {
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%s", sets[i]);
+    char *eq = strchr(buf, '=');
+
+    if (eq == NULL) {
+      fprintf(stderr, "%s: --set wants name=value\n", argv[0]);
+      return 2;
+    }
+
+    *eq = '\0';
+
+    if (!rade_tuning_set(buf, atof(eq + 1))) {
+      fprintf(stderr, "%s: unknown setting \"%s\"\n", argv[0], buf);
+      return 2;
+    }
+
+    printf("  set %s = %s\n", buf, eq + 1);
+  }
   FILE *out = fopen(outp, "w");
 
   if (out == NULL) { perror(outp); return 1; }
@@ -245,6 +356,7 @@ int main(int argc, char **argv) {
   diversity_auto_start();
   fseek(f, data_start, SEEK_SET);
   long nb = 0;
+  int  fed = 0;      /* samples pushed since the last pause */
 
   for (;;) {
     if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) { break; }
@@ -263,12 +375,25 @@ int main(int argc, char **argv) {
      */
     set_context(&m);
 
+    /*
+     * Paced per *engine* block, not per recorded block, and only when one
+     * has actually been handed over. With the resolution taken from the
+     * capture the two are the same size and this is the loop it always
+     * was - one pause per recorded block, at the end of it. Under
+     * --resolution they need not be, and a recorded block that decomposes
+     * into several engine blocks has to give the worker room between each
+     * of them or the queue overruns; a partial one has been buffered
+     * rather than enqueued and needs no pause at all.
+     */
     for (int i = 0; i < nfft; i++) {
       diversity_auto_sample(arm0[2 * i], arm0[2 * i + 1],
                             arm1[2 * i], arm1[2 * i + 1]);
-    }
 
-    g_usleep(usleep_us);
+      if (++fed == eng_nfft) {
+        fed = 0;
+        g_usleep(usleep_us);
+      }
+    }
     /*
      * div_cos/div_sin rather than the correlator's raw answer: this is
      * what the radio applies, slew and Hold and objective included, which

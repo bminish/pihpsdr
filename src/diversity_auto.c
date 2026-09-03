@@ -2017,6 +2017,45 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   }
 }
 
+#ifdef DIVERSITY_CAPTURE
+//
+// DEVELOPMENT TOOL - remove with the rest of the capture instrument.
+//
+// The context the previous captured block was taken with, so that the
+// record can say whether this one differs. lastctx is no use for that:
+// div_process_block() only writes it when it resets, so a change inside
+// DIV_RETUNE_HZ - or an attenuator step on a block that also reset for
+// another reason - would never show.
+//
+// The comparison is exact, deliberately. div_context_changed() is the
+// engine's question ("is the estimate still valid?") and it tolerates a
+// 20 Hz dial move; this is the reader's question ("did anything move in
+// this file?"), and an analyst looking for the block where an attenuator
+// or a filter changed wants every one of them.
+//
+static struct div_context divcap_prevctx;
+static int divcap_haveprev = 0;
+
+static int divcap_ctx_differs(const struct div_context *a,
+                              const struct div_context *b) {
+  return a->frequency      != b->frequency      ||
+         a->ctun_frequency != b->ctun_frequency ||
+         a->offset         != b->offset         ||
+         a->sidetone       != b->sidetone       ||
+         a->sample_rate    != b->sample_rate    ||
+         a->mode           != b->mode           ||
+         a->filter_low     != b->filter_low     ||
+         a->filter_high    != b->filter_high    ||
+         a->ref            != b->ref            ||
+         a->follow         != b->follow         ||
+         a->weighting      != b->weighting      ||
+         a->att0           != b->att0           ||
+         a->att1           != b->att1           ||
+         a->centre         != b->centre         ||
+         a->width          != b->width;
+}
+#endif
+
 //
 // Process one block. Runs on the analysis thread.
 //
@@ -2031,6 +2070,10 @@ static void div_process_block(void) {
 
   div_get_context(&ctx);
 
+#ifdef DIVERSITY_CAPTURE
+  int divcap_reset = 0;
+#endif
+
   if (div_context_changed(&ctx, &lastctx)) {
     //
     // The radio moved under us: anything we accumulated describes a
@@ -2039,6 +2082,9 @@ static void div_process_block(void) {
     div_reset_stats();
     rade_corr_reset();
     lastctx = ctx;
+#ifdef DIVERSITY_CAPTURE
+    divcap_reset = 1;
+#endif
   }
 
 #ifdef DIVERSITY_CAPTURE
@@ -2055,7 +2101,21 @@ static void div_process_block(void) {
     struct divcap_block m;
     memset(&m, 0, sizeof(m));
     m.dropped         = (guint32)divcap_dropped;
-    m.rec_flags       = 0;
+    //
+    // Bit 0: this block's context differs from the previous captured
+    // block's. The first block of a file never sets it - there is nothing
+    // before it to differ from.
+    //
+    m.rec_flags       = 0u;
+
+    if (divcap_haveprev && divcap_ctx_differs(&ctx, &divcap_prevctx)) {
+      m.rec_flags |= DIVCAP_FLAG_CTX_CHANGED;
+    }
+
+    if (divcap_reset) { m.rec_flags |= DIVCAP_FLAG_ENGINE_RESET; }
+
+    divcap_prevctx    = ctx;
+    divcap_haveprev   = 1;
     m.frequency       = (gint64)ctx.frequency;
     m.ctun_frequency  = (gint64)ctx.ctun_frequency;
     m.offset          = (gint64)ctx.offset;
@@ -2823,6 +2883,11 @@ void diversity_auto_start(void) {
 int diversity_auto_capture_start(void) {
   if (!div_auto_running || receivers < 1 || receiver[0] == NULL) { return 0; }
 
+  //
+  // A new file starts with nothing before it, so the first block must not
+  // be marked as differing from the last block of the previous one.
+  //
+  divcap_haveprev = 0;
   return diversity_capture_start(receiver[0]->sample_rate, nfft);
 }
 

@@ -54,6 +54,15 @@ int div_indep_att = 1;
  */
 #define ATT0 7
 #define ATT1 23
+/*
+ * ...and a step of ADC1's attenuator part-way through, so the file
+ * carries a context change. It is the one thing the operator does that
+ * the samples cannot show, it is what rec_flags exists to mark, and it is
+ * what a replay has to reproduce - div_context_changed() compares both
+ * attenuators, so the engine restarts its statistics here.
+ */
+#define ATT1_B     11
+#define ATT_STEP_B 100
 //
 // The engine tells the menu when a mode change swapped one block of
 // modal settings for another. There is no menu here.
@@ -233,6 +242,8 @@ int main(int argc, char **argv) {
   const int nblocks = 160;
 
   for (int b = 0; b < nblocks; b++) {
+    if (b == ATT_STEP_B) { adc[1].attenuation = ATT1_B; }
+
     for (int n = 0; n < NFFT; n++) {
       diversity_auto_sample(buf[4 * pos + 0], buf[4 * pos + 1],
                             buf[4 * pos + 2], buf[4 * pos + 3]);
@@ -317,20 +328,68 @@ int main(int argc, char **argv) {
 
   {
     fseek(f, data_start, SEEK_SET);
-    struct divcap_block m;
-    int bad = 0, checked = 0;
+    struct divcap_block m, prev;
+    int bad = 0, checked = 0, steps = 0, flag_wrong = 0, resets = 0;
+    int have_prev = 0;
 
     while (fread(&m, sizeof(m), 1, f) == 1 && m.rec_magic == DIVCAP_REC_MAGIC) {
-      if (m.att0 != ATT0 || m.att1 != ATT1) { bad++; }
+      if (m.att0 != ATT0) { bad++; }
 
+      if (m.att1 != ATT1 && m.att1 != ATT1_B) { bad++; }
+
+      /*
+       * rec_flags, checked against the fields it describes rather than
+       * against a block number: the step is applied between blocks on the
+       * feed thread and lands on whichever block the worker takes next,
+       * so the index is not fixed. What must hold is that bit 0 is set on
+       * exactly the blocks whose context differs from the one before.
+       */
+      if (have_prev) {
+        const int differs = (m.att0 != prev.att0 || m.att1 != prev.att1 ||
+                             m.mode != prev.mode || m.filter_low != prev.filter_low ||
+                             m.filter_high != prev.filter_high ||
+                             m.frequency != prev.frequency ||
+                             m.ref != prev.ref || m.follow != prev.follow ||
+                             m.weighting != prev.weighting ||
+                             m.centre != prev.centre || m.width != prev.width);
+        const int flagged = (m.rec_flags & DIVCAP_FLAG_CTX_CHANGED) != 0;
+
+        if (differs != flagged) { flag_wrong++; }
+
+        if (differs) { steps++; }
+      } else if ((m.rec_flags & DIVCAP_FLAG_CTX_CHANGED) != 0) {
+        /* Nothing precedes the first block, so it cannot differ from it. */
+        flag_wrong++;
+      }
+
+      if ((m.rec_flags & DIVCAP_FLAG_ENGINE_RESET) != 0) { resets++; }
+
+      prev = m;
+      have_prev = 1;
       checked++;
 
       if (fseek(f, (long)h.block_bytes, SEEK_CUR) != 0) { break; }
     }
 
-    printf("att:     %d block(s) carry att0=%d att1=%d, %d wrong", checked, ATT0, ATT1, bad);
+    printf("att:     %d block(s), att0=%d throughout, att1 %d then %d, %d wrong",
+           checked, ATT0, ATT1, ATT1_B, bad);
 
     if (bad != 0 || checked == 0) { printf("  FAIL\n"); fails++; } else { printf("  ok\n"); }
+
+    printf("flags:   %d context change(s) marked, %d engine reset(s), %d mismatch(es)",
+           steps, resets, flag_wrong);
+
+    /*
+     * One step was made, so exactly one block must carry each bit. Zero
+     * would mean the writer is not writing them again, which is the
+     * defect this check exists to prevent coming back.
+     */
+    if (flag_wrong != 0 || steps != 1 || resets != 1) {
+      printf("  FAIL\n");
+      fails++;
+    } else {
+      printf("  ok\n");
+    }
   }
 
   struct divcap_result r;

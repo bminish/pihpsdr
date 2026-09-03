@@ -83,10 +83,56 @@ the same 208 bytes and a **v1 file still replays**; the tools say once
 that its attenuators are unknown rather than letting two zeros be read as
 two settings. `run_ref` follows them block by block on a v2 file.
 
+**Format version 3 writes `rec_flags`.** It has two bits and they answer
+different questions:
+
+| bit | meaning |
+|---|---|
+| `DIVCAP_FLAG_CTX_CHANGED` | this block's context differs from the previous block's, compared **exactly** |
+| `DIVCAP_FLAG_ENGINE_RESET` | the engine ran `div_reset_stats()` and `rade_corr_reset()` before this block |
+
+They differ because `div_context_changed()` tolerates `DIV_RETUNE_HZ`, so
+a slow dial walk sets the first bit on every step and the second on none
+of them. Bit 0 is for a person reading a file back - it is how you find
+the block where an attenuator or a filter moved. Bit 1 is what
+`divcap_replay()` follows, so a recording containing a retune or an
+attenuator step replays through the restart instead of diverging from it.
+
+Before v3 the writer assigned `rec_flags` a literal zero and neither bit
+was ever set. **Every capture taken before that fix is v2 or v1 and reads
+zero on both bits whatever the operator did**, so on an older file the
+only way to find a context change is to compare the recorded fields block
+by block. `divcap_replay()` falls back to its own copy of
+`div_context_changed()` for those, and on a v3 file it compares its copy
+with the recorded bit and complains if they disagree - which is the alarm
+for that copy drifting, as it had: it was missing both attenuators.
+
 **Take a capture of nothing, too.** Same antennas, same band, no signal.
 That is the companion run for any threshold sweep: it is what says how far
 a threshold can come down before it starts finding pilots that are not
 there.
+
+### Walking a capture down to threshold
+
+`--noise RMS` adds independent AWGN to each arm, per component - the one
+part of the noise a two-branch array cannot null - so a capture that
+decodes at 99 % can be pushed to where the modem is actually failing and
+the correlator's constants have something to bite on. `replay_rade`,
+`run_ref` and `score_rade` all take it, with `--seed`.
+
+**The `--noise` and `--seed` must match wherever a weight series crosses
+between tools.** All three seed the same generator and call
+`divcap_add_noise()` once per block in file order, so the realisation is
+identical; mismatch them and `run_ref` fits a weight to one signal while
+`score_rade` decodes another, silently. The check that it is right: a
+`run_ref` weight series at the same noise scores within 0.1 dB of
+`score_rade`'s own `correlator` stream.
+
+The threshold is sharp and the right level is per capture - the noise is
+white across the DDC span and only 8 kHz of it reaches the modem, so a
+48 kHz capture needs about a quarter the amplitude of a 192 kHz one.
+`docs/diversity-measurements.md` Finding 41 has calibrated levels for two
+captures and the method for finding more.
 
 ## Replaying
 
@@ -216,6 +262,15 @@ the real engine with the capture armed, then replays the file and checks
 the correlator ends up in the same state block for block. It is what stops
 the writer, the record layout and the replay drifting apart.
 
+It steps ADC1's attenuator once part-way through, which is the only thing
+an operator does that the samples cannot show. That gives the run a
+context change to carry, and the check asserts three things about it: the
+recorded `att1` follows the step, `rec_flags` bit 0 is set on exactly the
+blocks whose recorded context differs from the one before, and bit 1 is
+set once. The verify pass then has to reproduce the restart as well as the
+tracking, which is what says a capture with a retune in it can be replayed
+at all.
+
 With `PIHPSDR_DIVCAP_DIR` set it keeps the file, which is how to get a
 sample `.divc` to try the tools on without a radio:
 
@@ -235,6 +290,7 @@ and lives on the analysis thread.
 ```
 ./run_ref cap.divc --ref band|carrier|rade|digital --out W.csv
 ./run_ref cap.divc --ref digital --weighting flat --out W.csv
+./run_ref cap.divc --ref band --resolution 12 --out W.csv
 ```
 
 It follows the operator's context **block by block** from the recording,
@@ -242,6 +298,26 @@ not just at block 0. That matters more than it sounds: with the context
 pinned to the first block the recorded retuning is invisible to the
 engine, so anything to do with `div_context_changed()` measures as having
 no effect whatever. It cost one wrong conclusion before it was noticed.
+
+**The transform size comes from the capture too**, and it did not always.
+`div_auto_resolution` is not part of `div_get_context()`, so nothing used
+to set it and the engine ran at its compiled default of 12 Hz bins -
+nfft 16384 at 192 kHz - however the radio had been configured. Two things
+followed and both were silent. The analysis window was two or four times
+shorter than the recorded one on any capture taken at a finer setting.
+And a recorded block then decomposed into two or four engine blocks
+pushed back to back, which overran the four-deep queue: on an nfft 65536
+capture that is one analysis block lost in four, the drop path calls
+`rade_corr_reset()`, and **`--ref rade` never acquired at all** while
+reporting a clean run. `replay_rade` was never affected - it hands
+`rade_corr_process()` the recorded block directly.
+
+`run_ref` now derives the target bin width from the header, prints the
+transform size it settled on, and warns if that is not the capture's own.
+The pacing is per engine block rather than per recorded block, so
+`--resolution` can be used to sweep the Resolution control deliberately
+without reintroducing the drops. Sweeping it is the one thing on that
+menu that has never been measured on a recording.
 
 ## One thing this turned up
 
@@ -266,14 +342,16 @@ sh test/diversity/devtools/remove.sh          # say what would go
 sh test/diversity/devtools/remove.sh --do     # do it
 ```
 
-which deletes the new files and the guarded blocks — five of them, all findable by one grep:
+which deletes the new files and every guarded block, all findable by one
+grep. The dry run prints the count, which is the number to trust - it has
+grown as the instrument has:
 
 | File | What to delete |
 |---|---|
-| `src/diversity_auto.c` | five `#ifdef DIVERSITY_CAPTURE` blocks: the include, the drop stash, the stash in the worker, the tap in `div_process_block()`, `diversity_auto_capture_start()`, and the stop hook |
-| `src/diversity_menu.c` | four `#ifdef DIVERSITY_CAPTURE` blocks: the include, the button callback, the button, the label refresh |
+| `src/diversity_auto.c` | the `#ifdef DIVERSITY_CAPTURE` blocks: the include, the drop stash, the previous-context memory and `divcap_ctx_differs()`, the reset flag in `div_process_block()`, the tap, the stash in the worker, `diversity_auto_capture_start()`, and the stop hook |
+| `src/diversity_menu.c` | the `#ifdef DIVERSITY_CAPTURE` blocks: the include, the button callback, the button, the label refresh |
 | `Makefile` | the `ifdef DIVCAP` block after the `OBJS` list |
-| `.gitignore` | the two `*.divc` lines |
+| `.gitignore` | the `*.divc` lines |
 
 and check:
 

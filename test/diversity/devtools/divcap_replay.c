@@ -69,6 +69,15 @@ void divcap_add_noise(float *arm0, float *arm1, int nfft, double rms) {
  */
 #define DIVCAP_RETUNE_HZ 20    /* mirrors DIV_RETUNE_HZ in diversity_auto.c */
 
+/*
+ * A copy of div_context_changed(), for files old enough not to carry the
+ * answer. From format version 3 the writer records whether the engine
+ * actually reset (DIVCAP_FLAG_ENGINE_RESET) and that is used instead -
+ * see the note at the reset site below. Keeping this only as a fallback
+ * is deliberate: a duplicated rule drifts, and this one had already
+ * drifted, missing both step attenuators for as long as they have been
+ * recorded.
+ */
 static int ctx_differs(const struct divcap_block *a, const struct divcap_block *b) {
   return llabs(a->frequency      - b->frequency)      > DIVCAP_RETUNE_HZ ||
          llabs(a->ctun_frequency - b->ctun_frequency) > DIVCAP_RETUNE_HZ ||
@@ -82,7 +91,9 @@ static int ctx_differs(const struct divcap_block *a, const struct divcap_block *
          a->follow         != b->follow         ||
          a->centre         != b->centre         ||
          a->width          != b->width          ||
-         a->weighting      != b->weighting;
+         a->weighting      != b->weighting      ||
+         a->att0           != b->att0           ||
+         a->att1           != b->att1;
 }
 
 static int near(double a, double b) {
@@ -104,6 +115,7 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
   float       *arm1  = malloc(half);
   struct divcap_block m, prev;
   int   have_prev = 0;
+  int   warned_reset = 0;
   int   was_locked = 0;
   double sw_re = 0.0, sw_im = 0.0, sw_n = 0.0;
   double sq_re = 0.0, sq_im = 0.0;
@@ -172,9 +184,31 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
      * of the capture tap, so the state recorded in this block is the
      * state after them - which is why the comparison below comes after.
      */
-    if (have_prev && ctx_differs(&m, &prev)) {
-      rade_corr_reset();
-      prev = m;
+    {
+      /*
+       * From v3 the file says whether the engine reset, so the replay
+       * follows the radio rather than re-deriving the decision. On an
+       * older file the local rule above is all there is; on a v3 file the
+       * two are compared, because a disagreement means the rule here has
+       * drifted from div_context_changed() and every replay of a capture
+       * with a retune in it is quietly wrong.
+       */
+      const int local = have_prev && ctx_differs(&m, &prev);
+      const int recorded = (h->version >= 3u)
+                           ? ((m.rec_flags & DIVCAP_FLAG_ENGINE_RESET) != 0)
+                           : local;
+
+      if (h->version >= 3u && recorded != local && !warned_reset) {
+        warned_reset = 1;
+        fprintf(stderr, "divcap_replay: block %u - the file says the engine "
+                "%s and the local rule says it %s; following the file\n",
+                m.seq, recorded ? "reset" : "did not reset",
+                local ? "did" : "did not");
+      }
+
+      if (recorded) { rade_corr_reset(); }
+
+      if (local || recorded) { prev = m; }
     }
 
     if (m.dropped > 0) { rade_corr_reset(); }

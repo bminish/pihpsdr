@@ -48,12 +48,19 @@
 // rather than pretending to be portable.
 //
 #define DIVCAP_MAGIC        "PIHPDIVC"
-#define DIVCAP_VERSION      2u
+#define DIVCAP_VERSION      3u
 //
 // Version 1 had no attenuator fields: att0/att1 occupied the pad after
 // weighting and read as zero. A v1 file is still replayable - the block
 // record is the same 208 bytes - but its attenuator values are unknown
 // rather than zero, and the tools say so.
+//
+// Version 2 and below never wrote rec_flags: the writer assigned it a
+// literal zero, so the "context changed here" bit documented below was
+// always clear and a reader could not tell "nothing moved" from "this
+// field is not written". Nothing about the layout changed when that was
+// fixed, so a v3 file is byte-compatible with a v2 reader; the version is
+// what says the flag can be believed.
 //
 #define DIVCAP_VERSION_MIN  1u
 #define DIVCAP_REC_MAGIC    0x214B4C42u   /* "BLK!" */
@@ -61,6 +68,36 @@
 
 #define DIVCAP_NOTE_LEN     192
 #define DIVCAP_RADIO_LEN    48
+
+//
+// divcap_block.rec_flags
+//
+// Bit 0 says this block's analysis context differs from the previous
+// block's. The comparison is *exact*, unlike div_context_changed(), which
+// tolerates DIV_RETUNE_HZ of dial movement: the engine's question is
+// whether the estimate is still valid, and this one is whether anything
+// moved in the file, which is what someone reading a recording back needs
+// in order to find the block where an attenuator or a filter changed.
+//
+// Only files of format version 3 and above write it. In an older file
+// every block reads zero whatever the operator did, so a reader must fall
+// back to comparing the recorded fields block by block - which is what
+// had to be done on every capture taken before this was fixed.
+//
+#define DIVCAP_FLAG_CTX_CHANGED  0x1u
+//
+// Bit 1 says the engine threw its statistics away before this block -
+// div_context_changed() returned true and div_reset_stats() and
+// rade_corr_reset() ran. That is a different question from bit 0 and the
+// answer differs: div_context_changed() tolerates DIV_RETUNE_HZ, so a
+// slow dial walk sets bit 0 on every step and bit 1 on none of them.
+//
+// This is the bit a replay must follow. Without it a tool driving the
+// correlator directly cannot know where the radio started again, so a
+// recording containing a retune or an attenuator step replays as one
+// continuous run and diverges from the recorded state from that block on.
+//
+#define DIVCAP_FLAG_ENGINE_RESET 0x2u
 
 //
 // Written once at the head of the file.
@@ -87,7 +124,7 @@ struct divcap_block {
   uint32_t rec_magic;
   uint32_t seq;
   uint32_t dropped;           // analysis blocks lost immediately before this one
-  uint32_t rec_flags;         // bit 0: context differs from the previous block
+  uint32_t rec_flags;         // DIVCAP_FLAG_* - see above
 
   //
   // Fixed-width mirror of struct div_context. The context is what decides
