@@ -1153,11 +1153,11 @@ static void div_populate_from_settings(void) {
 
   if (res_combo) {
     //
-    // The combo is an index into { 12, 6, 3 } Hz; the setting is the bin
+    // The combo is an index into { 24, 12, 6 } Hz; the setting is the bin
     // width itself. Match on midpoints so a value that has been through a
     // double round trip still lands on its own entry.
     //
-    const int i = (div_auto_resolution < 4.5) ? 2 : (div_auto_resolution < 9.0) ? 1 : 0;
+    const int i = (div_auto_resolution < 9.0) ? 2 : (div_auto_resolution < 18.0) ? 1 : 0;
     gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo), i);
   }
 
@@ -1417,7 +1417,7 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void res_changed_cb(GtkWidget *widget, gpointer data) {
-  static const double res[] = { 12.0, 6.0, 3.0 };
+  static const double res[] = { 24.0, 12.0, 6.0 };
   int i = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
 
   if (i < 0 || i > 2) { i = 0; }
@@ -1708,16 +1708,37 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_halign(res_label, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(grid), res_label, 0, 12, 1, 1);
   res_combo = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "12 Hz bins (fast)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "6 Hz bins");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "3 Hz bins (weak signals)");
+  //
+  // 24 / 12 / 6 Hz, where it was 12 / 6 / 3. The block period is the
+  // reciprocal of the bin width, so this control is really a block-length
+  // control read in hertz - and swept across twenty rows on fourteen
+  // captures, both objectives want the short block: seventeen of twenty,
+  // the largest being 6.4 dB of extra null depth. The setting that was
+  // labelled for weak signals was behind on both objectives on five
+  // captures of six and, above 192 kHz, was not even a distinct setting.
+  // See Finding 43 in docs/diversity-measurements.md.
+  //
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "24 Hz bins, 43 ms (fast paths)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "12 Hz bins, 85 ms");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(res_combo), "6 Hz bins, 171 ms");
   gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo),
-                           div_auto_resolution > 9.0 ? 0 : (div_auto_resolution > 4.5 ? 1 : 2));
+                           div_auto_resolution > 18.0 ? 0 : (div_auto_resolution > 9.0 ? 1 : 2));
   gtk_widget_set_tooltip_text(res_combo,
-                              "Finer bins lift a weak carrier further out of the noise, "
-                              "but each step doubles the block period and so halves the "
-                              "update rate. The bin width actually achieved is shown in "
-                              "the status line.");
+                              "Really a block-length control: the block period is the "
+                              "reciprocal of the bin width, and the times shown are what "
+                              "you get at every sample rate from 48 kHz up.\n\n"
+                              "Coarser bins measure the channel more often, which is what "
+                              "a null is limited by - it applies a weight one block after "
+                              "measuring it, and on a fast path the channel has moved by "
+                              "then. Measured across fourteen captures both Null and Sum "
+                              "want the coarse end on seventeen rows of twenty, worth up "
+                              "to 6.4 dB. Finer bins lift a weak carrier further out of "
+                              "the per-bin noise floor and are worth having on a slow, "
+                              "decorrelated path - one capture in the set wants them - "
+                              "but they are not the general answer the old labelling "
+                              "implied.\n\n"
+                              "The bin width actually achieved is shown in the status "
+                              "line.");
   gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 12, 1, 1);
   g_signal_connect(res_combo, "changed", G_CALLBACK(res_changed_cb), NULL);
   weight_label = gtk_label_new("Weighting");

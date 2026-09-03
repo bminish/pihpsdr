@@ -102,6 +102,21 @@ a scalar weight nulls 8.1 dB where a weight per 94 Hz bin nulls 16.5
 (Finding 28). **Finding 30** asks what window and tracking method suit it
 and finds that only the objective matters.
 
+**Finding 43 answers two questions from the captures already taken.** The
+Resolution menu was offering a coarsest setting that is not the coarsest
+the engine can produce: the 43 ms column in Finding 42's own sweep is
+23.44 Hz bins, and it nulls 0.35 to 0.92 dB deeper than the menu's 12 Hz
+on three of four captures. **The combo is now 24 / 12 / 6 Hz** and
+`DIV_MIN_NFFT` drops to 2048 so every sample rate reaches the new setting.
+The second question - discriminating *local* interference by the
+stationarity of `h1/h0`, which has no propagation behind it and so does
+not move - has a sound premise and both halves already measured, and comes
+out **against** building it: the statistic separates static paths from
+fading ones rather than local noise from wanted signal, and the one
+local-interference capture in the set is incoherent between the arms and
+not nullable at any setting. What it needs is a capture, and the cheapest
+one on the list.
+
 **Finding 42 is the Resolution control on air, and the first pair of
 recordings of one signal at two sample rates.** Six SSB captures on
 3 September - four of a 40 m station at 192 and 48 kHz and 12, 6 and 3 Hz
@@ -5754,6 +5769,193 @@ slowly. That undersampling can only understate the coarse settings, which
 is the direction the result already points, so the ordering is safe and
 the magnitudes at the coarse end are lower bounds.
 
+## Finding 43: a coarser bin than the menu offers, and whether stability can find local noise
+
+Two questions asked of the existing captures rather than of new ones. The
+first turns out to have been measured already and not noticed; the second
+has both of its halves measured and comes out against the proposal.
+
+### The coarsest setting in Finding 42's sweep is one the menu cannot select
+
+Finding 42 swept the block period over five columns, 43 to 683 ms. The
+43 ms column is nfft 8192 at 192 kHz, which is **23.44 Hz bins** - coarser
+than anything in the Resolution combo, whose top entry is 12 Hz. It exists
+on the four captures recorded at 192 kHz, and it wins.
+
+Against the 85 ms setting that was the coarsest an operator could ask for:
+
+| 192 kHz captures | 43 ms, 23.4 Hz | 85 ms, 11.7 Hz | coarser buys |
+|---|---|---|---|
+| `122632` 17 m, Null | **-15.46 dB** | -14.54 | **+0.92** |
+| `122119` 40 m, Null | **-11.82** | -11.12 | **+0.70** |
+| `122843` 17 m, Null | **-14.41** | -14.06 | **+0.35** |
+| `122211` 40 m, Null | -6.51 | **-6.66** | -0.15 |
+| `122211` 40 m, Sum | **+1.16** | +0.99 | +0.17 |
+| `122119` 40 m, Sum | **+2.58** | +2.46 | +0.12 |
+| `122632` 17 m, Sum | +1.47 | **+1.90** | -0.43 |
+| `122843` 17 m, Sum | -4.50 | **-3.83** | -0.67 |
+
+**Null gains on three of four and Sum is the usual wash.** The gains are
+on top of what the existing range already buys - `122632` nulls 6.4 dB
+deeper at 43 ms than at 341 ms - so this is the last decibel of a large
+effect rather than a new one. The two Sum rows that lose are both on 17 m
+and both are captures where Finding 42 says Sum should not be running at
+all.
+
+One thing sharpens it. Finding 42's own "what this cannot say" records
+that the weight series is sampled once per *recorded* block, so on the
+341 ms captures a weight updating every 43 ms is read four times too
+slowly - and that undersampling can only understate the coarse settings.
+The column above is a lower bound.
+
+So the document's standing advice - "an operator running Null on a fast
+path should set Resolution to its coarsest bins" - was pointing at a
+setting that is not the coarsest the engine can produce.
+
+### What a 24 Hz option reaches, and the one constant in the way
+
+`div_choose_nfft()` doubles from `DIV_MIN_NFFT` until the bin width is no
+coarser than the request. At a floor of 4096 a 24 Hz request is granted
+everywhere except 48 kHz, where 4096 already gives 11.72 Hz and the
+request rounds away to nothing - the same silent rounding Finding 42 found
+at the other end. Lowering the floor to 2048 removes it:
+
+| sample rate | 24 Hz, floor 4096 | 24 Hz, floor 2048 |
+|---|---|---|
+| 48 kHz | 11.72 Hz, 85 ms - *no change* | **23.44 Hz, 42.7 ms** |
+| 96 kHz | 23.44, 42.7 | 23.44, 42.7 |
+| 192 kHz | 23.44, 42.7 | 23.44, 42.7 |
+| 384 kHz | 23.44, 42.7 | 23.44, 42.7 |
+| 768 kHz | 23.44, 42.7 | 23.44, 42.7 |
+
+Every rate from 48 kHz up then reaches 23.44 Hz in a 42.7 ms block, so the
+setting means the same thing everywhere - which is what Finding 42 says
+the control ought to do and what the sample-rate result rests on. Swept
+against the floor at 4096, **exactly one of the fifteen rate-and-setting
+combinations moves**: 24 Hz at 48 kHz. No existing setting changes at any
+rate.
+
+It also improves the collapse Finding 42 found at the top. At 384 kHz the
+three options were 12, 6 and 6 Hz; they are now 24, 12 and 6, all
+distinct. At 768 kHz all three were 11.72; they are now 23.44, 11.72 and
+11.72 - one collapse left instead of a complete one.
+
+### What was changed
+
+The Resolution combo becomes **24 / 12 / 6 Hz**, labelled with the block
+period beside the bin width, and `DIV_MIN_NFFT` becomes 2048. The default
+is unchanged at `DIV_TARGET_BIN_HZ` = 12 Hz, which is now the middle
+entry.
+
+**3 Hz is retired rather than a fourth option added.** Finding 42 measured
+it behind the 12 Hz setting by 0.27 to 1.22 dB on Sum and 1.7 to 5.5 dB on
+Null on five captures of six, it is labelled for a case - weak signals -
+that the sweeps do not support, and above 192 kHz it was not a distinct
+setting. A props file or an older client carrying 3.0 is clamped to 6.0,
+the nearest surviving entry, which is a coarser block than it asked for
+and on those five captures a better one.
+
+### What this does not settle
+
+**Coarser than 24 Hz is unmeasured.** Nothing in the set runs a block
+shorter than 43 ms, so whether 48 Hz keeps going the same way is a
+question for the next sweep, not an extrapolation. There is a natural
+stopping point in sight: at 23.4 Hz a 3 kHz window holds 129 bins but a
+400 Hz CW window holds 18, and the carrier reference's `DIV_CARRIER_BINS`
+of two either side spans +/-47 Hz.
+
+That thinning is now self-reporting, which it was not before. The
+threshold slider's floor is computed from the bin count and the effective
+length of the average, so a 400 Hz window at 23.4 Hz bins and 0.2 s of
+averaging - about 18 bins and 9 effective blocks - puts the floor at
+2.7 %, and the operator can see that the estimate has little behind it.
+
+**And `011225` still reverses.** Finding 39's 60 m AM capture wants a
+*longer* block at every averaging time, because it is the one recording
+with essentially uncorrelated fading and the variance a short block costs
+exceeds the delay it saves. One capture of twenty; the coarse end is the
+general answer and not a universal one, which is why 6 Hz stays on the
+menu.
+
+### Local interference: the discriminant is real and it is the wrong one
+
+The proposal: a local source arrives with no propagation, so its
+antenna-to-antenna transfer `h1/h0` is fixed by geometry and cabling and
+does not move. Discriminate on that stability and null what is stationary,
+leaving the wanted signal alone.
+
+**Both halves of the premise are already measured, and they separate
+cleanly.**
+
+| | `h1/h0` behaviour |
+|---|---|
+| 20 m voice near the MUF, `002534` | coherence time **~0.5 s** |
+| 20 m CW, `002710` | ~1.0 s |
+| 30 m FT8, `003309` | ~4.1 s |
+| ordinary fading on `115357`, over 9 s | moved **7.10 dB** |
+| the three shortwave broadcasts, envelope correlation | +0.31 to +0.66 |
+| **the FSK station on `154822`, idling 6 to 30 s** | **+4.4 dB at -161 deg, to within 1 dB and 5 deg**, coherence 0.996 |
+
+The last row is the one that matters: a fixed-path source holds its
+signature to a decibel and five degrees over twenty-four seconds while a
+skywave path decorrelates in half a second to four. The statistic is also
+cheap - one extra complex accumulator per bin, holding the mean resultant
+length of the unit-magnitude per-bin channel phasor over a long window,
+which is O(bins) per block and needs no second transform.
+
+**But it separates static paths from fading paths, not local noise from
+wanted signal**, and the set contains four cases where those are not the
+same thing:
+
+- **`154822`'s stable source is a wanted signal.** It is a utility FSK
+  station, and by this test it is indistinguishable from local noise
+  (Finding 31). Groundwave, short skip, local repeaters and anything on
+  6 m by groundwave all read as stationary.
+- **On mediumwave the wanted signal is the stable thing and the noise is
+  not.** `111852` is a 693 kHz broadcast at inter-arm coherence 0.982 with
+  band noise at 0.52 (Finding 16). A stability-gated null points at the
+  station.
+- **The one local-interference capture in the set is not nullable at
+  all.** `233615`'s 574-996 Hz hump is 10.5 dB above the floor on ADC0
+  only and **incoherent between the arms at 0.20 to 0.38**, where the
+  deepest a single complex weight reaches is **0.2 to 0.7 dB** (Finding 5).
+  Identifying it perfectly buys nothing; the array's answer there is to
+  de-weight the contaminated arm, which MVDR with a correct noise
+  covariance already does. Only local noise that *both* antennas hear
+  coherently is nullable, and the set has no capture of that.
+- **A wanted CW carrier in a narrow window is stationary for seconds** on
+  a slow path, and `142333`'s window "holds one narrow CW carrier with
+  nothing to average" (Findings 21, 42).
+
+**The discriminant already available is stronger: presence, not
+stability.** Local noise is there between the overs and the wanted signal
+is not. The coherence gate already identifies noise-only blocks correctly
+on 93 to 98 % of them on `122843`, and `div_arm_publish()` already keeps
+the per-arm floor estimate running through held blocks for exactly this
+kind of decision - which the open items call the highest-value unmade
+change in the document, and which no path reaches. Fitting the null on the
+held blocks and freezing it through the signal is both a better
+discriminant and a smaller change than a new statistic.
+
+**So stationarity is a second axis, not the primary one.** Where it would
+earn its place is as a per-bin weight on the interference covariance -
+the slot coherence weighting currently occupies, and which Findings 27,
+29, 40 and 42 agree should be set to flat, so the slot is free. Nothing is
+being built on it here.
+
+### What would settle it
+
+One capture, and the instrument for it already exists. A quiet band, both
+antennas, and a known offending device switched **on and off during the
+minute** - the switching is the point, because it labels the blocks
+without needing a detector. That gives two numbers:
+
+- the stability of `h1/h0` for a real local source, against the 0.5 to
+  4.1 s of a skywave path and the 1 dB / 5 deg of `154822`'s fixed one;
+- **its inter-arm coherence**, which decides whether any of this is worth
+  building. If it comes back like `233615` at 0.2 to 0.4, no amount of
+  correct identification recovers more than a decibel.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -6067,17 +6269,17 @@ holds is the false-alarm line, and that part stands.
   What would is a noise ratio taken from the silent blocks, which is where
   it is easiest to measure and where the gate already knows it is looking
   at noise (Finding 42).
-- **The Resolution menu offers three options that are not always three.**
-  Above 192 kHz `div_choose_nfft()`'s cap collapses them: at 384 kHz "3 Hz
-  bins" and "6 Hz bins" are the same setting, at 768 kHz all three are.
-  The achieved width is published in `div_auto_binhz` and shown in the
-  status line, so the operator can see it if they look; nothing greys out
-  an option that will not do what it says. Alongside that, Findings 40 and
-  42 now agree that both objectives want the coarse end, so the option
-  labelled "3 Hz bins (weak signals)" is behind on both on five captures
-  of six. Retiring it, or relabelling the control by block period rather
-  than bin width, is a menu change this document has the evidence for and
-  has not made (Finding 42).
+- **Mostly closed: the Resolution menu is 24 / 12 / 6 Hz now.**
+  Finding 43 takes the change Finding 42 had the evidence for: 3 Hz is
+  retired, a 24 Hz setting takes its place, `DIV_MIN_NFFT` drops to 2048
+  so that every rate from 48 kHz up reaches it, and the entries carry the
+  block period beside the bin width. The 23.4 Hz column was already in
+  Finding 42's sweep and wins on three Null rows of four. **What is left is
+  the top of the range**: at 768 kHz "12 Hz" and "6 Hz" are still the same
+  setting, one collapse where there were three, and nothing greys out the
+  option that will not do what it says. **And coarser than 24 Hz is
+  unmeasured** - no capture runs a block shorter than 43 ms, so whether
+  48 Hz keeps going the same way is a sweep, not an extrapolation.
 - **Two captures where the zero-weight guard fired have no decode score
   after the fix.** Finding 11 is fixed and the change is scored on eight
   captures for zero frames and weight jitter, but only six carry a decode
@@ -6153,6 +6355,23 @@ holds is the false-alarm line, and that part stands.
   finds the menu worse than described: the three options are not three
   settings above 192 kHz, and the one labelled for weak signals is behind
   on both objectives on five captures of six.
+- **Local interference has one capture and it is the un-nullable kind.**
+  Finding 43 assesses discriminating local noise by the *stationarity* of
+  `h1/h0` - the premise being sound, and both halves of it already
+  measured: a skywave path decorrelates in 0.5 to 4.1 s while `154822`'s
+  fixed-path station held its signature to 1 dB and 5 degrees over
+  twenty-four seconds. The statistic separates and is cheap. It is not
+  being built, because it separates *static path* from *fading path* and
+  not local noise from wanted signal - `154822`'s stable source is itself
+  a wanted signal, on mediumwave the wanted carrier is the stable thing
+  (Finding 16), and a wanted CW carrier is stationary for seconds. The
+  better discriminant is presence rather than stability, and it needs no
+  new statistic. **What is missing is the capture**: `233615` is the only
+  local-interference recording in the set and its source is incoherent
+  between the arms at 0.20 to 0.38, where the deepest a single weight
+  reaches is 0.7 dB (Finding 5). Whether a coherently-received local source
+  exists on these two antennas is unmeasured, and it is what decides
+  whether any of this is worth building.
 - **The window and averaging questions are untested where they matter.**
   Finding 30 measures them on DRM at 40 dB SNR and finds every setting
   within 0.04 dB, which is the right answer there and says nothing about a
@@ -6451,6 +6670,20 @@ recorded nfft rather than in a derivation. *Compromise:* one capture at
 192 kHz is most of the first half; a quiet band with nobody on it at all
 gives the silence figure but not the in-speech one. Cost: two minutes on
 any band above 14 MHz that is not busy (Finding 42).
+
+**0b. A local noise source, switched on and off.** *Ideal:* a quiet band,
+both antennas, one minute, with a known offending device in the shack or
+on the property **switched on and off during the recording** - the
+switching is the whole point, because it labels the blocks without needing
+a detector to do it. *Closes:* the two numbers Finding 43 needs. The
+stability of `h1/h0` for a real local source, against the 0.5 to 4.1 s
+coherence time of a skywave path and the 1 dB / 5 degrees `154822`'s
+fixed-path station held for twenty-four seconds; and, deciding everything,
+**its inter-arm coherence** - if it comes back like `233615`'s at 0.20 to
+0.38 then a two-branch array cannot null it however well it is identified,
+and the answer is de-weighting the contaminated arm, which MVDR already
+does. *Compromise:* none needed. This is a minute on a dead band and a
+light switch, and it is the cheapest capture on the list (Findings 5, 43).
 
 **0. A second naturally marginal RADE signal.** *Ideal:* RADE V1 on any
 band, on a path deep enough into fading that one antenna alone loses
@@ -7168,6 +7401,27 @@ declines to start. Every capture in this document begins mid-track,
 because arming the recorder and then reaching for the Diversity tick was
 the only order available; acquisition and settling have never been
 recorded and now can be.
+
+### `src/diversity_auto.c`, `src/diversity_menu.c` — Resolution is 24 / 12 / 6 Hz
+
+Finding 43. The 43 ms column in Finding 42's sweep is 23.44 Hz bins, which
+is coarser than the menu's top entry, and it nulls 0.35 to 0.92 dB deeper
+than 85 ms on three of the four captures where it exists. The combo
+becomes **24 / 12 / 6 Hz** with the block period shown beside the bin
+width, and `DIV_MIN_NFFT` drops from 4096 to 2048 so that 48 kHz reaches
+23.44 Hz rather than silently rounding the request away. Swept across
+every rate and setting, that floor change moves **exactly one cell** - 24 Hz
+at 48 kHz - and no existing setting anywhere.
+
+3 Hz is retired rather than a fourth option added: Finding 42 measured it
+behind 12 Hz on both objectives on five captures of six, and above 192 kHz
+it was not a distinct setting. `div_settings_validate()` clamps a stored
+3.0 to 6.0, the nearest surviving entry. The default is unchanged at
+12 Hz, now the middle entry.
+
+The tooltip says what the control is - a block-length control read in
+hertz - which is the thing seventeen rows of twenty depend on and which
+"12 Hz bins (fast)" never conveyed.
 
 ### `src/radio.c` — the split attenuators, remembered
 

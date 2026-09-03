@@ -177,21 +177,38 @@ at every sample rate:
 | 192 kHz | 16384 | 11.7 Hz | 85.3 ms |
 | 384 kHz | 32768 | 11.7 Hz | 85.3 ms |
 
-Asking for finer bins doubles nfft and therefore the block period. nfft is
-capped at 65536, so 3 Hz bins are unavailable at 384 kHz; the status line
-always shows the bin width actually achieved.
+Asking for finer bins doubles nfft and therefore the block period; asking
+for coarser bins halves it. `DIV_MIN_NFFT` is 2048 and `DIV_MAX_NFFT` is
+65536, and between them every setting on the menu is reachable at every
+sample rate up to 384 kHz. The status line always shows the bin width
+actually achieved.
 
-| Resolution | Block | 48 kHz | 96 kHz | 192 kHz | 384 kHz |
-|---|---|---|---|---|---|
-| 12 Hz | 85 ms | yes | yes | yes | yes |
-| 6 Hz | 171 ms | yes | yes | yes | yes |
-| 3 Hz | 341 ms | yes | yes | yes | capped at 6 Hz |
+| Resolution | Block | 48 kHz | 96 kHz | 192 kHz | 384 kHz | 768 kHz |
+|---|---|---|---|---|---|---|
+| 24 Hz | 43 ms | yes | yes | yes | yes | yes |
+| 12 Hz | 85 ms | yes | yes | yes | yes | yes |
+| 6 Hz | 171 ms | yes | yes | yes | yes | capped at 12 Hz |
 
-Finer bins lift a weak signal further out of the per-bin noise floor, which
-is a different thing from turning Averaging up: averaging reduces the
-variance of an estimate, resolution improves the SNR the estimate is made
-from. The cost is responsiveness — at 3 Hz the weight settles in about two
-seconds rather than half a second.
+**This is a block-length control read in hertz, and that is the way round
+that matters.** The loop measures the channel over one block and applies
+the weight over the next, so the block period is the lag between the two -
+and on a fast path the channel has moved by then. Swept over twenty rows
+on fourteen captures, both objectives want the short block on seventeen of
+them, the largest being 6.4 dB of extra null depth on `122632` (Findings 40,
+42, 43).
+
+Finer bins do the opposite thing and are worth having in one case: they
+lift a weak signal further out of the per-bin noise floor, which is not
+what turning Averaging up does - averaging reduces the variance of an
+estimate, resolution improves the SNR the estimate is made from. One
+capture in the set wants that, `011225`, whose fading is essentially
+uncorrelated so that a short block costs more estimate variance than it
+saves lag (Finding 39). The cost is responsiveness in both directions.
+
+The 3 Hz setting was retired in favour of 24 Hz: measured, it was behind
+12 Hz on both objectives on five captures of six, and above 192 kHz it was
+not a distinct setting from 6 Hz. A props file carrying it comes back as
+6 Hz.
 
 ### The queue
 
@@ -754,7 +771,7 @@ one block from `track` to `search` when the signal stops.
 | **Measure on** | Which reference (§5) | always |
 | **Window follows RX filter** | — | Window, FSK/Digital |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
-| **Resolution** | 12 / 6 / 3 Hz bins. Finer lifts weak signals out of the noise but halves the update rate each step | all but RADE V1 |
+| **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Weighting** | Flat or Coherence (see above) | Window |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
 | **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md). **The range is not fixed**: the three coherence references go from their own noise floor (§4) to 95 %, and *Min quality* spans 0-25 % in ½ % steps, which is the range the pilot signal fraction actually occupies | all four |
@@ -983,9 +1000,9 @@ FM say nothing and cost both. The saving is less than half because the
 decimator is a fixed cost that grows with the sample rate — by 384 kHz it
 dominates and the difference nearly vanishes.
 
-At Resolution settings finer than 12 Hz the per-block cost roughly doubles
-with nfft, but so does the block period, so the cost per *second* is close
-to unchanged.
+Across the Resolution settings the per-block cost scales with nfft, but so
+does the block period, so the cost per *second* is close to unchanged in
+both directions.
 
 Reading these:
 

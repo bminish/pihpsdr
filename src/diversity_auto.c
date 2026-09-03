@@ -158,7 +158,22 @@
 // div_auto_resolution.
 //
 #define DIV_TARGET_BIN_HZ   12.0
-#define DIV_MIN_NFFT        4096
+//
+// 2048, not 4096. The floor decides which bin widths a given sample rate
+// can actually reach, and at 4096 the coarsest reachable width at 48 kHz
+// was 11.72 Hz - so the 24 Hz setting the measurements ask for existed at
+// 96 kHz and above and silently did nothing at 48. At 2048 every rate from
+// 48 kHz up reaches 23.44 Hz in a 42.7 ms block, which is what makes the
+// setting mean the same thing everywhere.
+//
+// Nothing else depends on the floor. The per-bin buffers are allocated at
+// DIV_MAX_NFFT whatever is running, and the occupancy split's limits count
+// bins in a region rather than bins in a transform.
+//
+// See Finding 43 in docs/diversity-measurements.md for why a coarser bin
+// is wanted at all: both objectives want the short block, by up to 6.4 dB.
+//
+#define DIV_MIN_NFFT        2048
 #define DIV_MAX_NFFT        65536
 
 //
@@ -3600,9 +3615,15 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   s->hang = DIV_HANG_DEFAULT;
 
-  if (s->resolution < 3.0)  { s->resolution = 3.0; }
+  //
+  // Both ends match the menu, which is 24 / 12 / 6 Hz. A props file or an
+  // older client carrying the retired 3 Hz setting lands on 6, the nearest
+  // one that survives - which is a coarser block than it asked for and, on
+  // five captures of six, a better one. See Finding 43.
+  //
+  if (s->resolution < 6.0)  { s->resolution = 6.0; }
 
-  if (s->resolution > 12.0) { s->resolution = 12.0; }
+  if (s->resolution > 24.0) { s->resolution = 24.0; }
 
   //
   // The widths: 20.0, not 10.0, because the spin button's minimum is 20

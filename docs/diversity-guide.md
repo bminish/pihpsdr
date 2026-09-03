@@ -208,7 +208,7 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | Control | What it is for |
 |---|---|
 | **Window centre / width** | Where to look, measured from the signal you are tuned to — the zero-beat note in CW. Kept separately for Window, Carrier and FSK/Digital, so aiming the carrier tracker does not destroy your wideband window |
-| **Resolution** | 12 / 6 / 3 Hz bins. Finer bins lift a weak signal out of the per-bin noise floor — a different thing from Averaging, which reduces the variance of an estimate rather than improving the SNR it is made from. Each step halves the update rate |
+| **Resolution** | 24 / 12 / 6 Hz bins — and it is really a *block length* control, 43 / 85 / 171 ms, because the block period is the reciprocal of the bin width. That is the way round that matters: the loop measures the channel over one block and applies the weight over the next, so a coarse setting keeps up with a fading path and a fine one lags it. Measured across fourteen recordings both `Sum` and `Null` want the coarse end on seventeen rows of twenty, worth up to 6.4 dB. Finer bins do the other job — lifting a weak signal out of the per-bin noise floor, which is not what Averaging does — and one recording in the set wants them |
 | **Weighting** | `Coherence` weights each bin by how well the two antennas agree in it. On speech it roughly halves the gain error, because the noise-only parts of a wide window stop diluting the answer. `Flat` is the older behaviour, kept for comparison |
 | **Level output** | The combined output is louder than one antenna by whatever the array does to it — measured at +1.5 to +8 dB, of which +2.9 to +9.4 dB *more* than the SNR it buys. Tick this and the level stays where it was, so an improvement arrives as the noise floor dropping rather than as everything getting louder. Off by default, because whether it sounds better depends on your AGC and no recording could settle it. Sum and Best only — Null exists to make the output quieter |
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. A weak AM carrier or an HF RADE path usually wants several seconds; a fast path (20 m near the MUF, or the low bands) wants a fraction of one, and Null wants the shortest setting that still holds a lock |
@@ -346,9 +346,10 @@ weight applies to the whole band regardless of where it was measured.
 **Weak AM broadcast with a splattering carrier 5 kHz up.**
 Auto `Null`, Measure on `Carrier`. Set Window centre to +5000 and width to
 1000, so the search cannot see the wanted station's own carrier. Set
-Resolution to 6 or 3 Hz and Averaging long — 10 s or more. The carrier is
+Resolution to 6 Hz and Averaging long — 10 s or more. The carrier is
 not going anywhere, and the only thing that helps a weak one is a narrower
-bin.
+bin. This is the one case where the fine end of Resolution is the right
+answer; on a fading path it is the wrong one.
 
 **SSB voice, no carrier to lock to.**
 Auto `Sum` or `Null` as needed, Measure on `Window`, follow the filter,
