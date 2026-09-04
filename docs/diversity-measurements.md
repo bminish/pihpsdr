@@ -6630,24 +6630,21 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
-- **A signal-presence gate is worth twelve decibels between the overs and
-  nothing has one.** On `122843` - 17 m, one side of a QSO, two thirds of
-  the minute bare band noise - the loop's weight raises the output noise
-  in the gaps by **12.18 dB** over the better antenna, and freezing that
-  weight through the silent blocks brings it to **-0.02 dB** with the
-  in-speech figure unchanged to a hundredth of a decibel. `123333` is a
-  second capture of the same station, **95 % bare noise**, and it shows the
-  other face of it: with ADC1 unattenuated and 15.4 dB hot the loop puts
-  `|w|` at +7.1 dB in speech and the output **+20.07 dB** over arm 0, so
-  the penalty lands in the speech rather than in the gaps (Finding 45). The coherence
-  gate is already a good detector, opening on 2 to 7 % of noise-only
-  blocks; what it does not do is *act* on the 93 % it correctly identifies,
-  because holding leaves the last weight applied rather than standing the
-  combiner down. `div_arm_publish()` keeps the per-arm floor estimate
-  running through held blocks for exactly this kind of decision and no
-  path reaches it - the same structural gap Finding 36 records. This is
-  the highest-value unmade change in the document and it needs a design
-  decision, not a measurement (Finding 42).
+- **Closed, and it was worth what it promised: the combiner now stands
+  down on an empty band.** `div_window_quiet()` asks whether either arm
+  is carrying anything, `DIV_QUIET_DWELL` separates a gap from a fade, and
+  the weight goes to zero and is put back in one step when the window
+  fills. Scored on nineteen wideband captures the silence figure improves
+  on seven and is never worse - 8.26 dB on `235906`, 8.20 on `122632`,
+  7.35 on `122843`, which lands at +0.31 dB, the better antenna's own
+  floor - and in speech it gains 3.49 dB on `002710` and 1.69 on `235906`
+  against a single cost of 0.58 dB on `122843`. See "What was changed".
+  **What is still open is the other half of the same problem**: the
+  FSK/Digital and RADE V1 references are untouched, and nothing here
+  measures what the change does on a band the operator is nulling rather
+  than summing, because no capture in the set has a local interferer
+  present through the gaps that a single weight can do anything with
+  (Findings 5 and 43).
 - **The branch-noise ratio cannot be measured when the window is mostly
   noise, which is where it matters most.** `div_wideband_sum_scale()`
   divides the noise ratio out of the Sum weight and closes Finding 20's
@@ -7852,6 +7849,120 @@ stops depending on the hang, and a 5.1 s fade of the same station keeps
 its lock and returns to within 0.033. The hang assertion is inverted,
 because the contract it encoded - "the setting is what decides" - is the
 one deliberately broken.
+
+### `src/diversity_auto.c`, `src/diversity_menu.c` — the combiner stands down on an empty band
+
+The highest-value unmade change in this document, made. Findings 36 and
+42: when a wideband reference declines a block it leaves the last weight
+applied, and on an empty band that weight goes on adding the second
+antenna's noise to the output for as long as nothing is there.
+
+**The mechanism, in three parts.**
+
+`div_window_quiet()` asks whether either arm is carrying anything: the
+complement of the clearance test `div_arm_nratio_update()` already
+applies, asked of both arms. **Which minimum it is asked of decides
+whether it works at all.** Pointed at `arm_floor0/1` - the all-time
+minimum with the slow rise - it recovered 1.8 dB of the 12 available on
+`122843`, because that tracker is taken from a smoother starting at zero,
+so its first value sits about 8 dB under the band and `DIV_FLOOR_RISE_DB`
+needs the better part of a minute to walk it into place. Pointed at the
+bounded five-second window next to it, which is seeded from its first
+block, it recovers all of it. Both sides of the comparison are the
+`DIV_FLOOR_TAU` smoother, not the operator's averaging time: on the
+synthetic gap in `test_window`, `arm_pw` takes **twenty seconds** to fall
+from a 30 dB signal to reading empty and `nr_f` takes **one**.
+
+`DIV_QUIET_DWELL`, two seconds, is what separates a gap from a dip. A
+signal that never stops leaves the bounded minimum sitting on the signal,
+so "quiet" is then measured against the signal and reads true on every
+deep fade. Without the dwell that costs **0.47 dB in speech on `000537`
+and 0.42 dB on `122211`**, both of which have a station in the window
+throughout; with it, both go to zero. Two seconds is well past the 0.5 to
+4.1 s coherence time's dips and far short of a gap between overs - and it
+is two orders of magnitude past a CW inter-character gap, which is the
+case that had to be protected.
+
+`div_hold_or_stand_down()` then slews the weight to zero - arm 0 alone -
+and puts back what it was holding, **in one step**, when the window fills
+again. The estimate is never discarded and the accumulators decay exactly
+as before; only what is applied changes.
+
+**What does *not* step is the gate opening.** An earlier version jumped
+back to the fresh weight there too, and that is wrong for a reason this
+document already measured: the shipped threshold passes about one
+no-signal block in twenty (Findings 26 and 29), so a step would put a
+weight fitted to noise straight into the audio where a slew merely leans
+towards it for one block. The restore that steps is on the presence path,
+where the evidence is the window filling up rather than a coherence
+reading - and it fires first in practice, because the presence test runs
+off a half-second smoother while the gate has to rebuild the
+accumulators.
+
+**Scored on nineteen wideband captures**, each at its own recorded
+settings, before against after. The in-speech figure takes the passband
+and the guard over the signal blocks only; the silence figure is the
+output passband power over the bare-noise blocks against the better arm's
+own power there. Both skip the first ten seconds, because `run_ref` cold
+starts at `div_cos` = 1 and the radio does not - that artefact alone
+accounts for 9.7 of `122843`'s 12.18 dB before anything is changed.
+
+| capture | speech before | after | | silence before | after | |
+|---|---|---|---|---|---|---|
+| `002710` 20 m CW | -2.85 | **+0.64** | **+3.49** | 14.30 | **11.14** | **-3.16** |
+| `235906` 17 m voice | 0.14 | **+1.83** | **+1.69** | 8.61 | **0.35** | **-8.26** |
+| `122632` 17 m voice | 1.30 | 1.40 | +0.10 | 2.10 | **-6.10** | **-8.20** |
+| `002534` 20 m voice | 0.78 | 0.83 | +0.04 | 1.47 | 1.30 | -0.17 |
+| `000747` 5 MHz | 1.56 | 1.56 | +0.01 | — | — | — |
+| `123333` 17 m, 95 % noise | — | — | — | 1.52 | **0.33** | **-1.18** |
+| `122211` 40 m voice | 0.67 | 0.54 | -0.13 | 9.27 | 9.16 | -0.12 |
+| `122843` 17 m voice | -2.35 | -2.92 | **-0.58** | 7.66 | **0.31** | **-7.35** |
+| ten more | | | **0.00** | | | **0.00** |
+
+**The silence figure improves on seven captures and is never worse.**
+`235906`, `122632` and `122843` are the three the finding was written
+about and they move 7.3 to 8.3 dB; `122843` lands at **+0.31 dB**, which
+is the better antenna's own floor and is Finding 42's "-0.02 dB with a
+perfect signal-presence gate" arrived at with a real one.
+
+**In speech it gains more than it costs.** `002710` is the surprise:
++3.49 dB on a CW capture whose arms are 12.3 dB apart, where the loop had
+been carrying a weight fitted during key-up. `235906` gains 1.69, which
+is Finding 36's "substituting w = 0 on the held blocks would have turned
+-3.54 into +3.85" measured through the shipping engine rather than
+substituted by hand. Twelve captures do not move at all.
+
+**The one cost is `122843` at -0.58 dB in speech**, and it is the
+re-acquisition transient: overs on that capture start with the power and
+the coherence rising in the same block, so the gate opens before the
+presence path can put the held weight back and the weight slews up from
+zero. It buys 7.35 dB in the gaps on the same capture, where Sum is
+already 2.4 dB below the better antenna for a reason Finding 42 puts on
+the branch noise ratio and no setting reaches.
+
+**What it is not.** Wideband references only - the FSK/Digital occupancy
+split already declines an empty region by a different route and RADE V1
+holds a lock deliberately. And it is a change to what is *applied*, not to
+what is estimated: nothing here improves a weight, it only stops a stale
+one being used as though it were current.
+
+The status line grows a third state. `track`, `wait` and now `quiet` -
+holding, against holding *and* nothing to hold for. The operator's
+question between overs is which of those happened, and the second used to
+be the invisible one while the output got noisier.
+
+`test_window` gains `test_standdown()`, which checks all three parts in
+the order they have to happen: a one-second gap does not stand down, an
+eight-second one does and reaches the weight floor, and the signal
+returning restores the weight to within 1 dB and 10 degrees of what it
+was. Its long gap is deliberately eight seconds and not longer, because
+past about fifteen the coherence gate lets a no-signal block through and
+what is being measured stops being this change. **`test_keyed`'s key-up
+drops from seventeen seconds to one**, because seventeen seconds is not a
+key-up - it is the station having stopped, and the contract that test
+encoded is the one deliberately broken. What it exists to protect is the
+60 to 300 ms gap between characters and words, an order of magnitude
+inside the dwell, and it now also asserts that nothing was stood down.
 
 ### `src/diversity_auto.c`, `src/diversity_menu.c` — Weighting is retired, and the Window threshold moves with it
 

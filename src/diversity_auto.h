@@ -78,6 +78,12 @@ extern double div_auto_tau;             // adaptation time constant (seconds)
 extern double div_auto_hang;            // hold a RADE lock this long after the
                                         // pilot goes away, before re-acquiring
 extern double div_auto_coherence_min;   // hold below this coherence
+//
+// Set while the loop has stood the combiner down - holding, and nothing
+// in the window to hold for, so arm 0 alone rather than the last weight.
+// Wideband references only; see div_hold_or_stand_down().
+//
+extern int    div_auto_standdown;
 extern int    div_auto_weighting;       // DIV_WEIGHT_FLAT / _COHERENCE
 //
 // Hold the combined output at the level of arm 0 alone rather than

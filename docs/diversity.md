@@ -366,6 +366,52 @@ every key-up period walking the weight around on noise; it now measures
 only while there is something to measure, so the estimate is built from
 key-down periods alone.
 
+### Standing the combiner down
+
+Holding is right when the signal is momentarily not measurable. It is
+wrong when there is nothing there at all: the weight then in force was
+fitted to something else, possibly on another band, and it goes on adding
+the second antenna's noise to the output for as long as the band stays
+empty. Measured at up to **12 dB** of extra noise between overs on a pair
+whose chains are 15 dB apart, and at 3.5 dB over two thirds of a minute
+where the weight had been carried in from a previous band.
+
+So the two wideband references ask a second question when they decline a
+block, and `div_window_quiet()` answers it: is *either* arm carrying
+anything? It is the complement of the clearance test the branch noise
+ratio already applies, asked of both arms, against the same bounded
+five-second minimum and the same half-second smoother — deliberately not
+the operator's averaging time, which on a 30 dB signal takes twenty
+seconds to fall far enough to read empty, and not the long-memory floor
+tracker, which starts about 8 dB low and needs the better part of a
+minute to climb into place.
+
+If the window has been quiet for `DIV_QUIET_DWELL` — two seconds — the
+weight is slewed to zero, which is arm 0 alone, the antenna the operator
+would hear with the feature switched off. The estimate is not discarded
+and the accumulators decay exactly as they did; only what is applied
+changes. When the window fills again the weight it was standing on is put
+back **in one step**.
+
+Both conditions are required, and the dwell is what makes the test safe.
+A signal that never stops eventually leaves the bounded minimum sitting
+on the signal itself, so "quiet" is measured against the signal and reads
+true on every deep fade; without the dwell that costs about half a
+decibel on two captures with a station in the window throughout. Two
+seconds is well past a fade and two orders of magnitude past the 60 to
+300 ms gap between CW characters, which stays held.
+
+The gate *opening* does not step the weight, only the presence path does.
+The shipped threshold passes about one no-signal block in twenty, so a
+step there would put a weight fitted to noise straight into the audio
+where a slew merely leans towards it for one block.
+
+Scored on nineteen wideband captures the noise between overs improves on
+seven and is never worse — by 7.3 to 8.3 dB on the three the change was
+written for — while in speech it gains 3.5 dB on a CW capture and 1.7 dB
+on a voice one against a single cost of 0.6 dB. See Findings 36 and 42 in
+[`diversity-measurements.md`](diversity-measurements.md).
+
 ### Applying the weight
 
 `div_apply_weight()` clamps `|w|` to +20 dB — inside the sliders' ±27 dB,
@@ -388,11 +434,19 @@ characters.
 
 ```
 Win 12Hz  track  coh 100%     -2.1 dB   +32°
+Win 12Hz  quiet  coh   4%    -27.0 dB    +0°
 Car  3Hz* HOLD   +400000 Hz  -12.3 dB  +179°
 RADE V1   LOCK   LSB 100%     -2.1 dB   +32°
 Dig 12Hz  track  occ  293Hz   -2.1 dB   +38°
 Dig 12Hz  search no signal    +0.0 dB    +0°
 ```
+
+`quiet` is a third state and not a flavour of `wait`. Holding says the
+loop stopped updating and is still applying what it had; quiet says it
+stopped updating *and* stood the combiner down. The operator's question
+between overs is which of those happened, and until the stand-down
+existed the second one was the invisible case where the output got
+noisier.
 
 Below it sits a second, single-field line reporting which antenna is
 measuring better and by how much, on the same fixed width:

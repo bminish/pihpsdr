@@ -213,6 +213,17 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. A weak AM carrier or an HF RADE path usually wants several seconds; a fast path (20 m near the MUF, or the low bands) wants a fraction of one, and Null wants the shortest setting that still holds a lock |
 | **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing — in RADE V1 the row reads *Min quality* and gates the pilot's signal fraction, which asks for about 4.5 dB less signal at the same percentage. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.20 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — and the slider now says so, because it will not go below that reading. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. In RADE V1 it spans 0–25 % instead, which is where the pilot signal fraction actually lives — 1 % on the weakest signal recorded, 15 % on a marginal one, 50–80 % on strong ones — and **0 is still the right setting**: on a marginal signal the quality reads near nothing while the modem decodes perfectly well |
 | **Restart averaging** | Throw away the statistics and start again |
+
+**Between overs the status line says `quiet`.** When neither antenna has
+anything above the noise for a couple of seconds, the combiner stands
+itself down to the main antenna alone rather than going on applying a
+weight measured on a signal that has gone — which on a pair with one hot
+chain was worth up to 12 dB of extra hiss in the gaps. The weight comes
+straight back when someone transmits, so there is nothing to set and
+nothing to watch for; the state is shown because "holding" and "there is
+nothing here" are different answers and used to look the same. A gap
+between CW characters or between syllables is far too short to trigger
+it.
 | **Hold** | Stop *applying* the answer without stopping the loop |
 | **Invert** | Swap Null and Sum. Greyed out under Best, which has no opposite |
 

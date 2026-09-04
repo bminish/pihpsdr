@@ -142,8 +142,20 @@ static int test_keyed(void) {
   const double blockms = 1000.0 * (double)nfft / (double)rate;
   int held = -1;
 
-  /* key up: nothing but noise from here */
-  for (int b = 0; b < 200; b++) {
+  /*
+   * Key up, for one second.
+   *
+   * It used to be two hundred blocks - seventeen seconds - and that is
+   * not a key-up, it is the station having stopped. The loop now stands
+   * the combiner down when the window has been empty for DIV_QUIET_DWELL,
+   * so over seventeen seconds the weight correctly goes to the floor and
+   * this test's drift measurement had nothing left to measure. What it
+   * exists to protect is the gap between characters and between words -
+   * 60 ms to 300 ms on a real fist, an order of magnitude inside the
+   * dwell - and one second covers that with room to spare. The long gap
+   * is test_standdown()'s business.
+   */
+  for (int b = 0; b < 12; b++) {
     for (int n = 0; n < nfft; n++) {
       diversity_auto_sample(nz * frand(), nz * frand(),
                             nz * frand(), nz * frand());
@@ -166,16 +178,18 @@ static int test_keyed(void) {
   dp = fabs(dp);
   diversity_auto_stop();
   const double secs = (held < 0) ? -1.0 : held * blockms / 1000.0;
-  const int good = (held > 0) && (secs < 2.0) && (dg < 0.5) && (dp < 5.0);
+  const int good = (held > 0) && (secs < 2.0) && (dg < 0.5) && (dp < 5.0)
+                   && !div_auto_standdown;
   printf("  keyed carrier, key-up: ");
 
   if (held < 0) {
-    printf("still tracking after %.1f s", 200 * blockms / 1000.0);
+    printf("still tracking after %.1f s", 12 * blockms / 1000.0);
   } else {
     printf("held after %.2f s", secs);
   }
 
-  printf(", drift %.2f dB %.1f deg  %s\n", dg, dp, good ? "OK" : "FAIL");
+  printf(", drift %.2f dB %.1f deg, standdown %d  %s\n",
+         dg, dp, div_auto_standdown ? 1 : 0, good ? "OK" : "FAIL");
   return good;
 }
 
@@ -670,6 +684,156 @@ static int test_cw_zero(void) {
   return ok;
 }
 
+/* ------------------------------------------------------------------ */
+/* 7. standing the combiner down on an empty band                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A signal that stops for a few seconds, and what is left applied.
+ *
+ * Holding is right while the signal is momentarily not measurable - a
+ * fade, a gap between syllables, a key-up - because the weight in force
+ * was measured on the real thing. It is wrong once the band is simply
+ * empty: the weight then goes on adding the second antenna's noise to the
+ * output for as long as nothing is there, which on a lopsided pair is
+ * worth up to 12 dB (Findings 36 and 42).
+ *
+ * Three things are checked, in the order they have to happen:
+ *
+ *   1. a short gap does NOT stand the combiner down - that is what
+ *      DIV_QUIET_DWELL is for, and without it a deep fade on a signal
+ *      that never stops takes the weight away;
+ *   2. a long one does, and the weight goes to the floor;
+ *   3. when the signal comes back the weight is restored in one step
+ *      rather than slewed up from zero, so the start of the over is not
+ *      spent on the way back.
+ */
+static int test_standdown(void) {
+  const int rate = 48000, nfft = 4096;
+  const double hr = 0.62, hi = -0.48;
+  const double nz = 0.03;
+  rx0.sample_rate = rate;
+  rx0.filter_low = 150;
+  rx0.filter_high = 2850;
+  vfo[0].mode = modeUSB;
+  vfo[0].frequency = 14200000;
+  vfo[0].ctun_frequency = 14200000;
+  vfo[0].offset = 0;
+  div_auto_ref = DIV_REF_BAND;
+  div_auto_mode = DIV_AUTO_SUM;
+  div_auto_follow_filter = 1;
+  div_auto_tau = 2.0;
+  div_auto_coherence_min = 0.20;
+  div_auto_weighting = DIV_WEIGHT_FLAT;
+  div_auto_resolution = 12.0;
+  div_cos = 1.0;
+  div_sin = 0.0;
+  div_gain = 0.0;
+  div_phase = 0.0;
+  srand(71);
+  diversity_auto_start();
+  double ph = 0.0;
+  /*
+   * Negative, because the tapped buffer is inverted with respect to RF: a
+   * USB filter of +150..+2850 puts the passband at -2850..-150 in the
+   * frame these bins are indexed by. See div_shift_to_bin().
+   */
+  const double tone = -1500.0;
+  const double blocks_per_s = (double)rate / (double)nfft;
+
+  /* on, long enough for the loop to converge and for a slot to close */
+  for (int b = 0; b < 140; b++) {
+    for (int n = 0; n < nfft; n++) {
+      ph += 2.0 * M_PI * tone / rate;
+      const double s = cos(ph), t = sin(ph);
+      diversity_auto_sample(s + nz * frand(), t + nz * frand(),
+                            hr * s - hi * t + nz * frand(),
+                            hr * t + hi * s + nz * frand());
+    }
+
+    settle();
+  }
+
+  g_usleep(300000);
+  const double g_on = div_gain, p_on = div_phase;
+  /*
+   * A gap of one second, which is inside DIV_QUIET_DWELL. Nothing may be
+   * stood down here.
+   */
+  const int shortgap = (int)(1.0 * blocks_per_s);
+
+  for (int b = 0; b < shortgap; b++) {
+    for (int n = 0; n < nfft; n++) {
+      diversity_auto_sample(nz * frand(), nz * frand(), nz * frand(), nz * frand());
+    }
+
+    settle();
+  }
+
+  g_usleep(200000);
+  const int short_ok = !div_auto_standdown;
+  const double g_short = div_gain;
+  /*
+   * And then a real gap between overs. Eight seconds, not longer: past
+   * about fifteen the coherence gate lets a no-signal block through - it
+   * passes roughly one in twenty by design (Findings 26 and 29) - the
+   * loop fits a weight to noise, and what is being measured stops being
+   * this change.
+   */
+  int stood = -1;
+
+  for (int b = 0; b < (int)(8.0 * blocks_per_s); b++) {
+    for (int n = 0; n < nfft; n++) {
+      diversity_auto_sample(nz * frand(), nz * frand(), nz * frand(), nz * frand());
+    }
+
+    settle();
+    g_usleep(3000);
+
+    if (stood < 0 && div_auto_standdown) { stood = b + 1; }
+  }
+
+  g_usleep(300000);
+  const double g_off = div_gain;
+  /* the signal returns */
+  for (int b = 0; b < 12; b++) {
+    for (int n = 0; n < nfft; n++) {
+      ph += 2.0 * M_PI * tone / rate;
+      const double s = cos(ph), t = sin(ph);
+      diversity_auto_sample(s + nz * frand(), t + nz * frand(),
+                            hr * s - hi * t + nz * frand(),
+                            hr * t + hi * s + nz * frand());
+    }
+
+    settle();
+  }
+
+  g_usleep(300000);
+  const double g_back = div_gain, p_back = div_phase;
+  diversity_auto_stop();
+  double dp = p_back - p_on;
+
+  while (dp >  180.0) { dp -= 360.0; }
+
+  while (dp < -180.0) { dp += 360.0; }
+
+  const int long_ok  = (stood > 0) && (stood / blocks_per_s < 3.0) && (g_off < -20.0);
+  const int back_ok  = (fabs(g_back - g_on) < 1.0) && (fabs(dp) < 10.0);
+  printf("  short gap (1.0 s):  standdown=%d, %.2f dB  %s\n",
+         div_auto_standdown ? 1 : 0, g_short, short_ok ? "OK" : "FAIL");
+
+  if (stood > 0) {
+    printf("  long gap:           stood down after %.1f s, %.2f dB  %s\n",
+           stood / blocks_per_s, g_off, long_ok ? "OK" : "FAIL");
+  } else {
+    printf("  long gap:           never stood down (%.2f dB)  FAIL\n", g_off);
+  }
+
+  printf("  signal returns:     %.2f dB %+.1f deg against %.2f dB %+.1f deg  %s\n",
+         g_back, p_back, g_on, p_on, back_ok ? "OK" : "FAIL");
+  return short_ok && long_ok && back_ok;
+}
+
 int main(int argc, char **argv) {
   if (argc > 1) { verbose = 1; }
 
@@ -691,6 +855,8 @@ int main(int argc, char **argv) {
   int e = test_cw_follow();
   printf("\n");
   int g = test_normalise();
-  printf("\n%s\n", (a && b && c && d && e && g) ? "PASS" : "FAIL");
-  return (a && b && c && d && e && g) ? 0 : 1;
+  printf("\n");
+  int h = test_standdown();
+  printf("\n%s\n", (a && b && c && d && e && g && h) ? "PASS" : "FAIL");
+  return (a && b && c && d && e && g && h) ? 0 : 1;
 }

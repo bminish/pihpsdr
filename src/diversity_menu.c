@@ -901,6 +901,19 @@ static int status_update_cb(gpointer data) {
   // rate and was clamped, so it is not the one that was asked for.
   //
   const char *clamp = div_auto_clamped ? "*" : "";
+  //
+  // "quiet" is a third state, not a flavour of "wait". Holding says the
+  // loop stopped updating and is still applying what it had; quiet says
+  // it stopped updating *and* stood the combiner down, because neither
+  // antenna has anything above the noise it hears when the band is empty.
+  // The operator's question between overs is which of those happened -
+  // the second is the radio saying "there is nothing here", and it is the
+  // one that used to be invisible while the output got noisier. Same
+  // shape as the FSK/Digital "no signal" state below.
+  //
+  const char *wideband_state = div_auto_hold ? "HOLD"
+                               : div_auto_standdown ? "quiet"
+                               : div_auto_holding ? "wait" : "track";
   detail[0] = 0;
 
   switch (div_auto_ref) {
@@ -910,7 +923,7 @@ static int status_update_cb(gpointer data) {
     if (!div_auto_carrier_valid) {
       state = "search";
     } else {
-      state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
+      state = wideband_state;
       //
       // Measured from the zero beat, which is the shifted frame's own
       // zero everywhere but CW. There rx_set_filter() folds the sidetone
@@ -987,7 +1000,7 @@ static int status_update_cb(gpointer data) {
 
   default:
     snprintf(tag, sizeof(tag), "Win %.0fHz%s", div_auto_binhz, clamp);
-    state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
+    state = wideband_state;
     snprintf(detail, sizeof(detail), "coh %3.0f%%", 100.0 * div_auto_coherence);
     break;
   }

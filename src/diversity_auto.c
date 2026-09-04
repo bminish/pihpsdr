@@ -378,6 +378,39 @@
 #define DIV_STALE_DB        10.0
 
 //
+// How far over its own tracked floor an arm has to sit before the window
+// is credited with containing anything.
+//
+// The same six decibels as DIV_ARM_MIN_DB, and deliberately the same
+// number: "this arm carries something" is one question and it should not
+// have two answers in one file. div_arm_from_floor() asks it of both arms
+// to decide whether the per-arm comparison means anything;
+// div_window_quiet() asks the complement of it, of both arms, to decide
+// whether there is anything here at all.
+//
+#define DIV_QUIET_DB        DIV_ARM_MIN_DB
+
+//
+// How long the window has to stay both held and quiet before the
+// combiner is stood down, in seconds.
+//
+// Without it the test fires on any block that is momentarily both, which
+// includes the deep fades on a signal that never stops - there the
+// bounded minimum has climbed onto the signal itself, so "quiet" is
+// measured against the signal rather than against the noise and reads
+// true whenever the signal dips. Measured: no dwell costs 0.47 dB in
+// speech on `000537` and 0.42 dB on `122211`, both of which have a
+// station in the window throughout.
+//
+// Two seconds is longer than the 0.5 to 4.1 s coherence time's dips and
+// far shorter than a gap between overs, which is what this exists to
+// catch. It also covers the other end of the same problem: standing down
+// and slewing back up at every syllable would cost the start of every
+// over.
+//
+#define DIV_QUIET_DWELL     2.0
+
+//
 // Bins either side of an occupied one that are excluded from the noise
 // covariance as well as from the signal.
 //
@@ -552,6 +585,12 @@ int    div_auto_holding        = 1;
 double div_auto_carrier        = 0.0;
 int    div_auto_carrier_valid  = 0;
 
+//
+// Set when the loop has stood the combiner down because there is nothing
+// in the window - as distinct from holding, which leaves the last weight
+// applied. See div_hold_or_stand_down().
+//
+int    div_auto_standdown      = 0;
 double div_auto_arm_db         = 0.0;
 int    div_auto_arm_valid      = 0;
 int    div_auto_arm_pick       = 0;
@@ -579,6 +618,21 @@ static int    nr_f_valid = 0;
 static double nr_cur0 = 0.0, nr_cur1 = 0.0;    // minimum over the slot in progress
 static double nr_prev0 = 0.0, nr_prev1 = 0.0;  // over the slot before it
 static int    nr_slot_left = 0, nr_have_prev = 0;
+//
+// The same pair of minima, published for div_window_quiet(). Written
+// where they are computed rather than recomputed there, so the presence
+// test and the branch noise ratio can never be looking at different
+// instants.
+//
+static double nr_min0 = 0.0, nr_min1 = 0.0;
+static int    nr_min_valid = 0;
+//
+// Consecutive blocks the loop has been both holding and looking at an
+// empty window, and the weight that was in force when the count ran out.
+// See DIV_QUIET_DWELL and div_hold_or_stand_down().
+//
+static int    quiet_run = 0;
+static double quiet_wr = 0.0, quiet_wi = 0.0;
 static double arm_nratio = 1.0;
 static int    arm_nratio_valid = 0;
 
@@ -888,6 +942,14 @@ static void div_reset_stats(void) {
   div_auto_arm_db = 0.0;
   div_auto_coherence = 0.0;
   div_auto_holding = 1;
+  //
+  // Not stood down, merely not started: the floor tracker has nothing yet
+  // and div_window_quiet() is false until it has, so this only has to
+  // survive a reference change - the flag is set in the wideband path and
+  // no other reference clears it.
+  //
+  div_auto_standdown = 0;
+  quiet_run = 0;
   div_carrier_hz = 0.0;
   div_auto_carrier_valid = 0;
   div_auto_occ_valid = 0;
@@ -1430,6 +1492,135 @@ static int div_arm_from_floor(double p0, double p1, double *db) {
 }
 
 //
+// Is there anything in the window at all?
+//
+// The complement of the clearance test div_arm_nratio_update() already
+// applies, asked of both arms: neither antenna is carrying anything that
+// stands out of the quietest it has recently been. Not the same question
+// as "is the per-arm estimate available", which is also false when one
+// arm is loud and the other is not, and which div_apply_best() rightly
+// refuses to fall back to arm 0 on.
+//
+// The minima come from that function rather than from arm_floor0/1, and
+// which minimum is used decides whether this works at all. The floor
+// tracker is an all-time minimum with a slow rise, taken from a smoother
+// that starts at zero, so its first value sits about 8 dB under the band
+// and DIV_FLOOR_RISE_DB needs the better part of a minute to walk it into
+// place. Nothing reads quiet for that minute, which on a one-minute
+// capture is the whole of it: pointed at the floor tracker this test
+// recovered 1.8 dB of the 12 available on `122843` and pointed at the
+// bounded window it recovers all of it. The bounded window is seeded from
+// its first block and needs one slot - five seconds - to become usable.
+//
+// Both sides of the comparison are nr_f0/nr_f1, the same DIV_FLOOR_TAU
+// smoother the minimum is taken from, and not the operator's averaging
+// time. Like against like, and fast: arm_pw0/arm_pw1 have to fall the
+// whole way from the signal to the noise before they read empty, which at
+// a two-second time constant and 30 dB of signal is twenty seconds -
+// measured, on the synthetic gap in test_window, against one second here.
+// Responsiveness is safe to take because DIV_QUIET_DWELL is what decides
+// whether a dip is a gap.
+//
+// False until then, so this can never fire on the first blocks after a
+// reset, when everything is quiet because nothing has been measured yet.
+//
+// Note what it cannot see: a signal that never stops leaves the minimum
+// sitting on the signal, and reads quiet. That is why the caller must
+// already be holding - a signal the two antennas agree on keeps the
+// coherence gate open and never reaches this test at all.
+//
+static int div_window_quiet(void) {
+  if (!nr_min_valid || nr_min0 <= 0.0 || nr_min1 <= 0.0) { return 0; }
+
+  const double need = pow(10.0, 0.1 * DIV_QUIET_DB);
+  return (nr_f0 < need * nr_min0) && (nr_f1 < need * nr_min1);
+}
+
+static void div_apply_weight(double wr, double wi);
+
+//
+// ------------------------------------------------------------------
+// Holding, and standing down
+// ------------------------------------------------------------------
+//
+// The loop declines a block for one of two reasons, and until now it did
+// the same thing for both: stop updating and leave the last weight
+// applied.
+//
+// That is right when the signal is momentarily not measurable - a fade, a
+// gap between syllables, a key-up - because the weight in force was
+// measured on the real signal and is the best guess at what it will be
+// when it comes back.
+//
+// It is wrong when there is nothing there at all. The weight then in
+// force was fitted to something else, possibly on another band, and it
+// goes on adding the second antenna's noise to the output for as long as
+// the band stays empty. Measured: on `122843` - 17 m, one side of a QSO,
+// two thirds of the minute bare band noise, ADC1 15 dB the noisier chain
+// - the output is 12.18 dB noisier than the better antenna through the
+// gaps, and freezing the weight through them brings that to -0.02 dB with
+// the in-speech figure unchanged to a hundredth. On `235906` a weight
+// carried in from a previous band cost 3.5 dB over two thirds of a
+// minute, and substituting w = 0 on the held blocks would have turned
+// -3.54 dB into +3.85. See Findings 36 and 42.
+//
+// So: hold as before, but if the window is quiet as well, slew the weight
+// to zero - arm 0 alone, the antenna the operator would have been
+// listening to with the feature switched off. The estimate is not
+// discarded and the accumulators go on decaying exactly as they did; only
+// what is applied changes, and it changes back the moment anything
+// arrives, because div_apply_weight() slews rather than steps.
+//
+// Both conditions are required. A signal both antennas hear keeps the
+// coherence gate open and never reaches here, which is what stops the
+// floor tracker's slow rise from standing the combiner down on a signal
+// that never stops.
+//
+static void div_hold_or_stand_down(void) {
+  div_auto_holding = 1;
+
+  if (!div_window_quiet()) {
+    //
+    // Something has arrived. If the combiner was stood down, put back the
+    // weight it was standing on rather than slewing up from zero: the
+    // estimate was never discarded, and the loop is still holding, so
+    // holding is what should resume. div_jump makes it one step, which is
+    // what the objective switch uses it for.
+    //
+    // Measured: without this the first second of every over runs with a
+    // weight on its way back up, which costs 0.58 dB in speech on
+    // `122843` - the whole of the in-speech cost of this change.
+    //
+    if (div_auto_standdown) {
+      div_auto_standdown = 0;
+      div_jump = 1;
+      div_apply_weight(quiet_wr, quiet_wi);
+    }
+
+    quiet_run = 0;
+    return;
+  }
+
+  if (blocktime > 0.0 && quiet_run < (int)(DIV_QUIET_DWELL / blocktime) + 1) {
+    quiet_run++;
+    return;
+  }
+
+  //
+  // Remember what was being applied before the first zero goes out, not
+  // after: div_cos/div_sin are on their way to zero from the second block
+  // of the stand-down onwards.
+  //
+  if (!div_auto_standdown) {
+    quiet_wr = div_cos;
+    quiet_wi = div_sin;
+    div_auto_standdown = 1;
+  }
+
+  div_apply_weight(0.0, 0.0);
+}
+
+//
 // The branch noise ratio, by minimum statistics over a bounded window.
 //
 // Deliberately not arm_floor0/arm_floor1, though those are minima too and
@@ -1513,6 +1704,9 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
   //
   const double m0 = (nr_cur0 + nr_cur1 < nr_prev0 + nr_prev1) ? nr_cur0 : nr_prev0;
   const double m1 = (nr_cur0 + nr_cur1 < nr_prev0 + nr_prev1) ? nr_cur1 : nr_prev1;
+  nr_min0 = m0;
+  nr_min1 = m1;
+  nr_min_valid = 1;
   const double need = pow(10.0, 0.1 * DIV_ARM_MIN_DB);
 
   if (p0 >= need * m0 && p1 >= need * m1) {
@@ -2680,21 +2874,29 @@ static void div_process_block(void) {
   div_norm_update(cur_xx, cur_yy, cur_xy_re, cur_xy_im);
 
   if (acc_xx <= 0.0 || acc_yy <= 0.0 || wsum <= 0.0) {
+    //
+    // Nothing accumulated yet. Not a statement about the band, so not a
+    // reason to stand anything down.
+    //
     div_auto_coherence = 0.0;
     div_auto_holding = 1;
+    div_auto_standdown = 0;
     return;
   }
 
   //
   // Is what these statistics describe still on the air?
   //
-  // Under Coherence weighting the comparison is weighted too, so it
-  // follows the bins the estimate actually rests on rather than the whole
-  // window - which is what makes it sensitive to a narrow signal, a CW
-  // carrier included, stopping inside a wide filter.
+  // The window is summed flat, so this compares the whole of it. Under
+  // the coherence weighting that used to be selectable the comparison was
+  // weighted too, which made it sensitive to a narrow signal - a CW
+  // carrier inside a wide filter - stopping while the rest of the window
+  // stayed as noisy as ever. Flat gives that up; the stale test is now
+  // the blunter of the two presence tests here and the quiet test below
+  // is the one that catches an empty band.
   //
   if (acc_p > 0.0 && cur_p * pow(10.0, DIV_STALE_DB / 10.0) < acc_p) {
-    div_auto_holding = 1;
+    div_hold_or_stand_down();
     return;
   }
 
@@ -2706,13 +2908,31 @@ static void div_process_block(void) {
   if (div_auto_coherence < div_auto_coherence_min) {
     //
     // Nothing the two antennas agree on. Hold what we have rather than
-    // chase noise.
+    // chase noise - and if there is nothing in the window either, stand
+    // the combiner down rather than go on applying a weight fitted to
+    // something that is no longer there.
     //
-    div_auto_holding = 1;
+    div_hold_or_stand_down();
     return;
   }
 
   div_auto_holding = 0;
+  quiet_run = 0;
+
+  //
+  // The gate has opened, so the stand-down ends - but the weight is
+  // slewed to like any other, deliberately. Stepping to it would be
+  // right if the gate opening always meant a signal, and it does not:
+  // the shipped threshold passes about one no-signal block in twenty
+  // (Findings 26 and 29), and a step would put a weight fitted to noise
+  // straight into the audio where the slew merely leans towards it for
+  // one block. The restore that does step is in
+  // div_hold_or_stand_down(), where the evidence is the window filling
+  // up rather than a coherence reading, and it fires first in practice:
+  // the presence test runs off a half-second smoother and the gate has
+  // to rebuild the accumulators.
+  //
+  div_auto_standdown = 0;
 
   if (div_auto_mode == DIV_AUTO_BEST) {
     div_apply_best(acc_xy_re / acc_xx, acc_xy_im / acc_xx);
