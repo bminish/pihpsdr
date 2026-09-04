@@ -6346,6 +6346,163 @@ is 15 dB rather than nothing - which says the two faces of this defect are
 the same fault seen at two attenuator settings, and that **the operator's
 attenuator is what decides which of them they hear.**
 
+## Finding 46: three ways not to build a false-alarm guard for the occupancy split
+
+Nothing was built and nothing was changed. This is the record of an
+attempt that failed three times over, kept because each failure rules out
+a family of designs and the third one reframes the problem.
+
+**The defect, sized properly at last.** `DIV_OCC_MIN_BINS` is an absolute
+count of three, whatever the region holds, so the occupancy test is a
+fixed-count test on a growing number of trials. Swept over the five
+no-signal captures with the region hand-placed:
+
+| region width | blocks producing a weight, no signal present |
+|---|---|
+| 300 Hz | 7.8 % |
+| 1000 Hz | 6.5 % |
+| 2600 Hz, about the default | 8.1 % |
+| **6000 Hz** | **44.6 %** |
+
+Per capture at 6 kHz: 72.0, 62.4, **98.6**, 17.1 and 0.0 %. Finding 8
+recorded 30 % on `231532` and that is reproduced (27.0 % at 2600 Hz); what
+was not known is how steeply it scales. **Widen the region to something an
+operator would reasonably use for a wide digital signal and the mode
+produces a weight on nearly half the blocks of a dead band.**
+
+### 1. A presence test ahead of the gate cannot work
+
+The first attempt gave the occupancy split the presence test the wideband
+references got: move the arm-power, floor and bounded-minimum updates
+above the branch in `div_process_block()` and refuse to act when
+`div_window_quiet()` says neither arm carries anything. It halves the
+false alarms - 44.6 % to 24.1 % at 6 kHz - and it is unusable:
+
+| capture | blocks updating, before | after |
+|---|---|---|
+| **`142026` DRM, 41 dB over its floor** | **100 %** | **17.9 %** |
+| `000747` wideband digital | 91.7 % | 17.1 % |
+| `154822` FSK | 37.6 % | 9.1 % |
+
+**A signal that never stops leaves the bounded minimum sitting on the
+signal**, so "quiet" is measured against the signal and reads true. That
+hazard is recorded beside `div_window_quiet()` itself, and the wideband
+stand-down is safe from it only because its guard runs *downstream* of the
+coherence gate - a signal both antennas agree on keeps that gate open and
+never reaches the test. A guard ahead of any gate has no such protection.
+
+Demanding the long-memory floor tracker's agreement as well - the two
+minima fail in opposite directions, so the pair should have been safe -
+does not rescue it: false alarms return to 42.8 % because the floor has
+not climbed into place inside a one-minute capture, while `142026` is
+still cut to 25.4 %.
+
+**This is structural rather than a matter of tuning. A minimum over time
+*is* the signal when the signal is always there**, so no presence test
+built on one can sit ahead of the gate. That rules out reusing any of the
+machinery built for Findings 36 and 42 here.
+
+### 2. And neither can an arithmetic correction, for a more interesting reason
+
+The obvious remaining fix is to make the bin count scale - a binomial or
+Bonferroni bound, or a threshold set for a fixed expected number of false
+bins. Sizing it first kills it. Bins clearing 6 dB over the region median,
+against what chance predicts for Rayleigh noise (a fraction `2^-4` =
+6.25 % of them):
+
+| capture | bins in region | expected by chance | observed, median block |
+|---|---|---|---|
+| `231532` no signal | 256 | 16 | **17** |
+| `111328` no signal | 64 | 4 | **4** |
+| **`142026` DRM mode B, strong** | 64 | 4 | **5** |
+| `154822` FSK | 64 | 4 | 6 |
+| `003309` FT8 | 64 | 4 | **21** |
+
+The null model is confirmed to the bin - 17 against 16, 4 against 4 - so
+the arithmetic is right and a correction would be calculable. **And a
+41 dB DRM broadcast stands one bin over chance.** Because it fills the
+region: the signal *is* the median, so nothing rises 6 dB over it. FSK
+gives 6 against 4, because two tones contribute fewer bins than the noise
+does by accident.
+
+So the statistic the whole occupancy split rests on - how many bins stand
+above the region's own median - **carries almost no information for two of
+the three signal shapes the mode serves.** Any guard built on it inherits
+that. A, B and C in the design space below go with it.
+
+### 3. Which is the real finding: the premise is shaped like FSK
+
+`DIV_REF_DIGITAL_IQ` is labelled *FSK/Digital*, and its occupancy premise
+- that wanted bins stand above a mostly-empty region - describes FSK and
+it describes FT8. It does not describe the digital modes that are
+actually wide:
+
+| shape | what the region looks like | occupancy premise |
+|---|---|---|
+| FSK, two or more narrow tones | a few bins over a noise floor | holds, but the signal contributes fewer bins than chance does |
+| many discrete carriers (FT8) | mostly empty, peaks | **holds** - 21 bins against 4 |
+| **OFDM (DRM, and the RADE waveform itself)** | filled edge to edge | **fails - the signal is the median** |
+| **wideband single-carrier QAM/PSK** | filled edge to edge | **fails, the same way** |
+
+Two of those four are in everyday use on the bands this radio covers and
+both are wider than the region the split works best in. **A guard designed
+to make the FSK case safe is a guard designed for the minority case**, and
+worse, the mode's own name invites exactly that mistake. `142026` is the
+only OFDM capture in the set and it is the one that broke both attempts
+above.
+
+Two consequences worth carrying, neither of them acted on:
+
+- what serves a band-filling signal today is not the occupancy split at
+  all but the **"the region is full" fallback** - plain maximum ratio
+  combining when there are no unoccupied bins to build `R` from
+  (Finding 8). Whether `142026` actually reaches that fallback or instead
+  proceeds on five bins indistinguishable from chance **is not
+  established here**, and it is the first thing to check: Finding 30's
+  result on that capture - every window width, weighting and averaging
+  time within 0.04 dB - is consistent with a selection carrying no
+  information, but consistent is not the same as measured. `run_ref` does
+  not export the occupied span, so this needs one line of instrumentation.
+- the useful question is probably not "how do we make occupancy safe" but
+  "which of these shapes should this reference serve at all", with the
+  wide ones going to a path that never tries to split the region.
+
+### What is left in the design space
+
+Only the structural options survive, and they converge on one idea: **the
+identity of the occupied bins is stable for a real signal and random for
+noise.** Noise passes a different seventeen bins each block; FT8's
+carriers and FSK's tones pass the same ones every block. That covers the
+two shapes the count test misses and says nothing about the two that fill
+the region, which is honest - those want the full-region path instead.
+
+**Not started.** Before writing any of it, the cheap check is to dump the
+occupied-bin sets per block from the captures already held and see whether
+their overlap between consecutive blocks separates the no-signal captures
+from `003309` and `154822`. That is an hour of Python against files
+already on disk, and it decides whether the idea is worth code.
+
+### The captures this work needs
+
+Everything above was measured from files already held. Anyone picking it
+up should start with these rather than recording anything new:
+
+| capture | why it matters here |
+|---|---|
+| `231532`, `232750`, `111328`, `233423`, `233615` | the five with **no signal at all** - the entire false-alarm measurement. `111328` is the worst case at 98.6 % and `233615` never false-alarms at any width, so the pair brackets the problem |
+| **`142026`** | **DRM mode B, the only OFDM capture in the set.** It broke both attempts above and it is the capture that reframes the question. Nothing else in the set fills a region with a wanted signal |
+| `000747` | wideband digital, continuous, band-filling - the second shape that defeats a temporal minimum |
+| `003309` | 30 m FT8: the one shape the occupancy premise fits, and the positive control any guard must not break |
+| `154822` | 50 baud FSK with a second source out of band - the mode's namesake, and the case where the signal contributes fewer bins than chance |
+| `231724`, `232052` | the matched pair, same band and path five minutes apart, one running each reference - the only clean comparison of this reference against Window |
+| `002534`, `002710` | scored FSK/Digital columns exist for both, so a change can be checked against a published figure rather than only against itself |
+
+The guard geometry for the scorable ones is under "Reproducing any of
+this". What the set does **not** contain, and what would be worth a minute
+of tape each: a **wideband QAM or PSK modem** of any kind, and a **second
+OFDM capture** - one capture of a shape that defeats the premise is not
+enough to design against.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -6937,14 +7094,24 @@ holds is the false-alarm line, and that part stands.
   captures**, where the yardstick is synced frames; that is the document's
   most trusted metric and has never been pointed at the weighting
   question.
-- **FSK/Digital occupancy has no false-alarm control.** On `231532`, with
-  no signal anywhere, the mode produces a weight on 30 % of blocks,
-  through the normal path. Three bins clearing a 6 dB-over-median
-  threshold is not evidence when the region holds two hundred of them, and
-  `DIV_OCC_MIN_BINS` does not scale with region width. What is wanted is
-  a threshold whose false-alarm rate is known: dead-air captures with
-  FSK/Digital selected at several filter widths would give it directly.
-  See the correction under Finding 8.
+- **FSK/Digital occupancy has no false-alarm control, three ways of
+  giving it one have been tried, and the third failure reframes the
+  problem.** The rate is now measured against region width rather than
+  estimated: 7.8 % of no-signal blocks at 300 Hz and **44.6 % at 6 kHz**,
+  one capture reaching 98.6 %. A presence test ahead of the gate cannot
+  work, because a minimum over time is the signal when the signal never
+  stops - it cut a 41 dB DRM broadcast from 100 % of blocks updating to
+  17.9 %. An arithmetic correction on the bin count cannot work either,
+  and for a better reason: the null model is confirmed to the bin, and the
+  same DRM broadcast stands **one bin over chance**, because it fills the
+  region and the signal is the median. **The occupancy premise is shaped
+  like FSK** - it fits FSK and FT8, and fails on OFDM and wideband QAM,
+  which are the digital modes actually in everyday use at those widths.
+  What is left is bin-set stability, unstarted, with an hour's check
+  against files already held that decides whether it is worth code. The
+  set needs a wideband QAM or PSK capture and a second OFDM one before
+  anything is designed. See Finding 46, which also lists the captures this
+  work should start from, and the correction under Finding 8.
 
 - **CW has been measured once, on weak signals.** `001054` and `001157`
   had only 0.2 to 0.3 dB available. A CW capture with one strong steady
@@ -7086,6 +7253,25 @@ recorded nfft rather than in a derivation. *Compromise:* one capture at
 192 kHz is most of the first half; a quiet band with nobody on it at all
 gives the silence figure but not the in-speech one. Cost: two minutes on
 any band above 14 MHz that is not busy (Finding 42).
+
+**0a-ii. A wideband QAM or PSK modem, and a second OFDM signal.**
+*Ideal:* one minute each of a digital signal that **fills two or three
+kilohertz or more with no gaps in frequency** - a wideband HF modem,
+STANAG or similar, a DRM broadcast other than `142026`, or any wide data
+waveform that is on the air locally - with the **FSK/Digital** reference
+selected and the search region set wide enough to hold it. *Closes:* the
+question Finding 46 ends on. That finding's whole reframing rests on one
+capture, `142026`, being the only signal in the set that fills its region,
+and a premise that fails on exactly one recording is a hypothesis rather
+than a result. Two more would settle whether the occupancy split should
+serve those shapes at all or hand them to the full-region path. *Also
+worth having:* the same signal recorded a second time with the region
+deliberately **narrower** than the signal, which is the case an operator
+will actually produce by leaving the follow tick on with a wide modem in
+the passband. *Compromise:* any wide digital signal at all, even a strong
+one, is worth more here than nothing - the point is the shape, not the
+margin. Cost: one minute, and the note field says what it was
+(Finding 46).
 
 **0b. A local noise source, switched on and off.** *Ideal:* a quiet band,
 both antennas, one minute, with a known offending device in the shack or

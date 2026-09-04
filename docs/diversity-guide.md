@@ -174,6 +174,23 @@ median, and enough noise bins clear the threshold to keep the loop
 adapting on nothing. Use **Window** there. The same numbers are in
 `docs/diversity-measurements.md` if you want to see the working.
 
+**And not for a signal that fills the passband either**, whatever the
+name of the mode suggests. It works by finding the bins that stand out
+from the rest of the region, so it needs the signal to be a minority of
+what is in there. A wide OFDM or QAM waveform — DRM, a wideband HF modem
+— is the whole region, so nothing stands out from it: measured on a DRM
+broadcast 41 dB out of the noise, the number of bins the split calls
+occupied is what pure noise would have given anyway. Use **Window** for
+those. It is the shape of the signal in the passband that decides this,
+not whether the mode is digital.
+
+**Keep the region no wider than it needs to be.** With nothing on the
+band, this mode produces a weight on about 8 % of blocks with a 2.6 kHz
+region and **45 %** with a 6 kHz one — it needs three bins to stand out
+and a wider region simply offers more chances for three to do so by
+accident. There is no control for that yet; a narrower region is the
+whole of the workaround.
+
 The status line shows the occupied width it found, and the panadapter
 shades those bins more strongly inside the search region — if the dark
 band is not on your signal, the region is in the wrong place.

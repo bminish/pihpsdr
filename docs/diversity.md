@@ -850,6 +850,22 @@ that is mostly empty. It is the only reference that measures the *noise*
 separately from the signal, and everything it does differently follows
 from that.
 
+**"Mostly empty" is a real precondition, not a figure of speech**, and the
+name of the mode hides how much rests on it. The split works by calling a
+bin occupied when it stands 6 dB over the region's own median, which
+requires the wanted signal to occupy a minority of the region. That
+describes FSK and it describes FT8. It does not describe **OFDM** - DRM,
+and the RADE waveform itself - or a **wideband QAM or PSK modem**, both of
+which fill the region edge to edge so that the signal *is* the median:
+measured on a DRM broadcast 41 dB over its noise floor, the number of bins
+standing 6 dB over the median is **five, where chance alone gives four**.
+Those shapes are served, if at all, by the "region is full" fallback
+below rather than by the split. Both are in everyday use on these bands
+and both are wider than the region this reference works best in. See
+Finding 46 in [`diversity-measurements.md`](diversity-measurements.md),
+which also records that the mode has no false-alarm control and that three
+ways of giving it one have been tried and rejected.
+
 The other references have no picture of the noise on its own, so **Sum**
 has to assume the two branches carry equal, uncorrelated noise. That is
 what makes `w = +Sxy/Sxx` maximum ratio combining. On a real station the
