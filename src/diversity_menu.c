@@ -576,22 +576,14 @@ static void div_show_row(GtkWidget *label, GtkWidget *widget, gboolean on) {
 // weight to an accident, which on a matched pair of arms adds about 3 dB
 // of noise for no signal. See diversity_auto_coh_floor().
 //
-// On RADE V1 it is not a coherence at all but the pilot signal fraction,
-// which reads far lower: 72 % of one marginal capture's locked blocks are
-// under 5 % while the modem holds sync on 98 % of frames (Finding 33).
-// The old 0 to 95 in steps of 5 put every reachable non-zero setting in
-// the range that holds the loop through a working decode. It spans the
-// measured range instead - 0.010 on the weakest capture in the set, 0.15
-// on a marginal one, 0.51 to 0.82 on strong ones - with a step fine
-// enough to sit under the weak end.
+// RADE V1 has no row here at all any more - see update_visibility() - so
+// there is no second range to derive.
 //
-#define DIV_QUALITY_MAX 25.0
-
 static void update_coh_range(void) {
   if (coh_scale == NULL) { return; }
 
   const double lo = 100.0 * diversity_auto_coh_floor(div_auto_ref);
-  const double hi = (div_auto_ref == DIV_REF_RADE_V1) ? DIV_QUALITY_MAX : 95.0;
+  const double hi = 95.0;
   //
   // Before the widget, not after: gtk_range_set_range() clamps the value
   // it is holding into the new range, and if the setting were left where
@@ -652,11 +644,19 @@ static void update_visibility(void) {
   div_show_row(width_label,  width_spin,  placeable);
   div_show_row(res_label,    res_combo,   uses_fft);
   //
-  // Every reference has a threshold now, RADE V1 included - it gates on
-  // rade_corr_quality where the others gate on a coherence, which is why
-  // the row is relabelled rather than hidden. The threshold is stored per
-  // reference for the same reason: the quantities are not comparable, so
-  // one number cannot serve four of them. See div_band_cohmin.
+  // Three references have a threshold, not four. The threshold is stored
+  // per reference because the quantities are not comparable, so one
+  // number cannot serve them all - see div_band_cohmin.
+  //
+  // RADE V1 no longer has one. It gated rade_corr_quality, and three
+  // gates on the pilot already stand in front of that: the acquisition
+  // ladder, the confirm and probation ladder, and RADE_USE_RATIO's
+  // per-frame freeze. The five no-signal captures produce no weight at
+  // all through them, so the false-alarm job was already finished, and
+  // the quality reading does not separate what is left - on the capture
+  // where the combiner most clearly helps, every block that produced a
+  // weight sat under the slider's whole travel. See
+  // div_settings_validate().
   //
   //
   // And in Carrier it is labelled for what it does rather than for what
@@ -689,8 +689,7 @@ static void update_visibility(void) {
   // which ones deserve it.
   //
   if (coh_label) {
-    gtk_label_set_text(GTK_LABEL(coh_label),
-                       (ref == DIV_REF_RADE_V1) ? "Min quality (%)" : "Min coherence (%)");
+    gtk_label_set_text(GTK_LABEL(coh_label), "Min coherence (%)");
     gtk_widget_set_tooltip_text(coh_label,
                                 (ref == DIV_REF_CARRIER)
                                 ? "This gate does not discriminate in Carrier mode, "
@@ -713,23 +712,6 @@ static void update_visibility(void) {
                                 "The estimate itself is fine. It is a real carrier "
                                 "measured to 0.03 Hz - it is only this gate that "
                                 "cannot say whether there is one."
-                                : (ref == DIV_REF_RADE_V1)
-                                ? "Hold below this pilot quality. RADE V1 measures "
-                                "acc_sig/(acc_sig+noise) - a signal fraction, not a "
-                                "coherence - so the same percentage asks for less "
-                                "signal here than it does in the other references, "
-                                "and the slider is scaled to the range the quantity "
-                                "actually occupies: 1 % on the weakest capture "
-                                "measured, 15 % on a marginal one, 50 to 80 % on "
-                                "strong ones.\n\n"
-                                "Zero, the default, is the behaviour before this "
-                                "reference had a threshold at all - and is what it "
-                                "should stay at. On a marginal signal the pilot "
-                                "quality reads near zero while the modem decodes "
-                                "perfectly well: 72 % of one capture's locked blocks "
-                                "are below 5 % with the modem in sync on 98 % of "
-                                "frames, so raising this would hold the loop through "
-                                "a working decode."
                                 : "Hold below this coherence. Each reference keeps its "
                                 "own value, because each measures the coherence over "
                                 "different bins: the whole window in Window, five "
@@ -752,7 +734,7 @@ static void update_visibility(void) {
   // time, so it is re-derived here rather than fixed at build time.
   //
   update_coh_range();
-  div_show_row(coh_label,    coh_scale,   TRUE);
+  div_show_row(coh_label,    coh_scale,   ref != DIV_REF_RADE_V1);
   //
   // Not a function of the reference like the rows above, but the same
   // treatment for the same reason: two numbers that mean nothing while
@@ -1812,12 +1794,9 @@ void diversity_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 16, 1, 1);
   //
   // A tenth of a percent of rounding and half a percent a step. The old
-  // 5 % step could not reach either end of what this control now spans:
-  // not the floor on a wide window, which is a fraction of a percent, and
-  // not the bottom of the RADE quality range, where every reachable
-  // non-zero setting held the loop through a working decode. The bounds
-  // themselves are set by update_coh_range(), which knows which reference
-  // is selected.
+  // 5 % step could not reach the floor on a wide window, which is a
+  // fraction of a percent. The bounds themselves are set by
+  // update_coh_range(), which knows which reference is selected.
   //
   coh_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 0.5);
   gtk_scale_set_digits(GTK_SCALE(coh_scale), 1);

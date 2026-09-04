@@ -3583,13 +3583,14 @@ void diversity_auto_ref_store(int ref) {
     div_digital_centre = div_auto_centre;
     div_digital_width  = div_auto_width;
     div_digital_cohmin = div_auto_coherence_min;
-  } else if (ref == DIV_REF_RADE_V1) {
-    //
-    // No window of its own - the correlator decides what it looks at -
-    // but it does have a threshold now.
-    //
-    div_rade_cohmin = div_auto_coherence_min;
   }
+
+  //
+  // DIV_REF_RADE_V1 has neither a window of its own - the correlator
+  // decides what it looks at - nor a threshold to file any more. Its slot
+  // is pinned at zero in div_settings_validate(); storing the live value
+  // into it here would let a value that arrived by some other route stick.
+  //
 }
 
 void diversity_auto_ref_recall(int ref) {
@@ -4003,7 +4004,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   {
     double *c[] = { &s->coherence_min, &s->band_cohmin, &s->carrier_cohmin,
-                    &s->digital_cohmin, &s->rade_cohmin
+                    &s->digital_cohmin
                   };
 
     for (unsigned i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
@@ -4012,6 +4013,37 @@ static void div_settings_validate(DIV_SETTINGS *s) {
       if (*c[i] > 0.95)    { *c[i] = 0.95; }
     }
   }
+
+  //
+  // RADE V1's is pinned, not ranged, for the reason the hang and the
+  // weighting are: there is no control for it any more.
+  //
+  // Three gates already stand in front of it and all of them are on the
+  // pilot - the acquisition ladder's sigmas, the confirm and probation
+  // ladder, and RADE_USE_RATIO's per-frame freeze - so this one is only
+  // reached on blocks where the pilot has already been found. Measured
+  // over the whole set: the five no-signal captures produce **no weight
+  // at all**, 3515 blocks of it, so the false-alarm job a threshold
+  // exists for is already finished. And the quantity it gates does not
+  // separate what is left: `234508`, a strong capture producing a weight
+  // on three blocks in four, reads a median quality of 0.217 with 31 % of
+  // its blocks under 0.05, where a capture that re-acquires eight times a
+  // minute reads 0.193.
+  //
+  // What decides it is that no reachable setting was safe. On `165826`,
+  // where one antenna gets 176 frames, the other 323 and the combiner
+  // 329, **every** block that produced a weight is under 0.25 and a third
+  // are under 0.05 - so the slider's whole travel held the loop through
+  // the one decode in the set that best shows the combiner working. A
+  // control whose likeliest use is to break a working decode is worse
+  // than no control. See Findings 26, 33, 35 and 41.
+  //
+  // Zero is what shipped as the default, so nothing an operator has today
+  // moves. The field stays on the wire and in the props file so neither
+  // changes shape, and the comparison stays in the engine so the offline
+  // harness can still sweep it.
+  //
+  s->rade_cohmin = 0.0;
 
   //
   // 0.2, not 0.1, to match the slider's minimum.

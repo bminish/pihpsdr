@@ -821,6 +821,28 @@ than assuming the nominal band, and it measures the noise separately
 instead of assuming both branches carry the same amount. Its slot in the
 props file's `diversity_auto_ref` is migrated to FSK/Digital on restore.
 
+**There is no threshold row in this mode.** It used to gate
+`rade_corr_quality`, and three gates on the pilot already stand in front
+of that: the acquisition ladder's sigmas, the confirm and probation
+ladder, and `RADE_USE_RATIO`'s per-frame freeze. Measured over the whole
+capture set, the five recordings with no signal in them produce **no
+weight at all** through those — 3515 blocks of it — so the false-alarm job
+a threshold exists for was already finished before this one was reached.
+
+What is left it cannot do either. `rade_corr_quality` is a display
+quantity by construction, and it does not separate a good lock from a poor
+one: a strong capture producing a weight on three blocks in four reads a
+median 0.217 with 31 % of its blocks under 0.05, where one that
+re-acquires eight times a minute reads 0.193. And no reachable setting was
+safe — on `165826`, where one antenna decodes 176 frames, the other 323
+and the combiner 329, **every** block that produced a weight sits under
+0.25; setting the old slider to 0.15 takes the loop from producing a
+weight on 32.6 % of blocks to 1.7 %.
+
+So the value is pinned to zero, which is what shipped, and the row is
+gone. See Findings 26, 33, 35 and 41 in
+[`diversity-measurements.md`](diversity-measurements.md).
+
 ### FSK/Digital (occupancy MVDR)
 
 For a narrow digital signal - FT8, RTTY, PSK31, VARA, JS8 - in a passband
@@ -928,14 +950,15 @@ one block from `track` to `search` when the signal stops.
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
-| **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md). **The range is not fixed**: the three coherence references go from their own noise floor (§4) to 95 %, and *Min quality* spans 0-25 % in ½ % steps, which is the range the pilot signal fraction actually occupies | all four |
+| **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the three do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md). **The range is not fixed**: each goes from its own noise floor (§4) to 95 %. It has no discriminating power in Carrier (§5) and there is no such row in RADE V1 (below) | Window, Carrier, FSK/Digital |
 | **Restart averaging** | Discards the accumulated statistics | always |
 | **Hold** | Stops applying the loop's answer without stopping the loop | always |
 | **Invert** | Swaps Null and Sum | always; inactive under Best |
 
 Rows that the selected reference cannot use are **hidden, not greyed
 out**. The RADE V1 reference places its own window, so four rows never
-apply to it, and it uses no transform at all, so two more do not either.
+apply to it; it uses no transform at all, so two more do not either; and
+it no longer has a threshold, so that row is gone from it as well.
 Greying them left a tall dialog of mostly dead controls.
 
 There is no Weighting row any more, in any reference. It only ever reached

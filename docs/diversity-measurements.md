@@ -2982,7 +2982,10 @@ Three consequences, in increasing order of how much they cost.
 `rade_corr_quality` there and then never compared with anything. The menu
 row was hidden in that mode, which is at least consistent, but it means
 the one reference where an operator most often watches a marginal signal
-had no way to say "do not act on that".
+had no way to say "do not act on that". *(It was given one, and it has
+since been retired again: the pilot gating already refuses an empty band
+completely and no reachable setting of this was safe. See "What was
+changed".)*
 
 **It did two jobs at once in FSK/Digital.** Moving the slider changed
 which bins the estimate is *made from* as well as whether the estimate was
@@ -7855,6 +7858,76 @@ stops depending on the hang, and a 5.1 s fade of the same station keeps
 its lock and returns to within 0.033. The hang assertion is inverted,
 because the contract it encoded - "the setting is what decides" - is the
 one deliberately broken.
+
+### `src/diversity_auto.c`, `src/diversity_menu.c` — RADE V1's threshold is retired
+
+Finding 26 gave every reference a threshold of its own, RADE V1 included,
+defaulting to zero. Finding 33 then measured that any non-zero setting
+"would hold the loop through most of a working decode" and recommended
+leaving it there. This is the sweep that asks whether the control should
+exist at all, and the answer is no.
+
+**Three gates on the pilot already stand in front of it**, and it is only
+reached on blocks where all three have passed: the acquisition ladder's
+three sigmas, the confirm and probation ladder, and `RADE_USE_RATIO`'s
+per-frame freeze, which is the ~1 s test that decides whether this frame
+is worth measuring at all. `rade_corr_process()` returns nothing when the
+pilot is absent, and the engine holds without ever reaching the
+comparison.
+
+**The false-alarm job is therefore already finished.** `run_ref --ref
+rade` over every RADE capture and all five no-signal ones:
+
+| | blocks | locked | produced a weight | median quality | < 0.05 | < 0.25 |
+|---|---|---|---|---|---|---|
+| `115357` strong | 351 | 95.4 % | 92.6 % | 0.838 | 0.0 % | 0.0 % |
+| `110923` | 351 | 65.2 % | 56.4 % | 0.872 | 0.0 % | 0.0 % |
+| `213155` | 703 | 93.2 % | 60.0 % | 0.667 | 0.0 % | 0.0 % |
+| `232842` | 351 | 94.0 % | 91.7 % | 0.568 | 0.0 % | 4.7 % |
+| **`234508` strong** | 175 | 84.0 % | 75.4 % | **0.217** | **31.1 %** | 63.6 % |
+| `202743` marginal | 351 | 75.2 % | 64.1 % | 0.193 | 0.0 % | 61.8 % |
+| **`165826` marginal** | 175 | 56.6 % | 34.3 % | **0.073** | **35.0 %** | **100 %** |
+| `193105` | 703 | 45.7 % | 6.0 % | 0.043 | 61.9 % | 90.5 % |
+| **the five no-signal** | 703 ea | **0.0 %** | **never produced a weight** | — | — | — |
+
+Three thousand five hundred and fifteen blocks of dead air and **not one
+weight**. That is the whole of what a threshold is normally for, done
+already.
+
+**And the statistic does not separate what is left.** `234508` is a
+*strong* capture - 84 % locked, a weight on three blocks in four - and
+reads a median 0.217 with 31 % of its blocks under 0.05, while `202743`,
+which re-acquires eight times a minute, reads 0.193. There is no threshold
+that keeps one and drops the other, which is Findings 33, 35 and 41's
+"the correlator's health readings do not track decode" arriving from the
+detection side rather than the decode side.
+
+**What decides it is that no reachable setting was safe.** The slider
+spanned 0 to 25 %. On `165826` - one antenna 176 frames, the other 323,
+the combiner 329 - **every** block that produced a weight is under 0.25
+and a third are under 0.05. Swept through the shipping engine, moving the
+gate from 0 to 0.15 takes the loop from producing a weight on **32.6 % of
+blocks to 1.7 %**: the control's own travel gutting the combiner on the
+one capture in the set that best demonstrates it working. Across all the
+RADE captures 24.6 % of weight-producing blocks sit under 0.25.
+
+So `div_settings_validate()` pins `div_rade_cohmin` to zero, which is
+what shipped as the default, and `update_visibility()` drops the row.
+Nothing an operator has today moves. The field stays on the wire and in
+the props file, `diversity_auto_ref_store()` no longer files a live value
+into that slot, and the comparison stays in the engine so `run_ref --ref
+rade --cohmin` can still sweep the retired path - which is how the 32.6
+against 1.7 % above was produced after the control was removed.
+
+`test_props` covers it beside weighting and hang: a stored 0.15 has to
+come back as zero rather than be clamped into range.
+
+**What this does not say** is that the pilot gating is right - Finding 41
+scored those constants and found the three acquisition sigmas the only
+ones that buy false alarms, and `probation` and `acq_at0` moving lock
+uptime by 10 to 24 points with no consistent decode effect. It says only
+that a fourth gate downstream of them, on a statistic built for a display,
+had nothing to add and a great deal to take away.
 
 ### `src/diversity_menu.c` — the Carrier gate is labelled for what it does
 

@@ -53,12 +53,16 @@ static int  have_scheme;
 static char schemeval[32];
 static int  have_weighting;
 static char weightingval[32];
+static int  have_radecoh;
+static char radecohval[32];
 const char *getProperty(const char *n) {
   if (!strcmp(n, "diversity_auto_ref")) { return refval[0] ? refval : NULL; }
 
   if (!strcmp(n, "diversity_auto_ref_scheme")) { return have_scheme ? schemeval : NULL; }
 
   if (!strcmp(n, "diversity_auto_weighting")) { return have_weighting ? weightingval : NULL; }
+
+  if (!strcmp(n, "diversity_rade_cohmin")) { return have_radecoh ? radecohval : NULL; }
 
   return NULL;
 }
@@ -160,7 +164,10 @@ static int test_wire_round_trip(void) {
  * or changed, and the radio runs on it. Coherence weighting in particular
  * would come back as the default it used to be, alongside the 0.20
  * threshold that was chosen to replace it - which is the one pairing the
- * measurements say is worse than either half. See Findings 27, 29, 40
+ * measurements say is worse than either half. RADE V1's threshold is the
+ * same shape of problem with a sharper edge: every reachable setting it
+ * ever offered holds the loop through a working decode, so a stored one
+ * has to be replaced rather than clamped. See Findings 27, 29, 33, 40
  * and 42, and DIV_HANG_DEFAULT.
  */
 static int test_retired_pinned(void) {
@@ -170,8 +177,11 @@ static int test_retired_pinned(void) {
   snprintf(schemeval, sizeof(schemeval), "2");
   have_weighting = 1;
   snprintf(weightingval, sizeof(weightingval), "%d", DIV_WEIGHT_COHERENCE);
+  have_radecoh = 1;
+  snprintf(radecohval, sizeof(radecohval), "0.15");
   div_auto_weighting = DIV_WEIGHT_COHERENCE;
   div_auto_hang = 1.0;
+  div_rade_cohmin = 0.15;
   diversity_auto_restore_state();
 
   if (div_auto_weighting != DIV_WEIGHT_FLAT) {
@@ -193,7 +203,15 @@ static int test_retired_pinned(void) {
     printf("  stored hang 1.0 s -> %.1f s\n", div_auto_hang);
   }
 
+  if (div_rade_cohmin != 0.0) {
+    printf("    FAIL rade_cohmin stored 0.15 -> %.3f, want 0\n", div_rade_cohmin);
+    bad++;
+  } else {
+    printf("  stored RADE quality gate 15 %% -> %.2f\n", div_rade_cohmin);
+  }
+
   have_weighting = 0;
+  have_radecoh = 0;
   return bad == 0;
 }
 
