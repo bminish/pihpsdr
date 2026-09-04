@@ -84,7 +84,6 @@ static double div_tau_to_pos(double tau) {
 static GtkWidget *tau_scale = NULL;
 static GtkWidget *coh_scale = NULL;
 static GtkWidget *res_combo = NULL;
-static GtkWidget *weight_combo = NULL;
 static GtkWidget *norm_b = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
@@ -104,7 +103,6 @@ static GtkWidget *att_spin[2] = { NULL, NULL };
 static GtkWidget *centre_label = NULL;
 static GtkWidget *width_label = NULL;
 static GtkWidget *res_label = NULL;
-static GtkWidget *weight_label = NULL;
 static GtkWidget *coh_label = NULL;
 
 //
@@ -293,7 +291,6 @@ static void cleanup(void) {
     tau_scale = NULL;
     coh_scale = NULL;
     res_combo = NULL;
-    weight_combo = NULL;
     norm_b = NULL;
     status_label = NULL;
     arm_label = NULL;
@@ -318,7 +315,6 @@ static void cleanup(void) {
     centre_label = NULL;
     width_label = NULL;
     res_label = NULL;
-    weight_label = NULL;
     coh_label = NULL;
     //
     // Hold is an operating state with no indicator outside this dialog,
@@ -642,14 +638,6 @@ static void update_visibility(void) {
   //
   const gboolean uses_fft = (ref != DIV_REF_RADE_V1);
   //
-  // Per-bin weighting needs a window with bins to weight, and only the
-  // wideband window has one. The carrier reference accumulates a handful
-  // either side of one peak, where there is nothing to choose between;
-  // FSK/Digital decides which bins carry signal by occupancy, which is
-  // the job Coherence weighting was doing.
-  //
-  const gboolean wide = is_band;
-  //
   // There is no Hang row any more. Only the pilot correlator ever had one
   // - it is the only reference holding a lock that can be given up and
   // re-acquired - and swept on the two captures that can be scored on
@@ -663,7 +651,6 @@ static void update_visibility(void) {
   div_show_row(centre_label, centre_spin, placeable);
   div_show_row(width_label,  width_spin,  placeable);
   div_show_row(res_label,    res_combo,   uses_fft);
-  div_show_row(weight_label, weight_combo, wide);
   //
   // Every reference has a threshold now, RADE V1 included - it gates on
   // rade_corr_quality where the others gate on a coherence, which is why
@@ -1141,7 +1128,6 @@ static void div_populate_from_settings(void) {
 
   if (width_spin)   { gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), div_auto_width); }
 
-  if (weight_combo) { gtk_combo_box_set_active(GTK_COMBO_BOX(weight_combo), div_auto_weighting); }
 
   if (norm_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise); }
 
@@ -1444,12 +1430,6 @@ static void norm_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
-static void weight_changed_cb(GtkWidget *widget, gpointer data) {
-  div_auto_weighting = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  diversity_auto_reset();
-  div_send_settings(DIV_ACTION_NONE);
-}
-
 // cppcheck-suppress constParameterCallback
 static void reset_cb(GtkWidget *widget, gpointer data) {
   //
@@ -1741,21 +1721,18 @@ void diversity_menu(GtkWidget *parent) {
                               "line.");
   gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 12, 1, 1);
   g_signal_connect(res_combo, "changed", G_CALLBACK(res_changed_cb), NULL);
-  weight_label = gtk_label_new("Weighting");
-  gtk_widget_set_name(weight_label, "boldlabel");
-  gtk_widget_set_halign(weight_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), weight_label, 0, 13, 1, 1);
-  weight_combo = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(weight_combo), "Flat");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(weight_combo), "Coherence");
-  gtk_combo_box_set_active(GTK_COMBO_BOX(weight_combo), div_auto_weighting);
-  gtk_widget_set_tooltip_text(weight_combo,
-                              "Coherence weights each frequency bin by how well the two "
-                              "antennas agree in it, so a wide window can be used on "
-                              "speech without the noise-only parts of it diluting the "
-                              "answer. Flat is the older behaviour.");
-  gtk_grid_attach(GTK_GRID(grid), weight_combo, 1, 13, 1, 1);
-  g_signal_connect(weight_combo, "changed", G_CALLBACK(weight_changed_cb), NULL);
+  //
+  // Row 13 was Weighting, and there is no such control now. Coherence
+  // weighting selected the most coherent bins and then reported the
+  // coherence of what it had selected, which is a biased estimator that
+  // does not know whether there is a signal underneath it: it raised the
+  // reported gamma^2 on all thirty-two captures including the ones
+  // holding nothing. That made it look better than flat at a fixed
+  // threshold and worse at a fixed false-alarm rate, which is the
+  // comparison that counts. Retired to flat, with the Window threshold
+  // moved from 0.30 to 0.20 in the same change so that the operating
+  // point does not move with it. See Findings 27, 29, 40 and 42.
+  //
   GtkWidget *tau_label = gtk_label_new("Averaging (s)");
   gtk_widget_set_tooltip_text(tau_label,
                               "Time constant for the gain/phase estimate. "
@@ -1899,7 +1876,6 @@ void diversity_menu(GtkWidget *parent) {
       centre_label, centre_spin,
       width_label,  width_spin,
       res_label,    res_combo,
-      weight_label, weight_combo,
       coh_label,    coh_scale,
       att_label,    att_box
     };

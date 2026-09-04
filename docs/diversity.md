@@ -622,47 +622,54 @@ edge and the status line marks the first field with a `*`. Before that guard exi
 a window at +30 kHz on a 48 kHz stream was silently measured at −18 kHz
 instead.
 
-#### Weighting
+#### Weighting: retired
 
-**Flat** sums the spectra over the window and divides, which makes the
-answer a power-weighted average of `h(f)` — dominated by the loudest bins
-whether or not the two antennas agree there, and diluted by noise-only
-bins that add to the denominator but not the numerator.
+The window is summed **flat** — the spectra are accumulated over the
+window and divided, making the answer a power-weighted average of `h(f)`.
+There is no control, and the alternative it used to offer has been
+withdrawn.
 
-**Coherence** weights each bin by its own magnitude-squared coherence, so
-bins carrying something both antennas hear dominate and noise-only bins
-fall out. This is what makes a wide window work on SSB voice, where the
-energy moves about constantly and there is no carrier to sit on: set the
-window to the whole passband and the estimator picks the bins worth using,
-following the voice as it moves, instead of the operator hand-placing a
-narrow window on the loudest point.
+That alternative was **coherence weighting**, which weighted each bin by
+its own magnitude-squared coherence so that bins both antennas heard
+dominated and noise-only bins fell out. On synthetic speech it roughly
+halves the gain error, and this section used to recommend it on that
+basis. On recorded signals it does not survive:
 
-**On recorded signals it is not the better estimator, and the case for it
-is weaker than this section reads.** Measured across the whole capture
-set, coherence weighting is no better than flat at recovering the channel,
-and at a *matched false-alarm rate* it is 1.4 to 5.6 points worse at the
-gate as well — it raises the reported coherence on signal and on noise
-alike, which is a biased statistic rather than a better one, and comparing
-the two at a fixed threshold compares them at different false-alarm rates.
-See Finding 27 in [`diversity-measurements.md`](diversity-measurements.md).
-It remains the default and nothing has been changed, because retiring it
-moves every operator's operating point unless the thresholds move with it.
+- it is **no better as an estimator** — flat is as good or better on four
+  of five captures scored with the gate out of the way, and 0.66 dB better
+  on one (Finding 27);
+- it is **worse at the gate at any matched false-alarm rate**, by 1.4 to
+  5.6 points of signal kept, because selecting the most coherent bins and
+  then reporting the coherence of what you selected is a biased estimator
+  that does not know whether there is a signal underneath it. It raises
+  the reported `γ²` on all thirty-two captures, the ones holding nothing
+  included (Findings 27 and 40);
+- on the six SSB captures whose windows are mostly noise — the case it
+  existed for — flat is ahead or level on **twenty of twenty-four** cells
+  and ahead by up to 0.93 dB on the two weak ones (Finding 42).
 
-Measured on synthetic speech — one narrow formant wandering across the
-passband, so only part of the window carries signal at any instant —
-against the true channel:
+The synthetic result and the on-air one differ because the synthetic
+signal has no gate: it measures the estimator alone, on a window where
+the signal is always present somewhere. What coherence weighting bought
+in practice was a lower effective threshold, and the threshold control
+does that on its own, transparently.
 
-| noise | flat gain err | flat phase | coherence gain err | coherence phase |
-|---|---|---|---|---|
-| 0.05 | 0.05 dB | 0.08° | 0.04 dB | 0.08° |
-| 0.20 | 0.60 dB | 0.32° | 0.41 dB | 0.30° |
-| 0.50 | 3.12 dB | 0.75° | **1.63 dB** | 0.78° |
-| 1.00 | 8.78 dB | 1.37° | **4.30 dB** | 1.10° |
+**The threshold moved with it.** Coherence weighting inflates `γ²`, so the
+same number was a laxer test with it than without — flat wants a threshold
+about 0.10 lower for the same false-alarm rate. The Window default is
+therefore **0.20**, not the 0.30 that shipped alongside coherence
+weighting: measured over thirty-two captures that is 5.2 % false alarms
+against 5.7 %, with 0.30 dB more signal. Retiring the control without
+moving the threshold would have made every operator's radio stricter than
+it was. See Findings 27, 29, 40 and 42 in
+[`diversity-measurements.md`](diversity-measurements.md).
 
-Coherence roughly halves the gain error wherever it matters, and the phase
-is much the same either way — which is what the theory says, since the
-noise-only bins bias the magnitude rather than the phase. Coherence is the
-default; Flat is kept so the two can be compared on air.
+The setting still travels on the wire and is still written to the props
+file, so neither had to change shape; `div_settings_validate()` pins it to
+flat rather than range-checking it, which is what happens to a value left
+by an older build or sent by an older client. `DIV_WEIGHT_COHERENCE`
+stays in the enum because the offline harness still has to be able to
+sweep the retired path.
 
 ### Carrier (AM/SAM)
 
@@ -850,7 +857,6 @@ one block from `track` to `search` when the signal stops.
 | **Window follows RX filter** | — | Window, FSK/Digital |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
-| **Weighting** | Flat or Coherence (see above) | Window |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
 | **Min coherence** | Below this the loop holds rather than adapts. **Stored per reference**, because the four do not compare the same quantity: `γ²` over the window in Window and Carrier, `γ²` over the occupied bins in FSK/Digital, and the pilot signal fraction `rade_corr_quality` in RADE V1, where the row is labelled *Min quality*. At 30 % a `γ²` gate asks for +0.8 dB per arm and a quality gate for −3.7 dB — see Finding 26 in [`diversity-measurements.md`](diversity-measurements.md). **The range is not fixed**: the three coherence references go from their own noise floor (§4) to 95 %, and *Min quality* spans 0-25 % in ½ % steps, which is the range the pilot signal fraction actually occupies | all four |
 | **Restart averaging** | Discards the accumulated statistics | always |
@@ -862,9 +868,11 @@ out**. The RADE V1 reference places its own window, so four rows never
 apply to it, and it uses no transform at all, so two more do not either.
 Greying them left a tall dialog of mostly dead controls.
 
-FSK/Digital hides Weighting for the same kind of reason: the occupancy
-split has already decided which bins carry signal, which is the job that
-control was doing.
+There is no Weighting row any more, in any reference. It only ever reached
+the Window reference — the carrier tracker accumulates a handful of bins
+either side of one peak and FSK/Digital's occupancy split had already
+decided which bins carry signal — and on four independent measurements it
+was behind or level with the flat sum it replaced (see above).
 
 ### One set of settings per group of modes
 
@@ -983,9 +991,10 @@ sample pair only exists on the radio side, so the analysis thread, the
 correlator and the weight all live there and nothing about that changes
 for a remote operator. What travels is the control surface and what it
 displays, so a client drives every part of the feature — objective,
-reference, window, resolution, weighting, averaging, hang, min coherence,
-Hold, Invert, Restart and the manual weight — exactly as the radio's own
-panel does.
+reference, window, resolution, averaging, min coherence, Hold, Invert,
+Restart and the manual weight — exactly as the radio's own panel does. The
+retired fields, weighting and hang, still travel so that the message keeps
+its shape; the radio pins both on arrival.
 
 Three messages carry it:
 

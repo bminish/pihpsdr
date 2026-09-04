@@ -7853,6 +7853,72 @@ its lock and returns to within 0.033. The hang assertion is inverted,
 because the contract it encoded - "the setting is what decides" - is the
 one deliberately broken.
 
+### `src/diversity_auto.c`, `src/diversity_menu.c` — Weighting is retired, and the Window threshold moves with it
+
+Findings 27, 29, 40 and 42, which are four measurements pointing one way
+and none pointing the other. `div_auto_weighting` defaults to
+`DIV_WEIGHT_FLAT`, `div_settings_validate()` **pins** it there rather than
+range-checking it, the combo box is gone, and `div_band_cohmin` moves from
+0.30 to 0.20.
+
+**The two halves are one change.** Coherence weighting inflates `γ²`, so
+the same threshold was a laxer test with it than without; retiring it
+without moving the threshold would have made every operator's gate
+stricter than the one they had. Flat wants about 0.10 less for the same
+false-alarm rate, which is what the new default is.
+
+Re-measured here before the change, on this machine, against Finding 40's
+re-run of Finding 29's grid — flat at 0.20 against coherence at 0.30, one
+`run_ref` per cell, scored on the guard geometry under "Reproducing any of
+this":
+
+| | flat 0.20 | coherence 0.30 | flat ahead | Finding 40 |
+|---|---|---|---|---|
+| `002710` 20 m CW | **-1.50 dB** | -2.76 | **+1.26** | +1.08 |
+| `003309` 30 m FT8 | **-0.41** | -1.03 | **+0.62** | +0.62 |
+| `002534` 20 m FSK | **-2.91** | -3.15 | +0.24 | +0.24 |
+| `000747` 5 MHz | **+1.64** | +1.58 | +0.06 | +0.06 |
+| `000332` 5 MHz | -0.76 | -0.76 | +0.00 | -0.00 |
+
+**Four of the five reproduce Finding 40 to the hundredth**, and the fifth
+is `002710`, which the document already flags as a v1 file whose two
+attenuator steps are not recorded and whose resets are reconstructed - it
+lands 0.18 dB further apart than published, in the same direction and
+still the largest margin in the table. The false-alarm column, counted
+over the five no-signal captures, reproduces exactly:
+
+| | false alarms on 3163 no-signal blocks |
+|---|---|
+| flat at 0.20 | **5.25 %** (published 5.2) |
+| coherence at 0.30 | 5.66 % (published 5.7) |
+| flat at 0.30 | 2.15 % (published 2.1) |
+| coherence at 0.20 | 8.76 % (published 8.8) |
+
+So the shipping pair moves from 5.66 % false alarms to 5.25 %, and gains
+0.24 to 1.26 dB on four captures of five with nothing given up on the
+fifth. The scorer used is a fresh implementation and was validated first
+against Finding 20's anchor - `000332`'s two arms come back at **27.43 and
+30.95 dB**, which is that finding's published pair to the hundredth - and
+against the CW window rule of Finding 8, without which `002710` scores the
+wrong passband entirely.
+
+`DIV_WEIGHT_COHERENCE` stays in the enum and `--weighting coherence` still
+works in `run_ref`: the retired path has to remain measurable, which is
+how the table above was produced after the control was removed from the
+radio. The field also stays on the wire and in the props file, as the hang
+setting does, so neither has to change shape - and `test_props` now checks
+that both come back pinned rather than merely in range, which is the
+failure that would otherwise be silent: an older client's settings block
+restoring coherence weighting *and* the 0.20 threshold chosen to replace
+it, which is the one pairing these measurements say is worse than either
+half.
+
+**What this does not settle** is unchanged from Finding 40: it is one
+reference and a passband metric. The sweep scored against librade on the
+RADE captures has still never been run, and the obstacle to it is the one
+Finding 45 hit - arm 0 alone decodes nearly everything on the captures
+that would carry it.
+
 ### `src/diversity_auto.c`, `src/diversity_menu.c` — Resolution is 24 / 12 / 6 Hz
 
 Finding 43. The 43 ms column in Finding 42's sweep is 23.44 Hz bins, which

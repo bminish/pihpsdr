@@ -47,14 +47,18 @@ double myatof(const char *s) { return atof(s); }
  */
 gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
 
-/* a tiny two-key property store the test drives directly */
+/* a tiny property store the test drives directly */
 static char refval[32];
 static int  have_scheme;
 static char schemeval[32];
+static int  have_weighting;
+static char weightingval[32];
 const char *getProperty(const char *n) {
   if (!strcmp(n, "diversity_auto_ref")) { return refval[0] ? refval : NULL; }
 
   if (!strcmp(n, "diversity_auto_ref_scheme")) { return have_scheme ? schemeval : NULL; }
+
+  if (!strcmp(n, "diversity_auto_weighting")) { return have_weighting ? weightingval : NULL; }
 
   return NULL;
 }
@@ -145,6 +149,54 @@ static int test_wire_round_trip(void) {
   return bad == 0;
 }
 
+/*
+ * A retired control is pinned on the way in, not merely range-checked.
+ *
+ * Weighting and Hang both still travel - the wire format and the props
+ * file keep their shape - but neither has a control any more and neither
+ * is a setting an operator can improve on. The failure this catches is
+ * quiet: a props file written by an older build, or a settings block from
+ * an older client, restores a value that no longer has a way to be seen
+ * or changed, and the radio runs on it. Coherence weighting in particular
+ * would come back as the default it used to be, alongside the 0.20
+ * threshold that was chosen to replace it - which is the one pairing the
+ * measurements say is worse than either half. See Findings 27, 29, 40
+ * and 42, and DIV_HANG_DEFAULT.
+ */
+static int test_retired_pinned(void) {
+  int bad = 0;
+  snprintf(refval, sizeof(refval), "%d", DIV_REF_BAND);
+  have_scheme = 1;
+  snprintf(schemeval, sizeof(schemeval), "2");
+  have_weighting = 1;
+  snprintf(weightingval, sizeof(weightingval), "%d", DIV_WEIGHT_COHERENCE);
+  div_auto_weighting = DIV_WEIGHT_COHERENCE;
+  div_auto_hang = 1.0;
+  diversity_auto_restore_state();
+
+  if (div_auto_weighting != DIV_WEIGHT_FLAT) {
+    printf("    FAIL weighting  stored coherence -> %d, want flat (%d)\n",
+           div_auto_weighting, DIV_WEIGHT_FLAT);
+    bad++;
+  } else {
+    printf("  stored coherence -> flat\n");
+  }
+
+  /* DIV_HANG_DEFAULT is private to diversity_auto.c; this is its value */
+  const double want_hang = 10.0;
+
+  if (fabs(div_auto_hang - want_hang) > 1.0e-9) {
+    printf("    FAIL hang       stored 1.0 -> %.3f, want %.3f\n",
+           div_auto_hang, want_hang);
+    bad++;
+  } else {
+    printf("  stored hang 1.0 s -> %.1f s\n", div_auto_hang);
+  }
+
+  have_weighting = 0;
+  return bad == 0;
+}
+
 int main(void) {
   memset(&rx0, 0, sizeof(rx0));
   memset(vfo, 0, sizeof(vfo));
@@ -164,6 +216,8 @@ int main(void) {
   ok &= check("new digital",  3, 2, DIV_REF_DIGITAL_IQ);
   printf("\nDIV_SETTINGS over the wire\n");
   ok &= test_wire_round_trip();
+  printf("\nretired controls are pinned, not ranged\n");
+  ok &= test_retired_pinned();
   printf("\n%s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }

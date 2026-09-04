@@ -119,7 +119,7 @@ mode and a hand-placed window agrees with the filter.
 
 Use it for:
 
-- **General work.** Follow the filter, Coherence weighting, and let it run.
+- **General work.** Follow the filter and let it run.
 - **A known noise.** Park a window directly on a carrier or a birdie and
   select Null. The window may sit *outside* the passband — measuring the
   noise on its own, away from the wanted signal, is often the cleaner
@@ -209,10 +209,9 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 |---|---|
 | **Window centre / width** | Where to look, measured from the signal you are tuned to — the zero-beat note in CW. Kept separately for Window, Carrier and FSK/Digital, so aiming the carrier tracker does not destroy your wideband window |
 | **Resolution** | 24 / 12 / 6 Hz bins — and it is really a *block length* control, 43 / 85 / 171 ms, because the block period is the reciprocal of the bin width. That is the way round that matters: the loop measures the channel over one block and applies the weight over the next, so a coarse setting keeps up with a fading path and a fine one lags it. Measured across fourteen recordings both `Sum` and `Null` want the coarse end on seventeen rows of twenty, worth up to 6.4 dB. Finer bins do the other job — lifting a weak signal out of the per-bin noise floor, which is not what Averaging does — and one recording in the set wants them |
-| **Weighting** | `Coherence` weights each bin by how well the two antennas agree in it. On speech it roughly halves the gain error, because the noise-only parts of a wide window stop diluting the answer. `Flat` is the older behaviour, kept for comparison |
 | **Level output** | The combined output is louder than one antenna by whatever the array does to it — measured at +1.5 to +8 dB, of which +2.9 to +9.4 dB *more* than the SNR it buys. Tick this and the level stays where it was, so an improvement arrives as the noise floor dropping rather than as everything getting louder. Off by default, because whether it sounds better depends on your AGC and no recording could settle it. Sum and Best only — Null exists to make the output quieter |
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. A weak AM carrier or an HF RADE path usually wants several seconds; a fast path (20 m near the MUF, or the low bands) wants a fraction of one, and Null wants the shortest setting that still holds a lock |
-| **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing — in RADE V1 the row reads *Min quality* and gates the pilot's signal fraction, which asks for about 4.5 dB less signal at the same percentage. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.30 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — and the slider now says so, because it will not go below that reading. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. In RADE V1 it spans 0–25 % instead, which is where the pilot signal fraction actually lives — 1 % on the weakest signal recorded, 15 % on a marginal one, 50–80 % on strong ones — and **0 is still the right setting**: on a marginal signal the quality reads near nothing while the modem decodes perfectly well |
+| **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing — in RADE V1 the row reads *Min quality* and gates the pilot's signal fraction, which asks for about 4.5 dB less signal at the same percentage. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.20 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — and the slider now says so, because it will not go below that reading. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. In RADE V1 it spans 0–25 % instead, which is where the pilot signal fraction actually lives — 1 % on the weakest signal recorded, 15 % on a marginal one, 50–80 % on strong ones — and **0 is still the right setting**: on a marginal signal the quality reads near nothing while the modem decodes perfectly well |
 | **Restart averaging** | Throw away the statistics and start again |
 | **Hold** | Stop *applying* the answer without stopping the loop |
 | **Invert** | Swap Null and Sum. Greyed out under Best, which has no opposite |
@@ -342,7 +341,7 @@ right.
 ## 6. Worked examples
 
 **A local noise source on 40 m, wanted signal is SSB.**
-Auto `Null`, Measure on `Window`, follow the filter, Coherence weighting,
+Auto `Null`, Measure on `Window`, follow the filter,
 Averaging around 3 s. If the noise is stronger outside the passband than
 in it, untick follow and park a 1–2 kHz window directly on the noise; the
 weight applies to the whole band regardless of where it was measured.
@@ -356,11 +355,11 @@ bin. This is the one case where the fine end of Resolution is the right
 answer; on a fading path it is the wrong one.
 
 **SSB voice, no carrier to lock to.**
-Auto `Sum` or `Null` as needed, Measure on `Window`, follow the filter,
-Weighting `Coherence`. Hand-placing a narrow window on the loudest part of
-the voice used to be the only way to make this work; coherence weighting
-is what makes running the whole passband the better option, because it
-discounts the bins where the two antennas do not agree.
+Auto `Sum` or `Null` as needed, Measure on `Window`, follow the filter.
+Hand-placing a narrow window on the loudest part of the voice used to be
+the recommended way to make this work, and on recorded speech it is not
+better: the whole passband, summed flat, measures the channel as well or
+better and needs nothing set by hand.
 
 **FreeDV RADE.**
 Measure on `RADE V1 pilot`. Check the status line shows the sideband you
@@ -558,7 +557,7 @@ phase stay valid; only the measurement restarts.
 The two antenna signals only exist on the radio, so that is where the
 analysis and the combining are done. The Diversity menu itself works the
 same from a remote client as it does at the server: every control on it —
-the objective, the reference, the window, resolution, weighting,
+the objective, the reference, the window, resolution,
 averaging, hang, min coherence, Hold, Invert, Restart, and the manual gain
 and phase — does what it says, and the status line, the antenna line and
 the green window on the panadapter all show what the server is really

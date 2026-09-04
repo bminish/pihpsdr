@@ -468,8 +468,8 @@ double div_auto_centre         = 0.0;
 double div_auto_width          = 1000.0;
 double div_auto_tau            = 2.0;
 double div_auto_hang           = DIV_HANG_DEFAULT;
-double div_auto_coherence_min  = 0.30;
-int    div_auto_weighting      = DIV_WEIGHT_COHERENCE;
+double div_auto_coherence_min  = 0.20;
+int    div_auto_weighting      = DIV_WEIGHT_FLAT;
 int    div_auto_normalise      = 0;
 double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 
@@ -519,9 +519,18 @@ double div_digital_width       = 2600.0;
 //
 // Defaults reproduce the single 0.30 that shipped before, except on RADE
 // V1, where the gate was never applied at all and 0.0 is what "as it was"
-// means.
+// means - and on Window, which is 0.20 because the weighting it gates
+// changed underneath it.
 //
-double div_band_cohmin         = 0.30;
+// The two are one decision. Coherence weighting inflates gamma^2, so the
+// same number was a laxer test with it than without: measured over
+// thirty-two captures, flat wants a threshold about 0.10 lower for the
+// same false-alarm rate. Flat at 0.20 gives 5.2 % false alarms against
+// coherence at 0.30's 5.7 %, and 0.30 dB more signal with it. Moving one
+// without the other would have moved every operator's operating point.
+// See Findings 27, 29 and 40.
+//
+double div_band_cohmin         = 0.20;
 double div_carrier_cohmin      = 0.30;
 double div_digital_cohmin      = 0.30;
 double div_rade_cohmin         = 0.0;
@@ -3754,9 +3763,18 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->follow_filter = s->follow_filter ? 1 : 0;
   s->normalise     = s->normalise ? 1 : 0;
 
-  if (s->weighting < DIV_WEIGHT_FLAT || s->weighting > DIV_WEIGHT_COHERENCE) {
-    s->weighting = DIV_WEIGHT_COHERENCE;
-  }
+  //
+  // Pinned, not ranged, for the reason DIV_HANG_DEFAULT is: there is no
+  // control for it any more. Coherence weighting was measured four times
+  // - on the estimate, on the gate's ROC, in decibels at matched false
+  // alarm, and on the six SSB captures whose windows are mostly noise,
+  // which is the case it existed for - and it is behind or level every
+  // time. The field stays on the wire and in the file so that neither has
+  // to change shape, and DIV_WEIGHT_COHERENCE stays in the enum because
+  // the offline harness still has to be able to sweep the retired path.
+  // See Findings 27, 29, 40 and 42.
+  //
+  s->weighting = DIV_WEIGHT_FLAT;
 
   //
   // Each reference's own threshold, and the live one. All five share the
