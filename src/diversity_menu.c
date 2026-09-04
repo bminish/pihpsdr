@@ -1553,18 +1553,10 @@ void diversity_menu(GtkWidget *parent) {
   if (have_rx_att && n_adc > 1) {
     indep_att_b = gtk_check_button_new_with_label("ATT");
     gtk_widget_set_tooltip_text(indep_att_b,
-                                "Split the two ADC step attenuators. Normally both run "
-                                "on ADC0's while diversity is on, so that changing it "
-                                "cannot move the weight. Split them to attenuate one "
-                                "antenna alone - the reason to want that is a local "
-                                "source strong enough to overload the main antenna "
-                                "which the second one cannot hear. The step is fed "
-                                "forward into the weight, so the audio does not jump, "
-                                "and the measurement restarts.\n\n"
+                                "Split the two ADC step attenuators.\n\n"
                                 "The pair is remembered and put back the next time you "
                                 "split them: what they correct is how much hotter one "
-                                "antenna is than the other, which is found by ear once "
-                                "and wanted again every time.");
+                                "antenna is than the other.");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(indep_att_b), div_indep_att);
     gtk_box_pack_start(GTK_BOX(topbox), indep_att_b, FALSE, FALSE, 0);
     g_signal_connect(indep_att_b, "toggled", G_CALLBACK(indep_att_cb), NULL);
@@ -1579,12 +1571,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_tooltip_text(norm_b,
                               "Keep the combined output at the level of the first "
                               "antenna alone, instead of letting it rise with the "
-                              "array gain. Measured across the capture set the rise "
-                              "is +1.5 to +8 dB, of which +2.9 to +9.4 dB more than "
-                              "the SNR it buys - so without this, switching diversity "
-                              "on makes the band louder whether or not it made it "
-                              "better. With it, an improvement arrives as the noise "
-                              "floor dropping. Sum and Best only: Null exists to make "
+                              "array gain. Sum and Best only: Null exists to make "
                               "the output quieter and is left alone.");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise);
   gtk_box_pack_start(GTK_BOX(topbox), norm_b, FALSE, FALSE, 0);
@@ -1698,8 +1685,11 @@ void diversity_menu(GtkWidget *parent) {
                               "output to whichever is winning, which is worth "
                               "having when one antenna is much better than the "
                               "other - and when it is not, Sum is worth about "
-                              "1.7 dB more. Null is the diagnostic: it cancels "
-                              "what the two antennas hear in common.");
+                              "1.7 dB more. Null cancels what the two antennas "
+                              "hear in common. It lives or dies on speed, since "
+                              "the weight is applied one block after it is "
+                              "measured, so coarser bins and a short average "
+                              "suit it.");
   gtk_combo_box_set_active(GTK_COMBO_BOX(auto_combo), div_auto_mode);
   gtk_grid_attach(GTK_GRID(grid), auto_combo, 1, 7, 1, 1);
   g_signal_connect(auto_combo, "changed", G_CALLBACK(auto_changed_cb), NULL);
@@ -1772,16 +1762,14 @@ void diversity_menu(GtkWidget *parent) {
                               "Really a block-length control: the block period is the "
                               "reciprocal of the bin width, and the times shown are what "
                               "you get at every sample rate from 48 kHz up.\n\n"
-                              "Coarser bins measure the channel more often, which is what "
-                              "a null is limited by - it applies a weight one block after "
-                              "measuring it, and on a fast path the channel has moved by "
-                              "then. Measured across fourteen captures both Null and Sum "
-                              "want the coarse end on seventeen rows of twenty, worth up "
-                              "to 6.4 dB. Finer bins lift a weak carrier further out of "
-                              "the per-bin noise floor and are worth having on a slow, "
-                              "decorrelated path - one capture in the set wants them - "
-                              "but they are not the general answer the old labelling "
-                              "implied.\n\n"
+                              "The trade is speed against sensitivity. Coarser bins "
+                              "measure the channel more often, which is what a null is "
+                              "limited by: the weight is applied one block after it is "
+                              "measured, and on a fast path the channel has moved by "
+                              "then - so faster is usually the better choice for Null. "
+                              "Finer bins lift a weak signal further out of the per-bin "
+                              "noise floor, which suits a slow path and a carrier that "
+                              "is not going anywhere.\n\n"
                               "The bin width actually achieved is shown in the status "
                               "line.");
   gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 12, 1, 1);
