@@ -893,7 +893,13 @@ typedef struct __attribute__((__packed__)) _div_status_data {
   int8_t   rade_side;
   uint8_t  indep_att;
   uint8_t  att0, att1;
-  uint8_t  pad;
+  //
+  // Holding and standing down are two different answers to "why is the
+  // status line not saying track", and the client's line distinguishes
+  // them - so this travels rather than being inferred. It took the byte
+  // that used to be padding, which keeps the packet the same shape.
+  //
+  uint8_t  standdown;
   //
   mydouble binhz, coherence, carrier, arm_db;
   mydouble occ_lo, occ_hi;

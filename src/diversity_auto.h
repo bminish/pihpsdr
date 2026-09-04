@@ -268,7 +268,7 @@ typedef struct _div_status {
   int    enabled;           // the whole feature, as the radio has it
   int    indep_att;         // ADC1 keeps its own step attenuator
   int    att0, att1;        // the two step attenuators, as the radio has them
-  int    running, holding, clamped;
+  int    running, holding, clamped, standdown;
   int    arm_valid, arm_pick, carrier_valid, occ_valid;
   int    rade_locked, rade_confirming, rade_side;
   double binhz, coherence, carrier, arm_db;

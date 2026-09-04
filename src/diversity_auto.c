@@ -935,6 +935,17 @@ static void div_reset_stats(void) {
   nr_cur0 = nr_cur1 = nr_prev0 = nr_prev1 = 0.0;
   nr_slot_left = 0;
   nr_have_prev = 0;
+  //
+  // The published minimum goes with the slots it was taken from. Left
+  // standing, it is a minimum of the *previous* band measured against a
+  // smoother that has just been re-seeded on this one - so a retune from
+  // a noisy band to a quiet one, or a step attenuator moved, makes
+  // div_window_quiet() true on the first block and stands the combiner
+  // down on a band nothing has been measured on yet. Two DIV_NRATIO_WIN
+  // slots pass before div_arm_nratio_update() writes them again.
+  //
+  nr_min0 = nr_min1 = 0.0;
+  nr_min_valid = 0;
   arm_nratio = 1.0;
   arm_nratio_valid = 0;
   arm_fast0 = arm_fast1 = 0.0;
@@ -1537,6 +1548,7 @@ static int div_window_quiet(void) {
 }
 
 static void div_apply_weight(double wr, double wi);
+static void div_write_weight(double wr, double wi, int track);
 
 //
 // ------------------------------------------------------------------
@@ -1594,7 +1606,11 @@ static void div_hold_or_stand_down(void) {
     if (div_auto_standdown) {
       div_auto_standdown = 0;
       div_jump = 1;
-      div_apply_weight(quiet_wr, quiet_wi);
+      //
+      // Written without tracking: the loop did not measure this weight
+      // this block, it is the one being put back. See div_write_weight().
+      //
+      div_write_weight(quiet_wr, quiet_wi, 0);
     }
 
     quiet_run = 0;
@@ -1617,7 +1633,13 @@ static void div_hold_or_stand_down(void) {
     div_auto_standdown = 1;
   }
 
-  div_apply_weight(0.0, 0.0);
+  //
+  // Zero is what gets applied, not what the loop has: the estimate is
+  // still there and div_track_gain/div_track_phase have to go on showing
+  // it, which under Hold - where the readout is the only sight of the
+  // loop's answer - is the whole point of them.
+  //
+  div_write_weight(0.0, 0.0, 0);
 }
 
 //
@@ -1865,9 +1887,27 @@ static void div_apply_best(double cophase_re, double cophase_im) {
 }
 
 //
-// Write a new weight, rate limited. Called from the analysis thread.
+// The ordinary way in: a weight the loop has just measured, so the
+// tracked readout follows it.
 //
 static void div_apply_weight(double wr, double wi) {
+  div_write_weight(wr, wi, 1);
+}
+
+//
+// Write a new weight, rate limited. Called from the analysis thread.
+//
+// track == 0 writes the weight and leaves the readout alone. Only
+// div_hold_or_stand_down() asks for that, and it is the one caller
+// applying a weight the loop did not produce: zero while the band is
+// empty, and the weight it was standing on when something comes back.
+// div_track_gain/div_track_phase say where the *loop* is, which under
+// Hold is the only sight of it there is - and the weight a stand-down
+// would otherwise push into the readout is the operator's own manual
+// one, so the readout would end up agreeing with the sliders it exists
+// to be compared against.
+//
+static void div_write_weight(double wr, double wi, int track) {
   double mag = sqrt(wr * wr + wi * wi);
 
   if (!isfinite(wr) || !isfinite(wi)) { return; }
@@ -1877,20 +1917,22 @@ static void div_apply_weight(double wr, double wi) {
     wi *= DIV_MAX_WEIGHT / mag;
   }
 
-  //
-  // Where the loop has got to, in the units the operator reads. Kept
-  // separately from div_gain/div_phase, which describe what is actually
-  // being applied to the samples: under Hold the two diverge, and being
-  // able to see the tracked answer while the manual controls hold a
-  // different one is the whole point of the control.
-  //
-  div_track_gain = (mag > 1.0e-9) ? 20.0 * log10(mag) : -27.0;
+  if (track) {
+    //
+    // Where the loop has got to, in the units the operator reads. Kept
+    // separately from div_gain/div_phase, which describe what is actually
+    // being applied to the samples: under Hold the two diverge, and being
+    // able to see the tracked answer while the manual controls hold a
+    // different one is the whole point of the control.
+    //
+    div_track_gain = (mag > 1.0e-9) ? 20.0 * log10(mag) : -27.0;
 
-  if (div_track_gain >  27.0) { div_track_gain =  27.0; }
+    if (div_track_gain >  27.0) { div_track_gain =  27.0; }
 
-  if (div_track_gain < -27.0) { div_track_gain = -27.0; }
+    if (div_track_gain < -27.0) { div_track_gain = -27.0; }
 
-  div_track_phase = atan2(wi, wr) * (180.0 / M_PI);
+    div_track_phase = atan2(wi, wr) * (180.0 / M_PI);
+  }
 
   if (div_auto_hold) {
     //
@@ -2458,6 +2500,30 @@ static void div_process_block(void) {
     // known RADE V1 pilot, which separates the wanted signal from noise
     // and QRM well enough to estimate the two separately.
     //
+    //
+    // Which is why the output-level normaliser has to be fed by hand
+    // here: the powers it wants come from the bins everywhere else, and
+    // this path has none. Summed over the whole tapped buffer instead,
+    // which is what the operator hears anyway. Unconditional, like the
+    // windowed path's: div_norm_update() is also what puts div_norm back
+    // to 1.0 when the control is unticked, so skipping the call while it
+    // is off would leave the last correction in force.
+    //
+    {
+      double nxx = 0.0, nyy = 0.0, nxy_re = 0.0, nxy_im = 0.0;
+
+      for (int i = 0; i < nfft; i++) {
+        const double i0 = work0[2 * i], q0 = work0[2 * i + 1];
+        const double i1 = work1[2 * i], q1 = work1[2 * i + 1];
+        nxx    += i0 * i0 + q0 * q0;
+        nyy    += i1 * i1 + q1 * q1;
+        nxy_re += i0 * i1 + q0 * q1;
+        nxy_im += q0 * i1 - i0 * q1;
+      }
+
+      div_norm_update(nxx, nyy, nxy_re, nxy_im);
+    }
+
     double wr, wi;
     //
     // The operator's sideband, as the pilot bank to search.
@@ -2757,6 +2823,22 @@ static void div_process_block(void) {
   }
 
   //
+  // The output-level normaliser, here rather than after the solve below.
+  //
+  // The three powers it wants are the ones just accumulated, and this is
+  // the last point every windowed reference still passes through: it used
+  // to sit past the FSK/Digital return further down, which left Level
+  // output visible, ticked and doing nothing in that mode.
+  //
+  // The weight it reads is div_cos/div_sin - what the sample path is
+  // multiplying by now, this block's solve not having run yet - which is
+  // the weight the level actually has to be corrected for. Its own
+  // DIV_NORM_TAU smoothing makes a block either way invisible in any
+  // case; the wideband path called it from the same side of the solve.
+  //
+  div_norm_update(cur_xx, cur_yy, cur_xy_re, cur_xy_im);
+
+  //
   // FSK/Digital takes it from here. The region has been accumulated;
   // which of its bins are signal is decided from the spectrum, which is
   // why this cannot happen in div_bin_range() with the rest.
@@ -2871,7 +2953,6 @@ static void div_process_block(void) {
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
-  div_norm_update(cur_xx, cur_yy, cur_xy_re, cur_xy_im);
 
   if (acc_xx <= 0.0 || acc_yy <= 0.0 || wsum <= 0.0) {
     //
@@ -3285,8 +3366,18 @@ void diversity_auto_start(void) {
       // passband and finds the modem's occupied bins there, which is the
       // job the retired RADE passband reference used to do.
       //
+      // Stored and recalled rather than assigned, because the window
+      // pair and the coherence threshold are per reference: dropping the
+      // reference on its own leaves RADE V1's window in force and its
+      // pinned zero as FSK/Digital's threshold, which is that reference's
+      // coherence gate switched off. The menu is told as well, or its
+      // combo goes on naming a reference the engine is not using.
+      //
       t_print("%s: falling back to DIV_REF_DIGITAL_IQ\n", __func__);
+      diversity_auto_ref_store(DIV_REF_RADE_V1);
       div_auto_ref = DIV_REF_DIGITAL_IQ;
+      diversity_auto_ref_recall(DIV_REF_DIGITAL_IQ);
+      g_idle_add(diversity_menu_settings_changed, NULL);
     }
   }
 
@@ -3766,6 +3857,7 @@ void diversity_auto_get_status(DIV_STATUS *st) {
   st->att1            = adc[1].attenuation;
   st->running         = div_auto_running;
   st->holding         = div_auto_holding;
+  st->standdown       = div_auto_standdown;
   st->clamped         = div_auto_clamped;
   st->arm_valid       = div_auto_arm_valid;
   st->arm_pick        = div_auto_arm_pick;
@@ -3807,6 +3899,7 @@ void diversity_auto_apply_status(const DIV_STATUS *st) {
   adc[1].attenuation     = st->att1;
   div_auto_running       = st->running;
   div_auto_holding       = st->holding;
+  div_auto_standdown     = st->standdown;
   div_auto_clamped       = st->clamped;
   div_auto_arm_valid     = st->arm_valid;
   div_auto_arm_pick      = st->arm_pick;

@@ -842,6 +842,7 @@ void send_div_status(int s, const DIV_STATUS *st) {
   data.enabled         = st->enabled;
   data.running         = st->running;
   data.holding         = st->holding;
+  data.standdown       = st->standdown;
   data.clamped         = st->clamped;
   data.arm_valid       = st->arm_valid;
   data.arm_pick        = st->arm_pick;
@@ -853,7 +854,6 @@ void send_div_status(int s, const DIV_STATUS *st) {
   data.indep_att       = st->indep_att;
   data.att0            = st->att0;
   data.att1            = st->att1;
-  data.pad = 0;
   data.binhz        = to_double(st->binhz);
   data.coherence    = to_double(st->coherence);
   data.carrier      = to_double(st->carrier);

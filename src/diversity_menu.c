@@ -322,6 +322,15 @@ static void cleanup(void) {
     // applying anything with nothing on screen to explain it.
     //
     diversity_auto_set_hold(0);
+    //
+    // On a client that clears the local flag and nothing else, so the
+    // release has to go over the wire too. Without it the radio is left
+    // holding - measuring but applying nothing - with the button that
+    // set it gone, and the server only lets go when the client
+    // disconnects. The same message reaches a watching client when the
+    // radio's own dialog is the one being closed.
+    //
+    div_send_settings(DIV_ACTION_NONE);
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     active_menu  = NO_MENU;
@@ -1244,6 +1253,7 @@ gboolean diversity_client_set_status(gpointer data) {
   st.enabled         = d->enabled;
   st.running         = d->running;
   st.holding         = d->holding;
+  st.standdown       = d->standdown;
   st.clamped         = d->clamped;
   st.arm_valid       = d->arm_valid;
   st.arm_pick        = d->arm_pick;
