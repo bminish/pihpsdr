@@ -658,11 +658,62 @@ static void update_visibility(void) {
   // reference for the same reason: the quantities are not comparable, so
   // one number cannot serve four of them. See div_band_cohmin.
   //
+  //
+  // And in Carrier it is labelled for what it does rather than for what
+  // it is meant to do. The tracker accumulates 2*DIV_CARRIER_BINS+1 = 5
+  // bins, where gamma^2-hat's own 1/N bias is comparable with the thing
+  // being measured, and over thirty-two captures the statistic clears
+  // 0.30 on 36.0 % of blocks holding a signal and 36.1 % of blocks
+  // holding none - a ROC on the diagonal, and no threshold separates
+  // them.
+  //
+  // Widening the accumulation is the fix Finding 26 proposed and it does
+  // not work: swept from 5 bins to 65 the two curves fall together and
+  // never part - 36.0/36.1 % at five bins, 29.1/29.7 % at sixty-five -
+  // because a carrier occupies the same few bins however many are
+  // accumulated around it, so every bin added is noise on both sides of
+  // the comparison. The half of that hypothesis which does work is the
+  // averaging time, and the operator already has that slider: over the
+  // captures carrying a carrier, 0.5 to 30 s moves the no-signal rate
+  // from 37.0 % to 32.2 % and the signal rate from 53.9 % to 56.2 %,
+  // with the best separation at 10 s.
+  //
+  // So the constant is left alone and the tooltip says what the control
+  // is. The label is not lengthened to say it: column 0 and the 300 px
+  // sliders beside it set this dialog's width together, and a longer
+  // string here can push it out - which is the one thing the status line
+  // is built the way it is to prevent. Every other rationale in this
+  // dialog lives in a tooltip and so does this one.
+  //
+  // The control is not inert. It still holds blocks; it just cannot tell
+  // which ones deserve it.
+  //
   if (coh_label) {
     gtk_label_set_text(GTK_LABEL(coh_label),
                        (ref == DIV_REF_RADE_V1) ? "Min quality (%)" : "Min coherence (%)");
     gtk_widget_set_tooltip_text(coh_label,
-                                (ref == DIV_REF_RADE_V1)
+                                (ref == DIV_REF_CARRIER)
+                                ? "This gate does not discriminate in Carrier mode, "
+                                "and no setting of it will.\n\n"
+                                "The carrier tracker accumulates five bins, which is "
+                                "too few for a coherence to mean much: the estimate "
+                                "two uncorrelated noises reach by accident is about "
+                                "1/N, and with N this small that is where the "
+                                "threshold has to sit. Measured over thirty-two "
+                                "recordings it passes 36 % of blocks that hold a "
+                                "signal and 36 % of blocks that hold none. "
+                                "Accumulating more bins does not help - swept to "
+                                "thirteen times as many, the two rates stay "
+                                "together - because a carrier occupies the same few "
+                                "bins however wide the sum.\n\n"
+                                "The control still works, in that it still holds "
+                                "blocks; it just cannot tell a carrier from an empty "
+                                "band. What does separate them here is Averaging: "
+                                "longer is better, and 10 s measured best.\n\n"
+                                "The estimate itself is fine. It is a real carrier "
+                                "measured to 0.03 Hz - it is only this gate that "
+                                "cannot say whether there is one."
+                                : (ref == DIV_REF_RADE_V1)
                                 ? "Hold below this pilot quality. RADE V1 measures "
                                 "acc_sig/(acc_sig+noise) - a signal fraction, not a "
                                 "coherence - so the same percentage asks for less "
@@ -681,8 +732,9 @@ static void update_visibility(void) {
                                 "a working decode."
                                 : "Hold below this coherence. Each reference keeps its "
                                 "own value, because each measures the coherence over "
-                                "different bins: the whole window in Window and "
-                                "Carrier, only the occupied ones in FSK/Digital.\n\n"
+                                "different bins: the whole window in Window, five "
+                                "about the carrier in Carrier, only the occupied "
+                                "ones in FSK/Digital.\n\n"
                                 "The bottom of the slider is not zero but the "
                                 "coherence two uncorrelated noises reach by accident "
                                 "one block in a hundred, which is what the estimator "

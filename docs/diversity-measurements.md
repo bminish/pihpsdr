@@ -6906,15 +6906,21 @@ holds is the false-alarm line, and that part stands.
   number on a quiet band, where it must be smaller, and the radio's own
   ADC overload indication alongside it, because the tap is downstream of
   the DDC and cannot see headroom at the converter.
-- **The Carrier reference's coherence gate has no discriminating power.**
-  Measured over thirty-two captures it clears 0.30 on 34.7 % of blocks
-  that hold a signal and 36.0 % of blocks that hold none, and no threshold
-  separates them (Finding 26). Five bins put `γ̂²`'s own `1/N` bias where
-  the threshold is. The fix is more bins or a longer average -
-  `DIV_CARRIER_BINS`, or letting the carrier tracker's own smoothing feed
-  the gate - and neither has been tried. Until then the mode is usable
-  because the *estimate* is fine on a real carrier; it is the gate that
-  cannot tell whether there is one.
+- **The Carrier reference's coherence gate has no discriminating power,
+  and widening it is not the answer.** Both halves of Finding 26's
+  proposed fix are now swept. `DIV_CARRIER_BINS` from 2 to 32 - five bins
+  accumulated to sixty-five - moves the signal and no-signal rates
+  together and never parts them, because a carrier occupies the same few
+  bins however many are summed around it, so every bin added is noise on
+  both sides. A longer average does separate them, from 37.0 % to 32.2 %
+  false alarms across 0.5 to 30 s with the best signal-kept figure at
+  10 s, and that is a slider the operator already has. Nothing is changed
+  in the engine and the tooltip now says so; the *estimate* remains fine
+  on a real carrier - 0.03 Hz of error - and it is only the gate that
+  cannot tell whether there is one. **What is still untried** is the third
+  option Finding 26 named and this sweep did not test: letting the carrier
+  tracker's own smoothed peak, rather than a coherence over the bins,
+  decide whether a carrier is present.
 - **The weighting and threshold pair is measured twice; the change is
   still not made.** Finding 29 ran the sweep the previous version of this
   item asked for, and Finding 40 re-ran it after the harness was fixed:
@@ -7849,6 +7855,74 @@ stops depending on the hang, and a 5.1 s fade of the same station keeps
 its lock and returns to within 0.033. The hang assertion is inverted,
 because the contract it encoded - "the setting is what decides" - is the
 one deliberately broken.
+
+### `src/diversity_menu.c` — the Carrier gate is labelled for what it does
+
+Finding 26 measured the Carrier reference's coherence gate as having no
+discriminating power - over thirty-two captures it cleared 0.30 on 34.7 %
+of blocks holding a signal and 36.0 % of blocks holding none - and said
+"the fix is more bins or a longer average - `DIV_CARRIER_BINS`, or letting
+the carrier tracker's own smoothing feed the gate - and neither has been
+tried."
+
+Both are tried here. **The first half of that hypothesis is wrong.**
+`run_ref` rebuilt at five values of `DIV_CARRIER_BINS`, every capture,
+signal against the five no-signal ones:
+
+| bins either side | accumulated | signal ≥ 0.30 | no-signal ≥ 0.30 | signal kept at 5 % FA |
+|---|---|---|---|---|
+| **2, as shipped** | 5 | 36.0 % | 36.1 % | 10.8 % |
+| 4 | 9 | 32.7 % | 33.0 % | 11.4 % |
+| 8 | 17 | 30.7 % | 31.9 % | 6.6 % |
+| 16 | 33 | 29.2 % | 32.8 % | 8.7 % |
+| 32 | 65 | 29.1 % | 29.7 % | 9.3 % |
+
+**The two curves fall together and never part.** Thirteen times as many
+bins moves the gap between them from 0.1 to 0.6 points, and the signal
+kept at a fixed 5 % false-alarm rate does not improve at any width - it is
+worse at 8 and 16 than at the shipped 2. The reason is not subtle once
+seen: a carrier occupies the same few bins however many are accumulated
+around it, so every bin added is noise on **both** sides of the
+comparison. Widening the sum lowers `γ̂²`'s `1/N` bias and lowers the
+signal's share of the window with it, in step.
+
+The first row also reproduces Finding 26 - 36.0 against 36.1 % where it
+published 34.7 against 36.0, the difference being that the signal set here
+is every capture that is not one of the five rather than that finding's
+narrower selection.
+
+**The second half does work, weakly, and the operator already has it.**
+The averaging time, swept on the six captures that actually carry a
+carrier plus the five empty ones:
+
+| averaging | signal ≥ 0.30 | no-signal ≥ 0.30 | signal kept at 5 % FA |
+|---|---|---|---|
+| 0.5 s | 53.9 % | 37.0 % | 24.5 % |
+| 2.0 s | 52.3 % | 37.4 % | 25.1 % |
+| **10.0 s** | 53.4 % | **34.0 %** | **30.0 %** |
+| 30.0 s | 56.2 % | **32.2 %** | 15.4 % |
+
+Separation improves monotonically to 30 s on the false-alarm column, and
+the signal kept peaks at 10 s - past that the average holds too few
+effective blocks for the threshold that 5 % now demands. It is a real
+effect and it is a slider the operator already has.
+
+**So nothing is changed in the engine.** `DIV_CARRIER_BINS` stays at 2,
+because widening it buys nothing and costs the tracker's ability to
+resolve one carrier from another - which is the whole point of a search
+region narrow enough to park on a splattering carrier 5 kHz up. The
+Carrier row's tooltip now says the gate does not discriminate, that no
+setting of it will, that accumulating more bins was tried and does not
+help, and that Averaging is the control that does - and it says the
+estimate itself is fine, because it is: 0.03 Hz of error and 0.002 Hz rms
+of jitter on a real carrier. It is only the gate that cannot say whether
+there is one.
+
+The label is deliberately not lengthened to carry that. Column 0 and the
+300 px sliders beside it set this dialog's width between them, and a
+longer string there can push it out - which is the one thing the fixed
+44-character status line exists to prevent. Every other rationale in the
+dialog lives in a tooltip and so does this one.
 
 ### `src/diversity_auto.c`, `src/diversity_menu.c` — the combiner stands down on an empty band
 

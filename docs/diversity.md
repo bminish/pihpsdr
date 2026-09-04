@@ -748,6 +748,22 @@ built up for AM are still there after an evening on SSB.
 Measured at 384 kHz, where a bin is 11.7 Hz wide: **0.03 Hz of error and
 0.002 Hz rms of jitter** at 11 s averaging, holding at −6 dB carrier SNR.
 
+**The estimate is good and the gate is not.** `Min coherence` has no
+discriminating power in this mode: the tracker accumulates
+`2·DIV_CARRIER_BINS+1` = five bins, where `γ̂²`'s own `1/N` bias sits about
+where the threshold has to, and over thirty-two captures it clears 0.30 on
+36.0 % of blocks holding a signal and 36.1 % of blocks holding none. **No
+threshold separates them, and accumulating more bins does not either** —
+swept from five bins to sixty-five the two rates fall together and never
+part, because a carrier occupies the same few bins however wide the sum,
+so every bin added is noise on both sides of the comparison. What does
+separate them is the averaging time: 0.5 to 30 s takes the no-signal rate
+from 37.0 % to 32.2 %, with the best signal-kept figure at 10 s. The
+constant is therefore left alone, the tooltip says what the control is,
+and the mode remains usable because what it measures is a real carrier.
+See Finding 26 and "What was changed" in
+[`diversity-measurements.md`](diversity-measurements.md).
+
 It does not use WDSP's SAM PLL, which is deliberately set for fast
 acquisition — 39.8 Hz natural frequency, ~25 Hz loop noise bandwidth,
 around 7 Hz of jitter on a weak carrier. That is right for demodulating
