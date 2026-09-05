@@ -156,6 +156,40 @@ carry signal, 0.5 s beats 2.0 s **on the mean on all nine captures the
 guard is clean on** and at the first percentile on five, and loses 0.43 dB
 on one. See "What was changed".
 
+**Finding 49 is six marginal RADE V1 captures - five on 41 m under the
+heaviest analog interference in the set, one on 160 m - and it is the
+first time in this document that a combiner has had somewhere to go.**
+Finding 45's captures were 97.9 to 100 % in sync on one antenna and said
+so; here arm 0 alone recovers 6 % of the minute on one capture and 14 % on
+another. Three things come out of it. **The prize is small and the
+correlator collects it:** the best single complex weight, chosen per block
+with hindsight from independently measured covariances, is worth **0.7 to
+2.3 dB**, a weight per frequency bin adds 0.2 to 0.95, an independently
+computed maximum-ratio weight decodes *fewer* frames than the shipping one
+while reporting 1 dB more SNR, and the correlator lands level with the
+better antenna over the set - 1376 synced frames against 1378. **The
+engine around it is 91 frames worse than one antenna**, because
+`div_process_block()`'s RADE branch has no stand-down: when the correlator
+produces no weight - 98.6 % of blocks on two of these captures - nothing
+ever asks whether what is applied is still worth anything. On `153114`
+that leaves the operator's manual unit weight in force for **42 of the 60
+seconds** and the modem decodes nothing where arm 0 alone decodes 70
+frames; on `152310` it is a stale answer held for 57 seconds, and it
+decodes nothing where arm 0 decodes 31. Two fallback rules were scored and
+both fix it, +26 and +49 frames. And
+**every decode figure in this document carries an undeclared error bar**:
+`arm0` and a `w = 0` weight stream are bit-identical input to `score_rade`
+and score up to 25 frames of 500 apart, reproducibly, depending on how
+many librade instances the run opens.
+
+**Finding 49's session also produced the worst false-alarm column this
+document has.** `151108` - 41 m band noise, `AM`, both pilot banks
+searched - false-alarms at every `RADE_USE_RATIO` up to and including
+**2.500, the shipping value**, and clears at 2.625. The margin that
+`112151` left at 5 % is now none. It produces no weight while it does it,
+and it closes the direction the threshold assessment left open: the
+constant cannot come down.
+
 **Finding 47 is now fixed, and the fix is a different estimator rather
 than a better guard.** The branch noise floor no longer comes from a
 minimum over *time*, which needs the band to go quiet and which a fading
@@ -6992,6 +7026,365 @@ says the slider is worth three frames of 450 there in any case, but it is
 the one corner of this change that rests on an argument rather than on a
 decode.
 
+## Finding 49: six marginal RADE V1 captures, the first set with room for a combiner, and the engine gives it away
+
+Six `.divc` files, all 192 kHz DDC and nfft 16384 - 11.72 Hz bins, 85.3 ms
+blocks - one minute each, RADE V1 selected, objective **Sum**, flat
+weighting. One on 160 m and five on 41 m, all `DIGL` with a
+-2500..-500 Hz filter, so `div_rade_side_expected()` returns -1 and only
+the LSB pilot bank is searched. They are what item 0 of "the captures, in
+the order they are worth taking" asked for and called **the most valuable
+capture on the list**: RADE V1 on a path deep enough into fading and QRM
+that one antenna alone loses frames. Five of the six do lose frames on the
+better antenna, four of them more than half. `232850` was recorded the
+evening before the other five.
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` |
+|---|---|---|---|---|---|---|
+| dial | 1.987 MHz | 7.197 | 7.197 | 7.177 | 7.177 | 7.177 |
+| attenuators, ADC0 / ADC1 | **0 / 16 dB** | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| averaging, as recorded | 0.62 s | 0.30 | 0.30 | 0.33 | 0.33 | 0.33 |
+| station transmitting | 100 % | 51 % | 60 % | 91 % | 45 % | 64 % |
+| modem-band SNR, arm 0 | +11.85 dB | +5.56 | +9.53 | +7.93 | **+2.87** | +3.98 |
+| modem-band SNR, arm 1 | +4.68 | +5.03 | +3.84 | +2.50 | **-1.14** | -0.30 |
+| branch noise `N0/N1` | **+25.65** | -1.22 | -1.32 | +6.06 | +6.20 | +6.08 |
+| inter-arm signal coherence | 0.918 | 0.619 | 0.247 | 0.401 | 0.818 | 0.441 |
+| fade depth p10..p90, arm 0 | 4.9 dB | 13.4 | 8.8 | 11.6 | 10.7 | 9.6 |
+| `±14 kHz` occupied over +10 dB | 7 % | 29 % | 24 % | **40 %** | 38 % | 39 % |
+| strongest interferer over floor | +17.7 dB | +30.3 | +26.7 | +29.6 | **+38.2** | +28.2 |
+
+Everything in that table is measured from the `.divc` files with an
+independent implementation - read the blocks out with the layout in
+`src/diversity_capture.h`, FFT each arm, take the modem band as **+750 to
++2200 Hz in the tapped frame**, which is where bank 0's carriers sit.
+"Transmitting" is the blocks whose summed in-band excess over the noise
+floor, both arms, exceeds -3 dB; every SNR, coherence and fade figure is
+over those blocks only, because the other half of each minute is the
+station listening and averaging it in makes the arms look alike.
+
+The noise floor is the **mean over a fixed quiet-bin set**, not a
+percentile: the quiet bins are chosen once from the whole-capture average
+spectrum, and the per-block level is then the mean over them. A percentile
+taken per block would read about 6.5 dB low - the 20th percentile of a
+one-look periodogram is 0.22 of its mean - which is harmless in the
+shipping estimator, where the same bias falls on both arms of a ratio, and
+not harmless at all in an absolute SNR.
+
+**These are heavily interfered captures, not merely weak ones.** A quarter
+to two fifths of the whole 28 kHz DDC span stands more than 10 dB over the
+noise floor, the strongest interferer reaches **+38 dB**, and on `153114`
+it starts **413 Hz above the top modem carrier** and runs to +6.8 kHz.
+
+### The harness first: five of six replay bit-exactly
+
+`replay_rade --verify` reproduces the recorded correlator state block for
+block on `152310`, `152423`, `152724`, `153114` and `153301`. `232850`
+does not, on all 703 blocks, and for the reason `193105` did not in
+Finding 45: **it opens already locked**, so the replay starts from a cold
+correlator against a recording of a warm one. Lock, quality and SNR
+converge within sixty blocks and agree to seven significant figures from
+there; only `freq_off` stays apart, -0.264 Hz against the recorded -0.653,
+which is the loop sitting in a different place inside the same frequency
+cell. Its numbers below are used, and they are approximate.
+
+### The detector, as it ran
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` |
+|---|---|---|---|---|---|---|
+| acquisitions | 1 | 1 | 1 | 2 | 1 | 4 |
+| locked | 94.2 % | **11.1 %** | 45.2 % | 58.7 % | **18.6 %** | 57.0 % |
+| first lock | 3.5 s | 2.1 | 2.2 | 19.2 | **42.3** | 2.1 |
+| mean pilot SNR | -10.36 dB | -15.73 | -13.27 | -10.72 | -14.12 | -14.63 |
+| mean quality | 0.089 | 0.047 | 0.057 | 0.125 | 0.047 | 0.073 |
+| **produced a weight** | 66.9 % | **1.3 %** | 25.7 % | 32.1 % | **1.4 %** | 23.8 % |
+
+The last row is the one that matters and it has never been tabulated
+before. `rade_corr_process()` returns a usable weight on **1.3 % of blocks
+on `152310` and 1.4 % on `153114`** - nine and ten blocks of 703, which is
+**under a second of each minute**. Lock is not the same thing as a weight:
+the loop can be locked and still frozen by `RADE_USE_RATIO`, and on these
+two it nearly always is - `152310` is locked for 78 blocks and produces a
+weight on nine of them.
+
+Locked time is also not the same thing as available time. Against the
+fraction of each minute the station was actually transmitting, the
+detector holds lock on 22 % of it on `152310` and 42 % on `153114`,
+against 65 to 94 % on the other four.
+
+### Decode, which is the only thing that settles it
+
+`score_rade`, and **every table below is internally from one invocation**
+- there are two of them, a seven-stream run and an eight-stream run, and
+each table carries its own arm 0 row from its own run. That is not
+fastidiousness: the last section of this finding shows the two runs give
+arm 0 itself 1378 and 1373 frames, and mixing them would manufacture five
+frames out of nothing. **`zero` is arm 0 alone scored as a weight stream**
+- `w = 0` for every block, which combines to bit-identical samples - and
+it, not the `arm0` row, is the reference every delta is taken against.
+
+From the seven-stream run. Synced frames, of about 500 in a minute:
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` | total |
+|---|---|---|---|---|---|---|---|
+| arm 0 alone (`zero`) | 490 | 31 | 208 | 343 | 70 | 236 | **1378** |
+| arm 1 alone | 317 | 0 | 38 | 340 | 0 | 189 | 884 |
+| correlator weight | 490 | 29 | 245 | 325 | 89 | 198 | **1376** |
+| **the whole engine** | 490 | **0** | 240 | 339 | **0** | 218 | **1287** |
+
+**This is the first set in this document where a combiner has somewhere to
+go.** Finding 45's six captures were 97.9 % to 100 % in sync on arm 0
+alone, and said so; here arm 0 alone recovers 6 % of the minute on
+`152310`, 14 % on `153114`, and 42 to 69 % on three more. Arm 1 alone
+recovers nothing at all on two of them.
+
+And the correlator's weight is **level with arm 0 over the set: 1376
+against 1378**, winning 37 frames on `152423` and 19 on `153114`, losing
+18 on `152724` and 38 on `153301`.
+
+### The ceiling, and it is low
+
+Two independent bounds, neither using the correlator.
+
+**A single complex weight, chosen per block with hindsight.** Per block,
+over the transmitting blocks, from the measured 2x2 signal and noise
+covariances: the in-band SINR of arm 0 alone, and the maximum over all
+complex `w` of the SINR of `x0 + w·x1`.
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` |
+|---|---|---|---|---|---|---|
+| arm 0 alone | +12.34 dB | +5.68 | +9.54 | +8.14 | +2.10 | +4.15 |
+| best `w` per block | +13.13 | +8.02 | +10.24 | +8.80 | +3.22 | +5.10 |
+| **available** | **+0.79** | **+2.34** | **+0.70** | **+0.66** | **+1.12** | **+0.95** |
+
+One fixed weight for the whole minute reaches +0.15 to +0.87 dB of the
+same quantity. **Between two thirds of a decibel and two and a third is
+the entire prize**, and the per-block figure is the optimistic end of it -
+it is fitted and scored on the same block, which is Trap 1, and it is an
+in-band SINR that counts co-channel QRM inside 750..2200 Hz as wanted
+signal.
+
+The reason it is so small is in the characterisation table. The two arms
+are **4 to 6 dB apart in SNR** on five of six, which caps two-branch
+maximum ratio at 1.0 to 1.5 dB before anything else, and the inter-arm
+signal coherence is **0.25 to 0.82**, which takes more off: the part of
+arm 1 that is incoherent with arm 0 adds as noise, not as signal.
+
+**A weight per frequency bin buys almost nothing.** Each 85.3 ms block cut
+into eight 2048-sample sub-blocks - 93.75 Hz bins, eight looks, both
+residuals bias-corrected for the parameters fitted - gives the depth a
+scalar weight nulls to against the depth a weight per bin reaches:
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` |
+|---|---|---|---|---|---|---|
+| scalar weight | 4.94 dB | 1.31 | 2.19 | 1.06 | 1.19 | 0.66 |
+| weight per bin | 5.66 | 2.22 | 3.14 | 1.97 | 1.41 | 1.21 |
+| **per-bin gain** | 0.72 | 0.91 | 0.95 | 0.91 | 0.22 | 0.56 |
+
+0.2 to 0.95 dB, against the **2.2 dB** Finding 17 measured on `000747`.
+The flat scalar channel model is not what is costing anything here: a
+1450 Hz modem band on a 41 m path at these distances is one or two modes,
+not twenty frequency cells.
+
+**And an independently computed maximum-ratio weight does not beat the
+correlator on decode.** The same 2x2 covariances give `w = conj((N⁻¹h)₁ /
+(N⁻¹h)₀)` per block, smoothed at 0.3 s, and the SNR-weighted mean of it as
+one fixed weight per capture. Scored through librade in the same
+invocation as the table above:
+
+From the eight-stream run, which is why its arm 0 row is not the one
+above:
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` | total |
+|---|---|---|---|---|---|---|---|
+| arm 0 alone | 490 | 31 | 207 | 339 | 70 | 236 | 1373 |
+| correlator | 490 | 29 | 245 | 325 | 89 | 198 | 1376 |
+| oracle, 0.3 s | 397 | 29 | 204 | 318 | 70 | 237 | 1255 |
+| oracle, fixed | 399 | 31 | 236 | 343 | 89 | 239 | 1337 |
+
+The oracle raises the SNR librade reports - **+1.1 dB on `232850` and
++1.0 dB on `153301`** - and decodes fewer frames doing it. That is the
+whole tension in one place: a weight that maximises in-band SINR changes
+the composite channel the modem has to equalise, and on a signal this
+close to threshold the modem would rather have a channel it can follow.
+
+**So the answer to "is the combiner leaving anything on the table" is
+no, for the weight itself.** Nothing computed here - not the correlator,
+not maximum ratio with hindsight, not a weight per bin - beats one antenna
+by more than the scatter, and the analytic ceiling says why.
+
+### The engine is another matter, and it is 91 frames
+
+The `engine` row above is `run_ref --ref rade`, which is the shipping
+`diversity_auto.c` on recorded samples with the worker thread, the slew,
+the hold and the objective all running - what the radio applies, as
+against the correlator's raw answer. **It is 91 synced frames below arm 0
+alone over the six, and it decodes nothing at all on two of them.**
+
+The cause is in `div_process_block()`'s RADE V1 branch. When
+`rade_corr_process()` returns 0 it sets `div_auto_holding = 1` and
+returns, leaving `div_cos` and `div_sin` where they were. There is no
+stand-down on this path - `div_hold_or_stand_down()` is reached only from
+the windowed references - so what "holding" leaves applied is whatever was
+applied last, and before the first solve that is the operator's own
+`div_gain` and `div_phase`: **1.0 at 0 degrees, the two antennas summed
+at equal weight with no phase correction.**
+
+On `153114` the correlator solves ten times in the minute and the first of
+them is at block 498, **42.5 seconds in**. The radio therefore runs 42
+seconds of a 60-second recording adding a 10 dB weaker antenna at unit
+gain and arbitrary phase - `|w|` is exactly 1.000 for every one of those
+498 blocks - and then holds 0.675 for the rest. Arm 0 alone decodes 70
+frames there. The engine decodes **none**.
+
+`152310` also decodes none, and it is a different shape of the same gap.
+Its first solve is at block 27, so only 2.3 s runs at the manual weight;
+the other 57 seconds hold a single stale answer, `|w|` 0.447 at -72
+degrees, from a correlator that solved nine times in the minute. **The two
+failures are one absent rule seen twice** - nothing on this path ever asks
+whether the weight it is applying is still worth anything - but only
+`153114`'s is large enough to stand clear of what the last section of this
+finding says the metric is worth. `152310`'s whole 31 frames turn on those
+first 2.3 seconds, which is not a safe thing to rest a mechanism on.
+
+Two candidate rules, both scored the same way, both referenced to arm 0
+alone as `zero`:
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` | total | vs arm 0 |
+|---|---|---|---|---|---|---|---|---|
+| arm 0 alone | 490 | 31 | 208 | 343 | 70 | 236 | 1378 | - |
+| shipping engine | 490 | 0 | 240 | 339 | 0 | 218 | 1287 | **-91** |
+| **A: zero until first solve** | 490 | 29 | 250 | 347 | 89 | 199 | 1404 | **+26** |
+| **B: zero whenever unlocked** | 490 | 29 | 242 | 349 | 89 | 228 | 1427 | **+49** |
+
+**A** applies `w = 0` - arm 0 alone - until the correlator has produced
+one weight, and the engine's own weight after that. It recovers the whole
+of `153114`, which is the case it was built for, and costs 19 frames on
+`153301`, where the first solve also arrives at block 27 and the unit
+weight happened to be serviceable for those 2.3 seconds. That it also
+recovers `152310` is the puzzle noted above: A and the shipping engine
+differ there on 27 blocks out of 703 and score 29 against 0.
+
+**B** additionally drops to arm 0 on any block the correlator is not
+locked. It is the better of the two on the set and it loses less on
+`153301`.
+
+**B is not the same as the rule Finding 45's `drop` column measured and
+rejected.** That one dropped the weight on every block that produced no
+weight, including blocks inside a healthy lock where `RADE_USE_RATIO` had
+merely frozen the estimate for a moment, and it scored 45 frames worse
+than holding. B drops only when the *lock* is gone, which on these
+captures totals 41 to 625 blocks of 703. Holding a weight through a freeze
+is right; holding one through a minute of no lock is not.
+
+Neither is a validated design. Both were built by rewriting the recorded
+weight series and scoring it, so neither carries the slew a real
+implementation would need on the way down, and B in particular would want
+the hang time in front of it rather than the raw lock flag. **What is
+measured is the size of the opportunity, not the shape of the remedy** -
+and the opportunity is 91 frames of 1378. It is not spread across the set:
+`152310` and `153114` supply **-101 of it between them**, `153301` -18,
+`152724` -4, and `152423` runs the other way at +32.
+
+### The averaging time is not the lever
+
+`replay_rade --tau` from 0.2 s to 2.0 s, on all five 41 m captures:
+acquisitions, locked fraction and time to first lock are **identical at
+every setting**, to the block. Only the weight's jitter and the reported
+pilot SNR move. That is Finding 48's claim - the averaging reaches what is
+applied and not what is detected - confirmed on real signals rather than
+argued.
+
+On decode, and this is the corner Finding 48 left open, **RADE V1 had not
+been decode-scored at the new 0.5 s default.** It is now. Against the
+0.30-0.33 s the operator had set on these captures:
+
+Eight-stream run, both rows:
+
+| | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` | total |
+|---|---|---|---|---|---|---|---|
+| as recorded | 490 | 29 | 245 | 325 | 89 | 198 | 1376 |
+| at 0.5 s | 490 | 29 | 200 | 331 | 89 | 197 | 1336 |
+
+40 frames of 1376, and 45 of them are on `152423` alone. **This does not
+justify moving the default**, in either direction: the spread is inside
+what the next section says the metric is worth, and the two captures with
+the most to gain do not move at all. It does mean the 0.5 s default has
+now been decode-scored on RADE V1 and is not a regression.
+
+`RADE_USE_RATIO` was swept from 1.5 to 3.0 on all five as well. Locked
+fraction is non-monotonic and moves by up to twenty points with no trend -
+`152724` reads 87, 67, 67, 64, 59, 56, 65 % across the sweep - which is
+the same scatter Finding 41's table shows. Nothing in it argues for a
+change, and the next-but-one section is a reason not to lower it.
+
+### A caveat that reaches every decode figure in this document
+
+`arm0` and a `w = 0` weight stream are the same samples. `score_rade`
+computes the first as `z0` and the second as `z0 + (0·z1 - 0·z1)`, which
+is bit-identical for every finite input, and pushes both through
+`(float)`. **They do not score the same.**
+
+On `153301`, in one invocation: `arm0` 211 synced frames and `zero` 236,
+the same samples, 25 apart. On `232850`: `arm0` 485 with four streams open
+and 490 with three or five. Three identical `w = 0` streams in one run
+agree with each other exactly and all three disagree with `arm0`. Arm 0
+alone totals **1378 in the seven-stream run and 1373 in the eight-stream
+one**, which is the same effect seen from the other end. Every
+configuration is reproducible - the same command gives the same answer
+every time - and the answer changes when the *number* of librade instances
+in the run changes.
+
+The samples are identical, so the difference is inside librade. It is not
+diagnosed further here; the shape of it - later instances agreeing with
+each other, the first differing, the effect largest on the most marginal
+capture - is consistent with heap alignment reaching the DNN kernels,
+which the build warns are SSE2 only, but that is a hypothesis and it has
+not been tested.
+
+**The consequence is not a hypothesis.** The "combined - best arm"
+statistic this document has quoted since Finding 41 is computed across
+that boundary on every capture, because the reference is `arm0` at stream
+index 0 and everything compared with it is not. Measured here it is worth
+**up to 25 synced frames of 500 on a marginal capture and 5 of 490 on a
+clean one** - which is larger than Finding 45's "+53 on one capture, -29
+on another and nothing at all on four", larger than Finding 35's "three
+synced frames of 450", and larger than most of the per-capture deltas in
+this finding.
+
+Everything above is quoted against a `w = 0` stream for that reason, and
+per-capture deltas smaller than about 25 frames are not to be read as
+real. What survives it is `152423`'s +37, the 89-frame swing the engine
+fallback recovers on `153114`, and the engine's -91 over the set.
+
+The cheap fix in the harness is to add a `w = 0` stream and use it as the
+reference rather than `arm0`, which is what was done here. It costs one
+decoder per run and it puts the reference on the same footing as the thing
+being measured. Whether the earlier findings move when re-scored that way
+is open, and nothing has been re-scored.
+
+### What this does not say
+
+**It does not say the combiner is useless on a marginal RADE path.** It
+says that on *these* six, with these two antennas, the available gain from
+any single complex weight is 0.7 to 2.3 dB, and that the correlator
+collects enough of it to stay level with the better antenna while beating
+it by 37 frames on one capture and 19 on another. A pair of antennas
+further apart in space, or a path with genuinely uncorrelated fading -
+Finding 47's 41 m AM pair reached fade correlations this set does not -
+would move the ceiling and not this loop.
+
+**It does not blame the interference.** The occupancy figures are the
+largest in the document and the correlator's peak-over-floor statistic is
+built for exactly that case; nothing here shows it failing on account of
+QRM. On `153114` the correlator's own MVDR guard span, 2200 to 2850 Hz,
+carries **26.7 dB more power than the modem band it is meant to be the
+reference for**, and that capture is the one where the correlator gains
+the most.
+
+**It does not settle whether A or B is the right fallback**, or what the
+stand-down for RADE V1 should look like. It settles that there has to be
+one.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -7081,12 +7474,69 @@ Non-monotonic and within a few points - that is scatter, not a trend. The
 only consistent effect is `233241`'s first lock moving from 19.8 s to
 13.7 s at 2.00 and below.
 
+### Two more columns, and the margin at 2.50 is now zero
+
+Finding 49's session left two 41 m captures on 7.2108 MHz with **no RADE
+signal anywhere** - `AM`, symmetric filter, Carrier reference, so
+`div_rade_side_expected()` returns 0 and **both pilot banks are searched**,
+which is the weakest setting the detector has. They are bare band noise
+from -2.5 kHz upwards, arm 0's floor sitting **5.71 dB** over arm 1's
+averaged across -3 to +6 kHz, with broadcast stations below -2.8 kHz and
+nothing else in the span. Taken 2 minutes 40
+seconds apart on the same antennas and the same dial.
+
+| `use_ratio` | `151108` 41 m noise | `151348` 41 m noise |
+|---|---|---|
+| 1.000 | 1 / 35 % | 1 / 81 % |
+| 1.250 | 1 / 35 % | 1 / 81 % |
+| 1.375 | 1 / 35 % | 1 / 25 % |
+| 1.500 | 1 / 35 % | 0 |
+| 1.625 to 2.250 | 1 / 12 to 14 % | 0 |
+| 2.375 | **2 / 32 %** | 0 |
+| **2.500** | **1 / 14 %** | 0 |
+| 2.625 and above | 0 | 0 |
+
+**`151108` is the worst column this table has ever had.** It produces a
+false lock at *every* threshold up to and including **2.500, which is the
+shipping `RADE_USE_RATIO`**, and clears only at 2.625. The previous worst,
+`112151`, cleared at 2.375 and that is what the margin assessment below
+was written against. There is no margin left: the shipping value is the
+last one that still false-alarms.
+
+Two things soften it and neither removes it. The lock at 2.500 produces
+**no weight at all** - `weight_jitter` is 0.00000, the freeze holds
+throughout - so what reaches the audio is unchanged; and the quality on
+it is 0.0202, against 0.51 for the genuine lock on `232842`, so the
+reading is honest about what it has found. What it costs is what a false
+lock always costs: `rade_corr_reset()` does not run, the accumulators go
+on ageing on noise, and a real signal arriving during it has to displace
+an existing lock rather than acquire cleanly.
+
+`151348`, on the same antennas and the same frequency less than three
+minutes later, clears at 1.500. The two together say the same thing
+`111852` and `112151` said on mediumwave: what decides this is the shape
+of the noise in that particular minute, not the band, the rate or the
+configuration.
+
+**This does not force `RADE_USE_RATIO` up.** Finding 49 shows the
+constant already freezing the weight on 98.6 % of blocks on the two
+captures where a weight was most wanted, and raising it would freeze more.
+What it does is close the direction the note below leaves open - the
+threshold cannot come *down* - and it moves the open item from "one more
+mediumwave capture" to "the amateur bands produce this too, at the
+shipping value".
+
 ### How much margin is left, and does `112151` force a change
 
 Swept finely, `112151` clears at **2.375** - the false lock survives 2.25
 and is gone by 2.375. The shipping 2.50 therefore sits **5 % above the
 false-alarm boundary**, where before this capture the worst case was
 `233615` at 1.50 and the margin was 67 %.
+
+**`151108`, in the section above, has since taken that to zero**: it
+false-alarms at 2.500 itself and clears at 2.625. Everything below is left
+as written - none of the cost figures move - but the "5 %" is now "none",
+and the direction the assessment leaves open is the only one still open.
 
 The cost of raising it was measured over the eight RADE captures, on the
 fixed correlator, as locked fraction and mean pilot SNR:
@@ -7279,6 +7729,29 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
+- **RADE V1 has no fallback, and what it leaves applied is the operator's
+  manual weight.** Finding 49. `div_process_block()`'s RADE branch sets
+  `div_auto_holding` and returns when the correlator produces no weight,
+  and there is no stand-down on that path, so before the first solve the
+  radio applies `div_gain`/`div_phase` - unit gain, zero phase, the two
+  antennas summed raw. On the two captures where the correlator solves on
+  about 1 % of blocks that decodes **nothing**, against 70 and 31 synced
+  frames for arm 0 alone - 42 seconds of unit weight on `153114`, 57
+  seconds of a stale one on `152310` - and over the six it costs **91
+  synced frames of 1378**. Two rules were scored and both recover it - arm 0 until the
+  first solve (+26), arm 0 whenever the lock is gone (+49) - but neither
+  carries the slew or the hang a real implementation needs, so what is
+  settled is that there has to be a fallback, not which one. **This is the
+  largest unmade change in the document.**
+- **`score_rade`'s streams are not interchangeable, and every
+  "combined - best arm" figure here is computed across that.** Finding 49.
+  `arm0` and a `w = 0` weight stream are bit-identical input and score
+  differently - up to 25 synced frames of 500 on a marginal capture - and
+  the difference moves with how many librade instances the run opens. It
+  is reproducible, it is inside librade, and it is not diagnosed. The
+  harness fix is one extra decoder per run: score arm 0 as a weight stream
+  and reference everything to that. Whether the earlier findings move when
+  re-scored that way is unknown; nothing has been re-scored.
 - **The coherence gate holds concentrated in the fades, and nothing has
   been done about it.** The last of Finding 47's three mechanisms. Arm 0's
   carrier signal-to-noise averages 33.3 dB on the blocks the loop held and
@@ -7828,8 +8301,18 @@ finding rests on one recording, and the one direction that transferred -
 the noise injection manufactures a marginal signal on demand, and it is
 worth having, but it is white noise on a flat channel, which is the
 *other* failure mode - and Finding 41's central result is that the two
-want opposite settings. There is no substitute for the real thing. **This
-is now the most valuable capture on the list.**
+want opposite settings. There is no substitute for the real thing. ~~**This
+is now the most valuable capture on the list.**~~
+
+**Taken, five times over, and it is Finding 49.** `152310`, `152423`,
+`152724`, `153114` and `153301` are 41 m RADE V1 under heavy analog QRM
+with arm 0 alone recovering between 6 % and 69 % of the minute, and
+`232850` is a 160 m one with a 16 dB pad on ADC1. They did what this item
+said they would: the tracking half of Finding 41 now has five recordings
+under it rather than one, and the answer they give is not the one that was
+expected. The combiner's whole prize on these paths is 0.7 to 2.3 dB, the
+correlator collects it, and what costs 91 synced frames is the engine
+around it. The item is closed.
 
 **1. A quiet high band with a lopsided pair, and long silences.**
 *Ideal:* 17 m, 15 m or 12 m SSB after dark, one antenna receiver-noise
@@ -9232,6 +9715,44 @@ guard regions moved to suit each capture: +1000..+3000 Hz fit and
 `002710`, +1000..+3000 and +4000..+6000 on `003309`. The CW capture is cut
 at 8192 samples rather than 2048, because its window is 800 Hz wide and
 93.75 Hz bins do not resolve it.
+
+**Finding 49 uses one arrangement and it is not the one above.** The RADE
+modem band is **+750 to +2200 Hz in the tapped frame** - `RADE_CORR_FLO`
+and `RADE_CORR_FHI`, bank 0's carriers, positive bin frequencies being
+*below* the dial, which is the mapping the comment in `div_process_block()`
+gives and the opposite of what reading the code suggests. Take the whole
+16384-sample block in one Hann-windowed transform, 11.72 Hz bins, and:
+
+- the **noise floor is a mean over a fixed quiet-bin set**, not a
+  percentile. Choose the bins once, from the whole-capture average
+  spectrum: everything within +/-14 kHz, outside 350..2600 Hz, whose
+  long-term average is within 1.5 dB of the tenth percentile *on both
+  arms*. Then take the per-block level as the mean over that set. A
+  percentile taken per block reads about 6.5 dB low, because the 20th
+  percentile of an exponential is 0.22 of its mean, and it is only
+  harmless where the same bias falls on both arms of a ratio;
+- **"transmitting" is `(R00-N00)/N00 + (R11-N11)/N11 > 0.5`**, and every
+  SNR, coherence and fade figure is over those blocks. Without it the
+  listening half of each minute averages in and the arms look alike;
+- the **ceiling** is `max_w (S00 + 2Re(w* S01) + |w|^2 S11) / (N00 +
+  2Re(w* N01) + |w|^2 N11)` on a 241 x 181 log-magnitude by phase grid,
+  per block, against the same expression at `w = 0`;
+- the **oracle weight** is `conj(u1/u0)` with `u = N^-1 h` and `h` the
+  principal eigenvector of `S = R - N`. The conjugate matters: maximum
+  ratio is `y = (N^-1 h)^H x`, so the coefficient on arm 1 is
+  `conj(u1)`, and `score_rade` combines `z0 + w*z1`. Getting it the wrong
+  way round gives a weight whose phase is reflected, which scores plausibly
+  on the captures whose coherence phase is near 0 or 180 degrees and
+  catastrophically on the rest - 0 synced frames of 500 on `153114`;
+- the **per-bin comparison** cuts each block into eight 2048-sample
+  sub-blocks, 93.75 Hz bins, and bias-corrects both residuals for the
+  parameters fitted: divide the scalar fit's residual by `1 - 1/(K*L)` and
+  the per-bin fit's by `1 - 1/L`, with `L = 8` looks and `K = 15` bins.
+  Uncorrected, the per-bin fit flatters itself by 0.58 dB.
+
+**Score arm 0 as a `w = 0` weight stream, and reference to that**, not to
+`score_rade`'s own `arm0` row. They are bit-identical input and they do
+not score the same; see the caveat at the end of Finding 49.
 
 **The CW window is `-(filter + sidetone)`, not `-filter`.** Finding 8 got
 this wrong and nothing caught it until a third CW capture was set up. Take it from
