@@ -141,6 +141,21 @@ percentile. The two captures were taken with ADC0's 6 dB pad in and out,
 so the branch-noise ratio is genuinely different in each, and the
 estimator is wrong in opposite directions on the two.
 
+**Finding 47 is now fixed, and the fix is a different estimator rather
+than a better guard.** The branch noise floor no longer comes from a
+minimum over *time*, which needs the band to go quiet and which a fading
+carrier defeats; it comes from a low percentile over *frequency* - the
+quietest bins of this block, outside the operator's filter, where no
+wanted signal can be. It needs no gap, so a carrier that never stops and
+one that fades are both ordinary. Measured against the whole capture set
+the median error is inside 0.3 dB on twenty of twenty-six and 1.3 dB on
+all but two, against 1.4 to 10.6 dB for the minimum it replaces, which
+also produces no answer at all on six of them. Scored through `run_ref`
+on twelve captures it gains **0.63 dB of Sum and 1.41 dB of Best on
+average**, up to +4.60 and +7.58 on `000332` - the capture the note under
+Findings 20 and 22 already flagged as under-corrected - and it costs
+0.6 dB at worst. See "What was changed".
+
 **Finding 44 is the first look at re-acquisition timing, and it is fixed.** `rade_acquire()` runs only while `tracking`
 is zero and `tracking` stays set for the whole hang, so at a changeover
 the correlator spends ten seconds correlating the station that has already
@@ -6531,6 +6546,17 @@ kHz DDC and nfft 16384 - 11.72 Hz bins, 85.3 ms blocks - objective Sum,
 averaging 0.6 s, flat weighting. A 41 m broadcast at moderate strength on
 a path that is fading hard.
 
+**Both defects below are now fixed**, and the fix is a different
+estimator rather than a better guard: the branch noise floor is taken as
+a low percentile over *frequency*, from the bins outside the operator's
+filter, every block. It needs no gap, so neither a fading carrier nor one
+that never stops is a difficulty. Scored on the two captures here it
+gains 1.83 and 0.19 dB of Sum and 3.47 and 0.64 dB of Best; on the twelve
+it was regression-scored over, 0.63 and 1.41 dB on average. **What is not
+fixed is the rest of this finding** - the averaging default, the slew
+limit and the gate holding through the fades - and those are still open.
+See "What was changed".
+
 They are the closest thing in this document to a controlled experiment,
 because only two things differ between them: **ADC0's step attenuator**,
 6 dB on the first and none on the second, and **the reference**, Window
@@ -7113,18 +7139,22 @@ holds is the false-alarm line, and that part stands.
   nearly the whole file, the ratio is never formed, and the loop hands a
   chain that is 15.2 dB noisier and 3.8 dB worse in signal-to-noise a
   weight seven decibels above the maximum-ratio optimum (Finding 45).
-  **And the failure has a second half, which is worse**: on a deeply
-  fading carrier the ratio *is* formed - on 78 % of blocks - and is
+  **Closed, and the second half of the failure is what closed it.** On a
+  deeply fading carrier the ratio *is* formed - on 78 % of blocks - and is
   10.9 dB wrong, because the fades supply the clearance `DIV_ARM_MIN_DB`
   exists to demand, and the pair of minima is then a ratio of two
   independent fades rather than of two noise floors. `div_arm_from_floor()`
-  takes the same corruption, 8.7 dB with the sign inverted, so Best picks
-  the wrong antenna as well. Both estimators err towards whichever arm
-  fades *less*. A remedy has to tell a minimum that is noise from a
-  minimum that is a fade, and on these two captures neither the depth nor
-  the duration of the dip separates them - the fades reach 20 dB and last
-  hundreds of milliseconds. What might is that a fade is common to the
-  whole passband and a noise floor is not (Finding 47).
+  took the same corruption, 8.7 dB with the sign inverted, so Best picked
+  the wrong antenna as well (Finding 47). Both errors are gone, and so is
+  the case this item opened with: `div_noise_floor_update()` measures the
+  pair across frequency instead of across time, so a window that is mostly
+  noise is no longer a difficulty either - there is nothing to wait for.
+  `123333`, the 95 %-noise capture that was the third to produce the same
+  seven decibels, gains 0.34 dB of Sum and 0.18 of Best; `122843` gains
+  0.42 and loses 0.05. **What is left is what those two numbers say**: the
+  ratio being right is worth little on a capture whose whole prize is
+  small, and the 7 dB it used to be wrong by was never the largest term
+  there. See "What was changed".
 - **Mostly closed: the Resolution menu is 24 / 12 / 6 Hz now.**
   Finding 43 takes the change Finding 42 had the evidence for: 3 Hz is
   retired, a 24 Hz setting takes its place, `DIV_MIN_NFFT` drops to 2048
@@ -8021,6 +8051,20 @@ from a gap would fix it and is not obvious; requiring two consecutive
 windows to agree within 3 dB was tried, and it refused the CW capture as
 well and gave up 1.5 dB there.
 
+> **Superseded.** The paragraph above states the defect correctly and
+> looks for the remedy on the wrong axis. Finding 47 measures the same
+> failure on two 41 m AM captures where it is worse - 10.9 dB rather than
+> 5 - and the fix is not a better test for separating a fade from a gap
+> but an estimator that needs neither: a low percentile over the bins
+> *outside the filter*, every block. `000332` reads +5.95 dB against its
+> +6.31 true, and scored through `run_ref` the capture gains 4.60 dB of
+> Sum and 7.59 dB of Best. **Everything from "The ratio is the hard part"
+> down to here describes the estimator that shipped between Finding 22
+> and Finding 47**; the minimum-statistics machinery is still in the file
+> because `div_window_quiet()` uses its minima for the stand-down, and it
+> is still the fallback where there are too few bins outside the filter
+> to sample. See "What was changed".
+
 ### `src/diversity_auto.c` — one fault the fix turned up
 
 The floor tracker's minimum can be the startup transient rather than the
@@ -8106,6 +8150,151 @@ existing `#ifdef DIVERSITY_CAPTURE`, and `diversity_auto_capture_start()`
 clears the previous-context memory so the first block of a file is never
 marked. With `DIVCAP` unset `src/diversity_auto.o` is byte-identical to
 what it was before the change, which was checked rather than assumed.
+
+### `src/diversity_auto.c` — the branch noise floor is measured across frequency
+
+Finding 47. The Window and Carrier references took the per-arm noise floor
+from a minimum over time - the quietest the in-window power had recently
+been - and everything downstream of it was wrong whenever that premise
+failed. `div_wideband_sum_scale()` fed it to the Sum weight and
+`div_arm_from_floor()` fed it to the per-arm SNR that Best selects on.
+
+The premise is that the band goes quiet often enough for the quietest
+recent moment to be noise, and `DIV_ARM_MIN_DB` is the guard on it: the
+smoothed power must stand 6 dB clear of the minima before the pair is
+believed. **A fading carrier supplies that clearance itself.** The minima
+land in the fades, the power stands clear the rest of the time, and what
+is published is a ratio of two independent fades.
+
+`div_noise_floor_update()` replaces the premise rather than the guard. The
+noise floor is the level the **quietest bins of this block** sit at, taken
+outside the operator's filter where no wanted signal can be, and there are
+thousands of them every block. A fade takes the signal down and leaves
+those bins where they were, so a fade cannot read as silence; a carrier
+that never stops is not a difficulty either, because nothing is being
+waited for.
+
+- The sample is the **union of the filter and the analysis window**, plus
+  a 1 kHz skirt, excluded from the central 80 % of the transform. The
+  filter and not the window: the Carrier reference accumulates five bins
+  and an AM signal's sidebands fill the passband either side of them, and
+  sampling those as noise credits whichever arm hears the station better
+  with the higher noise floor - which is the error being removed.
+- The statistic is the **tenth percentile**, averaged over the two
+  percentiles either side of it. A percentile rather than a mean, because
+  a mean is dragged up by anything transmitting in the sampled span and a
+  tenth percentile tolerates that span being ninety per cent occupied; a
+  band of order statistics rather than one, because a lone percentile is a
+  single sample of a noisy distribution and its scatter reaches the weight
+  - the band takes the ratio's block-to-block scatter from about 0.7 dB to
+  0.3, and costs nothing because the array is already sorted.
+- 1024 bins per arm, strided down from however many are available, sorted
+  the same way the FSK/Digital median already is. Smoothed at 2 s and
+  seeded from the first block.
+- The old machinery stays. `div_window_quiet()` takes the stand-down's
+  minima from it, and it is the fallback where fewer than 128 bins are
+  left outside the filter - which needs a hand-placed window wider than
+  the passband it sits in.
+
+**Accuracy, against the guard-region truth on 26 captures** - 48 and
+192 kHz, four transform sizes, FT8 to DRM to bare band noise:
+
+| | median error inside | produces no answer |
+|---|---|---|
+| minimum over time | 1.4 to 10.6 dB | 6 captures of 26 |
+| **percentile over frequency** | **0.3 dB on 20, 1.3 dB on 24** | none |
+
+The two that look like outliers are the new estimate being right and the
+whole-capture reference being wrong. On `122632` it follows the operator's
+ADC1 attenuator one for one from 0 to 16 dB while arm 0's floor holds to
+0.7 dB - which reproduces Finding 28's "one for one to within 0.03 dB"
+from a different measurement - and on `002710` it finds the two attenuator
+steps that capture's format-version-1 header could not record, and which
+the devtools README says had to be inferred by hand.
+
+**Scored through `run_ref`**, old engine against new, same invocations,
+`--ref band --mode sum|best --follow 1 --tau 0.6`, in-filter SNR against
+the out-of-filter noise floor:
+
+| capture | arm 0 | arm 1 | Sum before | Sum after | Best before | Best after |
+|---|---|---|---|---|---|---|
+| `143952` 41 m AM | **16.52** | 11.51 | 14.69 | **16.52 (+1.83)** | 12.53 | **16.00 (+3.47)** |
+| `144505` 41 m AM | 17.06 | 12.64 | 17.27 | 17.46 (+0.19) | 16.47 | 17.11 (+0.64) |
+| `000332` 5 MHz digital | -1.47 | **6.12** | 1.15 | **5.75 (+4.60)** | -0.86 | **6.72 (+7.58)** |
+| `000412` 13 MHz SAM | 16.54 | 12.83 | 15.70 | 16.53 (+0.82) | 14.47 | 16.35 (+1.88) |
+| `122843` 17 m SSB | -13.19 | -15.20 | -13.59 | -13.17 (+0.43) | -14.64 | -14.70 (-0.05) |
+| `123333` 80 m, 95 % noise | -14.17 | -14.67 | -14.45 | -14.10 (+0.34) | -14.50 | -14.32 (+0.18) |
+| `011225` 60 m AM | 17.59 | 16.49 | 17.72 | 18.00 (+0.28) | 18.19 | 18.05 (-0.14) |
+| `235906` 80 m voice | 2.69 | 0.34 | 2.71 | 2.76 (+0.06) | 2.62 | 2.62 (0.00) |
+| `003309` 30 m FT8 | 13.83 | 14.04 | 15.75 | 15.78 (+0.02) | 14.27 | 14.58 (+0.31) |
+| `000537` 13 MHz SAM | 0.53 | 5.98 | 3.36 | 3.15 (-0.21) | 4.87 | 5.61 (+0.73) |
+| `002534` 30 m CW | 0.61 | 1.64 | 1.17 | 0.96 (-0.21) | 0.96 | 0.67 (-0.30) |
+| `154822` FSK | -18.95 | -17.24 | -17.10 | -17.71 (-0.60) | -19.99 | -17.33 (+2.66) |
+
+**Eight better, three slightly worse, one level, on both objectives.**
+Mean +0.63 dB of Sum and +1.41 dB of Best. The three that lose are the
+three where the temporal minimum was already accurate - `002534` has real
+gaps in it and Finding 22's own table scores its old estimate at 0.36 dB
+from the truth - and they lose 0.21, 0.21 and 0.60 dB.
+
+`154822`'s row should be read as "not worse" rather than as a figure. It
+is the capture with a second source *out of band*, which is where this
+metric takes its noise reference, and its **Best** column moved 1.3 dB
+between two builds differing only in whether the percentile was averaged
+over a band of order statistics - more than the change being measured.
+Every other row reproduces to 0.02 dB across the same pair of builds.
+
+The two captures the finding came from move the most, and in the way it
+predicted. On `143952` the old Sum sat **1.60 dB below arm 0 alone** on
+per-block carrier C/N and the new one is level with it, +1.66 dB
+recovered; Best goes from 3.98 dB below arm 0 to 0.37 below, and its time
+under 20 dB carrier C/N from 2.3 % to 0.6 %. On `144505` the old Sum's
+first percentile was 2.5 dB *below* arm 0's and the new one is 1.2 dB
+above it.
+
+`test_digital`'s second check is the synthetic version and had to be
+rewritten, because its premise no longer holds. It gave arm 1 twenty
+decibels more noise and asserted that the occupancy split backed it off
+where the wideband window could not; the window now does, both land on the
+engine's -27 dB clamp short of the -42 dB optimum, and their SINRs agree
+to 0.01 dB. What it asserts instead is that neither is left estimating
+`conj(h)`, which on that geometry is worth **13.31 dB**.
+
+**Cost**, from `bench_cpu`, median of three runs, 85.3 ms block period:
+
+| | Window | Carrier | FSK/Digital |
+|---|---|---|---|
+| added, 48 kHz | +0.15 ms | +0.15 ms | none |
+| added, 192 kHz | +0.12 ms | +0.11 ms | none |
+| added, 384 kHz | +0.23 ms | +0.13 ms | none |
+
+0.13 to 0.27 % of a core. FSK/Digital does not call it - it has the
+unoccupied bins of its own region to measure the pair from, which is what
+`div_digital_solve()` already does, and its arm figures come from there.
+
+### `src/diversity_auto.c` — the stand-down puts the weight back by both doors
+
+Found while testing the above, and separate from it.
+
+The stand-down slews the weight to zero on an empty band and restores it
+"in one step" when the band fills. It restored by one door only:
+`div_hold_or_stand_down()`, which is reached when the band fills *while
+the loop is still holding*. An over that arrives strongly enough to open
+the coherence gate on its own first block goes straight to the solve,
+never reaches that function, and was left climbing off zero at
+`DIV_SLEW_FRAC` - half a second of first-order lag, which is the whole of
+the 0.58 dB the restore was measured to be worth.
+
+`div_leave_standdown()` now sets `div_jump` on every path out of a
+stand-down. The door in `div_hold_or_stand_down()` puts back the weight it
+was standing on, because it has no measurement for this block; the other
+door has one, so the fresh answer goes in at once instead.
+
+`test_window`'s synthetic gap measures it: twelve blocks after the signal
+returned the weight had reached -2.85 dB of the -2.11 it was standing on
+and was still climbing. It **steps back to it at once** now, and what is
+left in that test is the loop's own re-convergence on the returning
+signal.
 
 ### `test/diversity/devtools/run_ref.c` — the transform size, and a queue that was overflowing
 

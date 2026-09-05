@@ -278,7 +278,7 @@ cross spectrum and both auto spectra with exponential forgetting, then:
 | Objective | Weight | Behaviour |
 |---|---|---|
 | **Null** | `w = −Sxy/Syy` | minimises `E\|z0 + w·z1\|²` — cancels whatever the two antennas have in common. Noise cancelling. |
-| **Sum** | `w = +(N0/N1)·Sxy/Sxx` | `Sxy/Sxx` equals `conj(h)` for `z1 = h·z0`; the branch noise ratio `N0/N1` is what makes it maximum ratio combining rather than MRC under the assumption that the two branches are equally noisy. On a pair 12 dB apart that assumption cost 3.6 dB and put the audio 14.8 dB louder — see Finding 22 in [`diversity-measurements.md`](diversity-measurements.md). |
+| **Sum** | `w = +(N0/N1)·Sxy/Sxx` | `Sxy/Sxx` equals `conj(h)` for `z1 = h·z0`; the branch noise ratio `N0/N1` is what makes it maximum ratio combining rather than MRC under the assumption that the two branches are equally noisy. On a pair 12 dB apart that assumption cost 3.6 dB and put the audio 14.8 dB louder — see Finding 22 in [`diversity-measurements.md`](diversity-measurements.md). Where `N0/N1` comes from is below. |
 | **Best** | `w = 0` or `w` at the clamp, co-phased | gives the output to whichever antenna is measuring better, rather than combining them. |
 
 Null and Sum use **different denominators**, so they are not simply
@@ -291,7 +291,8 @@ effect on the next block and is applied without slewing.
 per-antenna SNR estimate `div_auto_arm_db` — each arm's signal measured
 against its *own* noise floor, so an antenna that is 12 dB down because it
 is deaf is distinguished from one that is 12 dB down because it is quiet.
-Every reference computes it. Whichever arm is ahead is used alone, with
+Every reference computes it, from the same pair of noise floors the Sum
+weight uses. Whichever arm is ahead is used alone, with
 1 dB of hysteresis so a marginal difference does not chatter.
 
 Selecting arm 1 is not directly expressible: the combiner forms
@@ -369,6 +370,40 @@ every key-up period walking the weight around on noise; it now measures
 only while there is something to measure, so the estimate is built from
 key-down periods alone.
 
+### The two branch noises
+
+Two of the three things above want them: Sum multiplies `conj(h)` by
+`N0/N1`, and Best compares each arm's signal against its own floor. The
+FSK/Digital and RADE V1 references have them already — their MVDR
+covariance is a measurement of the noise taken off the signal — and the
+two wideband references have to find them somewhere else.
+
+They are measured **across frequency, not across time**. Every block, the
+bin powers outside the operator's filter are sampled — 1024 of them per
+arm, strided down from the central 80 % of the transform, with the filter
+and the analysis window and a 1 kHz skirt taken out — and the floor is the
+tenth percentile, averaged over the two percentiles either side. A
+percentile because a mean is dragged up by anything transmitting in the
+sampled span; a band of order statistics because a single one is a noisy
+sample and its scatter reaches the weight.
+
+The obvious alternative is a minimum over time: the quietest the in-window
+power has recently been. That is what shipped until Finding 47, and it has
+a premise — that the band goes quiet often enough for the quietest recent
+moment to be noise. `DIV_ARM_MIN_DB` was the guard on it, and **a fading
+carrier supplies that clearance itself**: the minima land in the fades and
+what gets published is the ratio of two independent fades. Measured on a
+41 m broadcast it read +10.5 dB where the truth was −0.35, put 19 dB of
+surplus arm 1 into the Sum weight, and inverted Best's choice of antenna
+for a whole minute. Measured across frequency instead, the same captures
+come out inside 0.3 dB.
+
+The old minimum is still in the file. `div_window_quiet()` takes the
+stand-down's decision from it — that test asks a different question, "is
+either arm carrying anything", for which a temporal minimum is the right
+shape — and it is the fallback where a hand-placed window leaves fewer
+than 128 bins outside the filter to sample.
+
 ### Standing the combiner down
 
 Holding is right when the signal is momentarily not measurable. It is
@@ -382,19 +417,28 @@ where the weight had been carried in from a previous band.
 So the two wideband references ask a second question when they decline a
 block, and `div_window_quiet()` answers it: is *either* arm carrying
 anything? It is the complement of the clearance test the branch noise
-ratio already applies, asked of both arms, against the same bounded
-five-second minimum and the same half-second smoother — deliberately not
-the operator's averaging time, which on a 30 dB signal takes twenty
-seconds to fall far enough to read empty, and not the long-memory floor
-tracker, which starts about 8 dB low and needs the better part of a
-minute to climb into place.
+ratio used to apply, asked of both arms, against a bounded five-second
+minimum and a half-second smoother — deliberately not the operator's
+averaging time, which on a 30 dB signal takes twenty seconds to fall far
+enough to read empty, and not the long-memory floor tracker, which starts
+about 8 dB low and needs the better part of a minute to climb into place.
+The noise ratio itself no longer uses either of them (above); this test
+is the minimum's only remaining consumer, and the question it asks —
+whether anything is on the air — is one a temporal minimum is the right
+shape for.
 
 If the window has been quiet for `DIV_QUIET_DWELL` — two seconds — the
 weight is slewed to zero, which is arm 0 alone, the antenna the operator
 would hear with the feature switched off. The estimate is not discarded
 and the accumulators decay exactly as they did; only what is applied
-changes. When the window fills again the weight it was standing on is put
-back **in one step**.
+changes. When the window fills again the weight is put back **in one
+step**, by whichever of two doors applies: if the band fills while the
+loop is still holding it puts back the weight it was standing on, because
+it has no measurement for that block; if the over arrives strongly enough
+to open the coherence gate on its own first block, that block's own answer
+goes in instead. Only the first door existed until Finding 47 — the second
+case was left climbing off zero at the slew rate, which is half a second
+and the whole of the 0.58 dB the restore is worth.
 
 Both conditions are required, and the dwell is what makes the test safe.
 A signal that never stops eventually leaves the bounded minimum sitting
@@ -1207,7 +1251,11 @@ Reading these:
 
 - The transform modes scale with `nfft` and are cheap. FSK/Digital adds a
   partial sort for the median noise floor, capped at 4096 samples however
-  wide the region is, which is why it stays with the rest of them.
+  wide the region is, which is why it stays with the rest of them. Window
+  and Carrier add two sorts of 1024 for the branch noise floors, which is
+  0.11 to 0.23 ms a block — 0.13 to 0.27 % of a core — and is flat in the
+  sample rate, so it is proportionally largest at 48 kHz. FSK/Digital does
+  not pay it: its own region already has unoccupied bins to measure from.
 - **RADE V1 while searching is by far the peak load** and is nearly
   rate-independent, because acquisition works on the fixed 8 kHz decimated
   stream. It costs 3-4 points more than tracking does. On a Pi this is the
