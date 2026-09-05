@@ -370,6 +370,37 @@ every key-up period walking the weight around on noise; it now measures
 only while there is something to measure, so the estimate is built from
 key-down periods alone.
 
+### The output slew
+
+The solve's answer is not written to `div_cos`/`div_sin` directly. It is
+slewed towards, so a change in the mix is not heard as a step and a single
+bad block leans the weight rather than putting itself into the audio.
+
+**A quarter of the Averaging setting, up to 0.5 s.** Both halves of that
+were wrong until Finding 48 and in ways nothing said.
+
+It was a *fraction per block* — 0.15 of the remaining distance — and the
+block period is the reciprocal of the bin width, so the Resolution control
+moved it: 0.26 s at 24 Hz bins against 1.05 s at 6 Hz. Resolution is
+documented as trading estimate variance against measurement lag, and it
+was quietly moving the *output* lag the same way, which made it worth more
+than it looked for a reason nobody had written down.
+
+And it was **fixed**, in series with the Averaging control, which is the
+lag the operator can see. At 2.0 s of averaging a half-second slew is a
+quarter of it and hardly shows. At the bottom of the slider — 0.2 s, which
+is where a fading path wants it — it is two and a half times the
+averaging and is then the only thing the operator's control is fighting.
+The bottom two thirds of that slider's travel could not reach the applied
+weight at all.
+
+Tying it to the slider fixes both, and the old half-second is kept as the
+ceiling so that nothing moves for anyone running the 2.0 s that used to be
+the default. Measured on two 41 m AM captures, at 0.2 s of averaging,
+shortening the slew from 0.5 s to 0.05 s is worth 0.36 and 0.30 dB of mean
+signal-to-noise and 0.47 and 1.09 dB at the first percentile — the fades,
+which is what the slider is being shortened for.
+
 ### The two branch noises
 
 Two of the three things above want them: Sum multiplies `conj(h)` by
@@ -438,7 +469,8 @@ it has no measurement for that block; if the over arrives strongly enough
 to open the coherence gate on its own first block, that block's own answer
 goes in instead. Only the first door existed until Finding 47 — the second
 case was left climbing off zero at the slew rate, which is half a second
-and the whole of the 0.58 dB the restore is worth.
+at the default settings and the whole of the 0.58 dB the restore is
+worth.
 
 Both conditions are required, and the dwell is what makes the test safe.
 A signal that never stops eventually leaves the bounded minimum sitting
@@ -451,7 +483,12 @@ seconds is well past a fade and two orders of magnitude past the 60 to
 The gate *opening* does not step the weight, only the presence path does.
 The shipped threshold passes about one no-signal block in twenty, so a
 step there would put a weight fitted to noise straight into the audio
-where a slew merely leans towards it for one block.
+where a slew only leans towards it. How far it leans is now the
+operator's Averaging setting - see "The output slew" below - and at the
+bottom of that slider it is half the way in one block. Measured on the
+five bare-band captures that costs nothing: the silence penalty improves
+on three, is unchanged on one and costs 0.16 dB on the fifth (Finding
+48).
 
 Scored on nineteen wideband captures the noise between overs improves on
 seven and is never worse — by 7.3 to 8.3 dB on the three the change was
@@ -1277,7 +1314,7 @@ Run it yourself with `make -C test/diversity bench`.
 
 | Event | Time |
 |---|---|
-| Weight slew | ~0.5 s |
+| Weight slew | a quarter of the Averaging setting, up to 0.5 s |
 | Estimate settling | the Averaging control, 0.2-30 s (geometric) |
 | **RADE V1 acquisition** | **1-5 s** of continuous signal |
 | RADE V1 confirmation ("probation") | ~1 s of that |

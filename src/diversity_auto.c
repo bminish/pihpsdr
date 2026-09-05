@@ -287,15 +287,42 @@
 #define DIV_ARM_MIN_DB      6.0
 
 //
-// Fraction of the remaining distance to the target that w moves in one
-// block. With ~85 ms blocks this settles in a little over a second from
-// any starting point, which is fast enough to be useful and slow enough
-// that the change in the mix is not heard as a step. A fixed absolute
-// step was tried first and is wrong: the time to converge then depends on
-// how far away the answer is, and a large |w| took the best part of a
-// minute to reach.
+// The weight is slewed towards the answer rather than stepped to it: the
+// change in the mix is then not heard as a step, and a single bad block
+// leans the weight rather than putting itself into the audio. A fixed
+// absolute step was tried first and is wrong - the time to converge then
+// depends on how far away the answer is, and a large |w| took the best
+// part of a minute to reach.
 //
-#define DIV_SLEW_FRAC       0.15
+// A time constant in **seconds**, not a fraction per block, and that is a
+// change. It was 0.15 per block, which made the slew four times faster at
+// the coarsest Resolution setting than at the finest, because the block
+// period is the reciprocal of the bin width: 0.26 s at 24 Hz bins against
+// 1.05 s at 6 Hz. Nothing said so, and an operator moving Resolution to
+// trade estimate variance against measurement lag was silently moving the
+// *output* lag with it - in the same direction, so the control was worth
+// rather more than it looked and for the wrong reason. Finding 48.
+//
+// 0.5 s is what 0.15 per block came to at the default 12 Hz bins.
+//
+// It is also a *ceiling* rather than the value, because the slew must not
+// be the loop's dominant lag. The Averaging control sets the time
+// constant of the estimate; this sets the time constant of what is
+// applied, and the two are in series. At 2.0 s of averaging the slew is a
+// quarter of it and barely shows. At the bottom of the slider - 0.2 s,
+// which is where a fading path wants it - a fixed half-second slew is two
+// and a half times the averaging, and is then the only thing the
+// operator's control is fighting: measured on the two 41 m AM captures of
+// Finding 47, at 0.2 s of averaging, shortening the slew from 0.5 s to
+// 0.05 is worth 0.36 and 0.30 dB of mean signal-to-noise and 0.47 and
+// 1.09 dB at the first percentile, which is the fades the slider was
+// being shortened for.
+//
+// So it follows the slider at a quarter of it, up to the old value. At
+// 2.0 s of averaging that ceiling is what applies and nothing moves.
+//
+#define DIV_SLEW_TAU        0.50    // seconds, the ceiling
+#define DIV_SLEW_OF_TAU     0.25    // and a quarter of the averaging
 
 //
 // Number of bins either side of the carrier bin used in DIV_REF_CARRIER.
@@ -595,7 +622,25 @@ int    div_auto_ref            = DIV_REF_BAND;
 int    div_auto_follow_filter  = 1;
 double div_auto_centre         = 0.0;
 double div_auto_width          = 1000.0;
-double div_auto_tau            = 2.0;
+//
+// The Averaging default. 0.5 s, not the 2.0 s that shipped until
+// Finding 48.
+//
+// Finding 42 swept it over six wideband captures and found 2.0 s best on
+// three, and this reverses that on nine - because the metric changed, not
+// because the captures did. That sweep scored voice against the capture's
+// own quiet blocks, which moves the noise reference with whatever the
+// weight does in silence; scored per block against bins outside the
+// filter, and over the blocks that carry signal, 0.5 s is ahead of 2.0 s
+// on the mean on **all nine** captures the guard is clean on, by 0.01 to
+// 0.70 dB, and ahead at the first percentile on five of them by up to
+// 2.50 dB. It is behind on one, by 0.43 dB, on the FT8 capture.
+//
+// Only a fresh install gets it: the value is in every existing props
+// file, and moving an operator's setting under them is not this
+// program's business.
+//
+double div_auto_tau            = 0.5;
 double div_auto_hang           = DIV_HANG_DEFAULT;
 double div_auto_coherence_min  = 0.20;
 int    div_auto_weighting      = DIV_WEIGHT_FLAT;
@@ -1857,9 +1902,9 @@ static void div_write_weight(double wr, double wi, int track);
 //
 // Coming out of a stand-down, by whichever door.
 //
-// The weight the stand-down left is zero, and DIV_SLEW_FRAC would take
-// half a second to climb off it - which is the whole of the in-speech
-// cost the restore was measured to avoid. div_hold_or_stand_down() does
+// The weight the stand-down left is zero, and the slew would take a
+// quarter of the operator's averaging to climb off it - which is the
+// whole of the in-speech cost the restore was measured to avoid. div_hold_or_stand_down() does
 // this for the case where the band fills while the loop is still
 // holding; the other case is an over that arrives strongly enough to
 // open the coherence gate on its first block, which goes straight to the
@@ -2263,8 +2308,17 @@ static void div_write_weight(double wr, double wi, int track) {
     div_cos = wr;
     div_sin = wi;
   } else {
-    div_cos += DIV_SLEW_FRAC * (wr - div_cos);
-    div_sin += DIV_SLEW_FRAC * (wi - div_sin);
+    //
+    // div_auto_tau cannot be zero - div_settings_validate() holds it to
+    // the slider's own 0.2 to 30 s - so this needs no floor of its own.
+    //
+    double st = DIV_SLEW_OF_TAU * div_auto_tau;
+
+    if (st > DIV_SLEW_TAU) { st = DIV_SLEW_TAU; }
+
+    const double a = 1.0 - exp(-blocktime / st);
+    div_cos += a * (wr - div_cos);
+    div_sin += a * (wi - div_sin);
   }
   //
   // Back-compute the values the menu, the props file and remote clients

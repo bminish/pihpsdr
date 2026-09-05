@@ -141,6 +141,21 @@ percentile. The two captures were taken with ADC0's 6 dB pad in and out,
 so the branch-noise ratio is genuinely different in each, and the
 estimator is wrong in opposite directions on the two.
 
+**Finding 48 is the other half of Finding 47, and it is one mechanism seen
+twice.** The output slew was 0.15 of the remaining distance *per block*,
+which is not a time constant - it ran from 0.26 s at the coarsest
+Resolution setting to 1.05 s at the finest - and it sat in series with the
+Averaging control, so at the bottom of that slider it was two and a half
+times the averaging and **the bottom two thirds of the slider's travel
+could not reach the applied weight**. It is a time constant now, and a
+quarter of the Averaging setting up to its old half-second, so at 2.0 s of
+averaging nothing moves. The default averaging moves to **0.5 s**, which
+reverses part of Finding 42 because the metric changed rather than the
+captures: scored per block against out-of-filter bins over the blocks that
+carry signal, 0.5 s beats 2.0 s **on the mean on all nine captures the
+guard is clean on** and at the first percentile on five, and loses 0.43 dB
+on one. See "What was changed".
+
 **Finding 47 is now fixed, and the fix is a different estimator rather
 than a better guard.** The branch noise floor no longer comes from a
 minimum over *time*, which needs the band to go quiet and which a fading
@@ -151,10 +166,10 @@ one that fades are both ordinary. Measured against the whole capture set
 the median error is inside 0.3 dB on twenty of twenty-six and 1.3 dB on
 all but two, against 1.4 to 10.6 dB for the minimum it replaces, which
 also produces no answer at all on six of them. Scored through `run_ref`
-on twelve captures it gains **0.63 dB of Sum and 1.41 dB of Best on
-average**, up to +4.60 and +7.58 on `000332` - the capture the note under
+on twelve captures it gains **0.68 dB of Sum and 1.41 dB of Best on
+average**, up to +4.64 and +7.65 on `000332` - the capture the note under
 Findings 20 and 22 already flagged as under-corrected - and it costs
-0.6 dB at worst. See "What was changed".
+0.4 dB at worst. See "What was changed".
 
 **Finding 44 is the first look at re-acquisition timing, and it is fixed.** `rade_acquire()` runs only while `tracking`
 is zero and `tracking` stays set for the whole hang, so at a changeover
@@ -6551,11 +6566,11 @@ estimator rather than a better guard: the branch noise floor is taken as
 a low percentile over *frequency*, from the bins outside the operator's
 filter, every block. It needs no gap, so neither a fading carrier nor one
 that never stops is a difficulty. Scored on the two captures here it
-gains 1.83 and 0.19 dB of Sum and 3.47 and 0.64 dB of Best; on the twelve
-it was regression-scored over, 0.63 and 1.41 dB on average. **What is not
-fixed is the rest of this finding** - the averaging default, the slew
-limit and the gate holding through the fades - and those are still open.
-See "What was changed".
+gains 1.86 and 0.33 dB of Sum and 3.81 and 0.70 dB of Best; on the twelve
+it was regression-scored over, 0.68 and 1.41 dB on average. **The
+averaging default and the slew limit are fixed too, in Finding 48.** What
+is left open from this finding is the gate holding through the fades. See
+"What was changed".
 
 They are the closest thing in this document to a controlled experiment,
 because only two things differ between them: **ADC0's step attenuator**,
@@ -6637,7 +6652,8 @@ number a listener hears is neither: AGC removes the level, so what is
 left is **how far the signal-to-noise ratio dips while the level is being
 held up**. Scored per 85.3 ms block, on the carrier bins against the
 7-11.5 kHz guard, with the weight applied one block late and through the
-`DIV_SLEW_FRAC` slew exactly as the engine applies it:
+`DIV_SLEW_TAU` slew exactly as the engine applied it at the time - 0.5 s
+fixed, which is what Finding 48 then changed:
 
 `143952`:
 
@@ -6645,10 +6661,10 @@ held up**. Scored per 85.3 ms block, on the carrier bins against the
 |---|---|---|---|---|---|---|
 | arm 0 alone, the feature off | **37.09** | **5.85** | 27.29 | 18.77 | 14.33 | 1.4 % |
 | **on air, as recorded** | 35.57 (**-1.52**) | 4.14 (**-1.71**) | 27.26 | 20.16 | 19.34 | 0.6 % |
-| `run_ref`, Window / Sum, 0.6 s | 35.49 | 4.08 | 28.04 | 20.18 | 9.50 | 1.0 % |
-| `run_ref`, Window / Sum, 0.2 s | 35.81 | 4.07 | 28.42 | 19.45 | 5.19 | 1.3 % |
-| `run_ref`, Carrier / Sum, 0.6 s | 36.87 | 5.71 | 27.35 | 19.22 | 15.68 | 1.7 % |
-| `run_ref`, Window / **Best**, 0.6 s | 33.11 | 3.03 | 26.38 | 18.75 | 4.99 | 2.3 % |
+| `run_ref`, Window / Sum, 0.6 s | 35.92 | 4.09 | 28.51 | 21.08 | 18.52 | 0.7 % |
+| `run_ref`, Window / Sum, 0.2 s | 36.33 | 4.08 | 29.37 | 21.80 | 6.20 | 0.7 % |
+| `run_ref`, Carrier / Sum, 0.6 s | 36.94 | 5.74 | 27.40 | 18.49 | 15.79 | 1.6 % |
+| `run_ref`, Window / **Best**, 0.6 s | 33.17 | 3.07 | 26.38 | 18.75 | 4.99 | 2.3 % |
 | Sum x true `N0/N1`, 0.2 s, slewed | **38.17** (+1.08) | 5.69 | **30.29** | **23.06** | 12.45 | 0.4 % |
 | ceiling: per block, no slew | 38.97 | 5.65 | 32.07 | 27.60 | 23.87 | **0.0 %** |
 | arm 1 alone | 31.83 | 2.60 | 24.99 | 14.14 | 2.10 | 4.4 % |
@@ -6659,10 +6675,10 @@ held up**. Scored per 85.3 ms block, on the carrier bins against the
 |---|---|---|---|---|---|---|
 | arm 0 alone, the feature off | **39.02** | **4.47** | 32.36 | 19.67 | 8.55 | 1.3 % |
 | **on air, as recorded** | 39.31 (**+0.29**) | 4.53 | 32.42 | **17.76** | 10.97 | **2.1 %** |
-| `run_ref`, Carrier / Sum, 0.6 s | 39.22 | 4.52 | 32.57 | 17.21 | 9.81 | 2.0 % |
-| `run_ref`, Carrier / Sum, 0.2 s | 39.34 | 4.51 | 32.77 | 19.17 | 6.87 | 1.6 % |
-| `run_ref`, Window / Sum, 0.6 s | 39.19 | 4.52 | 32.44 | 17.18 | 6.93 | 2.0 % |
-| `run_ref`, Carrier / **Best**, 0.6 s | 39.10 | 3.97 | **33.68** | **28.55** | **19.70** | **0.1 %** |
+| `run_ref`, Carrier / Sum, 0.6 s | 39.32 | 4.53 | 32.83 | 15.56 | 9.92 | 1.8 % |
+| `run_ref`, Carrier / Sum, 0.2 s | 39.71 | 4.52 | 34.07 | 21.05 | 5.03 | 0.9 % |
+| `run_ref`, Window / Sum, 0.6 s | 39.28 | 4.53 | 32.61 | 15.68 | 5.46 | 2.3 % |
+| `run_ref`, Carrier / **Best**, 0.6 s | 39.35 | 4.00 | **34.23** | **29.17** | **26.31** | **0.0 %** |
 | Sum x true `N0/N1`, 0.2 s, slewed | **40.24** (+1.22) | 4.39 | 35.03 | 26.65 | 25.30 | **0.0 %** |
 | ceiling: per block, no slew | 40.80 | 4.30 | 36.31 | 30.92 | 29.64 | **0.0 %** |
 | arm 1 alone | 34.60 | 2.06 | 29.51 | 23.23 | 20.37 | 0.0 % |
@@ -6684,11 +6700,19 @@ would have called it a failure. `144505` gains 0.29 dB on the mean and
 makes the *worst* moments worse, its first percentile falling 1.9 dB below
 arm 0's and its time under 20 dB rising from 1.3 to 2.1 %.
 
-`run_ref` on the shipping source reproduces both on-air rows to **0.08
-dB**, and the on-air weight itself to 0.3 dB in median magnitude - +11.0
-against +11.3 dB on `143952`, both peaking at 9.69 against a
-`DIV_MAX_WEIGHT` of 10, with a log-magnitude correlation of 0.92. What follows is therefore
-a property of the engine and not of one recording.
+`run_ref` on the shipping source reproduces the on-air rows to **0.35 and
+0.01 dB**, and the on-air weight itself to 0.3 dB in median magnitude -
++11.0 against +11.3 dB on `143952`, both peaking at 9.69 against a
+`DIV_MAX_WEIGHT` of 10, with a log-magnitude correlation of 0.92. What
+follows is therefore a property of the engine and not of one recording.
+
+**`run_ref`'s `wr`/`wi` are `div_cos`/`div_sin` - the weight after the
+output slew, not the solve's answer** - so they are applied to the score
+one block late and *not* slewed again. An earlier version of this scoring
+slewed them a second time; it moved every figure by less than 0.35 dB and
+always in the direction of understating the change, and the rows above
+and the regression table under "What was changed" are the corrected
+ones.
 
 ### Why: a deeply fading carrier defeats every per-arm minimum statistic
 
@@ -6743,7 +6767,7 @@ capture. On `143952` the error is large enough to invert the answer
 outright and **Best picks arm 1 on 95.6 % of blocks** - the wrong antenna
 for the whole minute, held there because `arm_valid` is true on only
 12.7 % of them and `div_apply_best()` leaves the weight alone the rest of
-the time. It costs 3.98 dB.
+the time. It costs 3.92 dB.
 
 This is the mirror of the open item Finding 42 and 45 left standing. That
 one says the ratio cannot be measured when the window is mostly noise.
@@ -6755,9 +6779,8 @@ nothing downstream doubts it.
 
 `144505` is the first capture in this document where Best clearly wins,
 and it wins on the statistic that matters here rather than on the mean:
-level with arm 0 to 0.08 dB averaged, **+8.9 dB at the first percentile,
-+11.2 dB on the worst block, and 0.1 % of the minute under 20 dB against
-1.3 %.** That is selection diversity behaving exactly as the textbook says
++0.33 dB averaged, **+9.5 dB at the first percentile, +17.8 dB on the
+worst block, and none of the minute under 20 dB against 1.3 %.** That is selection diversity behaving exactly as the textbook says
 it should on two antennas that fade independently, and Finding 38's
 verdict - Best costing rather than gaining on five SSB captures of six -
 does not survive contact with a path like this one.
@@ -6782,10 +6805,11 @@ to 19.49 dB on `143952` and 26.65 to 21.72 on `144505`, back to arm 0's
 own figure. **Averaging is the fade-flattening control on this path**, it
 wants the bottom of its travel, and the operator had it at 0.6 s.
 
-**The output slew is itself a 0.53 s time constant.** `DIV_SLEW_FRAC` is
+**The output slew is itself a 0.53 s time constant.** `DIV_SLEW_FRAC` was
 0.15 per block and a block here is 85.3 ms, which is `-T/ln(0.85)` =
 0.525 s of first-order lag applied to the weight *after* the averaging
-slider has had its say. At 0.2 s averaging it costs 0.44 dB of mean and
+slider has had its say. (Finding 48 takes this one: it is a time constant
+in seconds now, and a quarter of the averaging.) At 0.2 s averaging it costs 0.44 dB of mean and
 **3.3 dB of first percentile** on `144505`, and it is the reason the ideal
 rows never reach the per-block ceiling. On a path whose channel is half
 decorrelated at 0.43 s, the slider cannot ask for anything faster than the
@@ -6819,6 +6843,154 @@ collectable part was half a decibel.
 Neither capture carries a note. Which antenna was on which ADC is
 recoverable only from the attenuator fields and the noise floors, which is
 the case `test/diversity/devtools/README.md` warns about.
+
+## Finding 48: the Averaging slider's bottom two thirds could not reach the output
+
+Finding 47 measured three things that cost fade tracking and fixed one of
+them. This is the other two, and they turn out to be one mechanism seen
+twice.
+
+`DIV_SLEW_FRAC` was **0.15 of the remaining distance per block**, applied
+to `div_cos`/`div_sin` after the solve. Two things follow that nothing in
+the code or the menu said.
+
+**It is a lag the operator cannot see, in series with the one they can.**
+The Averaging control sets the time constant of the *estimate*; the slew
+sets the time constant of what is *applied*. At the shipping 2.0 s of
+averaging the slew is a quarter of it and hardly shows. At the bottom of
+the slider - 0.2 s, which is where a fading path wants it - a half-second
+slew is two and a half times the averaging and is then the only thing the
+operator's control is fighting. **The bottom two thirds of the slider's
+travel could not reach the applied weight.**
+
+**And it was a fraction per block, so it moved with the Resolution
+control.** The block period is the reciprocal of the bin width, so
+0.15 per block is 0.26 s at 24 Hz bins and 1.05 s at 6 Hz - a four-to-one
+range, in the same direction as the estimate lag Resolution is documented
+to trade, which made that control worth rather more than it looked and
+for a reason nobody had written down.
+
+### The grid
+
+`run_ref`, Window / Sum, four captures chosen to disagree with each
+other, scored per 85.3 ms block over the blocks that carry signal - the
+better arm's passband more than 6 dB over its own guard, which is
+Finding 42's own test - against bins outside the filter. Averaging across,
+slew time constant down:
+
+`143952`, 41 m AM, fading hard:
+
+| mean SNR | avg 0.2 | 0.5 | 2.0 | 5.0 | | p1 | 0.2 | 0.5 | 2.0 | 5.0 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| slew 0.05 s | **17.69** | 17.34 | 16.71 | 16.65 | | slew 0.05 s | **6.45** | 5.18 | 4.72 | 4.88 |
+| slew 0.15 s | 17.61 | 17.25 | 16.67 | 16.64 | | slew 0.15 s | 6.32 | 5.06 | 4.71 | 4.89 |
+| slew 0.50 s | 17.33 | 16.99 | *16.57* | 16.58 | | slew 0.50 s | 5.98 | 4.70 | *4.88* | 4.82 |
+| slew 1.00 s | 17.04 | 16.77 | 16.48 | 16.52 | | slew 1.00 s | 5.08 | 5.04 | 4.77 | 4.75 |
+
+`144505`, 41 m AM, the same station five minutes later:
+
+| mean SNR | avg 0.2 | 0.5 | 2.0 | 5.0 | | p1 | 0.2 | 0.5 | 2.0 | 5.0 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| slew 0.05 s | **18.33** | 18.00 | 17.49 | 17.22 | | slew 0.05 s | **8.76** | 6.99 | 4.56 | 3.82 |
+| slew 0.15 s | 18.26 | 17.94 | 17.46 | 17.20 | | slew 0.15 s | 8.59 | 6.93 | 4.61 | 3.82 |
+| slew 0.50 s | 18.03 | 17.77 | *17.37* | 17.14 | | slew 0.50 s | 7.67 | 5.50 | *4.45* | 3.84 |
+| slew 1.00 s | 17.84 | 17.62 | 17.28 | 17.10 | | slew 1.00 s | 6.98 | 5.11 | 4.11 | 3.83 |
+
+The italic cell is what shipped. On the two captures the finding came
+from, both controls are monotone and both want the short end: at
+averaging 0.2 s and a 0.05 s slew the mean is 1.1 and 0.96 dB better than
+the shipped corner and the first percentile 1.6 and 4.3 dB better.
+
+**The slew's own contribution is largest exactly where the operator has
+asked for speed.** At averaging 2.0 s, shortening it from 0.5 to 0.05 s is
+worth 0.14 and 0.12 dB. At 0.2 s it is worth 0.36 and 0.30 dB on the mean
+and 0.47 and 1.09 dB at the first percentile. That is the series lag
+showing itself: the shorter the estimate's time constant, the larger the
+share of the total that the invisible one holds.
+
+### And two captures that do not want the short end
+
+`235906`, 80 m voice, 28 % of blocks carrying signal: **flat**. Every cell
+of both metrics within 0.2 dB, with a slight preference for short. Worth
+recording on its own account - Finding 42 measured a **3.59 dB** averaging
+spread on this capture and this measures 0.17 dB, and the difference is
+the noise reference. That sweep scored voice against the capture's own
+quietest blocks, which moves the reference with whatever the weight does
+in silence; this one scores against bins outside the filter, which does
+not move at all.
+
+`000412`, 13 MHz SAM: **the counter-example, and it is the first
+percentile that objects.** The mean is flat to 0.09 dB across the whole
+grid, and the first percentile prefers a *longer* slew - 3.45 at 1.00 s
+against 2.89 at 0.05 s, at averaging 0.2 s. This is the capture where the
+loop lands 0.96 dB below the better antenna (Finding 37) and where the two
+arms are within 0.3 dB of each other at the first percentile; a fast loop
+chasing a channel it cannot estimate well makes the worst moments worse.
+**It is the reason the answer is not "as short as possible".**
+
+### What was chosen, and what it scores
+
+Averaging default **0.5 s**, and the slew a **quarter of the averaging,
+capped at its old 0.5 s** - so at 2.0 s of averaging nothing moves at all,
+and the shipped corner is unchanged for anyone who has that in their props
+file.
+
+Scored A (2.0 s averaging, 0.5 s slew) against C (0.5 s, 0.125 s) through
+`run_ref`, on every capture where the out-of-filter guard is clean enough
+for the metric to mean anything - which is the test that excludes
+`235521`, `000232`, `122843`, `123333` and `154822`, whose passbands read
+*below* their guards on 80 m and 17 m at 192 kHz:
+
+| capture | A mean | C mean | Δ | A p1 | C p1 | Δ |
+|---|---|---|---|---|---|---|
+| `143952` 41 m AM | 16.57 | 17.27 | **+0.70** | 4.88 | 5.11 | +0.24 |
+| `144505` 41 m AM | 17.37 | 17.96 | **+0.59** | 4.45 | 6.95 | **+2.50** |
+| `000537` 13 MHz SAM | 6.87 | 7.44 | **+0.57** | -3.44 | -2.82 | +0.63 |
+| `003309` 30 m FT8 | 18.55 | 18.73 | +0.18 | 8.21 | 7.78 | **-0.43** |
+| `002534` 30 m CW | 14.76 | 14.92 | +0.16 | 4.85 | 5.06 | +0.21 |
+| `011225` 60 m AM | 18.48 | 18.58 | +0.11 | 3.91 | 5.44 | **+1.52** |
+| `235906` 80 m voice | 12.22 | 12.32 | +0.11 | 5.95 | 5.98 | +0.02 |
+| `000412` 13 MHz SAM | 16.83 | 16.87 | +0.04 | 3.51 | 3.50 | -0.01 |
+| `235652` 80 m LSB | 12.37 | 12.38 | +0.01 | 5.97 | 5.96 | -0.01 |
+
+**Better on the mean on all nine**, by 0.01 to 0.70 dB. Better at the
+first percentile on five, level on three, worse on one - the FT8 capture,
+by 0.43 dB, which is the shape `000412` warned about.
+
+### The two things a faster loop could have broken, and did not
+
+**It does not chase noise.** A 0.125 s slew at 85.3 ms blocks moves 49 %
+of the way in one block, so a no-signal block passing the coherence gate -
+about one in twenty by design - leans the weight much further than it used
+to. Scored on the five bare-band captures as the output passband power
+against arm 0's own, which is Finding 42's silence penalty:
+
+| | `231532` | `232750` | `111328` | `233423` | `233615` |
+|---|---|---|---|---|---|
+| A | 2.64 dB | 1.42 | 2.38 | 1.01 | 0.29 |
+| C | 2.46 | 1.58 | 2.38 | 0.89 | 0.13 |
+| Δ | **-0.18** | +0.16 | 0.00 | **-0.12** | **-0.16** |
+
+Four of five improve or are unchanged and the fifth costs 0.16 dB. The
+median applied `|w|` does not run away either - on `233615` it falls from
+0.717 to 0.296. The coherence gate and the stand-down are what hold it,
+and both still do.
+
+**It does not destabilise the pilot correlator.** RADE V1 applies its
+weight through the same path, and Finding 35 measured the whole averaging
+slider as worth three synced frames there *because the output slew was in
+the path* - which this change removes at short averaging. The lock
+fraction is **identical** on both RADE captures re-run, 56.6 % on `165826`
+and 84.0 % on `234508`, with pilot quality and SNR moving by hundredths:
+the change touches what is applied and not what is detected, and the
+identical lock fractions are what says so.
+
+**RADE V1 has not been decode-scored at the new default.** That needs
+`score_rade` and librade and it has not been run. The lock figures above
+bound the risk to the combining rather than the detection, and Finding 35
+says the slider is worth three frames of 450 there in any case, but it is
+the one corner of this change that rests on an argument rather than on a
+decode.
 
 ## False alarms
 
@@ -7107,6 +7279,19 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
+- **The coherence gate holds concentrated in the fades, and nothing has
+  been done about it.** The last of Finding 47's three mechanisms. Arm 0's
+  carrier signal-to-noise averages 33.3 dB on the blocks the loop held and
+  38.6 dB on the rest of `143952`; 31.9 against 40.4 dB on `144505`.
+  Holding is not spread across the minute - it is concentrated where the
+  channel is moving fastest and the weight most needs to move, which is
+  the gate doing exactly what it was designed to do and the wrong thing on
+  a fading path. Findings 47 and 48 fixed the noise floor, the slew and
+  the averaging default around it, and this one is untouched. What it
+  would take is a gate that distinguishes "the signal has gone" from "the
+  signal is in a fade", and the per-arm noise floor that Finding 47 added
+  is the first measurement in the engine that could tell them apart - a
+  fade leaves the floor where it was.
 - **Closed, and it was worth what it promised: the combiner now stands
   down on an empty band.** `div_window_quiet()` asks whether either arm
   is carrying anything, `DIV_QUIET_DWELL` separates a gap from a fade, and
@@ -7150,8 +7335,8 @@ holds is the false-alarm line, and that part stands.
   pair across frequency instead of across time, so a window that is mostly
   noise is no longer a difficulty either - there is nothing to wait for.
   `123333`, the 95 %-noise capture that was the third to produce the same
-  seven decibels, gains 0.34 dB of Sum and 0.18 of Best; `122843` gains
-  0.42 and loses 0.05. **What is left is what those two numbers say**: the
+  seven decibels, gains 0.36 dB of Sum and 0.14 of Best; `122843` gains
+  0.27 and loses 0.05. **What is left is what those two numbers say**: the
   ratio being right is worth little on a capture whose whole prize is
   small, and the 7 dB it used to be wrong by was never the largest term
   there. See "What was changed".
@@ -8218,24 +8403,25 @@ the out-of-filter noise floor:
 
 | capture | arm 0 | arm 1 | Sum before | Sum after | Best before | Best after |
 |---|---|---|---|---|---|---|
-| `143952` 41 m AM | **16.52** | 11.51 | 14.69 | **16.52 (+1.83)** | 12.53 | **16.00 (+3.47)** |
-| `144505` 41 m AM | 17.06 | 12.64 | 17.27 | 17.46 (+0.19) | 16.47 | 17.11 (+0.64) |
-| `000332` 5 MHz digital | -1.47 | **6.12** | 1.15 | **5.75 (+4.60)** | -0.86 | **6.72 (+7.58)** |
-| `000412` 13 MHz SAM | 16.54 | 12.83 | 15.70 | 16.53 (+0.82) | 14.47 | 16.35 (+1.88) |
-| `122843` 17 m SSB | -13.19 | -15.20 | -13.59 | -13.17 (+0.43) | -14.64 | -14.70 (-0.05) |
-| `123333` 80 m, 95 % noise | -14.17 | -14.67 | -14.45 | -14.10 (+0.34) | -14.50 | -14.32 (+0.18) |
-| `011225` 60 m AM | 17.59 | 16.49 | 17.72 | 18.00 (+0.28) | 18.19 | 18.05 (-0.14) |
-| `235906` 80 m voice | 2.69 | 0.34 | 2.71 | 2.76 (+0.06) | 2.62 | 2.62 (0.00) |
-| `003309` 30 m FT8 | 13.83 | 14.04 | 15.75 | 15.78 (+0.02) | 14.27 | 14.58 (+0.31) |
-| `000537` 13 MHz SAM | 0.53 | 5.98 | 3.36 | 3.15 (-0.21) | 4.87 | 5.61 (+0.73) |
-| `002534` 30 m CW | 0.61 | 1.64 | 1.17 | 0.96 (-0.21) | 0.96 | 0.67 (-0.30) |
-| `154822` FSK | -18.95 | -17.24 | -17.10 | -17.71 (-0.60) | -19.99 | -17.33 (+2.66) |
+| `143952` 41 m AM | 16.52 | 11.51 | 15.04 | **16.90 (+1.86)** | 12.59 | **16.39 (+3.81)** |
+| `144505` 41 m AM | 17.06 | 12.64 | 17.36 | 17.68 (+0.33) | 16.60 | 17.31 (+0.70) |
+| `000332` 5 MHz digital | -1.47 | **6.12** | 1.14 | **5.78 (+4.64)** | -0.95 | **6.70 (+7.65)** |
+| `000412` 13 MHz SAM | 16.54 | 12.83 | 15.75 | 16.58 (+0.83) | 14.65 | 16.39 (+1.73) |
+| `123333` 80 m, 95 % noise | -14.17 | -14.67 | -14.40 | -14.05 (+0.36) | -14.51 | -14.38 (+0.14) |
+| `011225` 60 m AM | 17.59 | 16.49 | 17.71 | 18.03 (+0.31) | 18.23 | 18.13 (-0.09) |
+| `122843` 17 m SSB | -13.19 | -15.20 | -13.31 | -13.04 (+0.27) | -14.53 | -14.57 (-0.05) |
+| `235906` 80 m voice | 2.69 | 0.34 | 2.73 | 2.80 (+0.08) | 2.62 | 2.62 (0.00) |
+| `003309` 30 m FT8 | 13.83 | 14.04 | 15.86 | 15.88 (+0.02) | 14.24 | 14.59 (+0.34) |
+| `000537` 13 MHz SAM | 0.53 | 5.98 | 3.35 | 3.31 (-0.03) | 4.94 | 5.55 (+0.61) |
+| `002534` 30 m CW | 0.61 | 1.64 | 1.16 | 0.97 (-0.18) | 0.95 | 0.57 (-0.38) |
+| `154822` FSK | -18.95 | -17.24 | -16.90 | -17.23 (-0.33) | -19.98 | -17.47 (+2.50) |
 
-**Eight better, three slightly worse, one level, on both objectives.**
-Mean +0.63 dB of Sum and +1.41 dB of Best. The three that lose are the
-three where the temporal minimum was already accurate - `002534` has real
-gaps in it and Finding 22's own table scores its old estimate at 0.36 dB
-from the truth - and they lose 0.21, 0.21 and 0.60 dB.
+**Nine better, two slightly worse, one level on Sum; eight better, three
+slightly worse, one level on Best.** Mean **+0.68 dB of Sum and +1.41 dB
+of Best**. The rows that lose are ones where the temporal minimum was
+already accurate - `002534` has real gaps in it and Finding 22's own
+table scores its old estimate at 0.36 dB from the truth - and they lose
+0.03 to 0.38 dB.
 
 `154822`'s row should be read as "not worse" rather than as a figure. It
 is the capture with a second source *out of band*, which is where this
@@ -8282,7 +8468,7 @@ The stand-down slews the weight to zero on an empty band and restores it
 the loop is still holding*. An over that arrives strongly enough to open
 the coherence gate on its own first block goes straight to the solve,
 never reaches that function, and was left climbing off zero at
-`DIV_SLEW_FRAC` - half a second of first-order lag, which is the whole of
+`DIV_SLEW_TAU` - half a second of first-order lag, which is the whole of
 the 0.58 dB the restore was measured to be worth.
 
 `div_leave_standdown()` now sets `div_jump` on every path out of a
@@ -8295,6 +8481,54 @@ returned the weight had reached -2.85 dB of the -2.11 it was standing on
 and was still climbing. It **steps back to it at once** now, and what is
 left in that test is the loop's own re-convergence on the returning
 signal.
+
+### `src/diversity_auto.c` — the output slew is a time constant, and follows the slider
+
+Finding 48. `DIV_SLEW_FRAC` was 0.15 of the remaining distance per block.
+It is now `DIV_SLEW_TAU`, a time constant in seconds, and it is the lesser
+of 0.5 s and a quarter of the operator's Averaging setting.
+
+Two defects, one line. **A fraction per block is not a time constant**: the
+block period is the reciprocal of the bin width, so 0.15 per block was
+0.26 s at 24 Hz bins and 1.05 s at 6 Hz, and the Resolution control was
+silently moving the output lag as well as the estimate lag - in the same
+direction, which made it worth more than it looked for a reason nothing
+had written down. And **it was a second lag in series with the one the
+operator can see**: at the bottom of the Averaging slider a fixed
+half-second slew is two and a half times the averaging, so the bottom two
+thirds of that slider's travel could not reach the applied weight.
+
+0.5 s is exactly what 0.15 per block came to at the default 12 Hz bins, so
+it is the ceiling and nothing moves for anyone at 2.0 s of averaging.
+
+### `src/diversity_auto.c` — the Averaging default is 0.5 s
+
+Finding 48, and it reverses part of Finding 42 - because the metric
+changed, not because the captures did.
+
+That sweep scored voice against the capture's own quietest blocks, which
+moves the noise reference with whatever the weight does in silence, and it
+found 2.0 s best on three wideband captures of six. Scored per block
+against bins *outside the filter*, over the blocks that carry signal,
+0.5 s is ahead of 2.0 s **on the mean on all nine captures the guard is
+clean on** - by 0.01 to 0.70 dB - and ahead at the first percentile on
+five of them, by up to 2.50 dB. It is behind on one, the FT8 capture, by
+0.43 dB. On `235906` the two metrics disagree by an order of magnitude
+about how much the setting is worth at all: 3.59 dB by the old one and
+0.17 dB by this one.
+
+Only a fresh install gets the new default. The value is written to every
+props file, so an operator who has 2.0 s keeps it, which is right - and
+what the guide now says is where to move it and why.
+
+Checked for the two things a faster loop could have broken. It does not
+chase noise: on the five bare-band captures the silence penalty improves
+on three, is unchanged on one and costs 0.16 dB on the fifth, and the
+median applied `|w|` falls rather than rises. It does not destabilise the
+pilot correlator: the lock fraction is identical on both RADE captures
+re-run, because the change touches what is applied and not what is
+detected. **RADE V1 has not been decode-scored at the new default** - see
+the end of Finding 48 for what that does and does not leave open.
 
 ### `test/diversity/devtools/run_ref.c` — the transform size, and a queue that was overflowing
 
@@ -9168,7 +9402,7 @@ The carrier is the five bins about the peak - -35 Hz on `143952`, -82 Hz
 on `144505` - the sideband column is 150 Hz to the filter edge either side
 of it, and the guard is +/-7000 to +/-11500 Hz, which both arms read flat
 to 1.4 dB. The weight is applied **one block late and through the
-`DIV_SLEW_FRAC` slew**, as the engine applies it. The fade table uses the
+`DIV_SLEW_TAU` slew**, as the engine applied it then. The fade table uses the
 same 2048-sample sub-block as Findings 34 to 39, so its envelope
 correlations are comparable with theirs. `run_ref` reproduces both on-air
 rows to 0.08 dB:
