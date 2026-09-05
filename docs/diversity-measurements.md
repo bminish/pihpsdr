@@ -172,12 +172,18 @@ engine around it is 91 frames worse than one antenna**, because
 `div_process_block()`'s RADE branch has no stand-down: when the correlator
 produces no weight - 98.6 % of blocks on two of these captures - nothing
 ever asks whether what is applied is still worth anything. On `153114`
-that leaves the operator's manual unit weight in force for **42 of the 60
+that leaves an uncomputed unit weight in force for **42 of the 60
 seconds** and the modem decodes nothing where arm 0 alone decodes 70
 frames; on `152310` it is a stale answer held for 57 seconds, and it
-decodes nothing where arm 0 decodes 31. Two fallback rules were scored and
-both fix it, +26 and +49 frames. And
-**every decode figure in this document carries an undeclared error bar**:
+decodes nothing where arm 0 decodes 31. **This is worth fixing and the
+frame totals are not the reason** - the manual scales are insensitive
+while the loop runs and `div_cos`/`div_sin` are persisted, so what is
+applied is the previous session's answer on a different band and the
+operator cannot reach it. Five lines, against machinery that already
+exists.
+
+And **every decode figure in this document carries an undeclared error
+bar**:
 `arm0` and a `w = 0` weight stream are bit-identical input to `score_rade`
 and score up to 25 frames of 500 apart, reproducibly, depending on how
 many librade instances the run opens.
@@ -7285,6 +7291,95 @@ and the opportunity is 91 frames of 1378. It is not spread across the set:
 `152310` and `153114` supply **-101 of it between them**, `153301` -18,
 `152724` -4, and `152423` runs the other way at +32.
 
+### What the operator can actually reach, which is what settles it
+
+Two facts from the code, neither of which needs a capture, and together
+they change what the section above is an argument about.
+
+**The manual gain and phase sliders are insensitive while the loop is
+running.** `diversity_menu.c` computes `manual` as `div_auto_mode ==
+DIV_AUTO_OFF || !div_auto_running || div_auto_hold` and greys all four
+scales on it. So under a running RADE V1 objective with Hold off, the
+weight the engine leaves applied through every unsolved block is one the
+operator **cannot adjust without first pressing Hold** - a deliberate act
+that also stops the thing they engaged the loop for.
+
+**And `div_cos` and `div_sin` are persisted in their own right.**
+`diversity_cos` and `diversity_sin` are written to the property file at
+shutdown and read back at start, alongside `diversity_gain` and
+`diversity_phase`. What is saved is whatever the loop last wrote. So on a
+fresh start the weight standing in for "the correlator has not solved yet"
+is **the answer the loop reached at the end of the previous session** - a
+different band, a different pair of signal levels, possibly hours earlier,
+and anywhere in the +/-27 dB the menu allows. `run_ref`'s stand-in of
+1.0 at 0 degrees is the *benign* case of this, not the representative one.
+
+So the engine is not falling back to a setting the operator chose. It is
+applying one they did not choose, cannot see the provenance of, and cannot
+reach.
+
+### Is any of this worth implementing
+
+**One change, and not for the reason the frame counts suggest.**
+
+The +26 and +49 totals are a poor justification and should not be used as
+one. Both turn partly on the 27-block head of the stream, where `152310`
+and `153301` move by +29 and -19 from a difference lasting 2.3 seconds -
+which is the instability the caveat section measures, seen again. Nothing
+that rests on those two numbers is safe.
+
+What is safe is `153114`, and it is not a tuning question. **498 blocks -
+42.5 seconds of a 60-second recording - with a weight the loop never
+computed, from an antenna 10 dB down, and the modem recovers nothing where
+one antenna alone recovers 70 frames.** That is a difference of kind, it is
+sustained rather than transient, its mechanism is a missing branch rather
+than a mis-set constant, and an operator meeting it has no recourse inside
+the feature: the sliders are greyed and the only fix is to switch
+diversity off.
+
+The narrow form of the change is **A**, and the machinery is already
+there:
+
+```c
+} else {
+  div_auto_coherence = rade_corr_quality;
+  div_auto_holding = 1;
+  if (!rade_ever_solved) { div_write_weight(0.0, 0.0, 0); }
+}
+```
+
+with the flag set in the `ok` branch and cleared in `div_reset_stats()`.
+`div_write_weight(..., 0)` is the existing "applied, but the loop did not
+measure it this block" path that the stand-down already uses for exactly
+this purpose, so the readout keeps showing the loop's own answer. It
+touches the RADE branch only, so no other reference moves, and it can act
+only before the *first* solve after a reset - 27 blocks on four of these
+six captures and 498 on one.
+
+**B is not worth implementing, despite scoring better.** Dropping to arm 0
+on every unlocked block duplicates a decision the hang already owns
+(Finding 44), and Finding 45's `drop` column is the same direction taken
+slightly too far and costing 45 frames. B's margin over A is inside the
+scatter; its risk is not.
+
+The other cheap change is in the harness: **score arm 0 as a `w = 0`
+weight stream and reference to that**, which is one extra decoder per run
+and about ten lines. Without it every future decode measurement carries an
+error bar larger than most of the effects being measured. **Re-scoring the
+earlier findings is the expensive half and is not worth it** - most of them
+concluded that no change was indicated, and a 25-frame error bar does not
+overturn a null result. The two whose conclusions sit inside it are named
+under "What is still open".
+
+Four things were measured and are **not** worth changing:
+
+| | why not |
+|---|---|
+| `RADE_USE_RATIO` | the margin is gone, but raising it freezes a weight already frozen on 98.6 % of blocks where one was most wanted, and `151108` rules out lowering it. Doing nothing is the measured answer |
+| the Averaging default | 40 frames of 1376 between the recorded 0.33 s and the new 0.5 s, and the two captures with the most to gain do not move at all |
+| a weight per frequency bin | 0.2 to 0.95 dB here, for a per-bin solve inside the correlator. The flat scalar model is not what is costing anything on these paths |
+| a better weight estimator | the independently computed maximum-ratio weight decoded **fewer** frames than the shipping one while reporting a decibel more SNR. There is nothing to chase |
+
 ### The averaging time is not the lever
 
 `replay_rade --tau` from 0.2 s to 2.0 s, on all five 41 m captures:
@@ -7729,20 +7824,25 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
-- **RADE V1 has no fallback, and what it leaves applied is the operator's
-  manual weight.** Finding 49. `div_process_block()`'s RADE branch sets
-  `div_auto_holding` and returns when the correlator produces no weight,
-  and there is no stand-down on that path, so before the first solve the
-  radio applies `div_gain`/`div_phase` - unit gain, zero phase, the two
-  antennas summed raw. On the two captures where the correlator solves on
-  about 1 % of blocks that decodes **nothing**, against 70 and 31 synced
-  frames for arm 0 alone - 42 seconds of unit weight on `153114`, 57
-  seconds of a stale one on `152310` - and over the six it costs **91
-  synced frames of 1378**. Two rules were scored and both recover it - arm 0 until the
-  first solve (+26), arm 0 whenever the lock is gone (+49) - but neither
-  carries the slew or the hang a real implementation needs, so what is
-  settled is that there has to be a fallback, not which one. **This is the
-  largest unmade change in the document.**
+- **RADE V1 has no fallback, and what it leaves applied is a weight the
+  operator cannot reach.** Finding 49. `div_process_block()`'s RADE branch
+  sets `div_auto_holding` and returns when the correlator produces no
+  weight, and there is no stand-down on that path, so nothing ever asks
+  whether what is applied is still worth anything. On the two captures
+  where the correlator solves on about 1 % of blocks that decodes
+  **nothing**, against 70 and 31 synced frames for arm 0 alone - 42
+  seconds of unit weight on `153114`, 57 seconds of a stale one on
+  `152310` - and over the six it costs **91 synced frames of 1378**.
+  **The case for changing it does not rest on that total**, which is
+  partly the metric's own scatter. It rests on `153114`: 498 blocks at a
+  weight the loop never computed, with no recourse inside the feature,
+  because the manual scales are insensitive while the loop runs and
+  `div_cos`/`div_sin` are persisted - so what stands in for "not solved
+  yet" on a fresh start is the previous session's answer on a different
+  band. The narrow remedy is five lines against `div_write_weight()`,
+  which already exists for exactly this; the wider one, dropping to arm 0
+  on every unlocked block, is not worth it and Finding 49 says why. **This
+  is the largest unmade change in the document.**
 - **`score_rade`'s streams are not interchangeable, and every
   "combined - best arm" figure here is computed across that.** Finding 49.
   `arm0` and a `w = 0` weight stream are bit-identical input and score
