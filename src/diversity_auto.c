@@ -917,10 +917,21 @@ static void div_reset_stats(void) {
   acc_xy_re = acc_xy_im = acc_xx = acc_yy = 0.0;
 
   if (bin_xy_re != NULL) {
-    memset(bin_xy_re, 0, DIV_MAX_NFFT * sizeof(double));
-    memset(bin_xy_im, 0, DIV_MAX_NFFT * sizeof(double));
-    memset(bin_xx,    0, DIV_MAX_NFFT * sizeof(double));
-    memset(bin_yy,    0, DIV_MAX_NFFT * sizeof(double));
+    //
+    // The bins in use, not the whole allocation. Every index into these
+    // is taken modulo nfft, so nfft entries is all that can be reached,
+    // and nfft is set before this runs on every path that changes it -
+    // diversity_auto_start() computes it before the reset below it, and
+    // it cannot change while the worker is running. At the default
+    // 12 Hz on a 48 kHz DDC that is 128 KB rather than 2 MB, and this
+    // runs from div_process_block() on every context change - tuning
+    // across a band raises one about once a block.
+    //
+    const size_t n = (size_t)((nfft > 0 && nfft <= DIV_MAX_NFFT) ? nfft : DIV_MAX_NFFT);
+    memset(bin_xy_re, 0, n * sizeof(double));
+    memset(bin_xy_im, 0, n * sizeof(double));
+    memset(bin_xx,    0, n * sizeof(double));
+    memset(bin_yy,    0, n * sizeof(double));
   }
 
   acc_valid = 0;

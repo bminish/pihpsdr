@@ -1075,6 +1075,15 @@ static int status_update_cb(gpointer data) {
 }
 
 static void auto_changed_cb(GtkWidget *widget, gpointer data) {
+  //
+  // A settings push, not the operator: div_populate_from_settings() is
+  // driving this widget and the globals behind it are already correct.
+  // Acting anyway restarts the engine and discards the statistics a
+  // second and third time over one mode change - and on RADE V1 each
+  // restart costs a fresh pilot acquisition.
+  //
+  if (updating_from_server) { return; }
+
   int previous = div_auto_mode;
   div_auto_mode = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
 
@@ -1154,6 +1163,8 @@ static void invert_cb(GtkWidget *widget, gpointer data) {
 
 // cppcheck-suppress constParameterCallback
 static void hold_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
   diversity_auto_set_hold(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
   div_send_settings(DIV_ACTION_NONE);
   update_manual_sensitivity();
@@ -1343,6 +1354,8 @@ static void div_window_recall(int ref) {
 }
 
 static void ref_changed_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
   int previous = div_auto_ref;
   int was_off = (div_auto_mode == DIV_AUTO_OFF);
   div_window_store(previous);
@@ -1381,6 +1394,8 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void follow_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
   div_auto_follow_filter = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   //
   // The window is now the RX filter's, or the operator's again, so the
@@ -1394,7 +1409,7 @@ static void follow_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void centre_cb(GtkWidget *widget, gpointer data) {
-  if (updating_from_auto) { return; }
+  if (updating_from_auto || updating_from_server) { return; }
 
   div_auto_centre = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
   div_window_store(div_auto_ref);
@@ -1403,7 +1418,7 @@ static void centre_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void width_cb(GtkWidget *widget, gpointer data) {
-  if (updating_from_auto) { return; }
+  if (updating_from_auto || updating_from_server) { return; }
 
   div_auto_width = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
   div_window_store(div_auto_ref);
@@ -1430,6 +1445,8 @@ static gchar *tau_format_cb(GtkScale *scale, gdouble value, gpointer data) {
 }
 
 static void tau_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
   div_auto_tau = div_tau_from_pos(gtk_range_get_value(GTK_RANGE(widget)));
   //
   // A shorter average is fewer independent blocks, which is the other half
@@ -1445,9 +1462,10 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
   //
   // div_window_recall() moves this slider when the reference changes, and
   // the slider's 5 % step would quantise the recalled value on the way
-  // back in.
+  // back in. A settings push from the other end moves it for the same
+  // reason and would quantise it the same way.
   //
-  if (updating_from_auto) { return; }
+  if (updating_from_auto || updating_from_server) { return; }
 
   div_auto_coherence_min = 0.01 * gtk_range_get_value(GTK_RANGE(widget));
   //
@@ -1460,6 +1478,8 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void res_changed_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
   static const double res[] = { 24.0, 12.0, 6.0 };
   int i = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
 
@@ -1481,7 +1501,7 @@ static void res_changed_cb(GtkWidget *widget, gpointer data) {
 static void norm_cb(GtkWidget *widget, gpointer data) {
   (void)data;
 
-  if (updating_from_auto) { return; }
+  if (updating_from_auto || updating_from_server) { return; }
 
   div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   div_send_settings(DIV_ACTION_NONE);
