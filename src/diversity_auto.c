@@ -325,6 +325,102 @@
 #define DIV_OCC_MAX_SAMPLES 4096
 
 //
+// ------------------------------------------------------------------
+// The per-arm noise floor, taken across frequency rather than time
+// ------------------------------------------------------------------
+//
+// What a maximum-ratio weight is missing is N0/N1, the ratio of the two
+// branch noises, and what the per-arm SNR readout needs is the same pair.
+// Both used to come from a minimum over *time*: the quietest the window
+// has recently been on each arm - see div_arm_floor_update() and
+// div_arm_nratio_update(), which are still here and still feed the
+// stand-down.
+//
+// A temporal minimum has one premise: that the band goes quiet often
+// enough for the quietest recent moment to be noise. DIV_ARM_MIN_DB is
+// the guard on it, and it refuses to answer for a signal that never
+// stops - which is the case the comment beside it describes.
+//
+// **A fading carrier defeats that guard**, and Finding 47 in
+// docs/diversity-measurements.md is the measurement. On a 41 m broadcast
+// whose carrier fades 17 dB peak to peak the fades supply the clearance
+// the guard asks for: the minima land in them, the smoothed power stands
+// well clear the rest of the time, and what gets published on 78 % of
+// blocks is a ratio of two independent fades. It read +10.5 dB where the
+// truth was -0.35, put 19 dB of surplus arm 1 into the Sum weight, and
+// cost 2.05 of the 2.60 dB that capture had to give. The same corruption
+// reaches the per-arm SNR through div_arm_from_floor(): 8.7 dB out with
+// its sign inverted, so Best chose the wrong antenna on 95.6 % of blocks.
+//
+// The estimate here has no such premise, because it never waits for a
+// gap. The noise floor is what the *quietest bins of this block* sit at,
+// and there are thousands of them in the DDC passband every block,
+// outside the operator's filter where no wanted signal can be. A fade
+// takes the signal down and leaves those bins exactly where they were, so
+// a fade cannot be mistaken for silence; a carrier that never stops is
+// not a difficulty either, because nothing is being waited for.
+//
+// Measured against the whole capture set - 26 files, 48 and 192 kHz, four
+// transform sizes, signals from FT8 to DRM to bare band noise - the
+// median error is inside 0.3 dB on twenty of them and 1.3 dB on all but
+// two, against 1.4 to 10.6 dB for the temporal minimum, which also
+// produces no answer at all on six. The two apparent outliers are the
+// estimate being right: on `122632` it follows the operator's ADC1
+// attenuator one for one from 0 to 16 dB while arm 0's floor holds to
+// 0.7 dB, and on `002710` it finds the two undocumented attenuator steps
+// that capture's format-version-1 header could not record.
+//
+// A low percentile rather than a minimum or a mean: a minimum over
+// thousands of bins is the low tail of the noise distribution and moves
+// with the bin count, a mean is dragged up by anything transmitting in
+// the sampled span, and a tenth percentile tolerates the span being up to
+// ninety per cent occupied before it starts to read the occupants.
+//
+#define DIV_NF_PCT          10
+//
+// ...averaged over a band of order statistics either side of it, rather
+// than read off as a single one. A lone percentile is one sample of a
+// noisy distribution and its scatter goes straight into the weight; two
+// percentiles either side is about forty sorted values at
+// DIV_NF_SAMPLES, the array is already sorted so they cost nothing, and
+// the ratio's block-to-block scatter drops from about 0.7 dB to 0.3.
+// Still a percentile, so it needs no distribution assumption - which a
+// trimmed mean scaled back to the true mean would.
+//
+#define DIV_NF_BAND         2
+//
+// Bins sampled per arm per block. Two qsorts of this length is the whole
+// cost, and at 1024 the percentile's own scatter is a few tenths of a
+// decibel before DIV_NF_TAU smooths it. Same striding idea as
+// DIV_OCC_MAX_SAMPLES: a wider span is sampled, not sorted in full.
+//
+#define DIV_NF_SAMPLES      1024
+//
+// Below this many candidate bins there is not enough spectrum outside the
+// filter to say anything, and the temporal floor is used instead. Reached
+// only by a hand-placed window far wider than the passband it sits in.
+//
+#define DIV_NF_MIN_BINS     128
+//
+// Keep this clear of the filter edge. The window is Blackman-Harris, so
+// leakage is not what this is for; it is the filter skirt itself, and
+// signals the operator has tuned close enough to hear the edge of.
+//
+#define DIV_NF_SKIRT_HZ     1000.0
+//
+// Sample the central fraction of the transform only. The DDC's own
+// response is not flat at the edge of its passband, and a floor measured
+// in the roll-off is a measurement of the roll-off.
+//
+#define DIV_NF_SPAN         0.80
+//
+// Smoothing, seconds. Long enough to take the scatter out of a
+// percentile, short enough that the step attenuators - which reset the
+// statistics anyway - are followed rather than averaged through.
+//
+#define DIV_NF_TAU          2.0
+
+//
 // Fewer occupied bins than this and there is nothing worth calling a
 // signal, whatever the coherence says.
 //
@@ -792,6 +888,22 @@ static int             acc_valid = 0;
 static double         *occ_scratch = NULL;
 
 //
+// Scratch for the per-arm noise floor, one buffer per arm. See
+// DIV_NF_SAMPLES.
+//
+static double         *nf_scratch0 = NULL, *nf_scratch1 = NULL;
+
+//
+// The per-arm noise floor itself, in power per bin, and whether it has
+// been established. Smoothed at DIV_NF_TAU; seeded from the first block
+// rather than started at zero, for the reason div_arm_nratio_update()
+// gives - a smoother that starts at zero reads its own startup transient
+// as the quietest the band has been.
+//
+static double          div_nf0 = 0.0, div_nf1 = 0.0;
+static int             div_nf_valid = 0;
+
+//
 // Which bins were found occupied, by wrapped index, so the noise pass can
 // keep its distance from them. See DIV_OCC_GUARD.
 //
@@ -937,6 +1049,8 @@ static void div_reset_stats(void) {
   acc_valid = 0;
   arm_floor_valid = 0;
   arm_floor0 = arm_floor1 = 0.0;
+  div_nf0 = div_nf1 = 0.0;
+  div_nf_valid = 0;
   arm_pw0 = arm_pw1 = 0.0;
   nrm_xx = nrm_yy = nrm_xy_re = nrm_xy_im = 0.0;
   nrm_valid = 0;
@@ -1455,6 +1569,131 @@ void div_mvdr2(double r00, double r11, double r01re, double r01im,
 // and the two want opposite weights - which is exactly the case the 60 m
 // captures turned up. See Finding 13 in docs/diversity-measurements.md.
 //
+//
+// Sort order for the noise-floor percentile. Same shape as div_occ_cmp(),
+// which sorts the FSK/Digital region for its median.
+//
+static int div_nf_cmp(const void *a, const void *b) {
+  const double x = *(const double *)a;
+  const double y = *(const double *)b;
+  return (x > y) - (x < y);
+}
+
+//
+// The two branch noise floors, in power per bin, from this block's
+// spectrum outside the operator's filter. See DIV_NF_PCT.
+//
+// What is excluded is the *filter*, not the analysis window. The Carrier
+// reference accumulates five bins and an AM signal's sidebands fill the
+// passband either side of them; sampling those as noise would credit
+// whichever arm hears the station better with the higher noise floor,
+// which is the error this function exists to remove. Where the operator
+// has placed a window wider than the filter - parking one on a known
+// noise, which Finding 4 recommends - the union is excluded instead.
+//
+// Returns 1 once div_nf0/div_nf1 hold something.
+//
+static int div_noise_floor_update(const struct div_context *ctx, int klo, int khi) {
+  if (fftout0 == NULL || nf_scratch0 == NULL || nfft <= 0 || binhz <= 0.0) { return 0; }
+
+  //
+  // The filter, through the same shift-and-invert div_bin_range() uses,
+  // widened to take in the analysis window and then by the skirt.
+  //
+  int elo, ehi;
+  {
+    const double a = div_shift_to_bin(ctx, (double)ctx->filter_low);
+    const double b = div_shift_to_bin(ctx, (double)ctx->filter_high);
+    const double flo = (a < b) ? a : b;
+    const double fhi = (a < b) ? b : a;
+    elo = (int)floor(flo / binhz);
+    ehi = (int)ceil (fhi / binhz);
+
+    if (klo < elo) { elo = klo; }
+
+    if (khi > ehi) { ehi = khi; }
+
+    const int skirt = (int)ceil(DIV_NF_SKIRT_HZ / binhz);
+    elo -= skirt;
+    ehi += skirt;
+  }
+  const int span = (int)(0.5 * DIV_NF_SPAN * (double)nfft);
+
+  if (span < 1) { return 0; }
+
+  //
+  // How many bins are left to choose from, in closed form, so the stride
+  // can be set before anything is touched.
+  //
+  const int xlo = (elo > -span) ? elo :  -span;
+  const int xhi = (ehi <  span) ? ehi :   span;
+  const int excl = (xhi >= xlo) ? (xhi - xlo + 1) : 0;
+  const int cand = (2 * span + 1) - excl;
+
+  if (cand < DIV_NF_MIN_BINS) { return 0; }
+
+  const int stride = (cand > DIV_NF_SAMPLES) ? (cand / DIV_NF_SAMPLES + 1) : 1;
+  int ns = 0;
+
+  for (int k = -span; k <= span && ns < DIV_NF_SAMPLES; k += stride) {
+    if (k >= elo && k <= ehi) {
+      //
+      // Step over the excluded band in one go rather than striding
+      // through it, or a wide filter would eat most of the sample count.
+      //
+      k = ehi;
+      continue;
+    }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    nf_scratch0[ns] = (double)fftout0[idx][0] * fftout0[idx][0]
+                      + (double)fftout0[idx][1] * fftout0[idx][1];
+    nf_scratch1[ns] = (double)fftout1[idx][0] * fftout1[idx][0]
+                      + (double)fftout1[idx][1] * fftout1[idx][1];
+    ns++;
+  }
+
+  if (ns < DIV_NF_MIN_BINS) { return 0; }
+
+  qsort(nf_scratch0, (size_t)ns, sizeof(double), div_nf_cmp);
+  qsort(nf_scratch1, (size_t)ns, sizeof(double), div_nf_cmp);
+  int ilo = (ns * (DIV_NF_PCT - DIV_NF_BAND)) / 100;
+  int ihi = (ns * (DIV_NF_PCT + DIV_NF_BAND)) / 100;
+
+  if (ilo < 0)   { ilo = 0; }
+
+  if (ihi >= ns) { ihi = ns - 1; }
+
+  if (ihi < ilo) { ihi = ilo; }
+
+  double f0 = 0.0, f1 = 0.0;
+
+  for (int i = ilo; i <= ihi; i++) {
+    f0 += nf_scratch0[i];
+    f1 += nf_scratch1[i];
+  }
+
+  f0 /= (double)(ihi - ilo + 1);
+  f1 /= (double)(ihi - ilo + 1);
+
+  if (!(f0 > 0.0) || !(f1 > 0.0)) { return 0; }
+
+  if (!div_nf_valid) {
+    div_nf0 = f0;
+    div_nf1 = f1;
+    div_nf_valid = 1;
+  } else {
+    const double a = 1.0 - exp(-blocktime / DIV_NF_TAU);
+    div_nf0 += a * (f0 - div_nf0);
+    div_nf1 += a * (f1 - div_nf1);
+  }
+
+  return 1;
+}
+
 static void div_arm_publish(int valid, double db) {
   div_auto_arm_valid = valid;
 
@@ -1488,28 +1727,44 @@ static void div_arm_floor_update(double p0, double p1) {
 }
 
 //
-// The advantage of arm 1, in dB, from the tracked floors. Fails while
-// the floor has not been established, and while either arm is sitting on
-// its own floor - there is no signal to compare then, and the ratio of
-// two noises is not an answer to the question.
+// The advantage of arm 1, in dB. Fails while there is no noise reference,
+// and while either arm is sitting on its own floor - there is no signal
+// to compare then, and the ratio of two noises is not an answer to the
+// question.
 //
-static int div_arm_from_floor(double p0, double p1, double *db) {
-  if (!arm_floor_valid || arm_floor0 <= 0.0 || arm_floor1 <= 0.0) { return 0; }
+// nbins is how many bins p0 and p1 were summed over, because the spectral
+// floor is per bin and the window powers are not. The temporal floor is
+// the fallback and is already in window units, so it needs no scaling -
+// which is also why it cannot be mixed with the other: the two are the
+// same quantity in different units and only nbins relates them.
+//
+static int div_arm_from_floor(double p0, double p1, int nbins, double *db) {
+  double n0, n1;
 
-  const double s0 = p0 - arm_floor0;
-  const double s1 = p1 - arm_floor1;
+  if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0 && nbins > 0) {
+    n0 = (double)nbins * div_nf0;
+    n1 = (double)nbins * div_nf1;
+  } else if (arm_floor_valid && arm_floor0 > 0.0 && arm_floor1 > 0.0) {
+    n0 = arm_floor0;
+    n1 = arm_floor1;
+  } else {
+    return 0;
+  }
+
+  const double s0 = p0 - n0;
+  const double s1 = p1 - n1;
 
   if (!(s0 > 0.0) || !(s1 > 0.0)) { return 0; }
 
   //
-  // Both arms have to stand clear of their own floor, or the floor is not
-  // yet known to be noise. See DIV_ARM_MIN_DB.
+  // Both arms have to stand clear of their own floor, or there is no
+  // signal to compare. See DIV_ARM_MIN_DB.
   //
   const double need = pow(10.0, 0.1 * DIV_ARM_MIN_DB) - 1.0;
 
-  if (s0 < need * arm_floor0 || s1 < need * arm_floor1) { return 0; }
+  if (s0 < need * n0 || s1 < need * n1) { return 0; }
 
-  *db = 10.0 * log10((s1 / arm_floor1) / (s0 / arm_floor0));
+  *db = 10.0 * log10((s1 / n1) / (s0 / n0));
   return 1;
 }
 
@@ -1853,16 +2108,26 @@ static void div_norm_update(double xx, double yy, double xyre, double xyim) {
 // because it uses the co-phasing direction and throws the magnitude away,
 // and a positive real factor does not move a direction.
 //
-// The ratio is latched rather than used live. It is a property of the two
-// receive chains, not of the path, so it changes when the operator moves
-// a step attenuator - which resets the statistics through
-// div_context_changed() - and hardly otherwise. Latching it means the
-// weight does not switch formula every time arm_valid toggles, which on a
-// continuous carrier it does constantly (Finding 16: asserted on 4 to
-// 32 % of blocks). Until it has been measured once the behaviour is
-// exactly what it was before.
+// It comes from div_noise_floor_update() - this block's own spectrum,
+// outside the filter - which is available on essentially every block and
+// cannot be fooled by a fading carrier. See DIV_NF_PCT for what that
+// replaced and what it cost.
+//
+// The temporal minimum is the fallback, for the one case the spectral
+// floor cannot serve: a hand-placed window so wide that fewer than
+// DIV_NF_MIN_BINS are left outside it. It is latched, because it is a
+// property of the two receive chains rather than of the path and because
+// switching formula every time its clearance test toggled - which on a
+// continuous carrier is constantly, 4 to 32 % of blocks by Finding 16 -
+// moved the weight for no reason. The spectral floor needs no latch: it
+// is smoothed at DIV_NF_TAU and does not toggle.
+//
+// Until either has been measured once the behaviour is exactly what it
+// was before this term existed.
 //
 static double div_wideband_sum_scale(void) {
+  if (div_nf_valid && div_nf1 > 0.0) { return div_nf0 / div_nf1; }
+
   return arm_nratio_valid ? arm_nratio : 1.0;
 }
 
@@ -2978,6 +3243,14 @@ static void div_process_block(void) {
     arm_fast0 += fa * (cur_xx - arm_fast0);
     arm_fast1 += fa * (cur_yy - arm_fast1);
   }
+  //
+  // The noise floor, from the bins outside the filter. Here rather than
+  // beside the transform because this is where it is consumed and because
+  // the Carrier reference recomputes klo/khi after the tracker has run -
+  // the exclusion has to take in the window that was actually
+  // accumulated, not the search region it was found in.
+  //
+  div_noise_floor_update(&ctx, klo, khi);
   div_arm_floor_update(arm_fast0, arm_fast1);
   {
     //
@@ -2987,7 +3260,7 @@ static void div_process_block(void) {
     // before it has been written.
     //
     double db = 0.0;
-    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, &db);
+    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, khi - klo + 1, &db);
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
@@ -3314,6 +3587,8 @@ void diversity_auto_start(void) {
     bin_xx    = g_new0(double, DIV_MAX_NFFT);
     bin_yy    = g_new0(double, DIV_MAX_NFFT);
     occ_scratch = g_new0(double, DIV_OCC_MAX_SAMPLES);
+    nf_scratch0 = g_new0(double, DIV_NF_SAMPLES);
+    nf_scratch1 = g_new0(double, DIV_NF_SAMPLES);
     occ_mask    = g_new0(unsigned char, DIV_MAX_NFFT);
     for (int i = 0; i < DIV_QUEUE; i++) {
       qbuf0[i] = g_new0(float, 2 * DIV_MAX_NFFT);

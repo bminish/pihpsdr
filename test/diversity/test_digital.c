@@ -286,17 +286,32 @@ int main(int argc, char **argv) {
     const double ds = out_sinr_db(dr, di, 1.0, n0 * n0, n1 * n1);
     const double bs = out_sinr_db(br, bi, 1.0, n0 * n0, n1 * n1);
     /*
-     * Sum estimates conj(h) whatever arm 1's noise is. The SINR-optimal
-     * weight is conj(h)*N0/N1, which with a 20 dB noise power ratio is
-     * -42 dB - past the engine's own -27 dB floor, so the digital answer
-     * sits on that clamp. Being clamped short of the optimum still leaves
-     * it far quieter than Sum, and the SINR is what is asserted.
+     * Both references back arm 1 off, and this check used to be the
+     * difference between them.
+     *
+     * Sum estimated conj(h) whatever arm 1's noise was, because the
+     * wideband window had no way to measure the two branch noises: the
+     * occupancy split has the unoccupied bins to take them from and a
+     * filter-wide window has nothing. The minimum-statistics floor that
+     * was supposed to cover it needs the band to go quiet, and nothing
+     * in this test ever does.
+     *
+     * div_noise_floor_update() takes the pair off the bins *outside* the
+     * filter, every block, so the wideband answer now carries the ratio
+     * too. The SINR-optimal weight is conj(h)*N0/N1, which at a 20 dB
+     * noise power ratio is -42 dB - past the engine's own -27 dB floor -
+     * so both sit on that clamp and their SINRs agree. What is asserted
+     * is that neither is left estimating conj(h), which is what the
+     * third figure below is. See Finding 47.
      */
-    const int ok = (ds > bs + 1.0) && (dg < bg - 3.0);
-    printf("2. arm 1 noisier by %.0f dB, MVDR backs it off (optimum %+.0f dB, clamped at -27)\n",
+    const double us = out_sinr_db(hr, -hi, 1.0, n0 * n0, n1 * n1);
+    const int ok = (dg < -20.0) && (bg < -20.0)
+                   && (fabs(ds - bs) < 1.0) && (ds > us + 3.0);
+    printf("2. arm 1 noisier by %.0f dB, both back it off (optimum %+.0f dB, clamped at -27)\n",
            20.0 * log10(n1 / n0), want_g + 40.0 * log10(n0 / n1));
     printf("   digital %+6.2f dB -> SINR %+6.2f dB\n", dg, ds);
-    printf("   window  %+6.2f dB -> SINR %+6.2f dB   %s\n\n", bg, bs,
+    printf("   window  %+6.2f dB -> SINR %+6.2f dB\n", bg, bs);
+    printf("   uncorrected conj(h) would give %+6.2f dB   %s\n\n", us,
            ok ? "OK" : "FAIL");
 
     if (!ok) { fails++; }
