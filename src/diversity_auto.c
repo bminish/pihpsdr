@@ -3617,7 +3617,7 @@ double diversity_auto_coh_floor(int ref) {
     // is measured over - not the search region they were found in.
     //
     width = div_auto_occ_hi - div_auto_occ_lo;
-  } else if (div_auto_follow_filter && ref != DIV_REF_CARRIER) {
+  } else if (div_auto_follow_filter) {
     width = 0.0;
 
     if (receivers > 0 && receiver[0] != NULL) {
@@ -4102,9 +4102,9 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->weighting = DIV_WEIGHT_FLAT;
 
   //
-  // Each reference's own threshold, and the live one. All five share the
-  // slider's range; RADE V1's default of zero is deliberate and legal -
-  // it is the gate never having been applied in that mode before.
+  // The live threshold and the three references whose gate has a slider.
+  // RADE V1's is not one of them - it is pinned below, for the reasons
+  // set out there - so four values, not five.
   //
   {
     double *c[] = { &s->coherence_min, &s->band_cohmin, &s->carrier_cohmin,

@@ -119,8 +119,11 @@ Four properties follow, and they shape everything else:
   level moves as the weight adapts.
 - **The weight is flat across the whole DDC passband.** It can align the
   two antennas exactly at one frequency only.
-- **There is no output normalisation.** Two equal in-phase signals give
-  +6 dB of signal and +3 dB of noise.
+- **There is no output normalisation by default.** Two equal in-phase
+  signals give +6 dB of signal and +3 dB of noise. The **Level output**
+  control (§6) divides that common scale back out when it is ticked, on
+  every reference; everything below describes the unnormalised case
+  unless it says otherwise.
 - **It is applied per raw IQ sample, ahead of WDSP** — before the noise
   blanker, before `fexchange0`.
 

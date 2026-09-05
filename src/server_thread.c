@@ -112,6 +112,15 @@ static GThread *listen_thread_id;
 static GThread *udp_thread_id;
 
 static int server_running = 0;
+
+//
+// Whether the last periodic push found the diversity loop active. File
+// scope rather than a static inside send_periodic_data(), so that
+// listen_thread() can clear it between connections: left set, the first
+// push to a newly connected client is the falling-edge message meant for
+// the one before it.
+//
+static int div_was_active = 0;
 static int listen_socket = -1;
 
 static int server_command(gpointer data);
@@ -166,7 +175,6 @@ static int send_periodic_data(gpointer arg) {
     // radio data at connect, so a client that arrives with the feature off
     // is not left guessing.
     //
-    static int div_was_active = 0;
     const int div_active = (diversity_enabled || div_auto_running);
 
     if (div_active || div_was_active) {
@@ -922,6 +930,7 @@ static gpointer listen_thread(gpointer arg) {
     // dialog is closed, for the same reason; this is the remote case.
     //
     diversity_auto_set_hold(0);
+    div_was_active = 0;
 
     if (remoteclient.sock_udp >= 0) {
       close(remoteclient.sock_udp);

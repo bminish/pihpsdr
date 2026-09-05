@@ -1448,12 +1448,17 @@ static int rade_track(double tau, double hang, double *wr, double *wi) {
   //
   if (++track_report >= 40) {
     track_report = 0;
+    //
+    // Never frozen here: the freeze is taken further up, on a frame with
+    // nothing worth measuring in it, and that path does not reach this
+    // report. It used to carry a "FROZEN" suffix which could not print.
+    //
     t_print("%s: tracking  pilot/floor %0.2f  f=%+0.1f Hz  "
             "pilot %0.0f%% / %+0.1f dB  w=%+0.1f dB %+0.0f deg  "
-            "avg=%0.1fs hang=%0.1fs%s\n",
+            "avg=%0.1fs hang=%0.1fs\n",
             __func__, ratio, lock_f,
             100.0 * rade_corr_quality, rade_corr_snr, div_gain, div_phase,
-            tau, hang, frozen ? "  FROZEN" : "");
+            tau, hang);
   }
   //
   // The channel, as a cross-spectrum rather than as two coherent means.
