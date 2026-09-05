@@ -1599,6 +1599,34 @@ static void div_write_weight(double wr, double wi, int track);
 // floor tracker's slow rise from standing the combiner down on a signal
 // that never stops.
 //
+//
+// Coming out of a stand-down, by whichever door.
+//
+// The weight the stand-down left is zero, and DIV_SLEW_FRAC would take
+// half a second to climb off it - which is the whole of the in-speech
+// cost the restore was measured to avoid. div_hold_or_stand_down() does
+// this for the case where the band fills while the loop is still
+// holding; the other case is an over that arrives strongly enough to
+// open the coherence gate on its first block, which goes straight to the
+// solve and never reaches that function at all. It was slewing up from
+// zero, and the synthetic gap in test_window measured it doing so:
+// twelve blocks after the signal came back the weight had reached
+// -2.85 dB of the -2.11 it had been standing on and was still climbing.
+// It steps back to it at once now, and what is left in that test is the
+// loop's own re-convergence on the returning signal.
+//
+// div_jump rather than a weight: this door has a measured answer for
+// this block, so the answer goes in - the door in
+// div_hold_or_stand_down() has none, which is why that one puts back
+// what it was standing on instead.
+//
+static void div_leave_standdown(void) {
+  if (div_auto_standdown) {
+    div_auto_standdown = 0;
+    div_jump = 1;
+  }
+}
+
 static void div_hold_or_stand_down(void) {
   div_auto_holding = 1;
 
@@ -1615,8 +1643,7 @@ static void div_hold_or_stand_down(void) {
     // `122843` - the whole of the in-speech cost of this change.
     //
     if (div_auto_standdown) {
-      div_auto_standdown = 0;
-      div_jump = 1;
+      div_leave_standdown();
       //
       // Written without tracking: the loop did not measure this weight
       // this block, it is the one being put back. See div_write_weight().
@@ -2972,7 +2999,7 @@ static void div_process_block(void) {
     //
     div_auto_coherence = 0.0;
     div_auto_holding = 1;
-    div_auto_standdown = 0;
+    div_leave_standdown();
     return;
   }
 
@@ -3024,7 +3051,7 @@ static void div_process_block(void) {
   // the presence test runs off a half-second smoother and the gate has
   // to rebuild the accumulators.
   //
-  div_auto_standdown = 0;
+  div_leave_standdown();
 
   if (div_auto_mode == DIV_AUTO_BEST) {
     div_apply_best(acc_xy_re / acc_xx, acc_xy_im / acc_xx);
