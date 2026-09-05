@@ -120,6 +120,27 @@ defect: ADC1 15.4 dB hot with a signal-to-noise ratio 3.8 dB *worse*, and
 the loop applying seven decibels more weight than maximum ratio wants and
 raising the output 20.07 dB in the speech.
 
+**Finding 47 is two 41 m AM captures of one station five minutes apart,
+and it says the statistic this document has been scoring is the wrong
+one.** Their fades are the deepest and least coincident in the set - arm 0
+is more than 10 dB into a fade on one sub-block in seven and both arms at
+once on seven in ten thousand - and the prize that buys is **not** in the
+minute-averaged signal-to-noise ratio, which moves 1.1 to 1.2 dB, but in
+the dips: the first percentile of per-block carrier C/N moves 4.3 and
+7.0 dB and the time spent under 20 dB goes to zero. The loop collects
+almost none of it, and the reason is a single term. **A deeply fading
+carrier defeats every per-arm minimum statistic in the engine**: the fades
+supply the gaps that `DIV_ARM_MIN_DB` exists to insist on, so the
+branch-noise ratio is published confidently on 78 % of blocks **10.9 dB
+wrong** and `arm_db` **8.7 dB wrong with its sign inverted**, both
+crediting whichever arm fades less. It costs 2.05 dB on one capture and
+makes Best pick the wrong antenna for a whole minute; on the other,
+`arm_db` is right to a decibel and **Best is the best row in the table** -
+level with the better antenna on the mean and +8.9 dB at the first
+percentile. The two captures were taken with ADC0's 6 dB pad in and out,
+so the branch-noise ratio is genuinely different in each, and the
+estimator is wrong in opposite directions on the two.
+
 **Finding 44 is the first look at re-acquisition timing, and it is fixed.** `rade_acquire()` runs only while `tracking`
 is zero and `tracking` stays set for the whole hang, so at a changeover
 the correlator spends ten seconds correlating the station that has already
@@ -6503,6 +6524,276 @@ of tape each: a **wideband QAM or PSK modem** of any kind, and a **second
 OFDM capture** - one capture of a shape that defeats the premise is not
 enough to design against.
 
+## Finding 47: 41 m AM, and the first path where the fade prize is large, collectable, and given away
+
+Two `AM` captures on 7.280 MHz, five minutes apart, one minute each, 192
+kHz DDC and nfft 16384 - 11.72 Hz bins, 85.3 ms blocks - objective Sum,
+averaging 0.6 s, flat weighting. A 41 m broadcast at moderate strength on
+a path that is fading hard.
+
+They are the closest thing in this document to a controlled experiment,
+because only two things differ between them: **ADC0's step attenuator**,
+6 dB on the first and none on the second, and **the reference**, Window
+following the filter on the first and Carrier on the second. Everything
+else - antennas, station, band, objective, averaging - is the same.
+
+| | `143952` | `144505` |
+|---|---|---|
+| frequency, mode, filter | 7.280000 MHz, AM, +/-4000 | 7.279948 MHz, AM, +/-5000 |
+| reference, objective, averaging | **Window**, follows filter; Sum; 0.6 s | **Carrier**; Sum; 0.6 s |
+| step attenuators, ADC0 / ADC1 | **6 / 0 dB** | 0 / 0 dB |
+| arm 0 / arm 1 noise (guard bins) | -52.1 / -51.8 dB | -46.3 / -51.8 dB |
+| noise ratio `N0/N1` | **-0.35 dB** | **+5.46 dB** |
+| band SNR, arm 0 / arm 1 | +19.5 / +13.9 dB | +19.1 / +14.0 dB |
+| carrier C/N, arm 0 / arm 1 | 37.09 / 31.83 dB | 39.02 / 34.60 dB |
+| inter-arm coherence, in band | 0.363 | 0.503 |
+| inter-arm noise coherence | 0.045 | 0.047 |
+| loop holding, as it ran | 28 % | 17 % |
+| window occupancy, bins over the floor | 88 % of 683 | 63 % of 853 |
+
+The pad is the whole of the noise-ratio difference: it takes 6 dB off
+ADC0's chain and with it ADC0's own noise, so the two front ends read
+0.35 dB apart on the first capture and 5.46 dB apart on the second. ADC0
+is the better arm on both, by 5.3 and 4.4 dB of carrier C/N. **Two
+captures, one pair of antennas, and a branch-noise ratio that is
+deliberately different in each** - which is what makes them worth having
+together.
+
+### The fades are the deepest and the least coincident in the document
+
+Measured on the carrier bins, per 2048-sample sub-block - 10.7 ms, the
+arrangement Findings 34 to 39 use - against each arm's own median:
+
+| | `143952` | `144505` | `011225`, Finding 39 |
+|---|---|---|---|
+| fade depth, p10 to p90, arm 0 | **17.1 dB** | 12.3 dB | 13.7 dB |
+| the same, arm 1 | 13.6 dB | 9.5 dB | 12.7 dB |
+| **envelope correlation, arm 0 : arm 1** | **+0.224** | **+0.187** | +0.148 |
+| more than 10 dB down, arm 0 | **13.8 %** | 7.0 % | 4.9 % |
+| the same, arm 1 | 6.9 % | 2.0 % | 5.9 % |
+| **more than 10 dB down on both at once** | **0.07 %** | **0.00 %** | 0.2 % |
+| more than 20 dB down, arm 0 / arm 1 | 1.0 % / 0.6 % | 1.2 % / 0.0 % | - |
+| more than 20 dB down on both at once | **0.00 %** | **0.00 %** | - |
+
+`143952` puts arm 0 more than 10 dB into a fade on **one sub-block in
+seven** and both arms at once on seven in ten thousand: a **197-fold**
+reduction, against the twenty-five-fold Finding 39 called the best in the
+set. On `144505` the two arms are never both 10 dB down in 5624
+sub-blocks, and neither capture ever has both arms 20 dB down at the same
+instant. Whatever selection diversity could do on this path, it could do
+it perfectly.
+
+The correlation coefficient is not what produces that. At +0.224 and
++0.187 these two sit marginally *above* `011225`'s +0.148, and the
+coincidence rate is an order of magnitude lower anyway. Against what
+independence alone would predict from each capture's own marginal rates:
+
+| | `143952` | `144505` | `011225` |
+|---|---|---|---|
+| predicted if independent | 0.95 % | 0.14 % | 0.29 % |
+| **measured** | **0.07 %** | **0.00 %** | 0.20 % |
+
+All three are at or below the independent prediction, so **the tails are
+decorrelated even where the whole-record coefficient is not small** - a
+correlation computed over a minute of envelope is dominated by the slow
+common trend and says little about whether the two arms are in a deep fade
+at the same instant. And what separates the three captures is mostly how
+often each arm fades *at all*, not how much extra decorrelation there is.
+**Envelope correlation ranks paths; it does not size the prize**, and
+Findings 37 and 39 quote it as though it did.
+
+### The prize is not in the mean, and this is where that stops being a caveat
+
+Findings 37 and 39 said the fade statistics and the signal-to-noise
+figure measure different things, and then scored the minute-averaged
+figure anyway, which is why they end at "the whole prize is 0.57 dB". The
+number a listener hears is neither: AGC removes the level, so what is
+left is **how far the signal-to-noise ratio dips while the level is being
+held up**. Scored per 85.3 ms block, on the carrier bins against the
+7-11.5 kHz guard, with the weight applied one block late and through the
+`DIV_SLEW_FRAC` slew exactly as the engine applies it:
+
+`143952`:
+
+| stream | carrier C/N | sideband SNR | p10 | p1 | worst block | under 20 dB |
+|---|---|---|---|---|---|---|
+| arm 0 alone, the feature off | **37.09** | **5.85** | 27.29 | 18.77 | 14.33 | 1.4 % |
+| **on air, as recorded** | 35.57 (**-1.52**) | 4.14 (**-1.71**) | 27.26 | 20.16 | 19.34 | 0.6 % |
+| `run_ref`, Window / Sum, 0.6 s | 35.49 | 4.08 | 28.04 | 20.18 | 9.50 | 1.0 % |
+| `run_ref`, Window / Sum, 0.2 s | 35.81 | 4.07 | 28.42 | 19.45 | 5.19 | 1.3 % |
+| `run_ref`, Carrier / Sum, 0.6 s | 36.87 | 5.71 | 27.35 | 19.22 | 15.68 | 1.7 % |
+| `run_ref`, Window / **Best**, 0.6 s | 33.11 | 3.03 | 26.38 | 18.75 | 4.99 | 2.3 % |
+| Sum x true `N0/N1`, 0.2 s, slewed | **38.17** (+1.08) | 5.69 | **30.29** | **23.06** | 12.45 | 0.4 % |
+| ceiling: per block, no slew | 38.97 | 5.65 | 32.07 | 27.60 | 23.87 | **0.0 %** |
+| arm 1 alone | 31.83 | 2.60 | 24.99 | 14.14 | 2.10 | 4.4 % |
+
+`144505`:
+
+| stream | carrier C/N | sideband SNR | p10 | p1 | worst block | under 20 dB |
+|---|---|---|---|---|---|---|
+| arm 0 alone, the feature off | **39.02** | **4.47** | 32.36 | 19.67 | 8.55 | 1.3 % |
+| **on air, as recorded** | 39.31 (**+0.29**) | 4.53 | 32.42 | **17.76** | 10.97 | **2.1 %** |
+| `run_ref`, Carrier / Sum, 0.6 s | 39.22 | 4.52 | 32.57 | 17.21 | 9.81 | 2.0 % |
+| `run_ref`, Carrier / Sum, 0.2 s | 39.34 | 4.51 | 32.77 | 19.17 | 6.87 | 1.6 % |
+| `run_ref`, Window / Sum, 0.6 s | 39.19 | 4.52 | 32.44 | 17.18 | 6.93 | 2.0 % |
+| `run_ref`, Carrier / **Best**, 0.6 s | 39.10 | 3.97 | **33.68** | **28.55** | **19.70** | **0.1 %** |
+| Sum x true `N0/N1`, 0.2 s, slewed | **40.24** (+1.22) | 4.39 | 35.03 | 26.65 | 25.30 | **0.0 %** |
+| ceiling: per block, no slew | 40.80 | 4.30 | 36.31 | 30.92 | 29.64 | **0.0 %** |
+| arm 1 alone | 34.60 | 2.06 | 29.51 | 23.23 | 20.37 | 0.0 % |
+
+The mean moves 1.1 to 1.2 dB, which is the figure Findings 37 to 39 would
+have quoted and it is unremarkable. **The first percentile moves 4.3 and
+7.0 dB, the worst block of the minute moves 16.8 dB on `144505`, and the
+time spent under 20 dB carrier C/N goes to zero, from 1.4 % and 1.3 %.** That
+is the fade flattening, it is what an operator hears, and it is between
+five and fifteen times the size of the mean this document has been
+scoring. On a path with independent fading the mean is the wrong statistic
+and always has been.
+
+**The on-air rows collect almost none of it.** `143952` gives away 1.52 dB
+of carrier C/N and 1.71 dB of sideband SNR against simply listening to
+ADC0 - though it does fill the deepest fades, which is why the operator's
+impression that the feature was helping is correct and why the mean alone
+would have called it a failure. `144505` gains 0.29 dB on the mean and
+makes the *worst* moments worse, its first percentile falling 1.9 dB below
+arm 0's and its time under 20 dB rising from 1.3 to 2.1 %.
+
+`run_ref` on the shipping source reproduces both on-air rows to **0.08
+dB**, and the on-air weight itself to 0.3 dB in median magnitude - +11.0
+against +11.3 dB on `143952`, both peaking at 9.69 against a
+`DIV_MAX_WEIGHT` of 10, with a log-magnitude correlation of 0.92. What follows is therefore
+a property of the engine and not of one recording.
+
+### Why: a deeply fading carrier defeats every per-arm minimum statistic
+
+`div_arm_nratio_update()` refuses to publish a ratio when the signal never
+stops, because a minimum taken over an unbroken carrier is a minimum of
+the carrier. The guard is `DIV_ARM_MIN_DB`: both arms must stand 6 dB
+clear of the pair of minima before the ratio is believed.
+
+**A fading carrier supplies its own gaps.** The minima land in the fades,
+the smoothed power stands well clear of them the rest of the time, the
+guard passes, and what gets published is the ratio of two independent
+fades rather than of two noise floors:
+
+| | published on | median | truth | error |
+|---|---|---|---|---|
+| `143952`, Window | **78 % of blocks** | **+10.5 dB** | -0.35 dB | **+10.9 dB** |
+| `143952`, Carrier | 78 % | +12.1 dB | -0.35 dB | +12.5 dB |
+| `144505`, Window | 2 % | +8.1 dB | +5.46 dB | +2.6 dB |
+| `144505`, Carrier | 5 % | +7.6 dB | +5.46 dB | +2.1 dB |
+
+On `143952` that turns a Sum weight of `|w|` = 0.41 into 3.68 - **19.1 dB
+of extra arm 1**, against a chain whose noise is 0.35 dB *quieter*, with
+`|w|` above 5 on 38 % of blocks and reaching 9.69 against a
+`DIV_MAX_WEIGHT` of 10. Remove the scale and change nothing else and the
+same capture reads 37.62 dB, **+0.53** over arm 0 instead of -1.52: one
+term, scored the same way as every row in the table above, is worth
+**2.05 dB of the 2.60 dB** between what the loop got and what was
+available at this averaging time.
+
+And on `144505` the same estimator is silent on 95 % of blocks in the one
+case where the correction was real and worth 5.46 dB. **Two captures of
+one station, and the branch-noise ratio is wrong in opposite directions on
+each** - loudly wrong where the two chains match, absent where they do not.
+
+The same corruption reaches `div_arm_from_floor()`, which is what Best
+decides on. `arm_db` is positive when ADC1 is the better arm; on blocks
+where it was published:
+
+| | `arm_db` published | median while published | truth | error |
+|---|---|---|---|---|
+| `143952`, Window | 12.7 % | **+3.44 dB** | -5.26 dB | **+8.70 dB, sign inverted** |
+| `143952`, Carrier | 0.7 % | +0.03 dB | -5.26 dB | +5.29 dB |
+| `144505`, Window | 50.6 % | -1.61 dB | -4.42 dB | +2.81 dB |
+| `144505`, Carrier | 62.2 % | -3.33 dB | -4.42 dB | +1.09 dB |
+
+**Every row errs in the same direction, and the direction is set by which
+arm fades deeper.** Arm 0 fades 3.5 dB deeper than arm 1 on `143952` and
+2.8 dB deeper on `144505`, so arm 0's minimum sits further below its own
+mean, so arm 0 is credited with the lower noise floor, so both estimators
+conclude arm 1 is the quieter and better antenna. It is not, on either
+capture. On `143952` the error is large enough to invert the answer
+outright and **Best picks arm 1 on 95.6 % of blocks** - the wrong antenna
+for the whole minute, held there because `arm_valid` is true on only
+12.7 % of them and `div_apply_best()` leaves the weight alone the rest of
+the time. It costs 3.98 dB.
+
+This is the mirror of the open item Finding 42 and 45 left standing. That
+one says the ratio cannot be measured when the window is mostly noise.
+This one says that when the window is mostly *signal* and that signal is
+fading, it is measured confidently and wrongly, by eleven decibels, and
+nothing downstream doubts it.
+
+### Best is not a poor relation on a fading path — it is the right objective
+
+`144505` is the first capture in this document where Best clearly wins,
+and it wins on the statistic that matters here rather than on the mean:
+level with arm 0 to 0.08 dB averaged, **+8.9 dB at the first percentile,
++11.2 dB on the worst block, and 0.1 % of the minute under 20 dB against
+1.3 %.** That is selection diversity behaving exactly as the textbook says
+it should on two antennas that fade independently, and Finding 38's
+verdict - Best costing rather than gaining on five SSB captures of six -
+does not survive contact with a path like this one.
+
+It also depends entirely on `arm_db` being right, which is why the same
+objective is the *worst* row on `143952`. Best is a good objective and a
+broken statistic; the two captures show both halves.
+
+### Three further things that cost fade tracking
+
+**The differential channel decorrelates in about half a second.**
+Autocorrelation of `h1/h0` taken on the carrier bins:
+
+| lag | 0.09 s | 0.17 s | 0.43 s | 0.85 s | 1.71 s |
+|---|---|---|---|---|---|
+| `143952` | 0.912 | 0.782 | 0.489 | 0.261 | 0.053 |
+| `144505` | 0.757 | 0.574 | 0.324 | 0.230 | 0.050 |
+
+At the shipping default of 2.0 s averaging almost all of the fade
+protection is gone - the ideal weight's first percentile falls from 23.06
+to 19.49 dB on `143952` and 26.65 to 21.72 on `144505`, back to arm 0's
+own figure. **Averaging is the fade-flattening control on this path**, it
+wants the bottom of its travel, and the operator had it at 0.6 s.
+
+**The output slew is itself a 0.53 s time constant.** `DIV_SLEW_FRAC` is
+0.15 per block and a block here is 85.3 ms, which is `-T/ln(0.85)` =
+0.525 s of first-order lag applied to the weight *after* the averaging
+slider has had its say. At 0.2 s averaging it costs 0.44 dB of mean and
+**3.3 dB of first percentile** on `144505`, and it is the reason the ideal
+rows never reach the per-block ceiling. On a path whose channel is half
+decorrelated at 0.43 s, the slider cannot ask for anything faster than the
+slew allows, and nothing in the menu says so.
+
+**The coherence gate holds exactly during the fades.** Arm 0's carrier C/N
+averages 33.3 dB on the blocks the loop held and 38.6 dB on the rest of
+`143952`; 31.9 against 40.4 dB on `144505`. Holding is not distributed
+across the minute - it is concentrated in the deep fades, which is where
+the channel is moving fastest and the weight most needs to move. The gate
+is doing what it was designed to do, and on a fading path the effect is to
+freeze the weight at precisely the wrong moments.
+
+### What this does not say
+
+The ideal and ceiling rows use a fixed `N0/N1` measured over the whole
+minute from the guard bins, which is an oracle the loop does not have;
+they say what the noise-ratio term is worth if it is right, not what any
+reachable estimator would score. The fit window for those rows is the
+operator's filter and the score is the five carrier bins inside it, so
+there is a small in-sample optimism - bounded by the 5-of-683 and 5-of-853
+bin counts and by the sideband column, which is scored on bins the weight
+was not fitted to and moves by less than 0.3 dB across every row.
+
+Both captures are one station on one path in one hour. The estimator
+defect is structural and reproduces on the shipping source through
+`run_ref`, but the *size* of the fade prize is a property of this path,
+and Findings 37 and 39 have two others where it was real and the
+collectable part was half a decibel.
+
+Neither capture carries a note. Which antenna was on which ADC is
+recoverable only from the attenuator fields and the noise floors, which is
+the case `test/diversity/devtools/README.md` warns about.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -6822,6 +7113,18 @@ holds is the false-alarm line, and that part stands.
   nearly the whole file, the ratio is never formed, and the loop hands a
   chain that is 15.2 dB noisier and 3.8 dB worse in signal-to-noise a
   weight seven decibels above the maximum-ratio optimum (Finding 45).
+  **And the failure has a second half, which is worse**: on a deeply
+  fading carrier the ratio *is* formed - on 78 % of blocks - and is
+  10.9 dB wrong, because the fades supply the clearance `DIV_ARM_MIN_DB`
+  exists to demand, and the pair of minima is then a ratio of two
+  independent fades rather than of two noise floors. `div_arm_from_floor()`
+  takes the same corruption, 8.7 dB with the sign inverted, so Best picks
+  the wrong antenna as well. Both estimators err towards whichever arm
+  fades *less*. A remedy has to tell a minimum that is noise from a
+  minimum that is a fade, and on these two captures neither the depth nor
+  the duration of the dip separates them - the fades reach 20 dB and last
+  hundreds of milliseconds. What might is that a fade is common to the
+  whole passband and a noise floor is not (Finding 47).
 - **Mostly closed: the Resolution menu is 24 / 12 / 6 Hz now.**
   Finding 43 takes the change Finding 42 had the evidence for: 3 Hz is
   retired, a 24 Hz setting takes its place, `DIV_MIN_NFFT` drops to 2048
@@ -7238,6 +7541,18 @@ everywhere but `202743`), one real trade is quantified and left open
 this list needs compute any more.
 
 ### The captures, in the order they are worth taking
+
+**0. One minute of bare 41 m, with the pad in and out.** *Ideal:* the
+same two antennas, the same band, no station - a minute at ADC0 padded
+6 dB and a minute unpadded, back to back with Finding 47's pair.
+*Closes:* it measures `N0/N1` directly, on the same chains and within the
+hour, which is the one number Finding 47 has to take from guard bins
+under a signal. Any remedy for the fading-carrier defect has to be scored
+against a known answer, and there is none in the set for these two
+captures. *Compromise:* one minute unpadded is worth most of it; the pad
+is a 6 dB shift that the attenuator sweep in Finding 28 already says is
+linear to 0.03 dB. **Cheap, and nothing else on this list is a
+prerequisite.**
 
 **0a. A second empty-band pair, and one at 384 kHz.** *Ideal:* two minutes
 on any quiet high band with one side of a QSO in them, so that more than
@@ -8656,6 +8971,30 @@ problem look like an SNR problem, and it is worth 12 dB of confusion on
 `122843`. The `--resolution` and `--tau` runs above are what produce the
 sliders table; `--set` plays no part, since none of these captures runs the
 RADE correlator.
+
+Finding 47's two 41 m captures are scored differently again, and
+deliberately: **per 85.3 ms analysis block, not averaged over the
+minute**, because the point of them is the distribution and not its mean.
+The carrier is the five bins about the peak - -35 Hz on `143952`, -82 Hz
+on `144505` - the sideband column is 150 Hz to the filter edge either side
+of it, and the guard is +/-7000 to +/-11500 Hz, which both arms read flat
+to 1.4 dB. The weight is applied **one block late and through the
+`DIV_SLEW_FRAC` slew**, as the engine applies it. The fade table uses the
+same 2048-sample sub-block as Findings 34 to 39, so its envelope
+correlations are comparable with theirs. `run_ref` reproduces both on-air
+rows to 0.08 dB:
+
+```
+./run_ref cap.divc --ref band --mode sum|best --tau 0.2|0.6 --follow 1 --out w.csv
+./run_ref cap.divc --ref carrier --mode sum|best --tau 0.2|0.6 --out w.csv
+```
+
+with the output power per block formed from the stored per-bin `P0`, `P1`
+and cross terms as `P0 + |w|^2 P1 + 2(wr*XR + wi*XI)`, which is exact
+because the weight is constant within a block. The ideal and ceiling rows
+substitute a fixed `N0/N1` taken from the guard bins over the whole
+minute, which is an oracle: they bound what the noise-ratio term is worth,
+not what an estimator would reach.
 
 The RADE window is trimmed inside the operator's filter deliberately: an
 arm-0-only carrier sits at +2.81 kHz, on the +2500 Hz filter edge, 26 dB
