@@ -612,6 +612,15 @@ where the carrier is. Setting the window by hand is still what aims at a
 carrier other than the one you are listening to, and those numbers are
 kept while the tick is on.
 
+**AF** was added, which is not an analysis control at all: it presents the
+two antennas one per ear instead of summing them, using the second
+receiver as an audio path without putting it on screen. **Balance** came
+with it, to trim the two ears against each other. The AF gain reaches both
+ears, which took a fix — the guard on `radio_set_af_gain()` had been
+turning the second one away — and so does the output device, which is
+mirrored rather than configured, because a receiver with no panel has no
+menu to configure it in.
+
 A hand-placed window is measured from the zero-beat note rather than from
 the dial. In CW those are one pitch apart, and a window centred on 0 used
 to land that far from the only signal in the passband — silently, since

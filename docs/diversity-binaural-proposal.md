@@ -1,8 +1,39 @@
 # Feature Request: Binaural Dual-ADC Presentation via the Diversity Path
 
-**Status:** Proposed  
+**Status:** Shipped, in part and not as specified — see the note below.  
 **Target Subsystem:** Diversity Engine (`src/diversity_auto.c`, `src/diversity_menu.c`), Receiver Engine (`src/receiver.c`), Protocol Ingestion (`src/new_protocol.c`, `src/old_protocol.c`)  
 **Companion Documents:** [`docs/diversity.md`](diversity.md), [`docs/diversity-guide.md`](diversity-guide.md), [`docs/diversity-auto-phasing.md`](diversity-auto-phasing.md)
+
+---
+
+> **This was a request; it is now shipped behaviour, and not what the
+> request asked for.** What was built is Modes 1 and 4 — `Ant 1 / Ant 2`
+> and `Sum / Difference` — under the **AF** control in the diversity menu.
+> Modes 2 and 3 and the radio's own headphone jack (§5.2) are not built.
+> The description of what runs is §6.1 of [`diversity.md`](diversity.md),
+> and how to use it is §4 of [`diversity-guide.md`](diversity-guide.md).
+>
+> Three of the findings below did not survive contact with the code, and
+> are recorded here because the reasoning that replaced them is the
+> interesting part:
+>
+> - **§6.3** — `receiver[1]` is *already* fed raw arm-1 IQ whenever
+>   diversity runs with two receivers, on both protocols. Mode 1's right
+>   ear needed no new data path.
+> - **§6.4** — copying `filter_low`/`filter_high` and calling
+>   `rx_filter_changed()` is a no-op: `rx_set_filter()` recomputes both
+>   edges from the VFO. Worse, the fix it implies — slaving VFO B — would
+>   change what split transmit transmits with. `rx_clone_dsp()` sets the
+>   second receiver's demodulation directly and leaves VFO B alone.
+> - **§6.2 and §5.1** — `rx->audio_channel` cannot be assigned once and
+>   left, because the per-mode RXTX profile overwrites it on every mode
+>   change; and the second receiver's audio device is not configured
+>   separately but mirrored from the first, since with no panel its menu
+>   cannot be reached at all.
+>
+> The proposal also calls the feature "binaural", which collides with
+> `rx->binaural` — WDSP's per-receiver AF stereo spread, an unrelated
+> thing. The code calls it the ear split, and the menu calls it **AF**.
 
 ---
 

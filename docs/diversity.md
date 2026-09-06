@@ -1526,6 +1526,9 @@ quantisation and follows the few Hz per minute a station drifts.
   along the way, where ADC1 never received the dither/random setting.
   Since fixed upstream as well, and the note records which upstream branch
   this fork rebases onto
+- [`diversity-binaural-proposal.md`](diversity-binaural-proposal.md) —
+  the request the ear split grew out of, and the three of its findings
+  that did not survive contact with the code
 - [`diversity-auto-phasing.md`](diversity-auto-phasing.md) — design
   history, including the approaches that were tried and abandoned. Not a
   description of current behaviour
