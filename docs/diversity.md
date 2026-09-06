@@ -578,7 +578,10 @@ spectrum trace, in the same place in the draw order as the notch shading.
 This matters most for a window placed outside the passband, which is
 otherwise completely invisible. In follow-filter mode the band lands
 exactly on the filter shading, which is a convenient check that the
-frequency reference is right.
+frequency reference is right — on Window and FSK/Digital, which take the
+passband itself. Carrier's follow tick means a fixed 400 Hz at the centre
+of the passband instead (§5), so there the band sits inside the filter
+shading rather than on it.
 
 In Carrier mode the band is the search region and a brighter vertical line
 marks where the tracker has settled within it. In FSK/Digital it is again
@@ -1399,7 +1402,9 @@ quantisation and follows the few Hz per minute a station drifts.
   the FSK/Digital reference in detail, and what the proposal it grew out
   of got wrong
 - [`diversity-dither-fix.md`](diversity-dither-fix.md) — a P2 bug found
-  along the way, where ADC1 never received the dither/random setting
+  along the way, where ADC1 never received the dither/random setting.
+  Since fixed upstream as well, and the note records which upstream branch
+  this fork rebases onto
 - [`diversity-auto-phasing.md`](diversity-auto-phasing.md) — design
   history, including the approaches that were tried and abandoned. Not a
   description of current behaviour
