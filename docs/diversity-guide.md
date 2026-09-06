@@ -207,6 +207,21 @@ park a 1 kHz window on +5 kHz and the primary is outside the search
 entirely, so you can null the station carrying that carrier while
 listening to the one on frequency.
 
+For the ordinary case — a station tuned to zero beat — you do not have to
+set either. Tick **Search 400 Hz at passband centre** and it looks in a
+400 Hz band at the middle of your filter, which is where the carrier of an
+AM or SAM signal is. It is the same tick the other references use to
+follow the filter, and it says which job it is doing.
+
+Your centre and width are not lost while it is ticked. Untick it and they
+come back exactly as you left them, so you can flip between "the station
+I am listening to" and a carrier you have aimed at 5 kHz away without
+setting anything up twice.
+
+If you are upgrading, the tick starts **off** on AM and SAM even though it
+defaults on elsewhere. A search you had placed by hand is a decision, and
+adopting it silently would have moved it.
+
 ### RADE V1 pilot (MVDR)
 
 The most capable and the most specialised. It correlates against RADE V1's

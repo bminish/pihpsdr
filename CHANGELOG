@@ -1,5 +1,19 @@
 LIST OF RECENT PIHPSDR CHANGES
 ==============================
+September 2026:
+---------------
+
+- diversity: the Carrier reference can follow the RX filter, like the
+  other two placeable references. It cannot mean the whole passband there
+  - 8 kHz of AM is mostly sidebands and the loudest bin in it is not
+  reliably the carrier - so it means a 400 Hz search at the centre of the
+  passband, which is where the carrier of a signal tuned to zero beat is.
+  The hand-placed centre and width are kept while it is ticked and come
+  back untouched when it is cleared, so aiming at a carrier 5 kHz away is
+  still one tick away. Existing props files do not adopt it: the flag
+  defaults on and meant nothing for this reference before, so a search
+  that had been placed by hand stays where it was put
+
 August 2026:
 ------------
 

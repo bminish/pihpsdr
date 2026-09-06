@@ -822,6 +822,35 @@ primary can be tracked — and therefore nulled. Park a 1 kHz window on
 panadapter shows the search region as a green band with a brighter line
 where the tracker has settled.
 
+**Following the filter means something else here.** Window and
+FSK/Digital take the whole passband when their follow tick is on. The
+whole of an AM passband is 8 kHz of mostly sidebands and the loudest bin
+in it is not reliably the carrier, so this reference takes
+`DIV_CARRIER_FOLLOW_WIDTH` = **400 Hz at the centre of the passband**
+instead — wide enough for the tuning error, narrow enough that a
+neighbouring carrier a few kHz off cannot get into the search. That is
+the common case, an AM or SAM signal tuned to zero beat, and it wanted
+two numbers set by hand to reach.
+
+The centre is the **passband midpoint**, not zero. An AM or SAM filter is
+symmetric about the tuned frequency and `sam_sb_mode` picks a sideband
+inside WDSP without moving the filter edges, so the two agree in every
+ordinary case; a deliberately offset filter moves the search with it
+rather than leaving it on the dial.
+
+Ticking it does not discard the hand-placed window — `div_carrier_centre`
+and `div_carrier_width` keep their values and come back untouched when it
+is cleared, the same way the other two references keep theirs. Only the
+peak search moves: what is *accumulated* is still the tracker's bin plus
+`DIV_CARRIER_BINS` either side, whatever the window says, so
+`Min coherence`'s floor is unchanged by the tick.
+
+Old props files do not adopt it. The flag defaults on and meant nothing
+for this reference before, so a file written earlier would silently move
+a search that had been placed by hand — and measured against — onto the
+passband. `DIV_REF_SCHEME` 3 marks the change and clears the flag for
+such a file, on the live keys and again per group; the tick is opt-in.
+
 **Window centre and width are modal twice over.** The Window, Carrier and
 FSK/Digital references each keep their own pair, so aiming the carrier
 tracker at a station 5 kHz away does not destroy the window set up for
@@ -1046,7 +1075,7 @@ one block from `track` to `search` when the signal stops.
 | **Gain / Phase** (coarse, fine) | Manual weight; live when Auto is not driving, and under **Hold** | always |
 | **Auto** | Off / Null / Sum / Best — the objective | always |
 | **Measure on** | Which reference (§5) | always |
-| **Window follows RX filter** | — | Window, FSK/Digital |
+| **Window follows RX filter** / **Search 400 Hz at passband centre** | The passband itself in Window and FSK/Digital; a fixed 400 Hz at the centre of it in Carrier (§5). The label says which | Window, Carrier, FSK/Digital |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
