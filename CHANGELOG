@@ -24,8 +24,9 @@ September 2026:
   ear - which the split deliberately does not display - stayed at whatever
   its props file last said while the first one moved. A Balance slider
   above Gain trims the two against each other in dB of left minus right,
-  attenuating the ear the trim does not favour rather than raising the one
-  it does, so it still has somewhere to go at the top of the AF range
+  6 dB either way in quarter-dB steps, attenuating the ear the trim does
+  not favour rather than raising the one it does, so it still has
+  somewhere to go at the top of the AF range
 
 - diversity: the Carrier reference can follow the RX filter, like the
   other two placeable references. It cannot mean the whole passband there

@@ -1766,7 +1766,8 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_halign(balance_label, GTK_ALIGN_END);
   gtk_misc_set_alignment (GTK_MISC(balance_label), 0, 0);
   gtk_grid_attach(GTK_GRID(grid), balance_label, 0, 2, 1, 1);
-  balance_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -20.0, +20.0, 0.5);
+  balance_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL,
+                                          -DIV_BALANCE_MAX, +DIV_BALANCE_MAX, 0.25);
   gtk_widget_set_size_request (balance_scale, 300, 25);
   gtk_widget_set_tooltip_text(balance_scale,
                               "Trim the two ears against each other, in dB of left "

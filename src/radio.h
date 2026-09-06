@@ -269,6 +269,13 @@ extern int div_split;
 // raise, and an ear that could only be corrected upwards could not be
 // corrected at all.
 //
+// Either side of centre. This is a trim, not a fader: it exists to line
+// two antennas - or two ears - up with each other, and the range is what
+// makes the fine end of it reachable. A pair further apart than this is
+// an antenna or attenuator problem rather than a balance one.
+//
+#define DIV_BALANCE_MAX 6.0    // dB
+
 extern double div_split_balance;
 extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
 void radio_calc_split_balance(void);

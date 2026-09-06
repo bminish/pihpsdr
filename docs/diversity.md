@@ -1077,7 +1077,7 @@ one block from `track` to `search` when the signal stops.
 | **Measure on** | Which reference (§5) | always |
 | **Window follows RX filter** / **Search 400 Hz at passband centre** | The passband itself in Window and FSK/Digital; a fixed 400 Hz at the centre of it in Carrier (§5). The label says which | Window, Carrier, FSK/Digital |
 | **AF** | Summed / Ant 1 / Ant 2 / Sum / Difference — what the two arms are presented as (§6.1). Off on a client and while RX2 is on screen | two ADCs, two receivers configured |
-| **Balance (dB, L−R)** | Trims one ear against the other, ±20 dB. Attenuate-only: the favoured ear is left alone and the other brought down (§6.1) | while a split is selected |
+| **Balance (dB, L−R)** | Trims one ear against the other, ±`DIV_BALANCE_MAX` = 6 dB in 0.25 dB steps. Attenuate-only: the favoured ear is left alone and the other brought down (§6.1) | while a split is selected |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
@@ -1160,7 +1160,14 @@ per-mode profile back for RX0 only, so the second ear's volume never
 reaches the operator's stored settings.
 
 The difference between the ears is **Balance**'s business instead, in dB
-of left minus right. It is **attenuate-only** — whichever ear the trim
+of left minus right, over ±`DIV_BALANCE_MAX` = 6 dB. That is a trim range
+rather than a fader's: it is there to line two antennas — or two ears — up
+with each other, and keeping it narrow is what makes the fine end of it
+reachable on a 300 px slider. A pair further apart than 6 dB is an antenna
+or step-attenuator problem, not a balance one. The value is clamped to the
+range in `radio_calc_split_balance()` as well as by the widget, so a props
+file written against a wider one cannot leave it somewhere the control
+cannot show. It is **attenuate-only** — whichever ear the trim
 favours is left alone and the other is brought down:
 
 ```

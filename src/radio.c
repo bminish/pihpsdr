@@ -336,6 +336,15 @@ double div_bal_r = 1.0;
 // which is where an operator with a hot antenna is most likely to be.
 //
 void radio_calc_split_balance(void) {
+  //
+  // Held to the slider's own range here rather than only in the widget,
+  // so that a value arriving from a props file written against a wider
+  // range cannot sit outside what the control can show or take back.
+  //
+  if (div_split_balance >  DIV_BALANCE_MAX) { div_split_balance =  DIV_BALANCE_MAX; }
+
+  if (div_split_balance < -DIV_BALANCE_MAX) { div_split_balance = -DIV_BALANCE_MAX; }
+
   const double l = (div_split_balance < 0.0) ?  div_split_balance : 0.0;
   const double r = (div_split_balance > 0.0) ? -div_split_balance : 0.0;
   div_bal_l = pow(10.0, 0.05 * l);

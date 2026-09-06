@@ -246,7 +246,7 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.20 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — measured at 36 % of signal blocks against 36 % of empty ones, and accumulating thirteen times as many bins does not part them either. Use **Averaging** instead, which does: longer is better here and 10 s measured best. The slider will not go below the reading noise alone produces, so it says as much on the way down. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. **There is no such row in RADE V1**: the pilot correlator's own gates already refuse a band with nothing in it, and the reading this used to gate goes on being low on signals that decode perfectly well, so every setting it offered did more harm than good |
 | **Restart averaging** | Throw away the statistics and start again |
 | **AF** | Present the two antennas one per ear instead of summing them — see below |
-| **Balance (dB, L−R)** | Trims one ear against the other once you are listening in stereo. Positive is left-louder. It works by turning the *other* ear down, so it always has room to move, and it only appears when a split is selected |
+| **Balance (dB, L−R)** | Trims one ear against the other once you are listening in stereo, 6 dB either way in quarter-dB steps. Positive is left-louder. It works by turning the *other* ear down, so it always has room to move, and it only appears when a split is selected |
 
 **Between overs the status line says `quiet`.** When neither antenna has
 anything above the noise for a couple of seconds, the combiner stands
@@ -289,8 +289,10 @@ bring RX2 up, the split stands down: RX2 then follows VFO B and is yours
 to tune, which is not the same thing. Put it away and it comes back.
 
 **One AF gain for both ears**, and a **Balance** slider above Gain to trim
-them against each other in dB of left minus right. Positive means left
-louder. It works by turning the other ear *down* rather than the favoured
+them against each other in dB of left minus right, 6 dB either way in
+quarter-dB steps. Positive means left louder. If you find yourself wanting
+more than 6 dB, the two antennas are far enough apart that the step
+attenuators (**ATT**) are the right control, not this one. It works by turning the other ear *down* rather than the favoured
 one up, so it still has somewhere to go with the AF gain at maximum —
 which is where you will be if one antenna is much the weaker. Use it for
 two antennas of unequal strength, or simply for an ear that hears better
