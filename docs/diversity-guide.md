@@ -282,11 +282,11 @@ a station peaks in one ear and vanishes in the other, and you can hear an
 auto-phasing null converge instead of watching the numbers. It is also the
 quickest way to tell whether a null is on the signal you meant.
 
-To use it you need a **second output device set for RX2**, in its RX menu.
-You do *not* need RX2 on screen — this uses it as an audio path only, and
-the menu tells you if it has nowhere to send the right ear. If you do
-bring RX2 up, the split stands down: RX2 then follows VFO B and is yours
-to tune, which is not the same thing. Put it away and it comes back.
+There is nothing to set up. It uses RX2 as an audio path only, without
+putting it on screen, and both ears come out of **this** receiver's output
+device — change the device and both move together. If you do bring RX2
+up, the split stands down: RX2 then follows VFO B and is yours to tune,
+which is not the same thing. Put it away and it comes back.
 
 **One AF gain for both ears**, and a **Balance** slider above Gain to trim
 them against each other in dB of left minus right, 6 dB either way in
@@ -311,6 +311,10 @@ Two other things worth knowing:
   reception of an AM station in stereo.
 - A **mono output device mixes the ears back together**, and it will not
   warn you. This wants headphones and a stereo card.
+- An **exclusive output device** — a raw ALSA `hw:` device, with no
+  mixing — has room for one stream only, so the right ear cannot open it.
+  The menu reads `AF: no right ear` if that happens; use a `default` or
+  `dmix` device, or PipeWire/PulseAudio.
 
 This is a local control: over a remote link the audio is mono, so it is
 greyed out on a client.

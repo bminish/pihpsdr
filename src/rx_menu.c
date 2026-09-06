@@ -204,6 +204,12 @@ static void local_output_changed_cb(GtkWidget *widget, gpointer data) {
       snprintf(RXTXprofile[mode].rx.audio_name, sizeof(RXTXprofile[mode].rx.audio_name), "%s", myrx->audio_name);
     }
     profiles_copy_rxtxprofile(mode);
+    //
+    // The diversity ear split's second receiver has no menu of its own -
+    // with no panel this one always opens on RX1 - so its device follows
+    // this one rather than being set. No-op when the split is not up.
+    //
+    div_split_mirror_audio();
   }
 }
 

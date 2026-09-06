@@ -2447,6 +2447,52 @@ static void div_split_align(void) {
   receiver[1]->samples = 0;
 }
 
+//
+// Put the second ear on the first ear's output device.
+//
+// Two ears of one stereo image have to come out of the same card, so
+// there was never a configuration where these should differ - but the
+// second receiver kept its own audio_name from its own props, and only
+// the first one's followed the operator. Changing the output device moved
+// the left ear and left the right one playing out of whatever RX2's props
+// last named, which is the definition of a device you cannot get rid of:
+// with no panel, active_receiver is always RX0, so rx_menu() opens on RX0
+// and RX2's audio settings cannot be reached at all.
+//
+// So they are not configured, they are mirrored. Called on the way in and
+// from the two places that can move RX0's device - the RX menu and the
+// per-mode profile.
+//
+void div_split_mirror_audio(void) {
+  if (radio_is_remote || !div_split_up) { return; }
+
+  if (receiver[0] == NULL || receiver[1] == NULL) { return; }
+
+  RECEIVER *l = receiver[0];
+  RECEIVER *r = receiver[1];
+
+  if (r->local_audio == l->local_audio && !strcmp(r->audio_name, l->audio_name)) {
+    return;                       // already there
+  }
+
+  if (r->local_audio) {
+    r->local_audio = 0;
+    audio_close_output(r);
+  }
+
+  snprintf(r->audio_name, sizeof(r->audio_name), "%s", l->audio_name);
+
+  if (l->local_audio) {
+    //
+    // The one way this fails on a device the left ear just opened
+    // successfully: an exclusive one, a raw ALSA hw: device with no
+    // mixing, which a second stream cannot join. The menu says so rather
+    // than leaving a silent right ear unexplained.
+    //
+    r->local_audio = (audio_open_output(r) < 0) ? 0 : 1;
+  }
+}
+
 void div_split_set(int mode) {
   //
   // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
@@ -2495,11 +2541,13 @@ void div_split_set(int mode) {
     // restores each one's own props and opens its audio sink on the way
     // past - so receiver[1] already has its output device open whether or
     // not it has a panel. Its WDSP channel is running too: OpenChannel()
-    // is given state 1. All that was ever missing is samples and
-    // something to demodulate them as.
+    // is given state 1. What is missing is samples, something to
+    // demodulate them as, and the first ear's output device.
     //
     div_split_align();
     rx_clone_dsp(receiver[1], receiver[0]);
+    div_split_up = 1;             // mirror_audio only acts once we are up
+    div_split_mirror_audio();
     //
     // Level with the first ear on the way in, whatever RX2's own props
     // last left it at. Balance is what makes them differ from here.
@@ -2508,7 +2556,6 @@ void div_split_set(int mode) {
     rx_set_af_gain(receiver[1]);
     radio_calc_split_balance();
     rx_on(receiver[1]);
-    div_split_up = 1;
   } else if (div_split_up) {
     //
     // Stop it only if nothing else wants it. The split stands down when

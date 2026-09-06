@@ -1183,13 +1183,26 @@ field *is* the AF gain — read by the slider, by CAT and by the per-mode
 profile — and a trim hidden inside it would make all three disagree about
 what the AF gain is.
 
-Two things to know before using it:
+**The output device is mirrored, not configured.** Two ears of one stereo
+image have to come out of the same card, so there was never a
+configuration where the two receivers' devices should differ — but
+`receiver[1]` kept its own `audio_name` from its own props, and only
+RX0's followed the operator. Changing the output device moved the left
+ear and left the right one playing out of whatever RX2's props last
+named; and since `rx_menu()` opens on `active_receiver`, which with one
+panel is always RX0, RX2's audio settings could not be reached at all.
+`div_split_mirror_audio()` copies the device across instead, on engage
+and from the two places that can move RX0's: the RX menu and the per-mode
+profile.
 
-- **RX2 needs an output device of its own**, set in its RX menu. Without
-  one there is no right ear, and the menu says so beside the control
-  rather than leaving it unexplained.
-- **A mono output device mixes the ears back together.** `audio.c` folds
-  L and R to `0.5·(L+R)` on a one-channel device.
+One thing to know before using it:
+
+- **A mono output device mixes the ears back together** (`audio.c` folds
+  L and R to `0.5·(L+R)` on a one-channel device), and an **exclusive**
+  one — a raw ALSA `hw:` device with no mixing — has no room for the
+  second ear's stream at all. That is the only way the mirror can fail on
+  a device the left ear just opened, and the menu reads `AF: no right ear`
+  when it does.
 
 `audio_channel` is not written to place the ears. The per-mode RXTX
 profile owns that field and reloads it on every mode change, so an

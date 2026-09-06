@@ -19,6 +19,25 @@ September 2026:
   if RX2 is brought up, since RX2 then follows VFO B; not available over a
   remote link, where the audio is mono
 
+- diversity: both ears of the split follow the output device, and the
+  second one is no longer configured separately. Two ears of one stereo
+  image have to come out of the same card, but the second receiver kept
+  its own audio_name from its own props and only the first one's followed
+  the operator - so changing the output device moved the left ear and left
+  the right one playing out of a device that could not then be changed:
+  with no panel, rx_menu() always opens on RX1, so RX2's audio settings
+  were unreachable. The device is mirrored on the way in and whenever the
+  RX menu or a per-mode profile moves RX1's
+
+- diversity: the two ears of the split arrive at the same time. The filter
+  size and the linear-phase/minimum-phase choice are per receiver and were
+  not being cloned onto the second ear, and a linear-phase FIR delays by
+  half its taps - 21 ms at the default 2048 - so two ears that disagreed
+  about either were tens of milliseconds apart, with no column in the FFT
+  menu for the hidden receiver to show why. Engaging the split also zeroed
+  only the second receiver's sample counter, leaving the two filling their
+  buffers up to 1023 samples out of phase for as long as it was up
+
 - diversity: the AF gain reaches both ears of the split. radio_set_af_gain()
   returns early for any receiver past the number on screen, so the second
   ear - which the split deliberately does not display - stayed at whatever

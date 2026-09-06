@@ -577,14 +577,18 @@ static void update_manual_sensitivity(void) {
 
   //
   // The one way this can be selected and silently do nothing: the second
-  // receiver has no output device of its own, so the right ear has
-  // nowhere to go. It is not an error - the left ear is working and the
-  // device is set in the RX2 menu - but it has to be said, because
+  // ear could not open the same output device the first one is using.
+  // That means an exclusive device - a raw ALSA hw: device with no mixing
+  // - which has room for one stream only. It has to be said, because
   // "I chose it and hear no difference" is otherwise unexplainable.
   //
+  // Keyed on the first ear having a device, so that a radio using its own
+  // headphone jack and no local audio at all does not read as a fault.
+  //
   if (split_label) {
-    const gboolean mute = div_split_active() && !receiver[1]->local_audio;
-    gtk_label_set_text(GTK_LABEL(split_label), mute ? "AF: no RX2 output" : "AF");
+    const gboolean mute = div_split_active() &&
+                          receiver[0]->local_audio && !receiver[1]->local_audio;
+    gtk_label_set_text(GTK_LABEL(split_label), mute ? "AF: no right ear" : "AF");
   }
 }
 
@@ -1707,10 +1711,13 @@ void diversity_menu(GtkWidget *parent) {
                                 "and the null in the right, so a signal nulls in one "
                                 "ear while it peaks in the other.\n\n"
                                 "Uses the second receiver without putting it on "
-                                "screen, so set its output device in the RX2 menu. It "
+                                "screen. Nothing to configure: both ears follow this "
+                                "receiver's own output device, mode and filter. It "
                                 "stands down if you bring RX2 up, because RX2 is then "
                                 "following VFO B rather than this. A mono output "
-                                "device mixes the two ears back together.");
+                                "device mixes the two ears back together, and an "
+                                "exclusive one - a raw ALSA hw: device - has no room "
+                                "for the second ear's stream.");
     gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), div_split);
     gtk_box_pack_start(GTK_BOX(topbox), split_combo, FALSE, FALSE, 0);
     g_signal_connect(split_combo, "changed", G_CALLBACK(split_cb), NULL);

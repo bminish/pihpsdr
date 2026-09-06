@@ -284,6 +284,7 @@ int  div_split_active(void);    // the split is on and has what it needs
 int  div_split_owns_rx1(void);  // the combiner feeds RX1, so the protocol must not
 int  div_rx1_takes_raw(void);   // should the protocol hand raw arm 1 to RX1?
 void div_split_set(int mode);
+void div_split_mirror_audio(void);  // put the second ear on the first ear's device
 
 extern int capture_state;
 extern const int capture_max;
