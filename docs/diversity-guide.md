@@ -437,7 +437,9 @@ the search region is in the wrong place.
 
 With **Window follows RX filter** ticked, the green band lands exactly on
 the filter shading. That is a free check that the frequency conversion is
-right.
+right. On Carrier the tick means a 400 Hz search at the centre of the
+passband instead, so there the band sits inside the filter shading rather
+than on it — which is the same check, just narrower.
 
 ---
 
@@ -449,9 +451,18 @@ Averaging around 3 s. If the noise is stronger outside the passband than
 in it, untick follow and park a 1–2 kHz window directly on the noise; the
 weight applies to the whole band regardless of where it was measured.
 
+**An AM or SAM station you are listening to.**
+Auto `Sum`, Measure on `Carrier`, and tick **Search 400 Hz at passband
+centre** — that is the whole setup. The search lands on the carrier of
+whatever you are tuned to, and Averaging is the control worth moving:
+longer is better on this reference, and 10 s measured best.
+
 **Weak AM broadcast with a splattering carrier 5 kHz up.**
-Auto `Null`, Measure on `Carrier`. Set Window centre to +5000 and width to
-1000, so the search cannot see the wanted station's own carrier. Set
+Auto `Null`, Measure on `Carrier`, and this time leave the follow tick
+*clear* — you are aiming somewhere other than the station you are
+listening to, which is what the centre and width are for. Set Window
+centre to +5000 and width to 1000, so the search cannot see the wanted
+station's own carrier. Set
 Resolution to 6 Hz and Averaging long — 10 s or more. The carrier is
 not going anywhere, and the only thing that helps a weak one is a narrower
 bin. This is the one case where the fine end of Resolution is the right
