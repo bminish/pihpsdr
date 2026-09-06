@@ -631,8 +631,15 @@ static void update_visibility(void) {
   // needing one.
   //
   const gboolean is_digital = (ref == DIV_REF_DIGITAL_IQ);
-  const gboolean follows    = is_band || is_digital;
-  const gboolean placeable  = is_carrier || (follows && !div_auto_follow_filter);
+  //
+  // Carrier takes the tick too, and means something slightly different by
+  // it: not the whole passband, but a fixed narrow search at the centre of
+  // it, which is where an AM or SAM carrier is. Its own centre and width
+  // are kept while it is ticked, in div_carrier_centre/width, and come
+  // back untouched when it is cleared.
+  //
+  const gboolean follows    = is_band || is_digital || is_carrier;
+  const gboolean placeable  = follows && !div_auto_follow_filter;
   //
   // Everything except the pilot correlator works from the transform, so
   // only it has no use for a bin resolution.
@@ -647,7 +654,20 @@ static void update_visibility(void) {
   // It stays at DIV_HANG_DEFAULT. See Findings 33, 35 and 41 in
   // docs/diversity-measurements.md.
   //
-  if (follow_b) { gtk_widget_set_visible(follow_b, follows); }
+  if (follow_b) {
+    //
+    // One tick, two meanings, so it has to say which one is on offer.
+    // Carrier searches a fixed width at the centre of the passband; the
+    // other two take the passband itself.
+    //
+    // The width is spelled from the constant so the two cannot drift.
+    char label[64];
+    snprintf(label, sizeof(label), "Search %g Hz at passband centre",
+             DIV_CARRIER_FOLLOW_WIDTH);
+    gtk_button_set_label(GTK_BUTTON(follow_b),
+                         is_carrier ? label : "Window follows RX filter");
+    gtk_widget_set_visible(follow_b, follows);
+  }
 
   div_show_row(centre_label, centre_spin, placeable);
   div_show_row(width_label,  width_spin,  placeable);
