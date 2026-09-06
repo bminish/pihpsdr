@@ -1314,10 +1314,30 @@ double div_window_zero(int mode, int sidetone) {
 //
 // The edges of a hand-placed window, in the shifted frame.
 //
+// Or of the carrier search when it is following the filter instead. The
+// Carrier reference uses this to say where to *look* for a carrier, not
+// what to accumulate - that is the tracker's bin plus a couple either
+// side, in div_bin_range() - so following the filter here means a fixed
+// narrow search centred on the passband rather than the whole of it.
+//
+// The passband midpoint is where the carrier is: an AM or SAM filter is
+// symmetric about the tuned frequency, and sam_sb_mode selects a
+// sideband inside WDSP without moving the filter edges. Taking the
+// midpoint rather than assuming zero also keeps this honest under a
+// deliberately offset filter.
+//
 static void div_manual_window(const struct div_context *ctx, double *lo, double *hi) {
   const double z = div_window_zero(ctx->mode, ctx->sidetone);
-  *lo = z + ctx->centre - 0.5 * ctx->width;
-  *hi = z + ctx->centre + 0.5 * ctx->width;
+  double centre = ctx->centre;
+  double width  = ctx->width;
+
+  if (ctx->ref == DIV_REF_CARRIER && ctx->follow) {
+    centre = 0.5 * ((double)ctx->filter_low + (double)ctx->filter_high) - z;
+    width  = DIV_CARRIER_FOLLOW_WIDTH;
+  }
+
+  *lo = z + centre - 0.5 * width;
+  *hi = z + centre + 0.5 * width;
 }
 
 //
@@ -3869,7 +3889,14 @@ void diversity_auto_restart(void) {
 // old RADE passband or the new RADE V1. Writing the scheme is what makes
 // the migration below unambiguous rather than a guess.
 //
-#define DIV_REF_SCHEME 2
+// Scheme 3 does not renumber anything. It marks the point where the
+// Carrier reference started honouring div_auto_follow_filter, which had
+// been a Window and FSK/Digital setting until then. The flag defaults on,
+// so a file written before this would silently move a carrier search that
+// had been placed by hand - and measured against - onto the passband. A
+// scheme bump is the only way to tell such a file from one that meant it.
+//
+#define DIV_REF_SCHEME 3
 
 //
 // Move the per-reference settings between their own slots and the live
@@ -4698,15 +4725,17 @@ void diversity_auto_restore_state(void) {
   // happen before the block is seeded from these values, so that every
   // group inherits the migrated reference rather than the raw one.
   //
+  //
+  // GetPropI0 leaves the variable alone when the key is absent, so the
+  // default here has to be the *old* scheme - a file that predates the
+  // key is exactly the one that needs migrating.
+  //
+  // Not scoped to the renumbering below: the scheme 3 migration has to
+  // reach the per-group blocks as well, further down.
+  //
+  int scheme = 1;
+  GetPropI0("diversity_auto_ref_scheme", scheme);
   {
-    //
-    // GetPropI0 leaves the variable alone when the key is absent, so the
-    // default here has to be the *old* scheme - a file that predates the
-    // key is exactly the one that needs migrating.
-    //
-    int scheme = 1;
-    GetPropI0("diversity_auto_ref_scheme", scheme);
-
     if (scheme < 2) {
       switch (div_auto_ref) {
       case 2:
@@ -4725,6 +4754,17 @@ void diversity_auto_restore_state(void) {
       default: break;                                     // 0 and 1 unmoved
       }
     }
+  }
+
+  //
+  // Carrier did not follow the filter before scheme 3, so a file written
+  // earlier carries a flag that meant nothing for it. It defaults on, and
+  // adopting it would move a hand-placed carrier search onto the passband
+  // without being asked. Leave such a file where it was; the tick is there
+  // to be turned on by whoever wants it.
+  //
+  if (scheme < 3 && div_auto_ref == DIV_REF_CARRIER) {
+    div_auto_follow_filter = 0;
   }
 
   //
@@ -4749,6 +4789,15 @@ void diversity_auto_restore_state(void) {
     div_group_set[g] = base;
     div_group_restore(g, &div_group_set[g]);
     div_settings_validate(&div_group_set[g]);
+
+    //
+    // The same scheme 3 migration, per group. A group seeded from the
+    // flat keys inherits the correction already; one with a block of its
+    // own in the file needs it applying to what that block said.
+    //
+    if (scheme < 3 && div_group_set[g].ref == DIV_REF_CARRIER) {
+      div_group_set[g].follow_filter = 0;
+    }
   }
 
   //

@@ -674,6 +674,94 @@ static int test_cw_follow(void) {
   return ok;
 }
 
+/* ------------------------------------------------------------------ */
+/* 5b. the carrier search following the filter                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Carrier uses the window controls to say where to *look* for a carrier,
+ * not what to accumulate, so following the filter cannot mean what it
+ * means for Window: the whole of an AM passband is 8 kHz of mostly
+ * sidebands, and the loudest bin in it is not reliably the carrier.
+ *
+ * It means a fixed narrow search at the centre of the passband instead.
+ * The centre matters and is not assumed to be zero: an AM or SAM filter
+ * is symmetric about the tuned frequency, but nothing enforces that, and
+ * an offset passband must move the search with it. That is what the last
+ * two cases are for - the same filter, one carrier at its midpoint and
+ * one at the dial, and only the first may be found.
+ *
+ * The tone is generated at -carrier_hz because the tapped frame inverts;
+ * see the frequency bookkeeping note at the top of diversity_auto.c.
+ */
+static int carrier_follow_case(const char *name, int flo, int fhi, int follow,
+                               double centre, double width,
+                               double carrier_hz, int want_track) {
+  const int rate = 48000, nfft = 4096;
+  const double hr = 0.62, hi = -0.48;
+  rx0.sample_rate = rate;
+  rx0.filter_low = flo;
+  rx0.filter_high = fhi;
+  vfo[0].mode = modeAM;
+  vfo[0].frequency = 1044000;
+  vfo[0].ctun_frequency = 1044000;
+  vfo[0].offset = 0;
+  div_auto_ref = DIV_REF_CARRIER;
+  div_auto_mode = DIV_AUTO_SUM;
+  div_auto_follow_filter = follow;
+  div_auto_centre = centre;
+  div_auto_width = width;
+  div_auto_tau = 1.0;
+  div_auto_coherence_min = 0.30;
+  div_auto_weighting = DIV_WEIGHT_FLAT;
+  div_auto_resolution = 12.0;
+  div_cos = 1.0;
+  div_sin = 0.0;
+  div_gain = 0.0;
+  div_phase = 0.0;
+  srand(37);
+  diversity_auto_start();
+  double ph = 0.0;
+
+  for (int b = 0; b < 60; b++) {
+    for (int n = 0; n < nfft; n++) {
+      ph += 2.0 * M_PI * (-carrier_hz) / rate;
+      const double s = cos(ph), t = sin(ph);
+      diversity_auto_sample(s + 0.03 * frand(), t + 0.03 * frand(),
+                            hr * s - hi * t + 0.03 * frand(),
+                            hr * t + hi * s + 0.03 * frand());
+    }
+
+    settle();
+  }
+
+  g_usleep(300000);
+  const double got = div_auto_carrier;
+  diversity_auto_stop();
+  /* three bins at 12 Hz, plus the parabolic interpolator's slack */
+  const int tracked = fabs(got - carrier_hz) < 40.0;
+  const int ok = want_track ? tracked : !tracked;
+  printf("  %-26s filter %+5d..%+5d %-8s carrier %+6.0f -> found %+7.1f  %s  %s\n",
+         name, flo, fhi, follow ? "follow" : "manual", carrier_hz, got,
+         tracked ? "tracked" : "ignored", ok ? "OK" : "FAIL");
+  return ok;
+}
+
+static int test_carrier_follow(void) {
+  printf("  carrier search: %g Hz at the passband centre when following\n",
+         DIV_CARRIER_FOLLOW_WIDTH);
+  int ok = 1;
+  /* a normal AM filter, symmetric about the carrier */
+  ok &= carrier_follow_case("follow, on centre",   -4000, 4000, 1, 0.0, 1000.0,  120.0, 1);
+  ok &= carrier_follow_case("follow, well outside", -4000, 4000, 1, 0.0, 1000.0,  600.0, 0);
+  /* the hand-placed window still reaches it, which is the point of having one */
+  ok &= carrier_follow_case("manual, aimed at it",  -4000, 4000, 0, 600.0, 1000.0, 600.0, 1);
+  /* an offset passband: the search must move with it, not sit on the dial */
+  ok &= carrier_follow_case("follow, offset band",   1000, 3000, 1, 0.0, 1000.0, 2050.0, 1);
+  ok &= carrier_follow_case("follow, dial not band", 1000, 3000, 1, 0.0, 1000.0,    0.0, 0);
+  return ok;
+}
+
 static int test_cw_zero(void) {
   printf("  hand-placed window, signal 100 Hz above the dial\n");
   printf("  target conj(h) = -2.11 dB, +37.75 deg  (CW pitch 800 Hz)\n");
@@ -854,9 +942,11 @@ int main(int argc, char **argv) {
   printf("\n");
   int e = test_cw_follow();
   printf("\n");
+  int f = test_carrier_follow();
+  printf("\n");
   int g = test_normalise();
   printf("\n");
   int h = test_standdown();
-  printf("\n%s\n", (a && b && c && d && e && g && h) ? "PASS" : "FAIL");
-  return (a && b && c && d && e && g && h) ? 0 : 1;
+  printf("\n%s\n", (a && b && c && d && e && f && g && h) ? "PASS" : "FAIL");
+  return (a && b && c && d && e && f && g && h) ? 0 : 1;
 }

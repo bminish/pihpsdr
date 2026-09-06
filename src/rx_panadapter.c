@@ -345,8 +345,19 @@ void rx_panadapter_update(RECEIVER *rx) {
       // the region the operator sets, and seeing it is how they aim at a
       // carrier other than the primary.
       //
-      wlo = wman_lo;
-      whi = wman_hi;
+      // Following the filter narrows it to a fixed width at the centre of
+      // the passband, which is where the carrier of an AM or SAM signal
+      // is. Drawn from the same numbers div_manual_window() searches with.
+      //
+      if (div_auto_follow_filter) {
+        const double mid = 0.5 * ((double)rx->filter_low + (double)rx->filter_high);
+        wlo = mid - 0.5 * DIV_CARRIER_FOLLOW_WIDTH;
+        whi = mid + 0.5 * DIV_CARRIER_FOLLOW_WIDTH;
+      } else {
+        wlo = wman_lo;
+        whi = wman_hi;
+      }
+
       break;
 
     case DIV_REF_DIGITAL_IQ:

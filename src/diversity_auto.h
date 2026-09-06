@@ -69,6 +69,18 @@ enum {
 // DIV_REF_SCHEME there.
 //
 
+//
+// The width of the carrier search when it follows the RX filter rather
+// than the operator's own numbers. Wide enough to take in the tuning
+// error on an AM or SAM signal, narrow enough that a neighbouring
+// carrier a few kHz away cannot get into the search.
+//
+// Public because the panadapter overlay draws the same region, and a
+// region that is drawn in one place and searched in another is worse
+// than no overlay at all.
+//
+#define DIV_CARRIER_FOLLOW_WIDTH 400.0    // Hz
+
 extern int    div_auto_mode;
 extern int    div_auto_ref;
 extern int    div_auto_follow_filter;   // analysis window follows the RX filter

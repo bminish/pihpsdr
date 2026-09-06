@@ -55,6 +55,16 @@ static int  have_weighting;
 static char weightingval[32];
 static int  have_radecoh;
 static char radecohval[32];
+static int  have_follow;
+static char followval[32];
+/*
+ * One group block, the AM one, for the scheme 3 check. The live keys
+ * alone cannot show it: a group with a block of its own in the file is
+ * restored from that block, not from them.
+ */
+static int  have_group;
+static char groupref[32];
+static char groupfollow[32];
 const char *getProperty(const char *n) {
   if (!strcmp(n, "diversity_auto_ref")) { return refval[0] ? refval : NULL; }
 
@@ -63,6 +73,12 @@ const char *getProperty(const char *n) {
   if (!strcmp(n, "diversity_auto_weighting")) { return have_weighting ? weightingval : NULL; }
 
   if (!strcmp(n, "diversity_rade_cohmin")) { return have_radecoh ? radecohval : NULL; }
+
+  if (!strcmp(n, "diversity_auto_follow_filter")) { return have_follow ? followval : NULL; }
+
+  if (!strcmp(n, "diversity_group[3].ref")) { return have_group ? groupref : NULL; }
+
+  if (!strcmp(n, "diversity_group[3].follow_filter")) { return have_group ? groupfollow : NULL; }
 
   return NULL;
 }
@@ -77,11 +93,77 @@ static int check(const char *what, int stored, int scheme, int want) {
   const char *names[] = { "Window", "Carrier", "RADE V1", "Digital I/Q" };
   const int got = div_auto_ref;
   const int ok = (got == want);
+  char sch[8];
+  snprintf(sch, sizeof(sch), "%d", scheme);
   printf("  stored %d, scheme %-7s -> %-12s (want %-12s) %s\n",
-         stored, scheme > 0 ? "2" : "absent",
+         stored, scheme > 0 ? sch : "absent",
          (got >= 0 && got <= 3) ? names[got] : "??",
          names[want], ok ? "OK" : "FAIL");
   (void)what;
+  return ok;
+}
+
+/*
+ * Scheme 3: Carrier started honouring div_auto_follow_filter.
+ *
+ * The flag defaults on and was meaningless for Carrier before, so a file
+ * written earlier carries a 1 that was never a decision. Adopting it
+ * would move a hand-placed carrier search onto the passband without being
+ * asked - on the one reference whose window an operator places by hand to
+ * aim at a carrier other than the primary. It must be cleared for such a
+ * file, and left alone for one that meant it.
+ *
+ * The migration runs twice, on the live keys and again per group, so both
+ * are checked: the group case reads back through
+ * diversity_auto_mode_changed(), which is how a group block reaches the
+ * live values in the running radio.
+ */
+static int follow_case(const char *what, int ref, int stored, int scheme,
+                       int group, int want) {
+  snprintf(refval, sizeof(refval), "%d", ref);
+  have_scheme = (scheme > 0);
+  snprintf(schemeval, sizeof(schemeval), "%d", scheme);
+  have_follow = 1;
+  snprintf(followval, sizeof(followval), "%d", stored);
+  have_group = group;
+  snprintf(groupref, sizeof(groupref), "%d", ref);
+  snprintf(groupfollow, sizeof(groupfollow), "%d", stored);
+  div_auto_follow_filter = -1;
+  diversity_auto_restore_state();
+
+  if (group) {
+    //
+    // AM is DIV_GROUP_AM, the group whose block the keys above describe.
+    // Restore leaves nothing adopted, so this is what puts it in force.
+    //
+    diversity_auto_mode_changed(modeAM);
+  }
+
+  const int got = div_auto_follow_filter;
+  const int ok = (got == want);
+  char sch[8];
+  snprintf(sch, sizeof(sch), "%d", scheme);
+  printf("  %-28s ref %d, follow %d, scheme %-6s -> %d (want %d) %s\n",
+         what, ref, stored, scheme > 0 ? sch : "absent", got, want,
+         ok ? "OK" : "FAIL");
+  have_follow = 0;
+  have_group = 0;
+  return ok;
+}
+
+static int test_carrier_follow(void) {
+  int ok = 1;
+  /* the live keys */
+  ok &= follow_case("old file, carrier",      DIV_REF_CARRIER, 1, 2, 0, 0);
+  ok &= follow_case("no scheme at all",       DIV_REF_CARRIER, 1, 0, 0, 0);
+  ok &= follow_case("this version, carrier",  DIV_REF_CARRIER, 1, 3, 0, 1);
+  ok &= follow_case("this version, cleared",  DIV_REF_CARRIER, 0, 3, 0, 0);
+  /* Window always meant it, so it is never touched */
+  ok &= follow_case("old file, window",       DIV_REF_BAND,    1, 2, 0, 1);
+  ok &= follow_case("old file, digital",      DIV_REF_DIGITAL_IQ, 1, 2, 0, 1);
+  /* and again through a group block of its own */
+  ok &= follow_case("old AM group block",     DIV_REF_CARRIER, 1, 2, 1, 0);
+  ok &= follow_case("new AM group block",     DIV_REF_CARRIER, 1, 3, 1, 1);
   return ok;
 }
 
@@ -232,6 +314,8 @@ int main(void) {
   ok &= check("new carrier",  1, 2, DIV_REF_CARRIER);
   ok &= check("new radev1",   2, 2, DIV_REF_RADE_V1);
   ok &= check("new digital",  3, 2, DIV_REF_DIGITAL_IQ);
+  printf("\ncarrier follow-filter migration (scheme 3)\n");
+  ok &= test_carrier_follow();
   printf("\nDIV_SETTINGS over the wire\n");
   ok &= test_wire_round_trip();
   printf("\nretired controls are pinned, not ranged\n");
