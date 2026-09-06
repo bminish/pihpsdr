@@ -2422,6 +2422,31 @@ int div_rx1_takes_raw(void) {
 //
 static int div_split_up = 0;
 
+//
+// Start both ears on the same input sample.
+//
+// The two receivers are handed the same stream one sample at a time and
+// both fill a 1024-sample buffer, so they demodulate in lockstep - but
+// only if their counters agree. Zeroing one while the other sits part way
+// through a buffer leaves the two firing rx_full_buffer() a fixed number
+// of samples apart, and since they then advance together that offset
+// never closes: up to 1023 samples, 21 ms at 48 kHz, of one ear lagging
+// the other for as long as the split is up. Which is audible, and was
+// whatever it happened to be at the moment the split was engaged.
+//
+// So both, together. RX0 loses its part buffer, which is one gap of up to
+// 21 ms as the mode changes - the right price for a stereo image that is
+// actually aligned.
+//
+// The feeding thread may slip a sample between the two writes. That is a
+// one-sample error, twenty microseconds, and not worth a lock on the
+// audio path to avoid.
+//
+static void div_split_align(void) {
+  receiver[0]->samples = 0;
+  receiver[1]->samples = 0;
+}
+
 void div_split_set(int mode) {
   //
   // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
@@ -2456,9 +2481,10 @@ void div_split_set(int mode) {
     //
     // Already up, and only the presentation changed. Who feeds RX1 moves
     // between the protocol and the combiner with it, so drop the part
-    // buffer rather than splice two sources into one block.
+    // buffers rather than splice two sources into one block - and drop
+    // both, for the reason in div_split_align() below.
     //
-    receiver[1]->samples = 0;
+    div_split_align();
     return;
   }
 
@@ -2472,7 +2498,7 @@ void div_split_set(int mode) {
     // is given state 1. All that was ever missing is samples and
     // something to demodulate them as.
     //
-    receiver[1]->samples = 0;
+    div_split_align();
     rx_clone_dsp(receiver[1], receiver[0]);
     //
     // Level with the first ear on the way in, whatever RX2's own props

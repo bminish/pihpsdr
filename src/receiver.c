@@ -1091,6 +1091,35 @@ void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
   dst->squelch        = src->squelch;
   rx_set_squelch_for(dst, mode);
   rx_set_offset_for(dst, mode, vfo[src->id].offset);
+
+  //
+  // The filter's shape, because the filter's shape is its delay.
+  //
+  // fft_size is the tap count and low_latency selects minimum phase over
+  // linear phase, and both are per receiver and stored per receiver. A
+  // linear-phase FIR delays by half its taps - 1024 samples, 21 ms, at
+  // the default 2048 - and a minimum-phase one by far less, so two ears
+  // that disagree about either arrive at different times. That is not a
+  // subtle mismatch in a stereo image: it is the whole of what a stereo
+  // image is made of.
+  //
+  // dst's values come from its own props and, while it has no panel, the
+  // FFT menu does not draw a column for it - so nothing would show the
+  // operator why one ear lagged, or let them correct it.
+  //
+  // Guarded because RXASetNC() stops and restarts the channel, and this
+  // runs on every mode and filter change. After the first call it is a
+  // comparison and nothing else.
+  //
+  if (dst->fft_size    != src->fft_size ||
+      dst->low_latency != src->low_latency ||
+      dst->nbp_window  != src->nbp_window) {
+    dst->fft_size    = src->fft_size;
+    dst->low_latency = src->low_latency;
+    dst->nbp_window  = src->nbp_window;
+    rx_set_fft_params(dst);
+  }
+
   //
   // sam_sb_mode is deliberately not copied. LSB in one ear and USB in the
   // other on an AM carrier is a reason to have two.
