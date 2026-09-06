@@ -207,6 +207,21 @@ park a 1 kHz window on +5 kHz and the primary is outside the search
 entirely, so you can null the station carrying that carrier while
 listening to the one on frequency.
 
+For the ordinary case — a station tuned to zero beat — you do not have to
+set either. Tick **Search 400 Hz at passband centre** and it looks in a
+400 Hz band at the middle of your filter, which is where the carrier of an
+AM or SAM signal is. It is the same tick the other references use to
+follow the filter, and it says which job it is doing.
+
+Your centre and width are not lost while it is ticked. Untick it and they
+come back exactly as you left them, so you can flip between "the station
+I am listening to" and a carrier you have aimed at 5 kHz away without
+setting anything up twice.
+
+If you are upgrading, the tick starts **off** on AM and SAM even though it
+defaults on elsewhere. A search you had placed by hand is a decision, and
+adopting it silently would have moved it.
+
 ### RADE V1 pilot (MVDR)
 
 The most capable and the most specialised. It correlates against RADE V1's
@@ -230,6 +245,7 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. **The default is 0.5 s**, and it used to be 2.0: measured per block on nine recordings, 0.5 s is ahead of 2.0 on every one of them, and on a fading AM carrier it is worth 2.5 dB at the moments the signal is worst. If your radio has 2.0 s in it from an earlier version, that is where it will stay — move it yourself. It also now sets how fast the *output* follows, at a quarter of whatever you set, so the bottom of this slider does something it did not do before. A fading broadcast or a fast path (20 m near the MUF, or the low bands) wants the short end; a weak AM carrier you are only trying to hold on to, or an HF RADE path, wants several seconds; and `Null` wants the shortest setting that still holds a lock |
 | **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.20 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — measured at 36 % of signal blocks against 36 % of empty ones, and accumulating thirteen times as many bins does not part them either. Use **Averaging** instead, which does: longer is better here and 10 s measured best. The slider will not go below the reading noise alone produces, so it says as much on the way down. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. **There is no such row in RADE V1**: the pilot correlator's own gates already refuse a band with nothing in it, and the reading this used to gate goes on being low on signals that decode perfectly well, so every setting it offered did more harm than good |
 | **Restart averaging** | Throw away the statistics and start again |
+| **Ears** | Present the two antennas one per ear instead of summing them — see below |
 
 **Between overs the status line says `quiet`.** When neither antenna has
 anything above the noise for a couple of seconds, the combiner stands
@@ -243,6 +259,47 @@ between CW characters or between syllables is far too short to trigger
 it.
 | **Hold** | Stop *applying* the answer without stopping the loop |
 | **Invert** | Swap Null and Sum. Greyed out under Best, which has no opposite |
+
+### Ears: one antenna per ear
+
+Everything above folds the two antennas into one signal. **Ears** does the
+other thing you can do with a coherent pair — puts them in different ears
+and lets your hearing separate them. Two ears are very good at pulling one
+voice out of a mess, and that is a different kind of filter from anything
+the weight can do.
+
+| Setting | What you hear |
+|---|---|
+| `Summed` | Normal diversity: the combined signal in both ears |
+| `Ant 1 / Ant 2` | Main antenna left, aux antenna right |
+| `Sum / Difference` | The combined signal left, the null right |
+
+`Sum / Difference` is the interesting one. The right ear gets what
+**Invert** would give you — the same measurement with the weight turned
+through 180°, which is a deep null on whatever the left ear is peaking. So
+a station peaks in one ear and vanishes in the other, and you can hear an
+auto-phasing null converge instead of watching the numbers. It is also the
+quickest way to tell whether a null is on the signal you meant.
+
+To use it you need a **second output device set for RX2**, in its RX menu.
+You do *not* need RX2 on screen — this uses it as an audio path only, and
+the menu tells you if it has nowhere to send the right ear. If you do
+bring RX2 up, Ears stands down: RX2 then follows VFO B and is yours to
+tune, which is not the same thing. Put it away and Ears comes back.
+
+Two other things worth knowing:
+
+- **Frequency, mode and filter follow the main receiver**, in both ears,
+  automatically. Your VFO B is untouched — split transmit still works
+  exactly as before.
+- In **SAM** the two ears keep their own sideband settings, on purpose.
+  Set one to LSB and the other to USB and you have independent-sideband
+  reception of an AM station in stereo.
+- A **mono output device mixes the ears back together**, and it will not
+  warn you. This wants headphones and a stereo card.
+
+Ears is a local control: over a remote link the audio is mono, so it is
+greyed out on a client.
 
 ### Settings are remembered per mode
 

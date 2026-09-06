@@ -1,5 +1,35 @@
 LIST OF RECENT PIHPSDR CHANGES
 ==============================
+September 2026:
+---------------
+
+- diversity: the two antennas can be presented one per ear instead of
+  summed. "Ears" offers Ant 1 / Ant 2, which puts the main antenna in the
+  left ear and the aux in the right, and Sum / Difference, which puts the
+  combined signal in one ear and the null in the other - the same
+  measurement read both ways at once, so a station peaks in one ear as it
+  extinguishes in the other and an auto-phasing null can be heard
+  converging rather than watched. The DDCs are locked together in the
+  FPGA, so the two ears cannot drift apart. It uses the second receiver as
+  an audio path without putting it on screen, and needs an output device
+  set for RX2; frequency, mode and filter follow the main receiver
+  automatically while VFO B is left alone, so split transmit is unaffected.
+  In SAM the two ears keep independent sideband settings, which gives
+  independent-sideband reception of an AM station in stereo. Stands down
+  if RX2 is brought up, since RX2 then follows VFO B; not available over a
+  remote link, where the audio is mono
+
+- diversity: the Carrier reference can follow the RX filter, like the
+  other two placeable references. It cannot mean the whole passband there
+  - 8 kHz of AM is mostly sidebands and the loudest bin in it is not
+  reliably the carrier - so it means a 400 Hz search at the centre of the
+  passband, which is where the carrier of a signal tuned to zero beat is.
+  The hand-placed centre and width are kept while it is ticked and come
+  back untouched when it is cleared, so aiming at a carrier 5 kHz away is
+  still one tick away. Existing props files do not adopt it: the flag
+  defaults on and meant nothing for this reference before, so a search
+  that had been placed by hand stays where it was put
+
 August 2026:
 ------------
 

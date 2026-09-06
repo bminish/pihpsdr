@@ -822,6 +822,35 @@ primary can be tracked — and therefore nulled. Park a 1 kHz window on
 panadapter shows the search region as a green band with a brighter line
 where the tracker has settled.
 
+**Following the filter means something else here.** Window and
+FSK/Digital take the whole passband when their follow tick is on. The
+whole of an AM passband is 8 kHz of mostly sidebands and the loudest bin
+in it is not reliably the carrier, so this reference takes
+`DIV_CARRIER_FOLLOW_WIDTH` = **400 Hz at the centre of the passband**
+instead — wide enough for the tuning error, narrow enough that a
+neighbouring carrier a few kHz off cannot get into the search. That is
+the common case, an AM or SAM signal tuned to zero beat, and it wanted
+two numbers set by hand to reach.
+
+The centre is the **passband midpoint**, not zero. An AM or SAM filter is
+symmetric about the tuned frequency and `sam_sb_mode` picks a sideband
+inside WDSP without moving the filter edges, so the two agree in every
+ordinary case; a deliberately offset filter moves the search with it
+rather than leaving it on the dial.
+
+Ticking it does not discard the hand-placed window — `div_carrier_centre`
+and `div_carrier_width` keep their values and come back untouched when it
+is cleared, the same way the other two references keep theirs. Only the
+peak search moves: what is *accumulated* is still the tracker's bin plus
+`DIV_CARRIER_BINS` either side, whatever the window says, so
+`Min coherence`'s floor is unchanged by the tick.
+
+Old props files do not adopt it. The flag defaults on and meant nothing
+for this reference before, so a file written earlier would silently move
+a search that had been placed by hand — and measured against — onto the
+passband. `DIV_REF_SCHEME` 3 marks the change and clears the flag for
+such a file, on the live keys and again per group; the tick is opt-in.
+
 **Window centre and width are modal twice over.** The Window, Carrier and
 FSK/Digital references each keep their own pair, so aiming the carrier
 tracker at a station 5 kHz away does not destroy the window set up for
@@ -1046,7 +1075,8 @@ one block from `track` to `search` when the signal stops.
 | **Gain / Phase** (coarse, fine) | Manual weight; live when Auto is not driving, and under **Hold** | always |
 | **Auto** | Off / Null / Sum / Best — the objective | always |
 | **Measure on** | Which reference (§5) | always |
-| **Window follows RX filter** | — | Window, FSK/Digital |
+| **Window follows RX filter** / **Search 400 Hz at passband centre** | The passband itself in Window and FSK/Digital; a fixed 400 Hz at the centre of it in Carrier (§5). The label says which | Window, Carrier, FSK/Digital |
+| **Ears** | Summed / Ant 1 / Ant 2 / Sum / Difference — what the two arms are presented as (§6.1). Off on a client and while RX2 is on screen | two ADCs, two receivers configured |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
@@ -1066,6 +1096,79 @@ the Window reference — the carrier tracker accumulates a handful of bins
 either side of one peak and FSK/Digital's occupancy split had already
 decided which bins carry signal — and on four independent measurements it
 was behind or level with the flat sum it replaced (see above).
+
+### 6.1 Ears: the two arms, one to each
+
+The combiner exists to fold two antennas into one stream. **Ears** is the
+other thing that can be done with a coherent pair: present them
+separately, one per ear, and let the listener separate signals by where
+they sound. It is a presentation control, not an analysis one — the
+auto-phasing loop goes on seeing both raw arms in every setting here, so
+the status line, the overlay and the weight are unaffected.
+
+| Setting | Left ear | Right ear |
+|---|---|---|
+| `Summed` | `z0 + w·z1` | the same (ordinary diversity) |
+| `Ant 1 / Ant 2` | `z0` | `z1` |
+| `Sum / Difference` | `(z0 + w·z1)·div_norm` | `(z0 − w·z1)·div_norm` |
+
+`Sum / Difference` is the classic Σ/Δ pair. Subtracting `w·z1` is the
+same thing as rotating the weight by 180°, which is what **Invert** does —
+so instead of toggling Invert to hear the null and then the peak, both are
+present at once, and a signal extinguishes in one ear as it peaks in the
+other. It is the fastest way to see an auto-phasing null converge by ear.
+
+**It uses the second receiver without putting it on screen.**
+`rx_create_receiver()` builds every `RECEIVERS` at startup, not merely the
+ones displayed, restores each one's props and opens its audio sink on the
+way past; `OpenChannel()` is given state 1, so its WDSP channel is already
+running. All that was ever missing is samples and something to demodulate
+them as. Under diversity the protocol is *already* feeding `receiver[1]`
+raw arm 1 — that feed exists for RX2 — so `Ant 1 / Ant 2` costs no new
+data path at all. `Sum / Difference` is the one that forms both ears in
+the combiner, and `div_rx1_takes_raw()` stands the protocol's feed down
+for it.
+
+**What the right ear demodulates comes from the left, not from VFO B.**
+`rx_set_mode()` and `rx_set_filter()` derive everything from
+`vfo[rx->id]`, and `receiver[1]`'s VFO is VFO B — the operator's split
+VFO, shown in the VFO bar and used for split transmit. Slaving it would be
+the short way and would quietly change what split TX transmits with, so
+`rx_clone_dsp()` sets mode, filter edges, deviation, CW peak, AGC, squelch
+and BFO offset on `receiver[1]` directly and leaves VFO B alone. It is
+called wherever RX0's mode or filter changes. `sam_sb_mode` is
+deliberately *not* copied: LSB in one ear and USB in the other on an AM
+carrier is a reason to have two.
+
+**It runs only while RX2 has no panel.** Bring RX2 up and `vfo.c` starts
+driving its mode and filter from VFO B on every change — the one thing
+`rx_clone_dsp()` is written to avoid — and the two would overwrite each
+other in whatever order the last event arrived. The split stands down
+instead and comes back when the panel goes away. That is also what makes
+the rest safe: with `receivers == 1`, every path in the program that would
+touch `receiver[1]` is guarded by `receivers`, so nothing else writes to
+it.
+
+Two things to know before using it:
+
+- **RX2 needs an output device of its own**, set in its RX menu. Without
+  one there is no right ear, and the menu says so beside the control
+  rather than leaving it unexplained.
+- **A mono output device mixes the ears back together.** `audio.c` folds
+  L and R to `0.5·(L+R)` on a one-channel device.
+
+`audio_channel` is not written to place the ears. The per-mode RXTX
+profile owns that field and reloads it on every mode change, so an
+assignment would not survive; the channel is computed in
+`rx_process_buffer()` instead, which also means switching Ears off
+restores exactly what was there before with nothing left behind. Each
+receiver's own output is folded to mono first, because `rx->binaural` is
+WDSP's stereo spread on one receiver and taking half of that would be half
+of a different signal.
+
+The split does not travel to a remote client: `remote_rxaudio()` carries
+one mono sample per receiver, so there is no second ear at the far end.
+The control is insensitive there.
 
 ### One set of settings per group of modes
 
