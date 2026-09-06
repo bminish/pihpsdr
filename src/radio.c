@@ -324,6 +324,23 @@ double div_phase = 0.0;    // phase for diversity (in degrees, 0 ... 360)
 // Ear split. See the enum in radio.h.
 //
 int div_split = DIV_SPLIT_OFF;
+double div_split_balance = 0.0;    // dB, left minus right
+double div_bal_l = 1.0;
+double div_bal_r = 1.0;
+
+//
+// Balance as two amplitudes. Attenuate-only: whichever ear the trim
+// favours is left alone and the other is brought down, so the pair never
+// asks for gain above what the AF slider is set to. Working the other way
+// round - raising one ear - would do nothing at the top of the AF range,
+// which is where an operator with a hot antenna is most likely to be.
+//
+void radio_calc_split_balance(void) {
+  const double l = (div_split_balance < 0.0) ?  div_split_balance : 0.0;
+  const double r = (div_split_balance > 0.0) ? -div_split_balance : 0.0;
+  div_bal_l = pow(10.0, 0.05 * l);
+  div_bal_r = pow(10.0, 0.05 * r);
+}
 
 //
 // Audio capture and replay
@@ -2448,6 +2465,13 @@ void div_split_set(int mode) {
     //
     receiver[1]->samples = 0;
     rx_clone_dsp(receiver[1], receiver[0]);
+    //
+    // Level with the first ear on the way in, whatever RX2's own props
+    // last left it at. Balance is what makes them differ from here.
+    //
+    receiver[1]->volume = receiver[0]->volume;
+    rx_set_af_gain(receiver[1]);
+    radio_calc_split_balance();
     rx_on(receiver[1]);
     div_split_up = 1;
   } else if (div_split_up) {
@@ -3065,6 +3089,24 @@ void radio_set_af_gain(int id, double value) {
   RECEIVER *rx = receiver[id];
   rx->volume = value;
   rx_set_af_gain(rx);
+
+  //
+  // One AF gain for the pair. The ear split's second receiver is not on
+  // screen and so is past the guard above - AF_GAIN_RX2 and the RX2
+  // slider both return early on it - which left the right ear stuck at
+  // whatever its props file last said while the left one moved. The
+  // difference between the ears is the Balance control's business, not
+  // this one's, and it is applied separately.
+  //
+  // rx_set_af_gain() writes the per-mode profile back for RX0 only, so
+  // this does not put the second ear's volume into the operator's stored
+  // settings.
+  //
+  if (id == 0 && div_split_active()) {
+    receiver[1]->volume = value;
+    rx_set_af_gain(receiver[1]);
+  }
+
   g_idle_add(sliders_af_gain, GINT_TO_POINTER(100 * suppress_popup_sliders + id));
 }
 
@@ -3600,6 +3642,7 @@ static void radio_restore_state(void) {
     GetPropI0("diversity_enabled",                           diversity_enabled);
     GetPropI0("diversity_indep_att",                         div_indep_att);
     GetPropI0("diversity_split",                             div_split);
+    GetPropF0("diversity_split_balance",                     div_split_balance);
     GetPropF0("diversity_gain",                              div_gain);
     GetPropF0("diversity_phase",                             div_phase);
     GetPropF0("diversity_cos",                               div_cos);
@@ -3723,6 +3766,8 @@ static void radio_restore_state(void) {
     div_indep_att = 0;
     div_split = DIV_SPLIT_OFF;
   }
+
+  radio_calc_split_balance();
   //
   // If the N2ADR filter board is selected, this determines  most  OC settings
   //
@@ -3827,6 +3872,7 @@ void radio_save_state(void) {
     SetPropI0("diversity_enabled",                           diversity_enabled);
     SetPropI0("diversity_indep_att",                         div_indep_att);
     SetPropI0("diversity_split",                             div_split);
+    SetPropF0("diversity_split_balance",                     div_split_balance);
     SetPropF0("diversity_gain",                              div_gain);
     SetPropF0("diversity_phase",                             div_phase);
     SetPropF0("diversity_cos",                               div_cos);

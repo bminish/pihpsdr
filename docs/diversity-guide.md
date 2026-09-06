@@ -245,7 +245,8 @@ It needs an actual RADE V1 signal and takes 1–5 s to acquire.
 | **Averaging** | 0.2–30 s time constant, on a **geometric** scale — most of the travel is below 5 s, because that is where the setting matters. Longer is steadier and follows fading more slowly. **The default is 0.5 s**, and it used to be 2.0: measured per block on nine recordings, 0.5 s is ahead of 2.0 on every one of them, and on a fading AM carrier it is worth 2.5 dB at the moments the signal is worst. If your radio has 2.0 s in it from an earlier version, that is where it will stay — move it yourself. It also now sets how fast the *output* follows, at a quarter of whatever you set, so the bottom of this slider does something it did not do before. A fading broadcast or a fast path (20 m near the MUF, or the low bands) wants the short end; a weak AM carrier you are only trying to hold on to, or an HF RADE path, wants several seconds; and `Null` wants the shortest setting that still holds a lock |
 | **Min coherence** | Below this the loop holds rather than adapts, so it does not chase noise when there is nothing worth combining. **Each Measure-on setting keeps its own value**, because they do not measure the same thing. Genuinely a per-path control, not a set-and-forget one: measured across recorded captures the *noise* on its own is 0.07 to 0.58 coherent between the arms, so on a path near the top of that range the default 0.20 cannot tell a signal both antennas hear from noise both antennas hear. If the loop adapts when there is plainly nothing there, raise it. On **Carrier** it will not help: that reference averages five bins, so its coherence reading sits near 0.2 on noise alone and no setting separates signal from silence — measured at 36 % of signal blocks against 36 % of empty ones, and accumulating thirteen times as many bins does not part them either. Use **Averaging** instead, which does: longer is better here and 10 s measured best. The slider will not go below the reading noise alone produces, so it says as much on the way down. **The bottom of the travel is the coherence an empty window reports**, which moves with the window and the averaging time: 0.1 % on a 3 kHz window at 2 s, 5.5 % on a 200 Hz one at 0.2 s, 15 % on Carrier at 0.2 s. Below it the gate lets noise-only blocks through and the loop fits a weight to an accident, so the slider stops there. **There is no such row in RADE V1**: the pilot correlator's own gates already refuse a band with nothing in it, and the reading this used to gate goes on being low on signals that decode perfectly well, so every setting it offered did more harm than good |
 | **Restart averaging** | Throw away the statistics and start again |
-| **Ears** | Present the two antennas one per ear instead of summing them — see below |
+| **AF** | Present the two antennas one per ear instead of summing them — see below |
+| **Balance (dB, L−R)** | Trims one ear against the other once you are listening in stereo. Positive is left-louder. It works by turning the *other* ear down, so it always has room to move, and it only appears when a split is selected |
 
 **Between overs the status line says `quiet`.** When neither antenna has
 anything above the noise for a couple of seconds, the combiner stands
@@ -260,9 +261,9 @@ it.
 | **Hold** | Stop *applying* the answer without stopping the loop |
 | **Invert** | Swap Null and Sum. Greyed out under Best, which has no opposite |
 
-### Ears: one antenna per ear
+### AF: one antenna per ear
 
-Everything above folds the two antennas into one signal. **Ears** does the
+Everything above folds the two antennas into one signal. **AF** does the
 other thing you can do with a coherent pair — puts them in different ears
 and lets your hearing separate them. Two ears are very good at pulling one
 voice out of a mess, and that is a different kind of filter from anything
@@ -284,8 +285,19 @@ quickest way to tell whether a null is on the signal you meant.
 To use it you need a **second output device set for RX2**, in its RX menu.
 You do *not* need RX2 on screen — this uses it as an audio path only, and
 the menu tells you if it has nowhere to send the right ear. If you do
-bring RX2 up, Ears stands down: RX2 then follows VFO B and is yours to
-tune, which is not the same thing. Put it away and Ears comes back.
+bring RX2 up, the split stands down: RX2 then follows VFO B and is yours
+to tune, which is not the same thing. Put it away and it comes back.
+
+**One AF gain for both ears**, and a **Balance** slider above Gain to trim
+them against each other in dB of left minus right. Positive means left
+louder. It works by turning the other ear *down* rather than the favoured
+one up, so it still has somewhere to go with the AF gain at maximum —
+which is where you will be if one antenna is much the weaker. Use it for
+two antennas of unequal strength, or simply for an ear that hears better
+than the other.
+
+(Before this, the AF gain reached only the left ear. The right one sat at
+whatever RX2's own volume had last been set to and would not move.)
 
 Two other things worth knowing:
 
@@ -298,7 +310,7 @@ Two other things worth knowing:
 - A **mono output device mixes the ears back together**, and it will not
   warn you. This wants headphones and a stereo card.
 
-Ears is a local control: over a remote link the audio is mono, so it is
+This is a local control: over a remote link the audio is mono, so it is
 greyed out on a client.
 
 ### Settings are remembered per mode

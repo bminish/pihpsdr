@@ -1076,7 +1076,8 @@ one block from `track` to `search` when the signal stops.
 | **Auto** | Off / Null / Sum / Best — the objective | always |
 | **Measure on** | Which reference (§5) | always |
 | **Window follows RX filter** / **Search 400 Hz at passband centre** | The passband itself in Window and FSK/Digital; a fixed 400 Hz at the centre of it in Carrier (§5). The label says which | Window, Carrier, FSK/Digital |
-| **Ears** | Summed / Ant 1 / Ant 2 / Sum / Difference — what the two arms are presented as (§6.1). Off on a client and while RX2 is on screen | two ADCs, two receivers configured |
+| **AF** | Summed / Ant 1 / Ant 2 / Sum / Difference — what the two arms are presented as (§6.1). Off on a client and while RX2 is on screen | two ADCs, two receivers configured |
+| **Balance (dB, L−R)** | Trims one ear against the other, ±20 dB. Attenuate-only: the favoured ear is left alone and the other brought down (§6.1) | while a split is selected |
 | **Window centre / width** | The analysis window, the carrier search region in Carrier mode, or the occupancy search region in FSK/Digital. Measured from the tuned signal, which in CW is the zero-beat note. Kept separately per reference | Window (unticked), Carrier, FSK/Digital (unticked) |
 | **Resolution** | 24 / 12 / 6 Hz bins — really a block-length control, 43 / 85 / 171 ms, since the block period is the reciprocal of the bin width. Coarser measures the channel more often, which is what a null is limited by; finer lifts weak signals out of the per-bin noise floor. Both objectives want the coarse end on seventeen rows of twenty (§4) | all but RADE V1 |
 | **Averaging** | 0.2-30 s, on a geometric scale so that 64 % of the travel is below 5 s. Time constant for the estimate | always |
@@ -1097,9 +1098,9 @@ either side of one peak and FSK/Digital's occupancy split had already
 decided which bins carry signal — and on four independent measurements it
 was behind or level with the flat sum it replaced (see above).
 
-### 6.1 Ears: the two arms, one to each
+### 6.1 AF: the two arms, one to each ear
 
-The combiner exists to fold two antennas into one stream. **Ears** is the
+The combiner exists to fold two antennas into one stream. **AF** is the
 other thing that can be done with a coherent pair: present them
 separately, one per ear, and let the listener separate signals by where
 they sound. It is a presentation control, not an analysis one — the
@@ -1149,6 +1150,32 @@ the rest safe: with `receivers == 1`, every path in the program that would
 touch `receiver[1]` is guarded by `receivers`, so nothing else writes to
 it.
 
+**One AF gain, and a balance to trim it.** `radio_set_af_gain()` opens with
+`if (id >= receivers) return`, so with one panel the second ear was past
+the guard — `AF_GAIN_RX2`, the RX2 slider and CAT `ZZLC` all returned
+early on it — and the right ear stayed at whatever RX2's props file last
+said while the left one moved. It now follows RX0 whenever the split is
+up, and is levelled with it on the way in. `rx_set_af_gain()` writes the
+per-mode profile back for RX0 only, so the second ear's volume never
+reaches the operator's stored settings.
+
+The difference between the ears is **Balance**'s business instead, in dB
+of left minus right. It is **attenuate-only** — whichever ear the trim
+favours is left alone and the other is brought down:
+
+```
+left  amplitude = 10^(min(0,  balance)/20)
+right amplitude = 10^(min(0, -balance)/20)
+```
+
+Working the other way round, raising one ear, would do nothing at the top
+of the AF range, which is exactly where an operator with one hot antenna
+is likely to be sitting. And it is applied as a scalar in
+`rx_process_buffer()` rather than folded into `rx->volume`, because that
+field *is* the AF gain — read by the slider, by CAT and by the per-mode
+profile — and a trim hidden inside it would make all three disagree about
+what the AF gain is.
+
 Two things to know before using it:
 
 - **RX2 needs an output device of its own**, set in its RX menu. Without
@@ -1160,7 +1187,7 @@ Two things to know before using it:
 `audio_channel` is not written to place the ears. The per-mode RXTX
 profile owns that field and reloads it on every mode change, so an
 assignment would not survive; the channel is computed in
-`rx_process_buffer()` instead, which also means switching Ears off
+`rx_process_buffer()` instead, which also means switching the split off
 restores exactly what was there before with nothing left behind. Each
 receiver's own output is folded to mono first, because `rx->binaural` is
 WDSP's stereo spread on one receiver and taking half of that would be half

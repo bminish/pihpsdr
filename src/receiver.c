@@ -1280,7 +1280,15 @@ static void rx_process_buffer(RECEIVER *rx) {
     //
     int chan = rx->audio_channel;
     if (split) {
-      const double m = 0.5 * (left_sample + right_sample);
+      //
+      // ...and the balance trim on the way past. It is applied here
+      // rather than through rx->volume because that field is the AF gain
+      // itself - read by the slider, by CAT and by the per-mode profile -
+      // and folding a trim into it would make all three disagree about
+      // what the AF gain is.
+      //
+      const double m = 0.5 * (left_sample + right_sample)
+                       * ((rx->id == 0) ? div_bal_l : div_bal_r);
       left_sample = right_sample = m;
       chan = (rx->id == 0) ? LEFT : RIGHT;
     }

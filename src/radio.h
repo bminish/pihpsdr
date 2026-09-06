@@ -262,6 +262,17 @@ enum {
 };
 
 extern int div_split;
+//
+// Ear balance, in dB of left minus right. Applied as attenuation on the
+// louder-by-definition side only, so it trims the image without needing
+// headroom the AF gain has not got: at 0 dB AF gain there is nothing to
+// raise, and an ear that could only be corrected upwards could not be
+// corrected at all.
+//
+extern double div_split_balance;
+extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
+void radio_calc_split_balance(void);
+
 int  div_split_active(void);    // the split is on and has what it needs
 int  div_split_owns_rx1(void);  // the combiner feeds RX1, so the protocol must not
 int  div_rx1_takes_raw(void);   // should the protocol hand raw arm 1 to RX1?

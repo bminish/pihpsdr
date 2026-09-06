@@ -45,6 +45,8 @@ static GtkWidget *phase_coarse_scale = NULL;
 
 static GtkWidget *split_combo = NULL;
 static GtkWidget *split_label = NULL;
+static GtkWidget *balance_scale = NULL;
+static GtkWidget *balance_label = NULL;
 static GtkWidget *auto_combo = NULL;
 static GtkWidget *ref_combo = NULL;
 static GtkWidget *follow_b = NULL;
@@ -287,6 +289,8 @@ static void cleanup(void) {
     phase_fine_scale = NULL;
     split_combo = NULL;
     split_label = NULL;
+    balance_scale = NULL;
+    balance_label = NULL;
     auto_combo = NULL;
     ref_combo = NULL;
     follow_b = NULL;
@@ -580,7 +584,7 @@ static void update_manual_sensitivity(void) {
   //
   if (split_label) {
     const gboolean mute = div_split_active() && !receiver[1]->local_audio;
-    gtk_label_set_text(GTK_LABEL(split_label), mute ? "Ears: no RX2 output" : "Ears");
+    gtk_label_set_text(GTK_LABEL(split_label), mute ? "AF: no RX2 output" : "AF");
   }
 }
 
@@ -698,6 +702,14 @@ static void update_visibility(void) {
                          is_carrier ? label : "Window follows RX filter");
     gtk_widget_set_visible(follow_b, follows);
   }
+
+  //
+  // Balance belongs to the split, not to the reference, so it is keyed on
+  // the setting rather than on div_split_active(): it is worth seeing -
+  // and setting - while Div is off, in the same way the split combo keeps
+  // showing what it will do when Div comes back.
+  //
+  div_show_row(balance_label, balance_scale, div_split != DIV_SPLIT_OFF);
 
   div_show_row(centre_label, centre_spin, placeable);
   div_show_row(width_label,  width_spin,  placeable);
@@ -1250,6 +1262,8 @@ static void div_populate_from_settings(void) {
 
   if (split_combo)  { gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), div_split); }
 
+  if (balance_scale) { gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance); }
+
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
 
   if (coh_scale)    { gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min); }
@@ -1572,6 +1586,20 @@ static void split_cb(GtkWidget *widget, gpointer data) {
 
   div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   update_manual_sensitivity();
+  update_visibility();
+}
+
+//
+// Trims one ear against the other. Local like the split itself, so it
+// does not travel either.
+//
+static void balance_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  if (updating_from_auto || updating_from_server) { return; }
+
+  div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
+  radio_calc_split_balance();
 }
 
 // cppcheck-suppress constParameterCallback
@@ -1663,7 +1691,7 @@ void diversity_menu(GtkWidget *parent) {
   // every setting here.
   //
   if (RECEIVERS > 1 && n_adc > 1) {
-    split_label = gtk_label_new("Ears");
+    split_label = gtk_label_new("AF");
     gtk_box_pack_start(GTK_BOX(topbox), split_label, FALSE, FALSE, 0);
     split_combo = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Summed");
@@ -1727,53 +1755,77 @@ void diversity_menu(GtkWidget *parent) {
     //
     gtk_widget_show_all(att_box);
   }
+  //
+  // Balance, above the two things it is most likely to be confused with.
+  // It trims the ears against each other; Gain trims the two antennas
+  // against each other before they are combined. Only shown while there
+  // are two ears to trim.
+  //
+  balance_label = gtk_label_new("Balance (dB, L-R)");
+  gtk_widget_set_name(balance_label, "boldlabel");
+  gtk_widget_set_halign(balance_label, GTK_ALIGN_END);
+  gtk_misc_set_alignment (GTK_MISC(balance_label), 0, 0);
+  gtk_grid_attach(GTK_GRID(grid), balance_label, 0, 2, 1, 1);
+  balance_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -20.0, +20.0, 0.5);
+  gtk_widget_set_size_request (balance_scale, 300, 25);
+  gtk_widget_set_tooltip_text(balance_scale,
+                              "Trim the two ears against each other, in dB of left "
+                              "minus right. Whichever ear the trim favours is left "
+                              "alone and the other is brought down, so this never "
+                              "asks for level the AF gain has not got.\n\n"
+                              "For two antennas of unequal strength, or simply for "
+                              "an ear that hears better than the other.");
+  gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance);
+  gtk_grid_attach(GTK_GRID(grid), balance_scale, 1, 2, 1, 1);
+  g_signal_connect(G_OBJECT(balance_scale), "value_changed", G_CALLBACK(balance_cb), NULL);
+
   GtkWidget *gain_coarse_label = gtk_label_new("Gain (dB, coarse)");
   gtk_widget_set_name(gain_coarse_label, "boldlabel");
   gtk_widget_set_halign(gain_coarse_label, GTK_ALIGN_END);
   gtk_misc_set_alignment (GTK_MISC(gain_coarse_label), 0, 0);
   gtk_widget_show(gain_coarse_label);
-  gtk_grid_attach(GTK_GRID(grid), gain_coarse_label, 0, 2, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), gain_coarse_label, 0, 3, 1, 1);
   gain_coarse_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -25.0, +25.0, 0.5);
   gtk_widget_set_size_request (gain_coarse_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(gain_coarse_scale), gain_coarse);
   gtk_widget_show(gain_coarse_scale);
-  gtk_grid_attach(GTK_GRID(grid), gain_coarse_scale, 1, 2, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), gain_coarse_scale, 1, 3, 1, 1);
   g_signal_connect(G_OBJECT(gain_coarse_scale), "value_changed", G_CALLBACK(gain_coarse_changed_cb), NULL);
   GtkWidget *gain_fine_label = gtk_label_new("Gain (dB, fine)");
   gtk_widget_set_name(gain_fine_label, "boldlabel");
   gtk_widget_set_halign(gain_fine_label, GTK_ALIGN_END);
   gtk_misc_set_alignment (GTK_MISC(gain_fine_label), 0, 0);
   gtk_widget_show(gain_fine_label);
-  gtk_grid_attach(GTK_GRID(grid), gain_fine_label, 0, 3, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), gain_fine_label, 0, 4, 1, 1);
   gain_fine_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -2.0, +2.0, 0.05);
   gtk_widget_set_size_request (gain_fine_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(gain_fine_scale), gain_fine);
   gtk_widget_show(gain_fine_scale);
-  gtk_grid_attach(GTK_GRID(grid), gain_fine_scale, 1, 3, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), gain_fine_scale, 1, 4, 1, 1);
   g_signal_connect(G_OBJECT(gain_fine_scale), "value_changed", G_CALLBACK(gain_fine_changed_cb), NULL);
   GtkWidget *phase_coarse_label = gtk_label_new("Phase (coarse)");
   gtk_widget_set_name(phase_coarse_label, "boldlabel");
   gtk_widget_set_halign(phase_coarse_label, GTK_ALIGN_END);
   gtk_misc_set_alignment (GTK_MISC(phase_coarse_label), 0, 0);
   gtk_widget_show(phase_coarse_label);
-  gtk_grid_attach(GTK_GRID(grid), phase_coarse_label, 0, 4, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), phase_coarse_label, 0, 5, 1, 1);
   phase_coarse_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -180.0, 180.0, 2.0);
   gtk_widget_set_size_request (phase_coarse_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(phase_coarse_scale), phase_coarse);
   gtk_widget_show(phase_coarse_scale);
-  gtk_grid_attach(GTK_GRID(grid), phase_coarse_scale, 1, 4, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), phase_coarse_scale, 1, 5, 1, 1);
   g_signal_connect(G_OBJECT(phase_coarse_scale), "value_changed", G_CALLBACK(phase_coarse_changed_cb), NULL);
   GtkWidget *phase_fine_label = gtk_label_new("Phase (fine)");
   gtk_widget_set_name(phase_fine_label, "boldlabel");
   gtk_widget_set_halign(phase_fine_label, GTK_ALIGN_END);
   gtk_misc_set_alignment (GTK_MISC(phase_fine_label), 0, 0);
   gtk_widget_show(phase_fine_label);
-  gtk_grid_attach(GTK_GRID(grid), phase_fine_label, 0, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), phase_fine_label, 0, 6, 1, 1);
   phase_fine_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -5.0, 5.0, 0.1);
   gtk_widget_set_size_request (phase_fine_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(phase_fine_scale), phase_fine);
   gtk_widget_show(phase_fine_scale);
-  gtk_grid_attach(GTK_GRID(grid), phase_fine_scale, 1, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), phase_fine_scale, 1, 6, 1, 1);
   g_signal_connect(G_OBJECT(phase_fine_scale), "value_changed", G_CALLBACK(phase_fine_changed_cb), NULL);
   //
   // ------------------------------------------------------------------
@@ -1781,11 +1833,11 @@ void diversity_menu(GtkWidget *parent) {
   // ------------------------------------------------------------------
   //
   GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-  gtk_grid_attach(GTK_GRID(grid), sep, 0, 6, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), sep, 0, 7, 2, 1);
   GtkWidget *auto_label = gtk_label_new("Auto");
   gtk_widget_set_name(auto_label, "boldlabel");
   gtk_widget_set_halign(auto_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), auto_label, 0, 7, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), auto_label, 0, 8, 1, 1);
   auto_combo = gtk_combo_box_text_new();
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_combo), "Off (manual)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_combo), "Null (cancel common signal)");
@@ -1803,12 +1855,12 @@ void diversity_menu(GtkWidget *parent) {
                               "measured, so coarser bins and a short average "
                               "suit it.");
   gtk_combo_box_set_active(GTK_COMBO_BOX(auto_combo), div_auto_mode);
-  gtk_grid_attach(GTK_GRID(grid), auto_combo, 1, 7, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), auto_combo, 1, 8, 1, 1);
   g_signal_connect(auto_combo, "changed", G_CALLBACK(auto_changed_cb), NULL);
   GtkWidget *ref_label = gtk_label_new("Measure on");
   gtk_widget_set_name(ref_label, "boldlabel");
   gtk_widget_set_halign(ref_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), ref_label, 0, 8, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), ref_label, 0, 9, 1, 1);
   ref_combo = gtk_combo_box_text_new();
 
   for (int i = 0; i < REF_ROWS; i++) {
@@ -1816,16 +1868,16 @@ void diversity_menu(GtkWidget *parent) {
   }
 
   gtk_combo_box_set_active(GTK_COMBO_BOX(ref_combo), div_ref_to_row(div_auto_ref));
-  gtk_grid_attach(GTK_GRID(grid), ref_combo, 1, 8, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), ref_combo, 1, 9, 1, 1);
   g_signal_connect(ref_combo, "changed", G_CALLBACK(ref_changed_cb), NULL);
   follow_b = gtk_check_button_new_with_label("Window follows RX filter");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(follow_b), div_auto_follow_filter);
-  gtk_grid_attach(GTK_GRID(grid), follow_b, 1, 9, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), follow_b, 1, 10, 1, 1);
   g_signal_connect(follow_b, "toggled", G_CALLBACK(follow_cb), NULL);
   centre_label = gtk_label_new("Window centre (Hz)");
   gtk_widget_set_name(centre_label, "boldlabel");
   gtk_widget_set_halign(centre_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), centre_label, 0, 10, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), centre_label, 0, 11, 1, 1);
   //
   // Deliberately wide: the window is allowed outside the passband, and how
   // far is a function of the sample rate. div_bin_range() clamps to the
@@ -1840,20 +1892,20 @@ void diversity_menu(GtkWidget *parent) {
                               "frequency, so a centre of 0 sits on what you are "
                               "listening to in every mode.");
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(centre_spin), div_auto_centre);
-  gtk_grid_attach(GTK_GRID(grid), centre_spin, 1, 10, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), centre_spin, 1, 11, 1, 1);
   g_signal_connect(centre_spin, "value_changed", G_CALLBACK(centre_cb), NULL);
   width_label = gtk_label_new("Window width (Hz)");
   gtk_widget_set_name(width_label, "boldlabel");
   gtk_widget_set_halign(width_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), width_label, 0, 11, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), width_label, 0, 12, 1, 1);
   width_spin = gtk_spin_button_new_with_range(20.0, 40000.0, 10.0);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), div_auto_width);
-  gtk_grid_attach(GTK_GRID(grid), width_spin, 1, 11, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), width_spin, 1, 12, 1, 1);
   g_signal_connect(width_spin, "value_changed", G_CALLBACK(width_cb), NULL);
   res_label = gtk_label_new("Resolution");
   gtk_widget_set_name(res_label, "boldlabel");
   gtk_widget_set_halign(res_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), res_label, 0, 12, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), res_label, 0, 13, 1, 1);
   res_combo = gtk_combo_box_text_new();
   //
   // 24 / 12 / 6 Hz, where it was 12 / 6 / 3. The block period is the
@@ -1884,7 +1936,7 @@ void diversity_menu(GtkWidget *parent) {
                               "is not going anywhere.\n\n"
                               "The bin width actually achieved is shown in the status "
                               "line.");
-  gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 12, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 13, 1, 1);
   g_signal_connect(res_combo, "changed", G_CALLBACK(res_changed_cb), NULL);
   //
   // Row 13 was Weighting, and there is no such control now. Coherence
@@ -1910,18 +1962,18 @@ void diversity_menu(GtkWidget *parent) {
                               "seconds.");
   gtk_widget_set_name(tau_label, "boldlabel");
   gtk_widget_set_halign(tau_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), tau_label, 0, 15, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), tau_label, 0, 16, 1, 1);
   tau_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, DIV_TAU_STEPS, 1.0);
   gtk_scale_set_digits(GTK_SCALE(tau_scale), 2);
   g_signal_connect(G_OBJECT(tau_scale), "format-value", G_CALLBACK(tau_format_cb), NULL);
   gtk_widget_set_size_request(tau_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau));
-  gtk_grid_attach(GTK_GRID(grid), tau_scale, 1, 15, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), tau_scale, 1, 16, 1, 1);
   g_signal_connect(G_OBJECT(tau_scale), "value_changed", G_CALLBACK(tau_cb), NULL);
   coh_label = gtk_label_new("Min coherence (%)");
   gtk_widget_set_name(coh_label, "boldlabel");
   gtk_widget_set_halign(coh_label, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 16, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), coh_label, 0, 17, 1, 1);
   //
   // A tenth of a percent of rounding and half a percent a step. The old
   // 5 % step could not reach the floor on a wide window, which is a
@@ -1932,7 +1984,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_scale_set_digits(GTK_SCALE(coh_scale), 1);
   gtk_widget_set_size_request(coh_scale, 300, 25);
   gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
-  gtk_grid_attach(GTK_GRID(grid), coh_scale, 1, 16, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), coh_scale, 1, 17, 1, 1);
   g_signal_connect(G_OBJECT(coh_scale), "value_changed", G_CALLBACK(coh_cb), NULL);
   //
   // The three things done while listening rather than while setting up,
@@ -1983,7 +2035,7 @@ void diversity_menu(GtkWidget *parent) {
   g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
   gtk_box_pack_start(GTK_BOX(buttons), divcap_b, FALSE, FALSE, 0);
 #endif
-  gtk_grid_attach(GTK_GRID(grid), buttons, 0, 18, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), buttons, 0, 19, 2, 1);
   //
   // The status line spans both columns and is held to exactly
   // DIV_STATUS_CHARS characters, so it fits inside the width the controls
@@ -2002,7 +2054,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_label_set_attributes(GTK_LABEL(status_label), attrs);
     pango_attr_list_unref(attrs);
   }
-  gtk_grid_attach(GTK_GRID(grid), status_label, 0, 19, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), status_label, 0, 20, 2, 1);
   //
   // Second line, same treatment: monospace, the same fixed width, so the
   // two line up and neither can widen the dialog.
@@ -2020,7 +2072,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_label_set_attributes(GTK_LABEL(arm_label), attrs);
     pango_attr_list_unref(attrs);
   }
-  gtk_grid_attach(GTK_GRID(grid), arm_label, 0, 20, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), arm_label, 0, 21, 2, 1);
 
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
@@ -2039,7 +2091,8 @@ void diversity_menu(GtkWidget *parent) {
       width_label,  width_spin,
       res_label,    res_combo,
       coh_label,    coh_scale,
-      att_label,    att_box
+      att_label,    att_box,
+      balance_label, balance_scale
     };
 
     //

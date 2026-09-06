@@ -4,7 +4,7 @@ September 2026:
 ---------------
 
 - diversity: the two antennas can be presented one per ear instead of
-  summed. "Ears" offers Ant 1 / Ant 2, which puts the main antenna in the
+  summed. "AF" offers Ant 1 / Ant 2, which puts the main antenna in the
   left ear and the aux in the right, and Sum / Difference, which puts the
   combined signal in one ear and the null in the other - the same
   measurement read both ways at once, so a station peaks in one ear as it
@@ -18,6 +18,14 @@ September 2026:
   independent-sideband reception of an AM station in stereo. Stands down
   if RX2 is brought up, since RX2 then follows VFO B; not available over a
   remote link, where the audio is mono
+
+- diversity: the AF gain reaches both ears of the split. radio_set_af_gain()
+  returns early for any receiver past the number on screen, so the second
+  ear - which the split deliberately does not display - stayed at whatever
+  its props file last said while the first one moved. A Balance slider
+  above Gain trims the two against each other in dB of left minus right,
+  attenuating the ear the trim does not favour rather than raising the one
+  it does, so it still has somewhere to go at the top of the AF range
 
 - diversity: the Carrier reference can follow the RX filter, like the
   other two placeable references. It cannot mean the whole passband there
