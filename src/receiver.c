@@ -1058,6 +1058,57 @@ void rx_set_sam_mode(const RECEIVER *rx) {
   SetRXAAMDSBMode(rx->id, rx->sam_sb_mode);
 }
 
+//
+// Give dst the same demodulation as src, without going through dst's own
+// VFO.
+//
+// Under the ear split dst is receiver[1] and src is receiver[0], and
+// receiver[1]'s controlling VFO is VFO B - the operator's split VFO,
+// shown in the VFO bar and used for split transmit. Slaving it would be
+// the short way to do this and would quietly change what split TX
+// transmits with, so the demodulation is set here instead and VFO B is
+// left alone.
+//
+// The filter edges are copied rather than recomputed. rx_set_filter()
+// derives them from vfo[id].mode and vfo[id].filter, which is exactly
+// what must not be consulted; src's are already folded for CW and
+// already correct.
+//
+void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
+  ASSERT_SERVER();
+  const int mode = vfo[src->id].mode;
+  SetRXAMode(dst->id, mode);
+  dst->filter_low  = src->filter_low;
+  dst->filter_high = src->filter_high;
+  dst->deviation   = src->deviation;
+  rx_set_deviation(dst);
+  rx_set_bandpass(dst);
+  rx_set_cw_peak(dst,
+                 (mode == modeCWU || mode == modeCWL) ? vfo[src->id].cwAudioPeakFilter : 0,
+                 (double)cw_keyer_sidetone_frequency);
+  rx_set_agc(dst);
+  dst->squelch_enable = src->squelch_enable;
+  dst->squelch        = src->squelch;
+  rx_set_squelch_for(dst, mode);
+  rx_set_offset_for(dst, mode, vfo[src->id].offset);
+  //
+  // sam_sb_mode is deliberately not copied. LSB in one ear and USB in the
+  // other on an AM carrier is a reason to have two.
+  //
+}
+
+//
+// Keep the split's second ear on the same demodulation as the first.
+// Called from the two functions every mode and filter change goes
+// through, RX0 only - RX1 is the one being written, and a change made to
+// it here must not come back round.
+//
+static void rx_sync_split(const RECEIVER *rx) {
+  if (rx->id == 0 && div_split_active()) {
+    rx_clone_dsp(receiver[1], rx);
+  }
+}
+
 void rx_filter_changed(RECEIVER *rx) {
   ASSERT_SERVER();
   rx_set_filter(rx);
@@ -1066,6 +1117,7 @@ void rx_filter_changed(RECEIVER *rx) {
       tx_set_filter(transmitter);
     }
   }
+  rx_sync_split(rx);
   //
   // TODO: Filter window has possibly moved outside CTUN range
   //
@@ -1085,6 +1137,12 @@ void rx_mode_changed(RECEIVER *rx) {
   if (rx->id == 0) {
     diversity_auto_mode_changed(vfo[rx->id].mode);
   }
+
+  //
+  // After rx_set_offset() above, so the clone carries the mode's BFO
+  // offset rather than the one it had a moment ago.
+  //
+  rx_sync_split(rx);
 }
 
 void rx_vfo_changed(RECEIVER *rx) {
@@ -1146,6 +1204,7 @@ static void rx_process_buffer(RECEIVER *rx) {
   lvl = 0.9 * lvl + (0.1 * sum) / rx->output_samples;
   t_print("RX lvl: %5.1f\n", 10.0 * log10(lvl));
 #endif
+  const int split = div_split_active();
   for (int i = 0; i < rx->output_samples; i++) {
     double left_sample = rx->audio_output_buffer[i * 2];
     double right_sample = rx->audio_output_buffer[(i * 2) + 1];
@@ -1198,11 +1257,34 @@ static void rx_process_buffer(RECEIVER *rx) {
       left_sample = 0.0;
       right_sample = 0.0;
     }
-    if (rx->mute_radio || (rx != active_receiver && rx->mute_when_not_active)) {
+    //
+    // Both ears of the split must keep sounding whichever receiver has
+    // the focus. Suspended for the pair rather than cleared on them: a
+    // flag cleared here would not find its way back.
+    //
+    if (rx->mute_radio || (!split && rx != active_receiver && rx->mute_when_not_active)) {
       left_sample = 0.0;
       right_sample = 0.0;
     }
-    switch (rx->audio_channel) {
+    //
+    // Each receiver to its own ear. Its own output is folded to mono
+    // first, because rx->binaural is WDSP's stereo spread and puts
+    // genuinely different audio in L and R - taking one half of that
+    // would be half of a different signal, not this ear's.
+    //
+    // rx->audio_channel is not written to do this. The per-mode RXTX
+    // profile owns that field and reloads it on every mode change
+    // (profiles.c), so an assignment would not survive; and computing
+    // the channel here means switching the split off restores exactly
+    // what was there before, with nothing left behind.
+    //
+    int chan = rx->audio_channel;
+    if (split) {
+      const double m = 0.5 * (left_sample + right_sample);
+      left_sample = right_sample = m;
+      chan = (rx->id == 0) ? LEFT : RIGHT;
+    }
+    switch (chan) {
     case STEREO:
       break;
     case LEFT:
@@ -1306,21 +1388,52 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
     diversity_auto_sample(i0, q0, i1, q1);
   }
 
-  //
-  // Note that we sum the second channel onto the first one
-  // and then simply pass to add_iq_samples
-  //
-  double i_sample = i0 + (div_cos * i1 - div_sin * q1);
-  double q_sample = q0 + (div_sin * i1 + div_cos * q1);
-  //
-  // ...and hold it at the level of arm 0 alone, if the operator asked
-  // for that. div_norm is 1.0 otherwise, and always in Null. The array
-  // gain is real work but it is not signal, and hearing the band get
-  // louder is not the same as hearing it get better.
-  //
-  i_sample *= div_norm;
-  q_sample *= div_norm;
-  rx_add_iq_samples(rx, i_sample, q_sample);
+  switch (div_split_active() ? div_split : DIV_SPLIT_OFF) {
+  case DIV_SPLIT_RAW:
+    //
+    // The left ear is arm 0 on its own. The right ear is already being
+    // fed raw arm 1 by the protocol - that feed exists for RX2 under
+    // ordinary diversity and is exactly what this wants - so there is
+    // nothing to do for it here. See div_rx1_takes_raw().
+    //
+    rx_add_iq_samples(receiver[0], i0, q0);
+    break;
+
+  case DIV_SPLIT_SUMDIFF: {
+    //
+    // Sum in the left ear, difference in the right: the peaked sum and
+    // the inverted null at the same time, rather than toggling Invert to
+    // hear them one after the other. Subtracting w*z1 is the same thing
+    // as rotating the weight by 180 degrees, which is what Invert does.
+    //
+    const double iw  = (div_cos * i1 - div_sin * q1) * div_norm;
+    const double qw  = (div_sin * i1 + div_cos * q1) * div_norm;
+    const double i0n = i0 * div_norm;
+    const double q0n = q0 * div_norm;
+    rx_add_iq_samples(receiver[0], i0n + iw, q0n + qw);
+    rx_add_iq_samples(receiver[1], i0n - iw, q0n - qw);
+    break;
+  }
+
+  default: {
+    //
+    // Note that we sum the second channel onto the first one
+    // and then simply pass to add_iq_samples
+    //
+    double i_sample = i0 + (div_cos * i1 - div_sin * q1);
+    double q_sample = q0 + (div_sin * i1 + div_cos * q1);
+    //
+    // ...and hold it at the level of arm 0 alone, if the operator asked
+    // for that. div_norm is 1.0 otherwise, and always in Null. The array
+    // gain is real work but it is not signal, and hearing the band get
+    // louder is not the same as hearing it get better.
+    //
+    i_sample *= div_norm;
+    q_sample *= div_norm;
+    rx_add_iq_samples(rx, i_sample, q_sample);
+    break;
+  }
+  }
 }
 
 void rx_update_width(RECEIVER *rx) {
@@ -1527,6 +1640,13 @@ void rx_change_sample_rate(RECEIVER *rx, int sample_rate) {
 
   if (rx->id == 0) {
     diversity_auto_restart();
+    //
+    // The ear split's second receiver has to keep the same rate, and the
+    // callers that change one only walk the receivers that are on screen.
+    // Reconciling here catches every route instead - and cannot recurse,
+    // because the receiver it goes on to change is not RX0.
+    //
+    div_split_set(div_split);
   }
 }
 
@@ -2223,11 +2343,12 @@ void rx_set_noise(const RECEIVER *rx) {
   SetRXASNBARun(rx->id,                 rx->snb);
 }
 
-void rx_set_offset(const RECEIVER *rx) {
+//
+// Split for the same reason as rx_set_squelch(): rx_clone_dsp() supplies
+// the mode and offset of a different receiver's VFO.
+//
+void rx_set_offset_for(const RECEIVER *rx, int mode, long long offset) {
   ASSERT_SERVER();
-  int id = rx->id;
-  int mode = vfo[id].mode;
-  long long offset = vfo[id].offset;
   //
   // CW BFO offset is done HERE.
   //
@@ -2250,12 +2371,27 @@ void rx_set_offset(const RECEIVER *rx) {
   }
 }
 
-void rx_set_squelch(const RECEIVER *rx) {
+void rx_set_offset(const RECEIVER *rx) {
+  rx_set_offset_for(rx, vfo[rx->id].mode, vfo[rx->id].offset);
+}
+
+//
+// The squelch mapping is per mode, and the mode normally comes from the
+// receiver's own VFO. rx_clone_dsp() needs it from somewhere else - it
+// gives receiver[1] receiver[0]'s demodulation without going through
+// VFO B - so the mode is a parameter here and rx_set_squelch() is the
+// wrapper that supplies the usual one. Every existing caller keeps going
+// through the wrapper, so nothing about their behaviour changes.
+//
+void rx_set_squelch_for(const RECEIVER *rx, int mode) {
   if (radio_is_remote) {
     send_squelch(cl_sock_tcp, rx->id, rx->squelch_enable, rx->squelch);
     return;
   }
-  int mode = vfo[rx->id].mode;
+  //
+  // Only RX0 writes the profile back. That is what keeps a clone onto
+  // receiver[1] out of the operator's stored per-mode settings.
+  //
   if (rx->id == 0) {
     RXTXprofile[mode].rx.squelch_enable = rx->squelch_enable;
     RXTXprofile[mode].rx.squelch        = rx->squelch;
@@ -2322,5 +2458,9 @@ void rx_set_squelch(const RECEIVER *rx) {
   SetRXAAMSQRun(rx->id, am_squelch);
   SetRXAFMSQRun(rx->id, fm_squelch);
   SetRXASSQLRun(rx->id, voice_squelch);
+}
+
+void rx_set_squelch(const RECEIVER *rx) {
+  rx_set_squelch_for(rx, vfo[rx->id].mode);
 }
 

@@ -246,6 +246,27 @@ extern double div_cos, div_sin;
 extern double div_norm;         // output-level normaliser, 1.0 when off
 extern double div_gain, div_phase;
 
+//
+// Ear split: the two arms presented one to each ear instead of summed
+// into one stream. The DDCs are locked together in the FPGA, so the two
+// are sample-aligned with no clock drift between them and the ears agree
+// on what they are hearing.
+//
+// Not to be confused with rx->binaural, which is WDSP's stereo spread on
+// one receiver's own audio.
+//
+enum {
+  DIV_SPLIT_OFF = 0,
+  DIV_SPLIT_RAW,        // arm 0 left, arm 1 right
+  DIV_SPLIT_SUMDIFF     // sum left, difference right
+};
+
+extern int div_split;
+int  div_split_active(void);    // the split is on and has what it needs
+int  div_split_owns_rx1(void);  // the combiner feeds RX1, so the protocol must not
+int  div_rx1_takes_raw(void);   // should the protocol hand raw arm 1 to RX1?
+void div_split_set(int mode);
+
 extern int capture_state;
 extern const int capture_max;
 extern int capture_record_pointer;

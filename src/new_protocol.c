@@ -2190,7 +2190,7 @@ static void process_div_iq_data(const unsigned char*buffer) {
     //
     // if RX2 exists, feed ADC2 data to  RX2
     //
-    if (receivers > 1 && (receiver[0]->sample_rate == receiver[1]->sample_rate)) {
+    if (div_rx1_takes_raw() && (receiver[0]->sample_rate == receiver[1]->sample_rate)) {
       rx_add_iq_samples(receiver[1], leftsampledouble1, rightsampledouble1);
     }
   }

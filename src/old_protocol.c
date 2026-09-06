@@ -1373,7 +1373,7 @@ static void process_ozy_byte(int b) {
         right_sample_double_aux = right_sample_double;
         rx_add_div_iq_samples(receiver[0], left_sample_double_main, right_sample_double_main, left_sample_double_aux,
                               right_sample_double_aux);
-        if (receivers > 1) { rx_add_iq_samples(receiver[1], left_sample_double_aux, right_sample_double_aux); }
+        if (div_rx1_takes_raw()) { rx_add_iq_samples(receiver[1], left_sample_double_aux, right_sample_double_aux); }
       }
     }
     if ((!radio_is_transmitting() || duplex) && !diversity_enabled) {

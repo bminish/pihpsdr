@@ -321,6 +321,19 @@ extern void   rx_set_noise(const RECEIVER *rx);
 extern void   rx_set_notch(const RECEIVER *rx);
 extern void   rx_set_offset(const RECEIVER *rx);
 extern void   rx_set_squelch(const RECEIVER *rx);
+//
+// The same two with the mode supplied rather than taken from the
+// receiver's own VFO, for rx_clone_dsp(). The wrappers above pass
+// vfo[rx->id]'s and are what every other caller uses.
+//
+extern void   rx_set_offset_for(const RECEIVER *rx, int mode, long long offset);
+extern void   rx_set_squelch_for(const RECEIVER *rx, int mode);
+//
+// Give dst src's demodulation - mode, filter, squelch, BFO offset -
+// without going through dst's own VFO. Used by the diversity ear split
+// to drive receiver[1] while leaving VFO B to the operator.
+//
+extern void   rx_clone_dsp(RECEIVER *dst, const RECEIVER *src);
 
 extern void   rx_vfo_changed(RECEIVER *rx);
 extern void   rx_update_zoom(RECEIVER *rx);
