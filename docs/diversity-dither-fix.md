@@ -47,6 +47,33 @@ receive_specific_buffer[5] = adc[0].dither | (adc[0].dither << 1);
 receive_specific_buffer[6] = adc[0].random | (adc[0].random << 1);
 ```
 
+## Status
+
+**Fixed upstream, identically.** DL1YCF landed the same one-character
+change on 2026-09-02 — `028262ad` on `TEST`, `f9ab6ee5` on `master`:
+
+```
+-    receive_specific_buffer[5] = adc[0].dither | (adc[0].dither >> 1);
+-    receive_specific_buffer[6] = adc[0].random | (adc[0].random >> 1);
++    receive_specific_buffer[5] = adc[0].dither | (adc[0].dither << 1);
++    receive_specific_buffer[6] = adc[0].random | (adc[0].random << 1);
+```
+
+So this fork's own hunk at that line is now redundant and should drop out
+of the next rebase onto `TEST` as already-applied. If it conflicts
+instead, take upstream's: the two edits are the same edit.
+
+The other dither hunk this fork carries — the non-diversity path a few
+lines above, which builds bit 1 from `adc[1]` rather than `adc[0]` — is
+untouched by that commit and is still ours.
+
+Note that the fork rebases onto **`upstream/TEST`**, not `upstream/master`.
+The two branches carry byte-identical trees; TEST is where DL1YCF works,
+in fine-grained commits, and master receives the same work consolidated
+into fewer. Their histories therefore diverge by 154 and 68 commits with a
+merge base back in June 2026, all of which is the same work counted twice.
+Rebasing onto `master` would be a large conflict for no content change.
+
 ## Scope
 
 * Protocol 2 only. Protocol 1 (`src/old_protocol.c`) has a single shared
