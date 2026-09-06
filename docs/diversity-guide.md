@@ -545,6 +545,13 @@ does not destroy the window set up for wideband work; and the whole
 settings block is kept per group of modes, so a mode change stops handing
 the loop settings chosen for a signal that is no longer there.
 
+Carrier gained the follow tick the other placeable references already
+had, meaning a fixed 400 Hz at the centre of the passband rather than the
+passband itself — which for an AM or SAM signal tuned to zero beat is
+where the carrier is. Setting the window by hand is still what aims at a
+carrier other than the one you are listening to, and those numbers are
+kept while the tick is on.
+
 A hand-placed window is measured from the zero-beat note rather than from
 the dial. In CW those are one pitch apart, and a window centred on 0 used
 to land that far from the only signal in the passband — silently, since
