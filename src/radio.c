@@ -2544,6 +2544,14 @@ void div_split_set(int mode) {
     // is given state 1. What is missing is samples, something to
     // demodulate them as, and the first ear's output device.
     //
+    //
+    // Its own settings, filed before anything is cloned over them. The
+    // props are where the teardown reads them back from, and on a radio
+    // that has never saved with two receivers there might be nothing
+    // there yet - GetProp leaves a field alone when its key is absent, so
+    // a restore from an empty section would return nothing at all.
+    //
+    rx_save_state(receiver[1]);
     div_split_align();
     rx_clone_dsp(receiver[1], receiver[0]);
     div_split_up = 1;             // mirror_audio only acts once we are up
@@ -2565,6 +2573,49 @@ void div_split_set(int mode) {
     //
     // The sink is left open either way: it was not opened here.
     //
+    //
+    // Give it its own settings back, before it is stopped.
+    //
+    // rx_restore_state() reads every field from the props, which is the
+    // point: this is deliberately not the mirror image of rx_clone_dsp()'s
+    // field list. That list can fall behind as fields are added and the
+    // worst that happens is an ear that stops following. Falling behind
+    // here would leave the operator's own settings overwritten, so it is
+    // done by the function that already knows all of them.
+    //
+    // The setters afterwards are the sequence rx_create_receiver() runs
+    // after its own restore, for the same reason: the restore puts values
+    // in the struct and nothing else.
+    //
+    const int had_audio = receiver[1]->local_audio;
+    char had_name[128];
+    snprintf(had_name, sizeof(had_name), "%s", receiver[1]->audio_name);
+    rx_restore_state(receiver[1]);
+    rx_set_mode(receiver[1]);
+    rx_set_filter(receiver[1]);
+    rx_set_offset(receiver[1]);
+    rx_set_agc(receiver[1]);
+    rx_set_noise(receiver[1]);
+    rx_set_notch(receiver[1]);
+    rx_set_fft_params(receiver[1]);
+    rx_set_af_gain(receiver[1]);
+    rx_set_squelch(receiver[1]);
+
+    //
+    // The device is part of what was overwritten, by
+    // div_split_mirror_audio(). Move the sink only if the restore actually
+    // changed it - reopening one that has not moved is a dropout for
+    // nothing, and on an exclusive device it might not come back.
+    //
+    if (had_audio != receiver[1]->local_audio ||
+        strcmp(had_name, receiver[1]->audio_name)) {
+      if (had_audio) { audio_close_output(receiver[1]); }
+
+      if (receiver[1]->local_audio) {
+        receiver[1]->local_audio = (audio_open_output(receiver[1]) < 0) ? 0 : 1;
+      }
+    }
+
     if (receivers < 2) { rx_off(receiver[1], 0); }
 
     div_split_up = 0;
@@ -3876,6 +3927,19 @@ void radio_save_state(void) {
   // are restored in create_receiver/create_transmitter
   //
   for (int i = 0; i < RECEIVERS; i++) {
+    //
+    // Not the ear split's second receiver. What it is holding is RX0's
+    // settings, cloned onto it, not its own - and this loop runs over
+    // RECEIVERS rather than receivers, so it reaches a receiver that has
+    // no panel and no way for the operator to have set any of it. Writing
+    // that into its props overwrites the configuration it had before the
+    // split was engaged, with nothing to recover it from.
+    //
+    // Skipping leaves those props holding the original, which is what the
+    // restore in div_split_set() reads back.
+    //
+    if (i == 1 && div_split_active()) { continue; }
+
     rx_save_state(receiver[i]);
   }
   if ((protocol == ORIGINAL_PROTOCOL || protocol == NEW_PROTOCOL) && !radio_is_remote) {

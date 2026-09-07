@@ -1074,6 +1074,64 @@ void rx_set_sam_mode(const RECEIVER *rx) {
 // what must not be consulted; src's are already folded for CW and
 // already correct.
 //
+//
+// The noise-reduction and notch settings, copied ear to ear.
+//
+// Two ears of one stereo image have to be fighting the noise the same way.
+// Different NR or a notch on one side only is not a mismatch in a detail -
+// it is a mismatch in the thing being listened to, and the brain reads the
+// difference as position.
+//
+// Split out from rx_clone_dsp() because these two also have to follow every
+// later change, and the hooks that do that are at the tail of rx_set_noise()
+// and rx_set_notch() rather than at their fifty-odd call sites.
+//
+// The lists are what those two functions read. A field added to either
+// without being added here would silently stop following, which is the one
+// way this can rot; the restore path deliberately does not work this way.
+//
+static void rx_copy_noise(RECEIVER *dst, const RECEIVER *src) {
+  dst->nb          = src->nb;
+  dst->nb2_mode    = src->nb2_mode;
+  dst->nb_tau      = src->nb_tau;
+  dst->nb_advtime  = src->nb_advtime;
+  dst->nb_hang     = src->nb_hang;
+  dst->nb_thresh   = src->nb_thresh;
+  dst->nr          = src->nr;
+  dst->nr_agc      = src->nr_agc;
+  dst->snb         = src->snb;
+  dst->anf         = src->anf;
+  dst->anf_taps    = src->anf_taps;
+  dst->anf_delay   = src->anf_delay;
+  dst->anf_gain    = src->anf_gain;
+  dst->anf_leakage = src->anf_leakage;
+  dst->nr2_gain_method        = src->nr2_gain_method;
+  dst->nr2_npe_method         = src->nr2_npe_method;
+  dst->nr2_trained_threshold  = src->nr2_trained_threshold;
+  dst->nr2_trained_t2         = src->nr2_trained_t2;
+  dst->nr2_post               = src->nr2_post;
+  dst->nr2_post_nlevel        = src->nr2_post_nlevel;
+  dst->nr2_post_factor        = src->nr2_post_factor;
+  dst->nr2_post_rate          = src->nr2_post_rate;
+  dst->nr2_post_taper         = src->nr2_post_taper;
+  dst->nr4_reduction_amount   = src->nr4_reduction_amount;
+  dst->nr4_smoothing_factor   = src->nr4_smoothing_factor;
+  dst->nr4_whitening_factor   = src->nr4_whitening_factor;
+  dst->nr4_noise_rescale      = src->nr4_noise_rescale;
+  dst->nr4_post_threshold     = src->nr4_post_threshold;
+  dst->nr4_noise_scaling_type = src->nr4_noise_scaling_type;
+}
+
+static void rx_copy_notch(RECEIVER *dst, const RECEIVER *src) {
+  dst->notch_min_width = src->notch_min_width;
+
+  for (int i = 0; i < 3; i++) {
+    dst->multi_notch_enable[i] = src->multi_notch_enable[i];
+    dst->multi_notch_center[i] = src->multi_notch_center[i];
+    dst->multi_notch_width[i]  = src->multi_notch_width[i];
+  }
+}
+
 void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
   ASSERT_SERVER();
   const int mode = vfo[src->id].mode;
@@ -1119,6 +1177,15 @@ void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
     dst->nbp_window  = src->nbp_window;
     rx_set_fft_params(dst);
   }
+
+  //
+  // Noise and notches. Plain WDSP setters, no channel restart, so these are
+  // applied every time rather than guarded like the filter shape above.
+  //
+  rx_copy_noise(dst, src);
+  rx_set_noise(dst);
+  rx_copy_notch(dst, src);
+  rx_set_notch(dst);
 
   //
   // sam_sb_mode is deliberately not copied. LSB in one ear and USB in the
@@ -1347,6 +1414,7 @@ static void rx_process_buffer(RECEIVER *rx) {
       }
     }
   }
+
 }
 
 static void rx_full_buffer(RECEIVER *rx) {
@@ -2245,6 +2313,20 @@ void rx_set_notch(const RECEIVER *rx) {
   }
   // global enable/disable flag
   RXANBPSetNotchesRun(rx->id, notch);
+
+  //
+  // The ear split's second receiver has no menu, no encoder and no CAT of
+  // its own, so it cannot be set - it follows this one. The hook is here
+  // rather than at the call sites because there are about fifty of them
+  // across nine files, and one missed would be an ear quietly out of step.
+  //
+  // rx->id == 0 is also what stops the recursion: the call below lands on
+  // receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    rx_copy_notch(receiver[1], rx);
+    rx_set_notch(receiver[1]);
+  }
 }
 
 void rx_set_noise(const RECEIVER *rx) {
@@ -2378,6 +2460,20 @@ void rx_set_noise(const RECEIVER *rx) {
   // SNB
   //
   SetRXASNBARun(rx->id,                 rx->snb);
+
+  //
+  // The ear split's second receiver has no menu, no encoder and no CAT of
+  // its own, so it cannot be set - it follows this one. The hook is here
+  // rather than at the call sites because there are about fifty of them
+  // across nine files, and one missed would be an ear quietly out of step.
+  //
+  // rx->id == 0 is also what stops the recursion: the call below lands on
+  // receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    rx_copy_noise(receiver[1], rx);
+    rx_set_noise(receiver[1]);
+  }
 }
 
 //
