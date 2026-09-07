@@ -1258,6 +1258,32 @@ void rx_vfo_changed(RECEIVER *rx) {
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef TCI
+//
+// The ear split's left half, held between the two receivers' passes.
+//
+// TCI carries a stereo pair per receiver already - the rings are
+// interleaved and every frame header says channels = 2 - so the split has a
+// place to go without any change to the protocol. What it needs is for one
+// pass to have both ears at once, and tci_audio_rx_sample() takes the ring
+// id as an argument, so the producer of ring 0 does not have to be RX0.
+//
+// RX1 is fed second in both protocols and in rx_add_div_iq_samples(), and
+// div_split_align() keeps the two buffers in phase, so by the time RX1's
+// pass runs RX0's half of the same block is already computed. RX1 therefore
+// emits the finished pair on stream 0, which is the stream a client already
+// opens. Nothing in tci.c changes.
+//
+// No lock: rx_process_buffer() is only reached from rx_add_iq_samples(), on
+// the protocol's receive thread, so the two passes are one thread.
+//
+// buffer_size is 1024 for every receiver and output_samples is
+// buffer_size/(rate/48000), so 1024 is the ceiling.
+//
+static double tci_split_left[1024];
+static int    tci_split_len = 0;      // 0 = nothing valid held
+#endif
+
 static void rx_process_buffer(RECEIVER *rx) {
   ASSERT_SERVER();
   //
@@ -1301,6 +1327,17 @@ static void rx_process_buffer(RECEIVER *rx) {
   t_print("RX lvl: %5.1f\n", 10.0 * log10(lvl));
 #endif
   const int split = div_split_active();
+#ifdef TCI
+  //
+  // One gain law for the pair. tci_volume is per receiver and is settable
+  // only in the RX menu, which with one panel always opens on RX0 - so
+  // RX2's is whatever its props last said and cannot be reached, exactly
+  // as audio_name was. Both ears therefore take RX0's.
+  //
+  const double pairscale = split
+                           ? pow(10.0, -0.05 * (receiver[0]->volume - receiver[0]->tci_volume))
+                           : tciscale;
+#endif
   for (int i = 0; i < rx->output_samples; i++) {
     double left_sample = rx->audio_output_buffer[i * 2];
     double right_sample = rx->audio_output_buffer[(i * 2) + 1];
@@ -1346,7 +1383,27 @@ static void rx_process_buffer(RECEIVER *rx) {
     // programs, we ship out before applying mute_rx or STEREO effects.
     //
     if (tci_audio_rx_active) {
-      tci_audio_rx_sample(rx->id, tciscale*left_sample, tciscale*right_sample);
+      if (split) {
+        //
+        // Each ear folded to mono the same way the headphone path folds it,
+        // and for the same reason: rx->binaural is WDSP's spread on a single
+        // receiver, and half of that is half of a different signal rather
+        // than this ear. Balance is applied so the TCI image matches what is
+        // in the headphones; the AF gain is not, because pairscale cancels
+        // it - a TCI consumer's level must not follow the AF knob.
+        //
+        const double ear = 0.5 * (left_sample + right_sample);
+
+        if (rx->id == 0) {
+          if (i < (int)(sizeof(tci_split_left) / sizeof(tci_split_left[0]))) {
+            tci_split_left[i] = pairscale * ear * div_bal_l;
+          }
+        } else if (tci_split_len == rx->output_samples) {
+          tci_audio_rx_sample(0, tci_split_left[i], pairscale * ear * div_bal_r);
+        }
+      } else {
+        tci_audio_rx_sample(rx->id, tciscale*left_sample, tciscale*right_sample);
+      }
     }
 #endif
     if (xmit && mute_rx_while_transmitting) {
@@ -1415,6 +1472,21 @@ static void rx_process_buffer(RECEIVER *rx) {
     }
   }
 
+#ifdef TCI
+  //
+  // Hand the left half over, or take it back. Marking it with the length
+  // rather than a flag is what makes the pairing safe: RX1 only uses a half
+  // that was made from a block of its own size, so the one after engaging -
+  // where RX0 has not run yet - and one either side of a sample rate change
+  // are skipped rather than mispaired. Ring 0 simply does not advance for
+  // that block, which the consumer absorbs.
+  //
+  if (split && tci_audio_rx_active) {
+    tci_split_len = (rx->id == 0) ? rx->output_samples : 0;
+  } else {
+    tci_split_len = 0;
+  }
+#endif
 }
 
 static void rx_full_buffer(RECEIVER *rx) {
