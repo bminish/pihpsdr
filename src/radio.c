@@ -2447,52 +2447,6 @@ static void div_split_align(void) {
   receiver[1]->samples = 0;
 }
 
-//
-// Put the second ear on the first ear's output device.
-//
-// Two ears of one stereo image have to come out of the same card, so
-// there was never a configuration where these should differ - but the
-// second receiver kept its own audio_name from its own props, and only
-// the first one's followed the operator. Changing the output device moved
-// the left ear and left the right one playing out of whatever RX2's props
-// last named, which is the definition of a device you cannot get rid of:
-// with no panel, active_receiver is always RX0, so rx_menu() opens on RX0
-// and RX2's audio settings cannot be reached at all.
-//
-// So they are not configured, they are mirrored. Called on the way in and
-// from the two places that can move RX0's device - the RX menu and the
-// per-mode profile.
-//
-void div_split_mirror_audio(void) {
-  if (radio_is_remote || !div_split_up) { return; }
-
-  if (receiver[0] == NULL || receiver[1] == NULL) { return; }
-
-  RECEIVER *l = receiver[0];
-  RECEIVER *r = receiver[1];
-
-  if (r->local_audio == l->local_audio && !strcmp(r->audio_name, l->audio_name)) {
-    return;                       // already there
-  }
-
-  if (r->local_audio) {
-    r->local_audio = 0;
-    audio_close_output(r);
-  }
-
-  snprintf(r->audio_name, sizeof(r->audio_name), "%s", l->audio_name);
-
-  if (l->local_audio) {
-    //
-    // The one way this fails on a device the left ear just opened
-    // successfully: an exclusive one, a raw ALSA hw: device with no
-    // mixing, which a second stream cannot join. The menu says so rather
-    // than leaving a silent right ear unexplained.
-    //
-    r->local_audio = (audio_open_output(r) < 0) ? 0 : 1;
-  }
-}
-
 void div_split_set(int mode) {
   //
   // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
@@ -2544,7 +2498,6 @@ void div_split_set(int mode) {
     // is given state 1. What is missing is samples, something to
     // demodulate them as, and the first ear's output device.
     //
-    //
     // Its own settings, filed before anything is cloned over them. The
     // props are where the teardown reads them back from, and on a radio
     // that has never saved with two receivers there might be nothing
@@ -2554,16 +2507,19 @@ void div_split_set(int mode) {
     rx_save_state(receiver[1]);
     div_split_align();
     rx_clone_dsp(receiver[1], receiver[0]);
-    div_split_up = 1;             // mirror_audio only acts once we are up
-    div_split_mirror_audio();
     //
     // Level with the first ear on the way in, whatever RX2's own props
     // last left it at. Balance is what makes them differ from here.
+    //
+    // It still gets an AF gain of its own even though its sink is never
+    // opened: WDSP applies the gain inside the channel, so this is what
+    // sets the level of the ear before it reaches the pair.
     //
     receiver[1]->volume = receiver[0]->volume;
     rx_set_af_gain(receiver[1]);
     radio_calc_split_balance();
     rx_on(receiver[1]);
+    div_split_up = 1;
   } else if (div_split_up) {
     //
     // Stop it only if nothing else wants it. The split stands down when
@@ -2587,9 +2543,6 @@ void div_split_set(int mode) {
     // after its own restore, for the same reason: the restore puts values
     // in the struct and nothing else.
     //
-    const int had_audio = receiver[1]->local_audio;
-    char had_name[128];
-    snprintf(had_name, sizeof(had_name), "%s", receiver[1]->audio_name);
     rx_restore_state(receiver[1]);
     rx_set_mode(receiver[1]);
     rx_set_filter(receiver[1]);
@@ -2600,21 +2553,6 @@ void div_split_set(int mode) {
     rx_set_fft_params(receiver[1]);
     rx_set_af_gain(receiver[1]);
     rx_set_squelch(receiver[1]);
-
-    //
-    // The device is part of what was overwritten, by
-    // div_split_mirror_audio(). Move the sink only if the restore actually
-    // changed it - reopening one that has not moved is a dropout for
-    // nothing, and on an exclusive device it might not come back.
-    //
-    if (had_audio != receiver[1]->local_audio ||
-        strcmp(had_name, receiver[1]->audio_name)) {
-      if (had_audio) { audio_close_output(receiver[1]); }
-
-      if (receiver[1]->local_audio) {
-        receiver[1]->local_audio = (audio_open_output(receiver[1]) < 0) ? 0 : 1;
-      }
-    }
 
     if (receivers < 2) { rx_off(receiver[1], 0); }
 

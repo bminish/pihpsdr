@@ -547,13 +547,6 @@ void profiles_load_rx_profile(RECEIVER *rx, int m) {
           rx->local_audio = 1;
         }
       }
-
-      //
-      // Take the diversity ear split's second receiver with it; it has no
-      // profile of its own to be loaded from. No-op when the split is not
-      // up.
-      //
-      div_split_mirror_audio();
     }
   }
 }

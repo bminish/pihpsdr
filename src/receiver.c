@@ -1280,9 +1280,35 @@ void rx_vfo_changed(RECEIVER *rx) {
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
+//
+// The ear split's left ear, held between the two receivers' passes.
+//
+// Both ears go out of ONE stream, receiver[0]'s. They used to go out of
+// two, one per receiver, and two streams cannot be kept together: each has
+// its own ring, audio_write() pins a ring to AUDIO_LAT_TARGET only when it
+// crosses a water mark, and anything that stops one ear for a moment
+// leaves the two at different depths for as long as neither crosses one.
+// A sample rate change does exactly that - rx_change_sample_rate() stops
+// and restarts each receiver at a different moment and for a different
+// length of time, and touches no ring - so the ears came apart on every
+// rate change and did not come back until a transmit drained both rings
+// and re-pinned them together.
+//
+// One ring cannot drift from itself. RX1's pass has RX0's half in hand -
+// it is fed second, and div_split_align() holds the two in phase - so it
+// writes the finished pair to RX0's sink and RX1's sink is never opened.
+//
+// output_samples is buffer_size/(rate/48000) with buffer_size 1024, so
+// 1024 is the ceiling. Single-threaded: rx_process_buffer() is only
+// reached from rx_add_iq_samples(), on the protocol's receive thread.
+//
+static double split_left[1024];
+static int    split_len = 0;          // 0 = nothing valid held
+
 #ifdef TCI
 //
-// The ear split's left half, held between the two receivers' passes.
+// The same thing for TCI, which needs its own because it taps earlier in
+// the chain - ahead of mute - and carries a different gain law.
 //
 // TCI carries a stereo pair per receiver already - the rings are
 // interleaved and every frame header says channels = 2 - so the split has a
@@ -1453,32 +1479,53 @@ static void rx_process_buffer(RECEIVER *rx) {
     // the channel here means switching the split off restores exactly
     // what was there before, with nothing left behind.
     //
-    int chan = rx->audio_channel;
     if (split) {
       //
-      // ...and the balance trim on the way past. It is applied here
-      // rather than through rx->volume because that field is the AF gain
-      // itself - read by the slider, by CAT and by the per-mode profile -
-      // and folding a trim into it would make all three disagree about
-      // what the AF gain is.
+      // This receiver's ear: folded to mono, because rx->binaural is
+      // WDSP's spread on a single receiver and half of that is half of a
+      // different signal; then the balance trim.
       //
-      const double m = 0.5 * (left_sample + right_sample)
-                       * ((rx->id == 0) ? div_bal_l : div_bal_r);
-      left_sample = right_sample = m;
-      chan = (rx->id == 0) ? LEFT : RIGHT;
-    }
-    switch (chan) {
-    case STEREO:
-      break;
-    case LEFT:
-      right_sample = 0.0;
-      break;
-    case RIGHT:
-      left_sample = 0.0;
-      break;
-    }
-    if (rx->local_audio) {
-      audio_write(rx, left_sample, right_sample);
+      // The trim is applied here rather than through rx->volume because
+      // that field is the AF gain itself - read by the slider, by CAT and
+      // by the per-mode profile - and folding a trim into it would make
+      // all three disagree about what the AF gain is.
+      //
+      const double ear = 0.5 * (left_sample + right_sample)
+                         * ((rx->id == 0) ? div_bal_l : div_bal_r);
+
+      if (rx->id == 0) {
+        //
+        // Held for RX1's pass, which does the writing. Nothing goes to
+        // this receiver's sink from here.
+        //
+        if (i < (int)(sizeof(split_left) / sizeof(split_left[0]))) {
+          split_left[i] = ear;
+        }
+      } else if (split_len == rx->output_samples && receiver[0]->local_audio) {
+        //
+        // Both ears, one stream, receiver[0]'s. Its audio_channel is not
+        // consulted: a stereo pair is what this is, and LEFT or RIGHT
+        // there would throw one ear away.
+        //
+        audio_write(receiver[0], split_left[i], ear);
+      }
+    } else {
+      switch (rx->audio_channel) {
+      case STEREO:
+        break;
+
+      case LEFT:
+        right_sample = 0.0;
+        break;
+
+      case RIGHT:
+        left_sample = 0.0;
+        break;
+      }
+
+      if (rx->local_audio) {
+        audio_write(rx, left_sample, right_sample);
+      }
     }
     if (rx == active_receiver) {
       switch (protocol) {
@@ -1493,6 +1540,15 @@ static void rx_process_buffer(RECEIVER *rx) {
       }
     }
   }
+
+  //
+  // Hand the left ear over, or take it back. Marked with the length of the
+  // block it came from rather than a flag, so RX1 only ever pairs a half
+  // made from a block of its own size: the one after engaging, where RX0
+  // has not run yet, and the ones either side of a sample rate change are
+  // dropped rather than mispaired.
+  //
+  split_len = (split && rx->id == 0) ? rx->output_samples : 0;
 
 #ifdef TCI
   //

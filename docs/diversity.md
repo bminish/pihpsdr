@@ -1246,26 +1246,36 @@ field *is* the AF gain — read by the slider, by CAT and by the per-mode
 profile — and a trim hidden inside it would make all three disagree about
 what the AF gain is.
 
-**The output device is mirrored, not configured.** Two ears of one stereo
-image have to come out of the same card, so there was never a
-configuration where the two receivers' devices should differ — but
-`receiver[1]` kept its own `audio_name` from its own props, and only
-RX0's followed the operator. Changing the output device moved the left
-ear and left the right one playing out of whatever RX2's props last
-named; and since `rx_menu()` opens on `active_receiver`, which with one
-panel is always RX0, RX2's audio settings could not be reached at all.
-`div_split_mirror_audio()` copies the device across instead, on engage
-and from the two places that can move RX0's: the RX menu and the per-mode
-profile.
+**Both ears go out of one stream**, `receiver[0]`'s. `receiver[1]`'s sink
+is never opened, so there is no second device to configure and none to go
+wrong.
+
+It was two streams to begin with, and two streams cannot be kept together.
+Each has its own ring; `audio_write()` pins a ring to `AUDIO_LAT_TARGET`
+only when it crosses a water mark; so anything that stops one ear for a
+moment leaves the two at different depths for as long as neither crosses
+one. A **sample rate change** does precisely that —
+`rx_change_sample_rate()` stops and restarts each receiver at a different
+moment and for a different length of time, and touches no ring — so the
+ears came apart on every rate change and stayed apart until a transmit
+drained both rings and re-pinned them together. Engaging the split did the
+same thing, RX1's ring starting empty and pinning to the target while
+RX0's sat wherever it had drifted.
+
+One ring cannot drift from itself. RX1's pass has RX0's half in hand — it
+is fed second and `div_split_align()` holds the two in phase — so it writes
+the finished pair to RX0's sink. `receiver[0]->audio_channel` is not
+consulted: a stereo pair is what this is, and LEFT or RIGHT there would
+throw an ear away.
+
+This is also what removed the device mirroring the split used to need,
+along with its failure mode: there is no second stream to be refused by an
+exclusive device.
 
 One thing to know before using it:
 
-- **A mono output device mixes the ears back together** (`audio.c` folds
-  L and R to `0.5·(L+R)` on a one-channel device), and an **exclusive**
-  one — a raw ALSA `hw:` device with no mixing — has no room for the
-  second ear's stream at all. That is the only way the mirror can fail on
-  a device the left ear just opened, and the menu reads `AF: no right ear`
-  when it does.
+- **A mono output device mixes the ears back together** — `audio.c` folds
+  L and R to `0.5·(L+R)` on a one-channel device.
 
 `audio_channel` is not written to place the ears. The per-mode RXTX
 profile owns that field and reloads it on every mode change, so an

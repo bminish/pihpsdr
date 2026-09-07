@@ -28,6 +28,20 @@ September 2026:
   its pass has both ears in hand and emits them on stream 0. With the
   split off, every receiver taps its own stream exactly as before
 
+- diversity: the two ears of the split stay together across a sample rate
+  change. They were going out of one audio stream each, and two streams
+  cannot be held together: each has its own ring buffer, and the code that
+  keeps a ring at its target latency only acts when the ring crosses a
+  water mark, so anything that stops one ear briefly leaves the two at
+  different depths until something drains them both. Changing the sample
+  rate does exactly that, stopping and restarting the two receivers at
+  different moments, which is why the ears came apart there and came back
+  after the next transmit. Both now go out of one stream - the second
+  receiver's sink is never opened - so they cannot drift apart at all.
+  That also removes the device mirroring the split used to need, and with
+  it the case where an exclusive output device had no room for a second
+  stream
+
 - diversity: the AGC slider reaches both ears of the split.
   radio_set_agc_gain() returns early for any receiver past the number on
   screen, exactly as the AF gain did, so the second ear was left on

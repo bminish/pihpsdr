@@ -282,9 +282,10 @@ a station peaks in one ear and vanishes in the other, and you can hear an
 auto-phasing null converge instead of watching the numbers. It is also the
 quickest way to tell whether a null is on the signal you meant.
 
-There is nothing to set up. It uses RX2 as an audio path only, without
-putting it on screen, and both ears come out of **this** receiver's output
-device — change the device and both move together. If you do bring RX2
+There is nothing to set up. It uses RX2 to demodulate the second antenna
+without putting it on screen, and both ears come out of **this** receiver's
+own output device as one stereo stream — change the device and both move
+with it, because they were never separate. If you do bring RX2
 up, the split stands down: RX2 then follows VFO B and is yours to tune,
 which is not the same thing. Put it away and it comes back.
 
@@ -317,10 +318,6 @@ Two other things worth knowing:
   therefore end up doing different things to the two ears and blurring the
   image. If the stereo picture seems vague, turn NR off before blaming
   anything else.
-- An **exclusive output device** — a raw ALSA `hw:` device, with no
-  mixing — has room for one stream only, so the right ear cannot open it.
-  The menu reads `AF: no right ear` if that happens; use a `default` or
-  `dmix` device, or PipeWire/PulseAudio.
 
 **It is on TCI too**, as a proper stereo pair on the stream a client
 already opens — left ear in one channel, right in the other, with the
