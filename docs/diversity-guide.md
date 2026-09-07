@@ -311,10 +311,27 @@ Two other things worth knowing:
   reception of an AM station in stereo.
 - A **mono output device mixes the ears back together**, and it will not
   warn you. This wants headphones and a stereo card.
+- **Noise reduction is not a stereo effect.** Both ears take the same NR
+  and notch settings automatically, but NR2 and NR4 adapt to what they
+  actually hear, and the two antennas do not hear the same thing. They can
+  therefore end up doing different things to the two ears and blurring the
+  image. If the stereo picture seems vague, turn NR off before blaming
+  anything else.
 - An **exclusive output device** — a raw ALSA `hw:` device, with no
   mixing — has room for one stream only, so the right ear cannot open it.
   The menu reads `AF: no right ear` if that happens; use a `default` or
   `dmix` device, or PipeWire/PulseAudio.
+
+**It is on TCI too**, as a proper stereo pair on the stream a client
+already opens — left ear in one channel, right in the other, with the
+Balance trim applied and the AF gain divided out, as TCI audio always is.
+Nothing to enable and nothing to configure. With `AF` set to `Summed` the
+TCI stream is exactly what it always was, so a digimode program running
+off it is unaffected either way.
+
+Everything else on RX2 follows the first receiver too — mode, filter,
+noise reduction, notches, CW peak — and is **given back** when you switch
+`AF` off. Your RX2 settings are not consumed by using it for an ear.
 
 This is a local control: over a remote link the audio is mono, so it is
 greyed out on a client.

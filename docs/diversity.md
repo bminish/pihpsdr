@@ -1153,6 +1153,56 @@ the rest safe: with `receivers == 1`, every path in the program that would
 touch `receiver[1]` is guarded by `receivers`, so nothing else writes to
 it.
 
+**What else the second ear follows, and what it gets back.** `rx_clone_dsp()`
+also carries the noise reduction and the notches, because two ears of one
+stereo image have to be fighting the noise the same way — different NR, or
+a notch on one side only, is not a mismatch in a detail but a mismatch in
+the thing being listened to, and the brain reads the difference as
+position rather than as filtering. The CW peak filter comes across too,
+deriving its width from the filter edges that are RX0's by then.
+
+Those two are set from about fifty call sites across nine files, so the
+hook is at the tail of `rx_set_noise()` and `rx_set_notch()` themselves
+rather than at any of them; the `rx->id == 0` that selects it is also what
+stops it recursing.
+
+Nothing of RX2's own is lost to this. `radio_save_state()` walks
+`RECEIVERS` rather than `receivers`, so it was saving a receiver holding
+RX0's settings into RX2's props at every save, over a configuration the
+operator could only have set with two panels and could not have set since.
+It is skipped while the split is up, the original is filed there on the
+way in, and on the way out the whole of it is read back through
+`rx_restore_state()` and re-applied with the setter sequence
+`rx_create_receiver()` uses. That restore is deliberately *not* the mirror
+of the clone's field list: a clone list that falls behind costs an ear
+that stops following something, a restore list that falls behind costs the
+operator's settings.
+
+One limit that cloning cannot reach. Identical NR *settings* do not give
+identical NR *output* — NR2 and NR4 adapt independently per channel, so on
+two different antenna signals they make different decisions and can smear
+the image. An operator chasing a vague image should try NR off first.
+
+**Over TCI, as one stereo pair.** TCI carries a stereo pair per receiver
+already: the rings are interleaved and every frame header declares
+`channels = 2`. `tci_audio_rx_sample()` takes the ring id as an argument,
+so the producer of ring 0 need not be RX0 — and RX1 is fed second, with
+the buffers held in phase by `div_split_align()`, so RX0's half of the
+same block is computed by the time RX1's pass runs. **RX1 therefore emits
+the finished pair on stream 0**, the stream a client already opens. No
+change to the feed order and none to `tci.c`; its `audio_start` guard
+stays, and is now right rather than limiting, since ring 1 is no longer
+written and what a client wanted from it is on ring 0.
+
+Each ear is folded to mono as the headphone path folds it, for the same
+reason. Balance is applied so the TCI image matches the headphones; the AF
+gain is not, because a TCI consumer's level must not follow the AF knob —
+and both ears take RX0's `tci_volume`, which is per receiver and settable
+only in a menu a panel-less receiver does not have. The held half is
+marked with the length of the block it came from rather than a flag, so
+the block after engaging and those either side of a rate change are
+skipped rather than mispaired.
+
 **One AF gain, and a balance to trim it.** `radio_set_af_gain()` opens with
 `if (id >= receivers) return`, so with one panel the second ear was past
 the guard — `AF_GAIN_RX2`, the RX2 slider and CAT `ZZLC` all returned

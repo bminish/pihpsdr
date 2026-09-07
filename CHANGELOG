@@ -19,6 +19,27 @@ September 2026:
   if RX2 is brought up, since RX2 then follows VFO B; not available over a
   remote link, where the audio is mono
 
+- diversity: the ear split reaches TCI, as one stereo pair on the stream a
+  client already opens - left ear in one channel, right in the other, with
+  the Balance trim applied and the AF gain divided out as TCI audio always
+  is. It needed no change to the TCI code and none to the wire format:
+  TCI already carries a stereo pair per receiver, and since the second
+  receiver is fed after the first and the two buffers are held in phase,
+  its pass has both ears in hand and emits them on stream 0. With the
+  split off, every receiver taps its own stream exactly as before
+
+- diversity: the ear split no longer overwrites the second receiver's own
+  settings. radio_save_state() walks RECEIVERS rather than receivers, so
+  it was writing the first receiver's cloned settings into the second
+  one's props at every save, over a configuration that could only have
+  been set with two panels on screen and with nothing to recover it from.
+  It is skipped while the split is up, the original is filed on the way
+  in, and the whole of it is read back and re-applied on the way out. The
+  noise reduction and the notches now follow the first receiver as well -
+  two ears of one image have to be fighting the noise the same way - with
+  the hook inside rx_set_noise() and rx_set_notch() rather than at their
+  fifty-odd call sites
+
 - diversity: both ears of the split follow the output device, and the
   second one is no longer configured separately. Two ears of one stereo
   image have to come out of the same card, but the second receiver kept
