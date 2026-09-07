@@ -1154,17 +1154,27 @@ touch `receiver[1]` is guarded by `receivers`, so nothing else writes to
 it.
 
 **What else the second ear follows, and what it gets back.** `rx_clone_dsp()`
-also carries the noise reduction and the notches, because two ears of one
+also carries the AGC, the noise reduction and the notches, because two ears of one
 stereo image have to be fighting the noise the same way — different NR, or
 a notch on one side only, is not a mismatch in a detail but a mismatch in
 the thing being listened to, and the brain reads the difference as
 position rather than as filtering. The CW peak filter comes across too,
 deriving its width from the filter edges that are RX0's by then.
 
-Those two are set from about fifty call sites across nine files, so the
-hook is at the tail of `rx_set_noise()` and `rx_set_notch()` themselves
-rather than at any of them; the `rx->id == 0` that selects it is also what
-stops it recursing.
+Those are set from about fifty call sites across nine files, so the hooks
+are at the tail of `rx_set_noise()`, `rx_set_notch()` and `rx_set_agc()`
+themselves rather than at any of them; the `rx->id == 0` that selects each
+one is also what stops it recursing.
+
+`rx_set_agc()` is the choke point for the AGC in the same way, and for a
+sharper reason than convenience: `radio_set_agc_gain()` returns early for
+any id past the number of panels on screen, so the AGC slider, like the AF
+gain before it, was turning the second ear away. Everything that moves the
+AGC — slider, encoder, menu, CAT — arrives at `rx_set_agc()`, so one hook
+there catches all of it. Two ears riding their gain independently is worse
+than either setting on its own: it is the stereo image moving with the
+signal. Only the inputs are copied; `agc_hang` and `agc_thresh` are read
+back out of WDSP per receiver and depend on its own analyser size.
 
 Nothing of RX2's own is lost to this. `radio_save_state()` walks
 `RECEIVERS` rather than `receivers`, so it was saving a receiver holding

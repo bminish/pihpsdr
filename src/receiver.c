@@ -1122,6 +1122,23 @@ static void rx_copy_noise(RECEIVER *dst, const RECEIVER *src) {
   dst->nr4_noise_scaling_type = src->nr4_noise_scaling_type;
 }
 
+//
+// The AGC settings, ear to ear.
+//
+// The inputs only. agc_hang and agc_thresh are read back out of WDSP at
+// the end of rx_set_agc() and depend on the receiver's own analyser size
+// and sample rate, so they are its own to compute and not ours to copy.
+//
+static void rx_copy_agc(RECEIVER *dst, const RECEIVER *src) {
+  dst->agc                = src->agc;
+  dst->agc_gain           = src->agc_gain;
+  dst->agc_hang_threshold = src->agc_hang_threshold;
+  dst->agc_custom_attack  = src->agc_custom_attack;
+  dst->agc_custom_decay   = src->agc_custom_decay;
+  dst->agc_custom_hang    = src->agc_custom_hang;
+  dst->agc_custom_slope   = src->agc_custom_slope;
+}
+
 static void rx_copy_notch(RECEIVER *dst, const RECEIVER *src) {
   dst->notch_min_width = src->notch_min_width;
 
@@ -1144,6 +1161,11 @@ void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
   rx_set_cw_peak(dst,
                  (mode == modeCWU || mode == modeCWL) ? vfo[src->id].cwAudioPeakFilter : 0,
                  (double)cw_keyer_sidetone_frequency);
+  //
+  // Before rx_set_agc(), which applies whatever the receiver is holding -
+  // and without this it would go on applying its own.
+  //
+  rx_copy_agc(dst, src);
   rx_set_agc(dst);
   dst->squelch_enable = src->squelch_enable;
   dst->squelch        = src->squelch;
@@ -2126,6 +2148,24 @@ void rx_set_agc(RECEIVER *rx) {
     RXTXprofile[mode].rx.agc_custom_hang   = rx->agc_custom_hang;
     RXTXprofile[mode].rx.agc_custom_slope  = rx->agc_custom_slope;
     profiles_copy_rxtxprofile(mode);
+  }
+
+  //
+  // The ear split's second receiver follows this one, the same way it
+  // follows the noise reduction and the notches. The AGC slider, the
+  // encoder action, the AGC menu and CAT all arrive here - and
+  // radio_set_agc_gain() turns the second receiver away before this,
+  // because it returns early for any id past the number of panels on
+  // screen - so this is the one place that catches all of them.
+  //
+  // Two ears riding their gain differently is worse than either setting:
+  // it is the stereo image itself moving with the signal.
+  //
+  // rx->id == 0 is what stops it recursing.
+  //
+  if (id == 0 && div_split_active()) {
+    rx_copy_agc(receiver[1], rx);
+    rx_set_agc(receiver[1]);
   }
 }
 

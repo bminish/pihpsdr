@@ -329,9 +329,15 @@ Nothing to enable and nothing to configure. With `AF` set to `Summed` the
 TCI stream is exactly what it always was, so a digimode program running
 off it is unaffected either way.
 
-Everything else on RX2 follows the first receiver too — mode, filter,
+Everything else on RX2 follows the first receiver too — mode, filter, AGC,
 noise reduction, notches, CW peak — and is **given back** when you switch
 `AF` off. Your RX2 settings are not consumed by using it for an ear.
+
+The AGC matters more than the rest of that list. Two ears riding their
+gain independently is worse than either setting on its own, because the
+image itself moves with the signal rather than the level: one ear ducks on
+a peak the other rode through, and the station appears to slide across
+your head. The AGC slider now moves both.
 
 This is a local control: over a remote link the audio is mono, so it is
 greyed out on a client.

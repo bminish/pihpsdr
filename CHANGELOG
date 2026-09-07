@@ -28,6 +28,15 @@ September 2026:
   its pass has both ears in hand and emits them on stream 0. With the
   split off, every receiver taps its own stream exactly as before
 
+- diversity: the AGC slider reaches both ears of the split.
+  radio_set_agc_gain() returns early for any receiver past the number on
+  screen, exactly as the AF gain did, so the second ear was left on
+  whatever its props last said. Everything that moves the AGC - the
+  slider, the encoder action, the menu and CAT - passes through
+  rx_set_agc(), so the hook is there and catches all of it. Two ears
+  riding their gain independently is worse than either setting on its own:
+  the image moves with the signal rather than the level
+
 - diversity: the ear split no longer overwrites the second receiver's own
   settings. radio_save_state() walks RECEIVERS rather than receivers, so
   it was writing the first receiver's cloned settings into the second
