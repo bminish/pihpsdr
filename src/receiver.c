@@ -1463,7 +1463,13 @@ static void rx_process_buffer(RECEIVER *rx) {
     // the focus. Suspended for the pair rather than cleared on them: a
     // flag cleared here would not find its way back.
     //
-    if (rx->mute_radio || (!split && rx != active_receiver && rx->mute_when_not_active)) {
+    // ...and its own mute is ignored for the same reason: it is persisted
+    // per receiver and set from the RX menu, which a receiver with no
+    // panel does not have, so an RX2 muted while it had one would be a
+    // permanently dead right ear with nothing on screen to say why.
+    //
+    if ((rx->mute_radio && !(split && rx->id == 1)) ||
+        (!split && rx != active_receiver && rx->mute_when_not_active)) {
       left_sample = 0.0;
       right_sample = 0.0;
     }

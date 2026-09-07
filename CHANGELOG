@@ -11,9 +11,12 @@ September 2026:
   extinguishes in the other and an auto-phasing null can be heard
   converging rather than watched. The DDCs are locked together in the
   FPGA, so the two ears cannot drift apart. It uses the second receiver as
-  an audio path without putting it on screen, and needs an output device
-  set for RX2; frequency, mode and filter follow the main receiver
-  automatically while VFO B is left alone, so split transmit is unaffected.
+  an audio path without putting it on screen, with nothing to set up:
+  both ears come out of this receiver's own output device as one stereo
+  stream. Frequency, mode, filter, AGC, noise reduction, notches and CW
+  peak follow the main receiver automatically while VFO B is left alone,
+  so split transmit is unaffected, and the second receiver's own settings
+  are given back when the split is switched off.
   In SAM the two ears keep independent sideband settings, which gives
   independent-sideband reception of an AM station in stereo. Stands down
   if RX2 is brought up, since RX2 then follows VFO B; not available over a
@@ -62,16 +65,6 @@ September 2026:
   two ears of one image have to be fighting the noise the same way - with
   the hook inside rx_set_noise() and rx_set_notch() rather than at their
   fifty-odd call sites
-
-- diversity: both ears of the split follow the output device, and the
-  second one is no longer configured separately. Two ears of one stereo
-  image have to come out of the same card, but the second receiver kept
-  its own audio_name from its own props and only the first one's followed
-  the operator - so changing the output device moved the left ear and left
-  the right one playing out of a device that could not then be changed:
-  with no panel, rx_menu() always opens on RX1, so RX2's audio settings
-  were unreachable. The device is mirrored on the way in and whenever the
-  RX menu or a per-mode profile moves RX1's
 
 - diversity: the two ears of the split arrive at the same time. The filter
   size and the linear-phase/minimum-phase choice are per receiver and were

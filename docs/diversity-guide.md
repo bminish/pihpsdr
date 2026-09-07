@@ -637,9 +637,9 @@ two antennas one per ear instead of summing them, using the second
 receiver as an audio path without putting it on screen. **Balance** came
 with it, to trim the two ears against each other. The AF gain reaches both
 ears, which took a fix — the guard on `radio_set_af_gain()` had been
-turning the second one away — and so does the output device, which is
-mirrored rather than configured, because a receiver with no panel has no
-menu to configure it in.
+turning the second one away — and both ears come out of this
+receiver's own output device as a single stereo stream - there is no second
+device, and nothing to configure.
 
 A hand-placed window is measured from the zero-beat note rather than from
 the dial. In CW those are one pitch apart, and a window centred on 0 used

@@ -1122,6 +1122,21 @@ so instead of toggling Invert to hear the null and then the peak, both are
 present at once, and a signal extinguishes in one ear as it peaks in the
 other. It is the fastest way to see an auto-phasing null converge by ear.
 
+**What it costs.** A second WDSP chain, running: noise blanker,
+`fexchange0()` with whatever NR is set, notches, AGC — so RX DSP load
+roughly doubles while the split is on. The display cost is *not* added,
+because `rx->displaying` is 0 and `Spectrum0()` is skipped, and on that
+count it is cheaper than bringing RX2 up. On Pi-class hardware, where NR4
+is already most of the budget, that doubling is the thing to watch.
+
+The RX/TX turnaround costs one more WDSP slew-down as well. `rx_off()`
+ignores its `wait` argument — upstream hard-wired the wait because
+shutting one receiver down without it and the other with it left a WDSP
+thread hanging — so the two ears are flushed in sequence, not together. A
+2-RX radio has always paid this; what is new is that a one-panel radio
+pays it once the split is on. In CW that lands between the key going down
+and the first element.
+
 **It uses the second receiver without putting it on screen.**
 `rx_create_receiver()` builds every `RECEIVERS` at startup, not merely the
 ones displayed, restores each one's props and opens its audio sink on the

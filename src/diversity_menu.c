@@ -44,7 +44,6 @@ static GtkWidget *phase_fine_scale = NULL;
 static GtkWidget *phase_coarse_scale = NULL;
 
 static GtkWidget *split_combo = NULL;
-static GtkWidget *split_label = NULL;
 static GtkWidget *balance_scale = NULL;
 static GtkWidget *balance_label = NULL;
 static GtkWidget *auto_combo = NULL;
@@ -288,7 +287,6 @@ static void cleanup(void) {
     phase_coarse_scale = NULL;
     phase_fine_scale = NULL;
     split_combo = NULL;
-    split_label = NULL;
     balance_scale = NULL;
     balance_label = NULL;
     auto_combo = NULL;
@@ -575,13 +573,6 @@ static void update_manual_sensitivity(void) {
                              !radio_is_remote && diversity_enabled && receivers < 2);
   }
 
-  //
-  // Both ears go out of this receiver's own stream, so there is no second
-  // device to fail to open and nothing left to warn about. The label is
-  // plain now; it stays a label rather than becoming a bare string so that
-  // anything worth saying here later has somewhere to go.
-  //
-  if (split_label) { gtk_label_set_text(GTK_LABEL(split_label), "AF"); }
 }
 
 //
@@ -1687,8 +1678,7 @@ void diversity_menu(GtkWidget *parent) {
   // every setting here.
   //
   if (RECEIVERS > 1 && n_adc > 1) {
-    split_label = gtk_label_new("AF");
-    gtk_box_pack_start(GTK_BOX(topbox), split_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(topbox), gtk_label_new("AF"), FALSE, FALSE, 0);
     split_combo = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Summed");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Ant 1 / Ant 2");

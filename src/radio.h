@@ -280,9 +280,33 @@ extern double div_split_balance;
 extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
 void radio_calc_split_balance(void);
 
-int  div_split_active(void);    // the split is on and has what it needs
-int  div_split_owns_rx1(void);  // the combiner feeds RX1, so the protocol must not
-int  div_rx1_takes_raw(void);   // should the protocol hand raw arm 1 to RX1?
+//
+// Whether the split is running, as a plain flag rather than a predicate.
+//
+// rx_add_div_iq_samples() and both protocols' aux feeds ask this once per
+// IQ sample - 768k times a second at 384 kHz - and the predicate lives in
+// radio.c, so from receiver.c or either protocol it was a real call that
+// could not be inlined, paid by every user whether or not they have ever
+// engaged the split.
+//
+// div_split_set() maintains it, and is called from everything that can
+// change the answer: radio_set_diversity(), radio_change_receivers(),
+// rx_change_sample_rate() for RX0, and once at startup. Anything else that
+// comes to move diversity_enabled, receivers or a sample rate has to call
+// it too, or this goes stale.
+//
+extern int div_split_on;
+
+static inline int div_split_active(void) { return div_split_on; }
+
+//
+// Should the protocol hand raw arm-1 IQ to receiver[1]? With the split off
+// this is the condition both protocols always used.
+//
+static inline int div_rx1_takes_raw(void) {
+  return div_split_on ? (div_split == DIV_SPLIT_RAW) : (receivers > 1);
+}
+
 void div_split_set(int mode);
 
 extern int capture_state;

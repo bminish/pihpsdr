@@ -1970,9 +1970,22 @@ static void rxtx(int state) {
 
       //
       // The ear split's second receiver is not in that loop when it has no
-      // panel, and it has to slew down with the first: the two are one
-      // stereo pair, and one ear cutting a beat after the other is exactly
-      // the artefact a listener notices.
+      // panel, and it has to be slewed down too: the two are one stereo
+      // pair, and one ear cutting while the other fades is exactly the
+      // artefact a listener notices.
+      //
+      // They do NOT go down together, and cannot. rx_off() ignores its
+      // wait argument - upstream hard-wired SetChannelState(id, 0, 1)
+      // because shutting one receiver down without waiting and the other
+      // with left a WDSP thread hanging - so this blocks until the flush
+      // completes, after the loop above has already blocked on RX0's.
+      // Two channels, two waits, in sequence.
+      //
+      // That is the price of running a second receiver and a 2-RX radio
+      // has always paid it; what is new is that a one-panel radio pays it
+      // once the split is on. It lands on the RX/TX turnaround, which in
+      // CW is the delay between the key going down and the first element,
+      // so it is worth knowing about rather than being surprised by.
       //
       if (!radio_is_remote && div_split_active()) {
         rx_off(receiver[1], 0);
@@ -2383,44 +2396,28 @@ void radio_calc_div_params(void) {
 // The sample rate is in the test for a plainer reason: RX1 is fed from
 // RX0's stream, so a rate mismatch would be a buffer mismatch.
 //
-int div_split_active(void) {
+static int div_split_recheck(void) {
   return div_split != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
          RECEIVERS > 1 && receivers < 2 && receiver[0] != NULL && receiver[1] != NULL &&
          receiver[0]->sample_rate == receiver[1]->sample_rate;
 }
 
 //
-// Sum/difference forms both ears in the combiner, so the raw arm-1 feed
-// the protocol would otherwise give RX1 has to stand aside.
-//
-int div_split_owns_rx1(void) {
-  return div_split_active() && div_split == DIV_SPLIT_SUMDIFF;
-}
-
-//
-// Should the protocol hand raw arm-1 IQ to receiver[1]? With the split
-// off this is the condition the two protocols always used, so nothing
-// about ordinary two-receiver diversity changes.
-//
-int div_rx1_takes_raw(void) {
-  if (div_split_active()) { return div_split == DIV_SPLIT_RAW; }
-
-  return receivers > 1;
-}
-
-//
 // Whether receiver[1] is currently ours: set up, running and being fed.
 //
-// Kept rather than re-derived from div_split_active(), because the two
-// answer different questions and the difference is exactly where the
-// work is. Everything that can change the answer - diversity going off,
-// the sample rate moving, the props file arriving with the split already
-// on - moves div_split_active() without moving what has been done to
+// Kept rather than re-derived, because it answers a different question
+// from div_split_recheck() and the difference is exactly where the work
+// is. Everything that can change the answer - diversity going off, the
+// sample rate moving, the props file arriving with the split already on -
+// moves what the predicate would say without moving what has been done to
 // receiver[1]. Comparing the two is what says which way to go, and it
 // makes div_split_set(div_split) a safe thing to call at any time: it
 // reconciles rather than toggles.
 //
-static int div_split_up = 0;
+// It is also the flag div_split_active() reads, so that the per-sample
+// paths cost a load rather than a call into this file. See radio.h.
+//
+int div_split_on = 0;
 
 //
 // Start both ears on the same input sample.
@@ -2475,9 +2472,9 @@ void div_split_set(int mode) {
     rx_change_sample_rate(receiver[1], receiver[0]->sample_rate);
   }
 
-  const int want = div_split_active();
+  const int want = div_split_recheck();
 
-  if (want && div_split_up) {
+  if (want && div_split_on) {
     //
     // Already up, and only the presentation changed. Who feeds RX1 moves
     // between the protocol and the combiner with it, so drop the part
@@ -2519,8 +2516,8 @@ void div_split_set(int mode) {
     rx_set_af_gain(receiver[1]);
     radio_calc_split_balance();
     rx_on(receiver[1]);
-    div_split_up = 1;
-  } else if (div_split_up) {
+    div_split_on = 1;
+  } else if (div_split_on) {
     //
     // Stop it only if nothing else wants it. The split stands down when
     // RX2 is brought up, and RX2 is this same receiver - now on screen,
@@ -2556,7 +2553,7 @@ void div_split_set(int mode) {
 
     if (receivers < 2) { rx_off(receiver[1], 0); }
 
-    div_split_up = 0;
+    div_split_on = 0;
   }
 }
 
