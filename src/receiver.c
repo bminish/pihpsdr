@@ -2656,6 +2656,7 @@ void rx_set_noise(const RECEIVER *rx) {
 //
 void rx_set_offset_for(const RECEIVER *rx, int mode, long long offset) {
   ASSERT_SERVER();
+  const long long vfo_offset = offset;
   //
   // CW BFO offset is done HERE.
   //
@@ -2675,6 +2676,30 @@ void rx_set_offset_for(const RECEIVER *rx, int mode, long long offset) {
     SetRXAShiftFreq(rx->id, (double)offset);
     RXANBPSetShiftFrequency(rx->id, (double)offset);
     SetRXAShiftRun(rx->id, 1);
+  }
+
+  //
+  // The second ear is fed RX0's stream, so the hardware LO is shared and
+  // an ear follows an ordinary VFO change for free. The shift is not
+  // shared: it is per WDSP channel, and it is the whole of where the
+  // receiver actually listens under CTUN. Written to channel 0 alone, the
+  // right ear stayed parked on the offset it had when the split came up
+  // while the left ear tuned away from it - two ears on two different
+  // signals, which is not a stereo image of anything.
+  //
+  // RIT and the CW BFO arrive here by the same path and were equally
+  // stuck. rx_clone_dsp() sets the clone's shift once, so mode changes
+  // did follow and frequency changes did not, which is why this reads as
+  // CTUN alone.
+  //
+  // The pre-BFO offset is what is passed on: the callee applies the same
+  // sidetone correction for the same mode and arrives at the same number.
+  //
+  // rx->id == 0 is what stops it recursing - the clone lands on
+  // receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    rx_set_offset_for(receiver[1], mode, vfo_offset);
   }
 }
 

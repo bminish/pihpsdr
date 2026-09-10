@@ -60,11 +60,13 @@ int main(void) {
 
   const double hr = 0.62, hi = -0.48;   // arm1 = h * arm0
   struct { const char *name; int ref; int obj; } cases[] = {
-    { "Window/Null",  DIV_REF_BAND,      DIV_AUTO_NULL },
-    { "Window/Sum",   DIV_REF_BAND,      DIV_AUTO_SUM  },
-    { "Carrier/Sum",  DIV_REF_CARRIER,   DIV_AUTO_SUM  },
+    { "Window/Null",  DIV_REF_BAND,       DIV_AUTO_NULL },
+    { "Window/Sum",   DIV_REF_BAND,       DIV_AUTO_SUM  },
+    { "Carrier/Sum",  DIV_REF_CARRIER,    DIV_AUTO_SUM  },
     { "Digital/Sum",  DIV_REF_DIGITAL_IQ, DIV_AUTO_SUM  },
     { "Digital/Null", DIV_REF_DIGITAL_IQ, DIV_AUTO_NULL },
+    { "CW/Sum",       DIV_REF_CW,         DIV_AUTO_SUM  },
+    { "CW/Null",      DIV_REF_CW,         DIV_AUTO_NULL },
     //
     // Best does not share the Null/Sum path: div_apply_best() holds
     // instead of producing a weight whenever div_auto_arm_valid is 0, and
@@ -75,6 +77,7 @@ int main(void) {
     //
     { "Window/Best",  DIV_REF_BAND,       DIV_AUTO_BEST },
     { "Digital/Best", DIV_REF_DIGITAL_IQ, DIV_AUTO_BEST },
+    { "CW/Best",      DIV_REF_CW,         DIV_AUTO_BEST },
   };
   int fails = 0;
   for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {

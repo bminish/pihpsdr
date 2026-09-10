@@ -352,6 +352,14 @@
 #define DIV_OCC_MAX_SAMPLES 4096
 
 //
+// CW / Morse (OOK MRC) tunables
+//
+#define DIV_CW_SNR_THRESH    1.58   // +2.0 dB tone SNR over noise floor
+#define DIV_CW_CREST_THRESH  2.00   // +6.0 dB spectral crest factor (rejects keyclicks/impulses)
+#define DIV_CW_BINS          1      // 1 bin either side of peak tone (3 bins total)
+
+
+//
 // ------------------------------------------------------------------
 // The per-arm noise floor, taken across frequency rather than time
 // ------------------------------------------------------------------
@@ -666,6 +674,8 @@ double div_carrier_width       = 1000.0;
 //
 double div_digital_centre      = 0.0;
 double div_digital_width       = 2600.0;
+double div_cw_centre           = 0.0;
+double div_cw_width            = 600.0;
 
 //
 // So is the coherence threshold, and for a stronger reason than the
@@ -708,6 +718,7 @@ double div_band_cohmin         = 0.20;
 double div_carrier_cohmin      = 0.30;
 double div_digital_cohmin      = 0.30;
 double div_rade_cohmin         = 0.0;
+double div_cw_cohmin           = 0.20;
 
 //
 // Set when the requested window had to be pulled inside the Nyquist
@@ -1431,7 +1442,7 @@ static int div_bin_range(const struct div_context *ctx, int *klo, int *khi) {
     //
     flo = div_carrier_hz - DIV_CARRIER_BINS * binhz;
     fhi = div_carrier_hz + DIV_CARRIER_BINS * binhz;
-  } else if (ctx->ref == DIV_REF_DIGITAL_IQ) {
+  } else if (ctx->ref == DIV_REF_DIGITAL_IQ || ctx->ref == DIV_REF_CW) {
     //
     // The *search region*, not the bins finally accumulated. Occupancy
     // narrows it after the transform - see div_digital_solve().
@@ -2725,6 +2736,246 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   }
 }
 
+//
+// CW / Morse (OOK MRC): 3-bin tone integration with key-down gating,
+// keyclick transient rejection, and in-passband branch noise ratio scaling.
+//
+static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
+  const int n = khi - klo + 1;
+
+  if (n < 3 || nfft <= 0) {
+    div_auto_occ_valid = 0;
+    div_auto_coherence = 0.0;
+    div_auto_holding = 1;
+    return;
+  }
+
+  //
+  // 1. Center-weighted peak tone search in passband [klo, khi]
+  // Bins near the center of the passband (where the operator tunes the desired CW signal)
+  // are preferred using a Gaussian bell-curve weighting, preventing off-center QRM
+  // near the filter edges from hijacking the tracker. Noise floor estimation in step 2
+  // continues to use off-tone bins across the full passband on an equal-weight basis.
+  //
+  int peak = klo;
+  double peakval = -1.0;
+  double p_passband_sum = 0.0;
+  int passband_bins = 0;
+
+  const double k_center = 0.5 * (double)(klo + khi);
+  const double sigma = (double)n / 4.0;
+  const double inv_two_sigma2 = (sigma > 0.0) ? (1.0 / (2.0 * sigma * sigma)) : 0.0;
+
+  for (int k = klo; k <= khi; k++) {
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    double p = (double)fftout0[idx][0] * fftout0[idx][0]
+               + (double)fftout0[idx][1] * fftout0[idx][1]
+               + (double)fftout1[idx][0] * fftout1[idx][0]
+               + (double)fftout1[idx][1] * fftout1[idx][1];
+    p_passband_sum += p;
+    passband_bins++;
+
+    double dk = (double)k - k_center;
+    double w_center = exp(-dk * dk * inv_two_sigma2);
+    double p_weighted = p * w_center;
+
+    if (p_weighted > peakval) {
+      peakval = p_weighted;
+      peak = k;
+    }
+  }
+
+  if (peakval <= 0.0 || passband_bins <= 0) {
+    div_auto_occ_valid = 0;
+    div_auto_coherence = 0.0;
+    div_auto_holding = 1;
+    return;
+  }
+
+  //
+  // 2. Measure in-passband off-tone noise floor (|k - peak| >= 4)
+  //
+  int nns = 0;
+
+  for (int k = klo; k <= khi && nns < DIV_OCC_MAX_SAMPLES; k++) {
+    if (abs(k - peak) < 4) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    nf_scratch0[nns] = (double)fftout0[idx][0] * fftout0[idx][0]
+                      + (double)fftout0[idx][1] * fftout0[idx][1];
+    nf_scratch1[nns] = (double)fftout1[idx][0] * fftout1[idx][0]
+                      + (double)fftout1[idx][1] * fftout1[idx][1];
+    nns++;
+  }
+
+  double n0_floor = 0.0, n1_floor = 0.0;
+
+  if (nns >= 2) {
+    qsort(nf_scratch0, (size_t)nns, sizeof(double), div_nf_cmp);
+    qsort(nf_scratch1, (size_t)nns, sizeof(double), div_nf_cmp);
+    int pidx = nns / 10;
+
+    if (pidx < 0) { pidx = 0; }
+
+    n0_floor = nf_scratch0[pidx];
+    n1_floor = nf_scratch1[pidx];
+  } else if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
+    n0_floor = div_nf0;
+    n1_floor = div_nf1;
+  } else if (arm_floor_valid && arm_floor0 > 0.0 && arm_floor1 > 0.0) {
+    n0_floor = arm_floor0 / (double)n;
+    n1_floor = arm_floor1 / (double)n;
+  } else {
+    n0_floor = n1_floor = 1e-12;
+  }
+
+  //
+  // 3. Evaluate Tone Power & Gates (Tone SNR & Spectral Crest Factor)
+  //
+  double p_tone = 0.0;
+
+  for (int d = -DIV_CW_BINS; d <= DIV_CW_BINS; d++) {
+    int idx = (peak + d) % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    p_tone += (double)fftout0[idx][0] * fftout0[idx][0]
+            + (double)fftout0[idx][1] * fftout0[idx][1]
+            + (double)fftout1[idx][0] * fftout1[idx][0]
+            + (double)fftout1[idx][1] * fftout1[idx][1];
+  }
+
+  double n_floor_avg = 0.5 * (n0_floor + n1_floor);
+  double tone_snr = (n_floor_avg > 0.0) ? (p_tone / (3.0 * n_floor_avg)) : 0.0;
+  double passband_mean = p_passband_sum / (double)passband_bins;
+  double crest_factor = (passband_mean > 0.0) ? (p_tone / (3.0 * passband_mean)) : 0.0;
+
+  int is_keydown   = (tone_snr >= DIV_CW_SNR_THRESH);
+  int is_transient = (crest_factor < DIV_CW_CREST_THRESH);
+
+  if (!is_keydown || is_transient) {
+    if (div_auto_carrier_valid) {
+      const double sa = div_carrier_hz - ((double)DIV_CW_BINS + 0.5) * binhz;
+      const double sb = div_carrier_hz + ((double)DIV_CW_BINS + 0.5) * binhz;
+      div_auto_occ_lo = (sa < sb) ? sa : sb;
+      div_auto_occ_hi = (sa < sb) ? sb : sa;
+      div_auto_occ_valid = 1;
+    } else {
+      div_auto_occ_valid = 0;
+    }
+    div_hold_or_stand_down();
+    return;
+  }
+
+  //
+  // Smoothly track peak tone frequency (div_carrier_hz) across Key-DOWN blocks
+  //
+  double peak_hz = -((double)peak) * binhz - div_frame_off(ctx);
+
+  if (!div_auto_carrier_valid) {
+    div_carrier_hz = peak_hz;
+    div_auto_carrier_valid = 1;
+  } else {
+    double alpha_carrier = 1.0 - exp(-blocktime / div_auto_tau);
+    div_carrier_hz += alpha_carrier * (peak_hz - div_carrier_hz);
+  }
+
+  div_auto_carrier = div_carrier_hz;
+
+  //
+  // 4. Key-DOWN: Accumulate spectra over 3 tone bins (peak-1 .. peak+1)
+  //
+  double alpha = 1.0 - exp(-blocktime / div_auto_tau);
+
+  if (!acc_valid) {
+    alpha = 1.0;
+    acc_valid = 1;
+  }
+
+  double sig_xy_re = 0.0, sig_xy_im = 0.0, sig_xx = 0.0, sig_yy = 0.0;
+
+  for (int d = -DIV_CW_BINS; d <= DIV_CW_BINS; d++) {
+    int idx = (peak + d) % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+
+    bin_xy_re[idx] += alpha * ((i0 * i1 + q0 * q1) - bin_xy_re[idx]);
+    bin_xy_im[idx] += alpha * ((q0 * i1 - i0 * q1) - bin_xy_im[idx]);
+    bin_xx[idx]    += alpha * ((i0 * i0 + q0 * q0) - bin_xx[idx]);
+    bin_yy[idx]    += alpha * ((i1 * i1 + q1 * q1) - bin_yy[idx]);
+
+    sig_xy_re += bin_xy_re[idx];
+    sig_xy_im += bin_xy_im[idx];
+    sig_xx    += bin_xx[idx];
+    sig_yy    += bin_yy[idx];
+  }
+
+  if (sig_xx <= 0.0 || sig_yy <= 0.0) {
+    div_auto_occ_valid = 0;
+    div_hold_or_stand_down();
+    return;
+  }
+
+  // Publish occupied tone span centered on tracked average carrier offset
+  {
+    const double sa = div_carrier_hz - ((double)DIV_CW_BINS + 0.5) * binhz;
+    const double sb = div_carrier_hz + ((double)DIV_CW_BINS + 0.5) * binhz;
+    div_auto_occ_lo = (sa < sb) ? sa : sb;
+    div_auto_occ_hi = (sa < sb) ? sb : sa;
+    div_auto_occ_valid = 1;
+  }
+
+  double xy2 = sig_xy_re * sig_xy_re + sig_xy_im * sig_xy_im;
+  div_auto_coherence = xy2 / (sig_xx * sig_yy);
+
+  if (div_auto_coherence > 1.0) { div_auto_coherence = 1.0; }
+
+  if (div_auto_coherence < div_auto_coherence_min) {
+    div_hold_or_stand_down();
+    return;
+  }
+
+  div_auto_holding = 0;
+  quiet_run = 0;
+  div_leave_standdown();
+
+  // Per-arm SNR
+  {
+    double db = 0.0;
+    int ok = 0;
+
+    if (n0_floor > 0.0 && n1_floor > 0.0 && sig_xx > 0.0 && sig_yy > 0.0) {
+      db = 10.0 * log10((sig_xx / n0_floor) / (sig_yy / n1_floor));
+      ok = 1;
+    }
+
+    div_arm_publish(ok, db);
+  }
+
+  if (div_auto_mode == DIV_AUTO_BEST) {
+    div_apply_best(sig_xy_re / sig_xx, sig_xy_im / sig_xx);
+    return;
+  }
+
+  if (div_auto_mode == DIV_AUTO_NULL) {
+    div_apply_weight(-sig_xy_re / sig_yy, -sig_xy_im / sig_yy);
+    return;
+  }
+
+  // DIV_AUTO_SUM: Maximum Ratio Combining with Branch Noise Ratio (N0/N1)
+  double n_ratio = (n0_floor > 0.0 && n1_floor > 0.0) ? (n0_floor / n1_floor) : 1.0;
+  div_apply_weight(n_ratio * sig_xy_re / sig_xx, n_ratio * sig_xy_im / sig_xx);
+}
+
 #ifdef DIVERSITY_CAPTURE
 //
 // DEVELOPMENT TOOL - remove with the rest of the capture instrument.
@@ -3222,6 +3473,11 @@ static void div_process_block(void) {
   //
   if (ctx.ref == DIV_REF_DIGITAL_IQ) {
     div_digital_solve(&ctx, klo, khi);
+    return;
+  }
+
+  if (ctx.ref == DIV_REF_CW) {
+    div_cw_solve(&ctx, klo, khi);
     return;
   }
 
@@ -3916,6 +4172,8 @@ static double div_cohmin_for_ref(int ref) {
 
   case DIV_REF_DIGITAL_IQ: return div_digital_cohmin;
 
+  case DIV_REF_CW:         return div_cw_cohmin;
+
   case DIV_REF_RADE_V1:    return div_rade_cohmin;
 
   default:                 return div_band_cohmin;
@@ -3994,7 +4252,7 @@ double diversity_auto_coh_floor(int ref) {
     // window controls say.
     //
     width = (2.0 * DIV_CARRIER_BINS + 1.0) * bhz;
-  } else if (ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
+  } else if ((ref == DIV_REF_DIGITAL_IQ || ref == DIV_REF_CW) && div_auto_occ_valid) {
     //
     // Only the occupied bins are accumulated, so those are what the gate
     // is measured over - not the search region they were found in.
@@ -4068,6 +4326,10 @@ void diversity_auto_ref_store(int ref) {
     div_digital_centre = div_auto_centre;
     div_digital_width  = div_auto_width;
     div_digital_cohmin = div_auto_coherence_min;
+  } else if (ref == DIV_REF_CW) {
+    div_cw_centre = div_auto_centre;
+    div_cw_width  = div_auto_width;
+    div_cw_cohmin = div_auto_coherence_min;
   }
 
   //
@@ -4088,6 +4350,9 @@ void diversity_auto_ref_recall(int ref) {
   } else if (ref == DIV_REF_DIGITAL_IQ) {
     div_auto_centre = div_digital_centre;
     div_auto_width  = div_digital_width;
+  } else if (ref == DIV_REF_CW) {
+    div_auto_centre = div_cw_centre;
+    div_auto_width  = div_cw_width;
   }
 
   div_auto_coherence_min = div_cohmin_for_ref(ref);
@@ -4110,12 +4375,15 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->carrier_cohmin = div_carrier_cohmin;
   s->digital_cohmin = div_digital_cohmin;
   s->rade_cohmin    = div_rade_cohmin;
+  s->cw_cohmin      = div_cw_cohmin;
   s->band_centre    = div_band_centre;
   s->band_width     = div_band_width;
   s->carrier_centre = div_carrier_centre;
   s->carrier_width  = div_carrier_width;
   s->digital_centre = div_digital_centre;
   s->digital_width  = div_digital_width;
+  s->cw_centre      = div_cw_centre;
+  s->cw_width       = div_cw_width;
 }
 
 //
@@ -4140,6 +4408,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_carrier_cohmin     = s->carrier_cohmin;
   div_digital_cohmin     = s->digital_cohmin;
   div_rade_cohmin        = s->rade_cohmin;
+  div_cw_cohmin          = s->cw_cohmin;
   //
   // The live threshold always belongs to the selected reference. Taking
   // it from the slot rather than from s->coherence_min is what makes that
@@ -4156,6 +4425,8 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_carrier_width      = s->carrier_width;
   div_digital_centre     = s->digital_centre;
   div_digital_width      = s->digital_width;
+  div_cw_centre          = s->cw_centre;
+  div_cw_width           = s->cw_width;
 }
 
 //
@@ -4464,7 +4735,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
     s->mode = DIV_AUTO_OFF;
   }
 
-  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_DIGITAL_IQ) {
+  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_CW) {
     s->ref = DIV_REF_BAND;
   }
 
@@ -4485,13 +4756,12 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->weighting = DIV_WEIGHT_FLAT;
 
   //
-  // The live threshold and the three references whose gate has a slider.
-  // RADE V1's is not one of them - it is pinned below, for the reasons
-  // set out there - so four values, not five.
+  // The live threshold and the references whose gate has a slider.
+  // RADE V1's is not one of them.
   //
   {
     double *c[] = { &s->coherence_min, &s->band_cohmin, &s->carrier_cohmin,
-                    &s->digital_cohmin
+                    &s->digital_cohmin, &s->cw_cohmin
                   };
 
     for (unsigned i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
@@ -4568,10 +4838,10 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // div_bin_range() does the real limiting against the Nyquist frequency
   // at the rate in use.
   //
-  double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width };
-  double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre };
+  double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width, &s->cw_width };
+  double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre, &s->cw_centre };
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 5; i++) {
     if (*widths[i] < 20.0)    { *widths[i] = 20.0; }
 
     if (*widths[i] > 40000.0) { *widths[i] = 40000.0; }
@@ -4611,6 +4881,9 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
   SetPropF1("diversity_group[%d].carrier_width",  g, s->carrier_width);
   SetPropF1("diversity_group[%d].digital_centre", g, s->digital_centre);
   SetPropF1("diversity_group[%d].digital_width",  g, s->digital_width);
+  SetPropF1("diversity_group[%d].cw_cohmin",       g, s->cw_cohmin);
+  SetPropF1("diversity_group[%d].cw_centre",       g, s->cw_centre);
+  SetPropF1("diversity_group[%d].cw_width",        g, s->cw_width);
 }
 
 //
@@ -4636,12 +4909,15 @@ static void div_group_restore(int g, DIV_SETTINGS *s) {
   GetPropF1("diversity_group[%d].carrier_cohmin", g, s->carrier_cohmin);
   GetPropF1("diversity_group[%d].digital_cohmin", g, s->digital_cohmin);
   GetPropF1("diversity_group[%d].rade_cohmin",    g, s->rade_cohmin);
+  GetPropF1("diversity_group[%d].cw_cohmin",      g, s->cw_cohmin);
   GetPropF1("diversity_group[%d].band_centre",    g, s->band_centre);
   GetPropF1("diversity_group[%d].band_width",     g, s->band_width);
   GetPropF1("diversity_group[%d].carrier_centre", g, s->carrier_centre);
   GetPropF1("diversity_group[%d].carrier_width",  g, s->carrier_width);
   GetPropF1("diversity_group[%d].digital_centre", g, s->digital_centre);
   GetPropF1("diversity_group[%d].digital_width",  g, s->digital_width);
+  GetPropF1("diversity_group[%d].cw_centre",       g, s->cw_centre);
+  GetPropF1("diversity_group[%d].cw_width",        g, s->cw_width);
 }
 
 void diversity_auto_save_state(void) {
@@ -4682,6 +4958,9 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_carrier_width",       div_carrier_width);
   SetPropF0("diversity_digital_centre",      div_digital_centre);
   SetPropF0("diversity_digital_width",       div_digital_width);
+  SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
+  SetPropF0("diversity_cw_centre",           div_cw_centre);
+  SetPropF0("diversity_cw_width",            div_cw_width);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -4706,17 +4985,20 @@ void diversity_auto_restore_state(void) {
   // inherits the single diversity_auto_coherence_min just read, which is
   // exactly the behaviour that file was written under.
   //
-  div_band_cohmin = div_carrier_cohmin = div_digital_cohmin = div_auto_coherence_min;
+  div_band_cohmin = div_carrier_cohmin = div_digital_cohmin = div_cw_cohmin = div_auto_coherence_min;
   GetPropF0("diversity_band_cohmin",         div_band_cohmin);
   GetPropF0("diversity_carrier_cohmin",      div_carrier_cohmin);
   GetPropF0("diversity_digital_cohmin",      div_digital_cohmin);
   GetPropF0("diversity_rade_cohmin",         div_rade_cohmin);
+  GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_band_centre",         div_band_centre);
   GetPropF0("diversity_band_width",          div_band_width);
   GetPropF0("diversity_carrier_centre",      div_carrier_centre);
   GetPropF0("diversity_carrier_width",       div_carrier_width);
   GetPropF0("diversity_digital_centre",      div_digital_centre);
   GetPropF0("diversity_digital_width",       div_digital_width);
+  GetPropF0("diversity_cw_centre",           div_cw_centre);
+  GetPropF0("diversity_cw_width",            div_cw_width);
 
   //
   // Migrate a reference written under the old numbering. Absent key means

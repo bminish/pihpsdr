@@ -58,7 +58,8 @@ enum {
   DIV_REF_BAND = 0,   // all bins in the analysis window ("A")
   DIV_REF_CARRIER,    // the carrier bin only, found by our own tracker ("B")
   DIV_REF_RADE_V1,    // RADE V1 pilot correlation + MVDR
-  DIV_REF_DIGITAL_IQ  // occupied bins in the window, split, then MVDR
+  DIV_REF_DIGITAL_IQ, // occupied bins in the window, split, then MVDR
+  DIV_REF_CW          // CW / Morse (OOK MRC with transient rejection & noise scaling)
 };
 
 //
@@ -106,7 +107,7 @@ extern int    div_auto_normalise;
 extern double div_auto_resolution;      // requested bin width, Hz
 
 //
-// The window controls are modal: the Window, Carrier and FSK/Digital
+// The window controls are modal: the Window, Carrier, FSK/Digital and CW
 // references each keep their own pair. div_auto_centre/width are the
 // active pair.
 //
@@ -116,9 +117,11 @@ extern double div_carrier_centre;
 extern double div_carrier_width;
 extern double div_digital_centre;
 extern double div_digital_width;
+extern double div_cw_centre;
+extern double div_cw_width;
 //
 // The coherence threshold is modal on the *reference*, not the mode: the
-// four references do not compare the same quantity. div_auto_coherence_min
+// references do not compare the same quantity. div_auto_coherence_min
 // always holds the value for whichever reference is selected; these hold
 // the rest. See the note in diversity_auto.c.
 //
@@ -126,6 +129,7 @@ extern double div_band_cohmin;
 extern double div_carrier_cohmin;
 extern double div_digital_cohmin;
 extern double div_rade_cohmin;
+extern double div_cw_cohmin;
 
 //
 // Status: the window had to be clamped to the Nyquist limit, and the bin
@@ -270,10 +274,11 @@ typedef struct _div_settings {
   // beside div_band_cohmin in diversity_auto.c. coherence_min above is
   // the live one, for whichever reference is selected.
   //
-  double band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin;
+  double band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin, cw_cohmin;
   double band_centre, band_width;
   double carrier_centre, carrier_width;
   double digital_centre, digital_width;
+  double cw_centre, cw_width;
 } DIV_SETTINGS;
 
 typedef struct _div_status {

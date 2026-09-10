@@ -305,8 +305,10 @@ whatever RX2's own volume had last been set to and would not move.)
 Two other things worth knowing:
 
 - **Frequency, mode and filter follow the main receiver**, in both ears,
-  automatically. Your VFO B is untouched — split transmit still works
-  exactly as before.
+  automatically — including under CTUN, where what the receiver listens
+  to is a shift inside the passband rather than the LO, and with RIT and
+  the CW BFO for the same reason. Your VFO B is untouched — split
+  transmit still works exactly as before.
 - In **SAM** the two ears keep their own sideband settings, on purpose.
   Set one to LSB and the other to USB and you have independent-sideband
   reception of an AM station in stereo.

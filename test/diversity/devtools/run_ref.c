@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
       }
     }
     else if (argv[i][0] == '-') {
-      fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital --out W.csv\n"
+      fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
               "       [--mode null|sum|best] [--weighting flat|coherence]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
               "       [--noise RMS] [--seed N] [--resolution HZ]\n"
@@ -236,6 +236,7 @@ int main(int argc, char **argv) {
   else if (!strcmp(refname, "carrier")) { ref = DIV_REF_CARRIER; }
   else if (!strcmp(refname, "rade"))    { ref = DIV_REF_RADE_V1; }
   else if (!strcmp(refname, "digital")) { ref = DIV_REF_DIGITAL_IQ; }
+  else if (!strcmp(refname, "cw"))      { ref = DIV_REF_CW; }
   else { fprintf(stderr, "%s: unknown reference \"%s\"\n", argv[0], refname); return 2; }
 
   struct divcap_header h;
