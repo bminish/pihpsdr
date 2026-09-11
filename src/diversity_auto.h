@@ -120,6 +120,15 @@ extern double div_digital_width;
 extern double div_cw_centre;
 extern double div_cw_width;
 //
+// The CW activity gate: how far the window's peak has to stand above the
+// quietest it has recently been before the loop believes something is
+// being keyed. Bounded - see DIV_CW_ACT_MAX in diversity_auto.c - because
+// past that the gate stops the mode rather than degrading it.
+// div_cw_act_db is the statistic itself, for the menu readout.
+//
+extern double div_cw_activity;
+extern double div_cw_act_db;
+//
 // The coherence threshold is modal on the *reference*, not the mode: the
 // references do not compare the same quantity. div_auto_coherence_min
 // always holds the value for whichever reference is selected; these hold
@@ -279,6 +288,7 @@ typedef struct _div_settings {
   double carrier_centre, carrier_width;
   double digital_centre, digital_width;
   double cw_centre, cw_width;
+  double cw_activity;
 } DIV_SETTINGS;
 
 typedef struct _div_status {

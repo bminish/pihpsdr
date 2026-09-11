@@ -3,6 +3,22 @@ LIST OF RECENT PIHPSDR CHANGES
 September 2026:
 ---------------
 
+- diversity: the CW/Morse reference tells a keyed signal from a steady one.
+  It compares the strongest bin in the window with the quietest that bin has
+  recently been - Morse stops between letters, words and overs and a carrier
+  does not - which is a thing no single block can see and the reason the old
+  key-down test rejected 0 of 4123 blocks. On a 20 m recording with a
+  heterodyne two bins from the zero beat the tracker sat on the carrier for
+  38 % of blocks; it is now 3 %. A four-position "Key detect" control, not a
+  slider: every setting rejects a carrier equally and what rises with the
+  setting is the signal strength the loop needs, so there is nothing above
+  the top position worth reaching
+
+- diversity: the CW reference's coherence default is 0.10 rather than 0.20,
+  and the CW mode group's averaging default is 0.2 s rather than 0.5 s.
+  Both measured over eleven CW recordings; the averaging change is a
+  per-group default, so nothing outside CW moves
+
 - diversity: a CW / Morse reference for the auto-phasing loop. It takes the
   CW filter as its search region, finds the strongest tone in it and
   combines over that tone and its neighbours, with the branch noise ratio
