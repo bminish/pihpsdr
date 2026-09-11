@@ -121,7 +121,7 @@ int main(void) {
   run_blocks(20, f_raw, 0.0, 0.02, hr, hi);
   g_usleep(200000);
 
-  double hold_carrier = div_auto_carrier;
+  /* the tracked tone is re-read after the pause; see the check below */
   int hold_occ_valid = div_auto_occ_valid;
   double hold_occ_center = 0.5 * (div_auto_occ_lo + div_auto_occ_hi);
 

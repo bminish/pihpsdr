@@ -354,8 +354,26 @@
 //
 // CW / Morse (OOK MRC) tunables
 //
-#define DIV_CW_SNR_THRESH    1.58   // +2.0 dB tone SNR over noise floor
-#define DIV_CW_CREST_THRESH  2.00   // +6.0 dB spectral crest factor (rejects keyclicks/impulses)
+//
+// DIV_CW_SNR_THRESH is compared against p_tone, which carries *both*
+// arms, over a floor that is the mean of the two per-arm floors - so the
+// ratio runs 3 dB high and the gate stands 3 dB looser than the figure
+// here. It makes no difference to what the gate does, because it does
+// not do anything: over the eleven CW captures in
+// docs/diversity-measurements.md it rejected 0 of 4123 blocks, and at a
+// correct +2.0 dB it still rejects none. The peak bin of a window
+// compared against a low percentile of that same window is the maximum
+// of the sample against its own tenth percentile, which for ~70 noise
+// bins sits around +17 dB whether the key is down or up. A test that
+// can tell key-down from key-up has to compare against something the
+// block does not contain - a temporal reference, of the kind
+// div_arm_floor_update() already maintains, or the stale-signal check
+// div_digital_solve() makes at DIV_STALE_DB - and that has not been
+// built. Until it is, this constant documents an intention rather than
+// a behaviour.
+//
+#define DIV_CW_SNR_THRESH    1.58   // +2.0 dB tone SNR over noise floor (see above)
+#define DIV_CW_CREST_THRESH  2.00   // +3.0 dB spectral crest factor (rejects keyclicks/impulses)
 #define DIV_CW_BINS          1      // 1 bin either side of peak tone (3 bins total)
 
 
@@ -2798,9 +2816,26 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   //
   // 2. Measure in-passband off-tone noise floor (|k - peak| >= 4)
   //
+  // Strided down to what nf_scratch0/1 actually hold. They are
+  // DIV_NF_SAMPLES long, not DIV_OCC_MAX_SAMPLES: the bound this loop
+  // was written with belongs to occ_scratch, which is four times the
+  // size, so a window holding more than DIV_NF_SAMPLES bins wrote past
+  // the end of both buffers and then sorted what it had written. That is
+  // reached by ordinary settings - any hand-placed window past about
+  // 6 kHz at the finest Resolution, and the follow tick on a filter that
+  // wide in any mode the reference can be selected in - and it was
+  // reached by test/diversity/test_cw.c itself, which follows a 16 kHz
+  // filter.
+  //
+  // Same treatment as div_noise_floor_update() and the occupancy split:
+  // a wider region is sampled, not sorted in full. The percentile is
+  // unaffected by striding and the two qsorts stay bounded, which is
+  // also what keeps the per-block cost flat in the window width.
+  //
+  const int nf_stride = (n > DIV_NF_SAMPLES) ? (n / DIV_NF_SAMPLES + 1) : 1;
   int nns = 0;
 
-  for (int k = klo; k <= khi && nns < DIV_OCC_MAX_SAMPLES; k++) {
+  for (int k = klo; k <= khi && nns < DIV_NF_SAMPLES; k += nf_stride) {
     if (abs(k - peak) < 4) { continue; }
 
     int idx = k % nfft;
@@ -2948,13 +2983,21 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   quiet_run = 0;
   div_leave_standdown();
 
-  // Per-arm SNR
+  //
+  // Per-arm SNR. div_arm_publish() takes the advantage of *arm 1* - see
+  // div_arm_from_floor(), which forms (s1/n1)/(s0/n0), and
+  // div_apply_best(), which reads a positive value as "switch to arm 1".
+  // Written the other way up this published arm 0's advantage, so Best
+  // on this reference selected the worse antenna: measured over the
+  // eleven CW captures the readout's sign agreed with the truth on 36 %
+  // of them against the Window reference's 91 %.
+  //
   {
     double db = 0.0;
     int ok = 0;
 
     if (n0_floor > 0.0 && n1_floor > 0.0 && sig_xx > 0.0 && sig_yy > 0.0) {
-      db = 10.0 * log10((sig_xx / n0_floor) / (sig_yy / n1_floor));
+      db = 10.0 * log10((sig_yy / n1_floor) / (sig_xx / n0_floor));
       ok = 1;
     }
 
