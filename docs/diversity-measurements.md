@@ -25,6 +25,21 @@ a new question about what the loop leaves applied while it holds. Getting
 them needed **three fixes to the instrumentation itself**, which are in
 "What was changed" and which qualify a good deal of what is above them.
 
+**Findings 50 and 51 add nine captures and a CW reference.** 50 is the
+first answer in this document with an interval on it - thirteen captures
+of one mode - and it is not the answer the mode was written expecting: the
+CW reference is a wash against Window, its key-down gate never fired once
+in 4123 blocks, and the one component that works is worth about a tenth of
+a decibel. What came out of it is a working discriminant between a keyed
+signal and a steady carrier, which cuts false locks on the capture that
+has one from 38 % of blocks to 3 %. 51 is the notch carve-out, which is
+proved inert when unused and **has no on-air measurement at all**.
+
+Two of this document's own measurements are corrected in place there: a
+7-bin tone span that was really a looser crest gate, and a replica of the
+solve that put an optimum where the shipping engine loses 0.3 dB. Both are
+left in with the correction beside them rather than deleted.
+
 **Finding 11** - the MVDR solve returning a weight of exactly zero, the
 second antenna muted, the menu showing -27 dB, on between half and all of
 the frames of every RADE capture in this document bar one - has been
@@ -622,6 +637,15 @@ recording.
 | `190932` | 3.65400 | DIGL | RADE V1 | the same at averaging **2.05 s**, four searches |
 | `193007` | 3.65400 | DIGL | RADE V1 | nfft 16384 - **opens with a RADE signal too weak to sync**, four failed confirmations in 22 s, then a strong one |
 | `193105` | 3.65400 | DIGL | RADE V1 | nfft 16384, **six lock-and-drop cycles in the minute**; **opens already locked, so it does not `--verify`** (Finding 45) |
+| `001142` | 7.048992 | CWL | **CW** | 40 m CW, 5.86 Hz bins, 400 Hz filter, **objective switched Sum -> Null -> Sum on air**, ADC0 at 10 dB |
+| `001628` | 7.051450 | CWL | **CW** | the weakest in the CW set - arm 0 stands 7.5 dB out of the noise. 803 Hz filter, averaging swept 0.33 to 0.92 s |
+| `002049` | 7.053975 | CWL | **CW** | 1 kHz filter, **6 % key-down** - effectively a no-signal capture and used as one |
+| `002209` | 7.053975 | CWL | **CW** | **operator sweeps the filter 1000 Hz down to 26 Hz and back**, then retunes 4.95 kHz |
+| `135657` | 14.010700 | CWL | **CW** | 20 m CW, 36 s only, ADC0 at 3 dB |
+| `135736` | 14.010700 | CWL | **CW** | nfft 16384, **operator walks the dial up 5.5 kHz** across the minute |
+| `135857` | 14.030050 | CWL | **CW** | nfft 8192, **23.4 Hz bins and 21 bins in the whole window** - a weak carrier inside the tone span, and the operator stepping the dial 1 Hz at a time |
+| `143433` | 14.028550 | CWL | **CW** | **the carrier capture**: a heterodyne two bins from the zero beat that holds through a 15 s gap where every station stops. Finding 50 |
+| `143734` | 14.026975 | CWL | **CW**, **hand-placed** | **keyclicks**: a station whose keying transients raise the whole passband 18.8 dB, nulled from a 110 Hz window on the skirt at +140 Hz |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -698,6 +722,20 @@ omission has now cost something in three findings. The attenuator is the
 worse gap of the two: `struct divcap_block` mirrors no `att0`/`att1`
 field, so on `002710` the two settings the operator chose have to be
 inferred from arm 1's own noise floor.
+
+The nine captures from September 10-11 are the first taken with the
+**CW / Morse** reference selected, and the first set recorded to answer a
+question about that reference rather than about the path. Four are on
+40 m and five on 20 m; all are `CWL`, all have ADC1 running 8.4 to
+11.7 dB hotter in noise than ADC0, and none has a note. `143433` and
+`143734` are the two that carry the findings: one has a steady carrier
+sitting where the tracker most wants to look, the other has a keyclick
+source and the operator hand-placing a null window on its skirt. See
+Finding 50.
+
+Together with `001054`, `001157`, `002710` and `142333` they make
+**thirteen CW captures**, which is the first time any single mode in this
+document has had enough of them to put an interval on an answer.
 
 `231724` and `232052` are a matched pair: same band, same path, five
 minutes apart, one running each reference. That comparison did more work
@@ -7480,6 +7518,282 @@ the most.
 stand-down for RADE V1 should look like. It settles that there has to be
 one.
 
+## Finding 50: the CW reference, thirteen captures, and what a keyed signal has that a carrier does not
+
+`DIV_REF_CW` went in on measurements from two captures. Nine more were
+recorded to score it properly, which with the four CW captures already in
+the set makes thirteen - enough to put an interval on the answer for the
+first time in any single mode here.
+
+The yardstick is **tone-to-noise of the key-down-averaged spectrum**: the
+mean of the three bins at the tone, less the window's off-tone median,
+over that median. It is a ratio taken inside one spectrum, so any constant
+gain cancels and Trap 4 does not apply. Two details decide whether the
+numbers mean anything. The key-down block set is chosen from `arm0 + arm1`
+and never from the candidate stream, so every weight is scored on the same
+blocks. And the weight applied to block *n* is the one block *n-1*
+produced - the same one-block lag the instrument records. **Scoring a
+block with the weight derived from itself flatters an adaptive weight by
+up to 9 dB**, which is a trap worth adding to the four at the top: it
+looks like a combiner gain and it is a measurement error.
+
+Two captures carry no usable signal - `002049` at 6 % key-down, and
+`001054`, which has eight key-down blocks and a bootstrap spread of
++/-3 dB across resamples of them. They are reported but excluded from
+every mean below, because a score computed on eight blocks is noise and
+allowing it into an average of eleven hides the answer.
+
+### What it was worth, as it shipped
+
+Sum objective, defaults as recorded, against the better of the two
+antennas used alone:
+
+| | CW | Window | FSK/Digital |
+|---|---|---|---|
+| mean, 11 captures | **-0.05 dB** | -0.14 | -0.42 |
+| beats the better antenna | 7 / 11 | 7 / 11 | 4 / 11 |
+
+**CW - Window is +0.10 dB, 95 % CI [-0.46, +0.66].** There is no
+measurable benefit over the reference that was already there. It does beat
+FSK/Digital by 0.37 dB, which corroborates Finding 8's advice without
+vindicating the new mode.
+
+The centre weighting is the one component that does what its comment says.
+Over 1409 key-down blocks it puts the peak on the wanted tone 82.6 % of
+the time against 80.5 % for a plain argmax - 46 blocks rescued, 16 broken,
+and on the widest filter in the set (`001628`, 803 Hz) 13 rescued and none
+broken. It earns its place and it is worth about a tenth of a decibel,
+because the blocks it rescues were mostly being tracked correctly anyway.
+
+### The key-down gate never fired
+
+Over all thirteen captures - **4123 blocks** - the `DIV_CW_SNR_THRESH`
+test rejected **zero**. Not few: none, anywhere, and none either with the
+3 dB scaling error corrected so the constant means what it says.
+
+The reason is structural. The test compared the window's own peak bin
+against a low percentile of that same window, which is the maximum of a
+sample against its own tenth percentile. For a few dozen Rayleigh bins
+that ratio is about **+17 dB with no signal present at all**. No threshold
+in the range anyone would choose can see key-up through it.
+
+The crest gate does fire - 0.6 % to 37 % of blocks depending on the
+capture - but ablating it moves the mean score by **+0.01 dB**.
+
+### `143433`: a carrier where the tracker most wants to look
+
+Two bins at +12 to +23 Hz hold +7 to +8 dB over the floor right through a
+fifteen-second gap in which every station stops, with a 90/10 spread of
+3.7 dB against 8 to 11 dB for the keyed bins. It is a carrier, and it sits
+almost exactly at the centre of the analysis window - which is where the
+Gaussian weighting is strongest, so the one component that works is
+actively helping it win.
+
+Measured on the shipping path from `div_auto_carrier`, the tracked readout
+the operator actually sees: **38.1 % of the blocks that produced a weight
+had the tracker sitting on the carrier.**
+
+### Why the keying rate cannot be the discriminant
+
+The obvious approach is to look for the keying in the envelope spectrum,
+and the arithmetic rules it out before any capture does. At *N* WPM a dot
+is `1.2/N` seconds, so a string of dots modulates the envelope at `N/2.4`
+Hz - 4.2 Hz at 10 WPM, 14.6 Hz at 35 WPM. The engine sees one sample per
+analysis block:
+
+| Resolution | block | block rate | Nyquist | reaches 10 WPM? | 35 WPM? |
+|---|---|---|---|---|---|
+| 24 Hz | 42.7 ms | 23.4 /s | 11.7 Hz | yes | no |
+| 12 Hz | 85.3 ms | 11.7 /s | 5.86 Hz | marginal | no |
+| 6 Hz | 170.7 ms | 5.86 /s | 2.93 Hz | no | no |
+
+At 6 Hz bins a single block is longer than a 35 WPM *letter*. Nothing
+downstream of the transform can recover a rate it never sampled.
+
+What survives the block rate is that **Morse stops** - between letters,
+between words, between overs - and a carrier does not. That is a statement
+about the recent past, so it needs a temporal reference, which is exactly
+what the mode never had.
+
+### The statistic that works, and the one that does not
+
+**Per-bin contrast works on the bin the tracker picked** and not as a
+window-wide test. Causally, with a peak follower and a minimum hold, the
+contrast at the picked bin is a median of **1.0 dB when the pick is the
+carrier against 51.1 dB when it is a CW signal**, and a threshold anywhere
+from 4 to 12 dB separates them with no false rejection of CW on that
+capture.
+
+It cannot be used to ask "is anything keying in this window", because a
+single noise bin is exponentially distributed and swings 15 dB on its own,
+so the maximum over forty-odd such bins is never quiet. That version of
+the gate fired on nothing.
+
+**The peak power against its own temporal floor does work**, because the
+maximum over bins is a far more stable statistic than any one bin. On
+`143433` it reads:
+
+| | median |
+|---|---|
+| during the 15 s gap | **0.0 dB** |
+| while stations work | 31.1 dB |
+| on true key-down | 42.2 dB (10th percentile 9.9) |
+
+### What it is worth, and where the threshold goes
+
+On the shipping path, with the gate prototyped behind an environment
+variable in a build that is byte-identical to the engine when it is off:
+
+| threshold | off | 2 dB | 3 dB | 4 dB | 5 dB | 6 dB |
+|---|---|---|---|---|---|---|
+| carrier locks, `143433` | **38.1 %** | 3.9 % | 3.4 % | 3.5 % | 3.5 % | 3.6 % |
+| mean score, 11 captures | +0.13 | +0.38 | **+0.42** | +0.30 | +0.39 | +0.39 |
+| worst capture | -3.47 | -0.60 | -0.59 | -0.59 | -0.60 | -0.58 |
+| beats the better antenna | 7/11 | 9/11 | 8/11 | 8/11 | 9/11 | **10/11** |
+
+Every setting from 2 dB up rejects the carrier equally. What rises with
+the threshold is the **signal strength the loop needs**, because a keyed
+signal *n* dB out of the noise produces an activity reading of about *n*
+dB: on `001628`, the weakest capture at 7.5 dB, the loop updates on 17 %
+of blocks at 2 dB and 4 % at 6 dB. The score surface across the range is a
+wash, every interval spanning zero, so the setting is chosen as **the
+lowest that gets the whole benefit** - 3 dB.
+
+Above the range it stops the mode rather than degrading it. At 10 dB the
+mean falls to -0.69, at 14 dB to -1.27 with the loop updating on 14 % of
+blocks and two captures losing 4 to 6 dB. That is the argument for a
+four-position control rather than a slider.
+
+**The floor's rise rate** is flat from 3 to 12 dB/s and then falls off a
+cliff - mean +0.26 dB at 12 dB/s against -0.71 at 24 and -0.97 at 48 -
+because past about 20 dB/s the floor recovers inside a *dot* rather than
+inside a gap. It is a constant at 12 dB/s, not a control.
+
+### A replica is not the shipping path, and said the opposite
+
+A Python replica of the solve, without the slew and the Hold, put the
+optimum at a 10 dB threshold and scored it +0.58 dB. **On the real engine
+that setting loses 0.32 dB**, because the replica could not see the
+estimator being starved: the shipping loop already holds through the
+quiet, so cutting its update rate from 61 % to 18 % of blocks costs more
+than the gate buys.
+
+Every number in the two tables above is from the shipping engine. The
+replica's only surviving use was ablating components against each other,
+where both sides share the same handicap.
+
+### `143734`: the keyclick null, and what it actually got
+
+A station at +47 to +94 Hz whose keying transients raise the **whole**
+passband by 18.8 dB. The operator hand-placed a 110 Hz window at +140 Hz -
+on the click skirt, clear of the wanted signal - and ran Null. Scored
+inside the Null blocks only, as the ratio of click energy to the local
+noise floor at the centre of the passband:
+
+| | clicks over the floor | vs arm 0 | `\|w\|` |
+|---|---|---|---|
+| arm 0 alone | 6.19 dB | +0.00 | 0.00 |
+| arm 1 alone | 8.23 dB | +2.04 | - |
+| **as it ran on air** | 4.27 dB | **-1.93** | 0.880 |
+| best single fixed weight | 3.52 dB | -2.67 | 0.589 |
+
+**The null works**: 1.93 dB off the clicks where 2.67 dB was the ceiling
+for any one complex weight, so 72 % of what was available. Arm 1 alone is
+2 dB *worse*, so this is cancellation and not antenna selection.
+
+The 0.74 dB left behind is a weight running 50 % too large. Null is
+deliberately not scaled by the branch noise ratio - correct when the
+objective is minimum output power, which is what Null means. It is not
+what the operator wanted here, which was minimum interference *relative to
+the noise floor* on a pair 9 dB apart in noise. **One capture is not
+enough to overturn a decision measured across the whole set**; see "What
+to record next".
+
+### `135857`: where the resolution trade bites hardest
+
+Recorded at 23.44 Hz bins with a 492 Hz filter, which leaves **21 bins in
+the whole window**. The wanted tone and the weak carrier beside it are
+smeared across `k = +1..+5` and the peak stands 4.5 dB above the window
+median. At that bin width the three-bin tone span covers 70 Hz, so the
+interferer sits *inside* the bins being accumulated: the correlator is not
+choosing between two signals, it is measuring their sum. Every reference
+loses on it - CW -0.50, Window -0.14, FSK/Digital -2.72.
+
+Separating the two carriers wants a finer bin; seeing the keying wants a
+shorter block; the Resolution control sets both and they pull opposite
+ways. This is Finding 43's trade in its sharpest form and this capture is
+the one that shows it costing something.
+
+### A measurement of our own that did not survive
+
+Finding 50 originally recorded that widening the tone span from three bins
+to seven was worth **+0.32 dB, 95 % CI [+0.02, +0.61]**. It is wrong. That
+experiment summed the tone over seven bins while still dividing the crest
+factor by three, so the crest gate ran 3.7 dB looser and that, not the
+wider accumulation, is what was being measured.
+
+Re-run with the two spans separated, seven bins beats three by **+0.07 dB,
+CI [-0.02, +0.16]** and five bins by +0.06 [+0.00, +0.11]. Neither is
+worth the change and `DIV_CW_BINS` stays at 1. The lesson is narrow and
+worth keeping: a gate and an estimator that share a span are coupled, and
+changing one silently retunes the other.
+
+### What this does not say
+
+Nothing here is decode-scored - there is no CW decoder in the harness, so
+the yardstick is tone-to-noise and not copy. All thirteen captures have
+ADC1 8 to 12 dB hotter in noise and none has genuinely independent fading
+of the kind Finding 37 found. And thirteen captures with a scatter near
+1 dB resolve effects down to about +/-0.6 dB: a real 0.3 dB advantage for
+this reference would not have been detected.
+
+## Finding 51: the analysis never saw the operator's notches
+
+The auto-phasing transform is taken from the two raw antenna streams, at
+the tap in `div_process_block()`. WDSP's manual notch is applied a long
+way downstream of that. So a notched interferer was still sitting in our
+spectrum at full strength, still being picked as a peak, and still being
+solved for - in every reference that works from the transform.
+
+On the CW reference it is the heterodyne the tracker locks to first, which
+is how it was noticed. On Window it simply dominates the weight in
+proportion to how loud it is.
+
+The mapping needs no CW special case, which is the part worth recording.
+`nbp.c` forms its passband as `flow + ndb->tunefreq + ndb->shift`;
+`tunefreq` is never set by piHPSDR and stays at the zero `create_notchdb()`
+leaves, and `shift` is what `rx_set_offset_for()` passes to
+`RXANBPSetShiftFrequency()` - the VFO offset with the CW sidetone already
+folded in, which is `div_frame_off()` exactly. A notch centre therefore
+lives in the raw frame, and
+
+```
+div_shift_to_bin(s) = -(s + frame_off),   s = centre - frame_off
+```
+
+collapses to a bin frequency of simply `-centre`. The sidetone cancels.
+
+Bins are excluded when they fall **entirely** inside a notch, not when
+they overlap one: a bin straddling a notch edge still carries wanted
+signal, and at a coarse Resolution a narrow notch is narrower than one
+bin, where excluding on overlap would throw away the whole region the
+operator was trying to keep.
+
+`RADE V1` is the one reference this cannot reach - `rade_corr_process()`
+is handed the block in the time domain, so there are no bins to leave out.
+It is also where it would buy least, the pilot correlator looking for a
+specific waveform at a specific offset rather than for whatever is
+loudest.
+
+**Verified inert when unused**: with no notch set, all sixteen
+combinations of four references and four captures replay bit-identically
+to the commit before. That is the check that matters, because this touches
+the accumulation loop of every reference.
+
+There is no on-air measurement of what it is worth, because no capture in
+the set was recorded with a notch set. That is the next thing to record
+against it - see "What to record next".
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -8526,6 +8840,26 @@ on an on-air capture, because every one was armed while the correlator was
 already locked. *Compromise:* arming cold is a matter of pressing the
 button in a different order, so there is nothing to compromise; it just
 has to be remembered.
+
+### For the notch carve-out and the CW null
+
+- **A capture with a notch set.** Any signal, any reference, with one of
+  the three manual notches parked on an interferer inside the passband and
+  a second capture of the same minute without it. *Closes:* Finding 51 has
+  no on-air number at all - only the proof that it changes nothing when no
+  notch is set. *Ideal:* a carrier or a birdie inside a voice passband,
+  strong enough that the weight visibly follows it with the notch off.
+- **Two or three Null captures with the ADC1 attenuator stepped.** Same
+  offender, Null objective, a fixed signal, the branch noise ratio moved
+  underneath it. *Closes:* whether Null should carry `N0/N1` after all.
+  Finding 50 has one capture where the on-air weight ran 50 % too large
+  and gave away 0.74 dB, which is a hint and not a case - the decision it
+  would overturn was measured across the whole set.
+- **`135857` again at 6 Hz bins.** Same signal, same session, the weak
+  carrier still beside the wanted tone. *Closes:* whether the Resolution
+  trade in CW has a good answer or only a least-bad one - the capture is
+  currently the one place where bin width and block length can be seen
+  costing something in opposite directions at once.
 
 ### And the ones no capture can settle
 
@@ -9731,6 +10065,79 @@ and three keys per band in the props file, which is a large change to
 structures the whole radio shares for something two spin buttons already
 correct. Neither is kept across a restart, for the same reason - the
 memory lasts the session, like `div_saved_att`.
+
+### `src/diversity_auto.c`, `src/diversity_menu.c` — a CW / Morse reference
+
+The filter as a search region, a centre-weighted peak search over it, and
+the cross spectrum accumulated over the strongest tone and one bin either
+side, with the branch noise ratio in the Sum weight. Finding 50 scores it:
+against the better single antenna it is a wash on average, ahead on 7 of
+11 captures, and +0.10 dB against Window with an interval four times wider
+than the effect. It beats FSK/Digital by 0.37 dB, which is the advice
+Finding 8 already gave.
+
+The centre weighting is the part that earns its place: 82.6 % of key-down
+blocks tracked on the wanted tone against 80.5 % for a plain argmax.
+
+### `src/diversity_auto.c` — two defects in the CW solve
+
+The noise-floor loop bounded itself with `DIV_OCC_MAX_SAMPLES` and wrote
+into `nf_scratch0/1`, which are `DIV_NF_SAMPLES` long - a quarter of that.
+Any window past 1024 bins wrote off the end of both buffers and sorted
+what it had written. Reachable from the menu, and reached by
+`test/diversity/test_cw.c` itself, which follows a 16 kHz filter and still
+reported PASS. Strided the way `div_noise_floor_update()` already does.
+
+And `div_arm_publish()` takes the advantage of **arm 1**; the CW solve
+formed it the other way up, so `Best` selected the worse antenna. The
+readout's sign agreed with the truth on 36 % of captures against Window's
+91 %; after the fix 64 %, and Best gains 0.33 dB. Still not good enough to
+recommend - the estimate is signal-plus-noise and skips the clearance test
+`div_arm_from_floor()` applies - so Sum remains the only objective worth
+selecting on this reference.
+
+### `src/diversity_auto.c`, `src/diversity_menu.c` — a CW activity gate
+
+`DIV_CW_SNR_THRESH` is gone. It compared the window's peak against a low
+percentile of that same window and rejected 0 of 4123 blocks, which
+Finding 50 shows it could not have done otherwise.
+
+In its place, the window's peak power against the quietest that peak has
+recently been - one minimum hold, one scalar per block, at
+`DIV_CW_ACT_RISE_DB` = 12 dB/s. On `143433` the tracker's time on the
+carrier falls from **38.1 % of blocks to 3.4 %**, and over the eleven
+captures with a usable signal the mean score goes from +0.13 to +0.42 dB
+and the worst case from -3.47 to -0.59.
+
+Exposed as a four-position control at `DIV_CW_ACT_DEFAULT` = 3 dB, bounded
+at 6. Every setting from 2 dB up rejects the carrier equally; what rises
+with the setting is the signal strength the loop needs, and past 6 dB the
+gate stops the mode rather than degrading it.
+
+Defaults with it: the CW coherence threshold is 0.10 rather than 0.20, and
+the CW mode group seeds its averaging at 0.2 s. Both from the sweeps in
+Finding 50; the averaging one is a per-group seed, so nothing outside CW
+moves and an operator's own value survives.
+
+`DIV_CW_BINS` stays at 1. The measurement that argued for widening it was
+wrong - see the correction in Finding 50 - and `DIV_CW_CREST_BINS` now
+pins the crest gate's span so a future change to the accumulation cannot
+silently retune it again.
+
+### `src/diversity_auto.c` — the operator's notches reach the estimate
+
+Finding 51. Bins falling entirely inside an enabled notch are excluded
+from the wideband accumulation and the combine over it, the Carrier peak
+search, all four passes of the occupancy split, the CW solve and the
+per-arm noise floor. RADE V1 cannot be covered and says so at both ends.
+
+The wideband path counts the bins it used rather than the width of the
+window, because `div_arm_from_floor()` scales a per-bin floor by that
+count and a notch would otherwise bias the per-arm readout.
+
+Inert when unused: sixteen combinations of four references and four
+captures replay bit-identically without a notch set. **Not scored on air**
+- no capture in the set was recorded with a notch.
 
 ### What was thrown away
 
