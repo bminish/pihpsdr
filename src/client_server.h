@@ -866,16 +866,14 @@ typedef struct __attribute__((__packed__)) _div_settings_command {
   mydouble band_centre, band_width;
   mydouble carrier_centre, carrier_width;
   mydouble digital_centre, digital_width;
+  mydouble cw_centre, cw_width;
   //
-  // The coherence threshold is per reference - the four references do not
-  // compare the same quantity - so all four slots travel, not just the
-  // live one. Leaving them off was a real bug: the receiving end filled a
-  // DIV_SETTINGS from the wire, the fields it could not fill kept whatever
-  // was on the stack, and div_settings_load() then took the live threshold
-  // from one of them. A client's Min coherence control did nothing it
-  // could predict.
+  // The coherence threshold is per reference - the references do not
+  // compare the same quantity - so all slots travel, not just the
+  // live one.
   //
-  mydouble band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin;
+  mydouble band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin, cw_cohmin;
+  mydouble cw_activity;
 } DIV_SETTINGS_COMMAND;
 
 //
@@ -1269,10 +1267,14 @@ static inline void div_settings_to_command(DIV_SETTINGS_COMMAND *c, const DIV_SE
   c->carrier_width  = to_double(s->carrier_width);
   c->digital_centre = to_double(s->digital_centre);
   c->digital_width  = to_double(s->digital_width);
+  c->cw_centre      = to_double(s->cw_centre);
+  c->cw_width       = to_double(s->cw_width);
   c->band_cohmin    = to_double(s->band_cohmin);
   c->carrier_cohmin = to_double(s->carrier_cohmin);
   c->digital_cohmin = to_double(s->digital_cohmin);
   c->rade_cohmin    = to_double(s->rade_cohmin);
+  c->cw_cohmin      = to_double(s->cw_cohmin);
+  c->cw_activity    = to_double(s->cw_activity);
 }
 
 static inline void div_settings_from_command(DIV_SETTINGS *s, const DIV_SETTINGS_COMMAND *c) {
@@ -1299,10 +1301,14 @@ static inline void div_settings_from_command(DIV_SETTINGS *s, const DIV_SETTINGS
   s->carrier_width  = from_double(c->carrier_width);
   s->digital_centre = from_double(c->digital_centre);
   s->digital_width  = from_double(c->digital_width);
+  s->cw_centre      = from_double(c->cw_centre);
+  s->cw_width       = from_double(c->cw_width);
   s->band_cohmin    = from_double(c->band_cohmin);
   s->carrier_cohmin = from_double(c->carrier_cohmin);
   s->digital_cohmin = from_double(c->digital_cohmin);
   s->rade_cohmin    = from_double(c->rade_cohmin);
+  s->cw_cohmin      = from_double(c->cw_cohmin);
+  s->cw_activity    = from_double(c->cw_activity);
 }
 
 #endif

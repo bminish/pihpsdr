@@ -200,8 +200,10 @@ static int test_wire_round_trip(void) {
   a.band_centre = 101.0;    a.band_width = 202.0;
   a.carrier_centre = 303.0; a.carrier_width = 404.0;
   a.digital_centre = 505.0; a.digital_width = 606.0;
+  a.cw_centre = 707.0;      a.cw_width = 808.0;
   a.band_cohmin = 0.11; a.carrier_cohmin = 0.22;
   a.digital_cohmin = 0.33; a.rade_cohmin = 0.44;
+  a.cw_cohmin = 0.55; a.cw_activity = 0.66;
   memset(&c, 0xA5, sizeof(c));          /* so an unwritten field is obvious */
   div_settings_to_command(&c, &a);
   memset(&b, 0x5A, sizeof(b));          /* and so is one the unpack forgets */
@@ -226,11 +228,13 @@ static int test_wire_round_trip(void) {
   CHK_D(band_centre); CHK_D(band_width);
   CHK_D(carrier_centre); CHK_D(carrier_width);
   CHK_D(digital_centre); CHK_D(digital_width);
+  CHK_D(cw_centre); CHK_D(cw_width);
   CHK_D(band_cohmin); CHK_D(carrier_cohmin);
   CHK_D(digital_cohmin); CHK_D(rade_cohmin);
+  CHK_D(cw_cohmin); CHK_D(cw_activity);
 #undef CHK_I
 #undef CHK_D
-  printf("  %d field(s) wrong out of 22; worst round-trip error %.2g (the wire quantises at ~1e-7)\n",
+  printf("  %d field(s) wrong out of 26; worst round-trip error %.2g (the wire quantises at ~1e-7)\n",
          bad, worst);
   return bad == 0;
 }
