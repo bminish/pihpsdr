@@ -1559,6 +1559,16 @@ static int div_context_changed(const struct div_context *a, const struct div_con
 // and solved for like anything else. Excluding the bins here is the only
 // way the declaration reaches the estimate.
 //
+// Applied by every reference that works from the transform: the wideband
+// Window accumulation and the coherence-weighted combine over it, the
+// Carrier tracker's peak search, all four passes of the occupancy split,
+// the CW solve, and the per-arm noise floor. RADE V1 is the exception and
+// cannot be covered - rade_corr_process() is handed the block in the time
+// domain and does its own correlation, so there are no bins here to leave
+// out. It is also the one reference where it would buy least: the pilot
+// correlator is looking for a specific waveform at a specific offset, not
+// for whatever is loudest.
+//
 // The frame. multi_notch_center is what reaches RXANBPEditNotch(), and
 // nbp.c forms its passband as "flow + offset" with
 // offset = ndb->tunefreq + ndb->shift. tunefreq is never set by piHPSDR
@@ -1898,6 +1908,13 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
       k = ehi;
       continue;
     }
+
+    //
+    // A notch outside the passband is unusual but perfectly legal, and a
+    // bin the operator has notched is the one place in the band where
+    // the level says nothing about the noise.
+    //
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2597,6 +2614,8 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   int ns = 0;
 
   for (int k = klo; k <= khi && ns < DIV_OCC_MAX_SAMPLES; k += stride) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
@@ -2639,6 +2658,8 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   // First pass: which bins carry signal, and the channel over them.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
@@ -2707,6 +2728,8 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   // Distance from the signal is what keeps the signal out of R instead.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
@@ -2761,6 +2784,8 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
     nsig = nnoise = 0;
 
     for (int k = klo; k <= khi; k++) {
+      if (div_bin_notched(ctx, k)) { continue; }
+
       int idx = k % nfft;
 
       if (idx < 0) { idx += nfft; }
@@ -3477,6 +3502,11 @@ static void div_process_block(void) {
     //
     const int expect = div_rade_side_expected(&ctx);
     const int bank = (expect == 0) ? -1 : (expect < 0 ? 0 : 1);
+    //
+    // The one reference a manual notch does not reach: the correlator is
+    // given the block in the time domain, so div_bin_notched() has nothing
+    // to act on here. See the note there.
+    //
     int ok = rade_corr_process(work0, work1, nfft, bank,
                                div_frame_off(&ctx), div_auto_tau, div_auto_hang,
                                &wr, &wi);
@@ -3630,6 +3660,13 @@ static void div_process_block(void) {
     double peakval = -1.0;
 
     for (int k = klo_s; k <= khi_s; k++) {
+      //
+      // A notched carrier is one the operator has said they do not want
+      // tracked, which is exactly the heterodyne this search would
+      // otherwise lock to first.
+      //
+      if (div_bin_notched(&ctx, k)) { continue; }
+
       int idx = k % nfft;
 
       if (idx < 0) { idx += nfft; }
@@ -3724,6 +3761,13 @@ static void div_process_block(void) {
   }
 
   double cur_xx = 0.0, cur_yy = 0.0, cur_xy_re = 0.0, cur_xy_im = 0.0;
+  //
+  // Bins actually used, which is the window less whatever the operator
+  // has notched out of it. div_arm_from_floor() scales a per-bin noise
+  // floor by this to compare with the window powers beside it, so it has
+  // to be the count accumulated and not the width of the window.
+  //
+  int used_bins = 0;
 
   //
   // Per-bin running spectra. Keeping these per bin rather than as four
@@ -3731,10 +3775,13 @@ static void div_process_block(void) {
   // antennas agree in each - see below.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(&ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
 
+    used_bins++;
     double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
     double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
     //
@@ -3816,6 +3863,8 @@ static void div_process_block(void) {
   double cur_p = 0.0, acc_p = 0.0;
 
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(&ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
@@ -3900,7 +3949,7 @@ static void div_process_block(void) {
     // before it has been written.
     //
     double db = 0.0;
-    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, khi - klo + 1, &db);
+    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, used_bins, &db);
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);

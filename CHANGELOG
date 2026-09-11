@@ -14,10 +14,17 @@ September 2026:
   setting is the signal strength the loop needs, so there is nothing above
   the top position worth reaching
 
-- diversity: bins the operator has notched out take no part in the CW
-  reference's estimate. The analysis runs on the two raw antenna streams,
-  upstream of WDSP, so a notched interferer was still sitting in the
-  spectrum at full strength and could be picked as the signal to work on
+- diversity: bins the operator has notched out take no part in the
+  auto-phasing estimate, in every reference that works from the transform
+  - the wideband Window accumulation and the combine over it, the Carrier
+  tracker's peak search, all four passes of the FSK/Digital occupancy
+  split, the CW solve, and the per-arm noise floor. The analysis runs on
+  the two raw antenna streams, upstream of WDSP, so a notched interferer
+  was still sitting in the spectrum at full strength and could be picked
+  as the signal to work on. RADE V1 is the exception: the correlator is
+  handed the block in the time domain, so there are no bins to leave out.
+  Moving or enabling a notch resets the statistics like any other context
+  change. With no notch set the engine is bit-identical to before
 
 - diversity: the CW reference's coherence default is 0.10 rather than 0.20,
   and the CW mode group's averaging default is 0.2 s rather than 0.5 s.
