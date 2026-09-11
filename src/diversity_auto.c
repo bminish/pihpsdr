@@ -354,27 +354,81 @@
 //
 // CW / Morse (OOK MRC) tunables
 //
+// There was a DIV_CW_SNR_THRESH here, comparing the tone against a low
+// percentile of its own window and meant as the key-down test. It never
+// fired - 0 rejections of 4123 blocks over thirteen captures - because
+// the peak bin of a window measured against that same window's tenth
+// percentile is the maximum of a sample against its own low order
+// statistic, which for a few dozen noise bins sits near +17 dB whether
+// the key is down or up. It is gone; DIV_CW_ACT_DEFAULT is the test that
+// replaced it.
 //
-// DIV_CW_SNR_THRESH is compared against p_tone, which carries *both*
-// arms, over a floor that is the mean of the two per-arm floors - so the
-// ratio runs 3 dB high and the gate stands 3 dB looser than the figure
-// here. It makes no difference to what the gate does, because it does
-// not do anything: over the eleven CW captures in
-// docs/diversity-measurements.md it rejected 0 of 4123 blocks, and at a
-// correct +2.0 dB it still rejects none. The peak bin of a window
-// compared against a low percentile of that same window is the maximum
-// of the sample against its own tenth percentile, which for ~70 noise
-// bins sits around +17 dB whether the key is down or up. A test that
-// can tell key-down from key-up has to compare against something the
-// block does not contain - a temporal reference, of the kind
-// div_arm_floor_update() already maintains, or the stale-signal check
-// div_digital_solve() makes at DIV_STALE_DB - and that has not been
-// built. Until it is, this constant documents an intention rather than
-// a behaviour.
-//
-#define DIV_CW_SNR_THRESH    1.58   // +2.0 dB tone SNR over noise floor (see above)
 #define DIV_CW_CREST_THRESH  2.00   // +3.0 dB spectral crest factor (rejects keyclicks/impulses)
+//
+// Bins either side of the peak the crest gate is measured over. Fixed at
+// one - the span the 2.00 threshold was set and measured against - and
+// independent of DIV_CW_BINS for the reason given where it is used.
+//
+#define DIV_CW_CREST_BINS    1
+//
+// Bins either side of the peak.
+//
+// Widening this was tried and withdrawn. The first measurement said seven
+// bins beat three by +0.32 dB, 95 % CI [+0.02, +0.61], but that experiment
+// summed the tone over seven bins while still dividing the crest factor by
+// three - so what it actually measured was a crest gate 3.7 dB looser, not
+// a wider accumulation. Re-run with the two spans separated, seven bins
+// beats three by +0.07 dB, 95 % CI [-0.02, +0.16] over thirteen captures,
+// and five bins by +0.06 [+0.00, +0.11]. Neither is worth the change.
+// DIV_CW_CREST_BINS exists so the same trap cannot be walked into again.
+//
 #define DIV_CW_BINS          1      // 1 bin either side of peak tone (3 bins total)
+//
+// Below this many usable bins there is nothing to measure. Reached by a
+// very narrow filter, and by notches covering most of the window.
+//
+#define DIV_CW_MIN_BINS      6
+//
+// How fast the activity floor may climb back, in dB per second.
+//
+// It has to recover inside a keying gap - a word space is 240 ms at
+// 35 WPM and 840 ms at 10 WPM - without recovering inside a dot, which
+// is 34 to 120 ms over the same range. Swept on thirteen captures: flat
+// from 3 to 12 dB/s and then a cliff, because past about 20 dB/s the
+// floor climbs far enough inside a single element that the gate starts
+// cutting key-down blocks. Mean score falls from +0.26 dB at 12 dB/s to
+// -0.71 at 24 and -0.97 at 48.
+//
+// Sixty times faster than DIV_FLOOR_RISE_DB, which is the same shape of
+// tracker aimed at a different question: that one follows an antenna
+// over minutes, this one follows keying over a second.
+//
+#define DIV_CW_ACT_RISE_DB   12.0
+//
+// The activity threshold, and what the menu offers.
+//
+// Every setting from 2 dB up rejects the carrier equally - on the capture
+// with one, the tracker sits on it for 38.1 % of blocks with the gate off
+// and 3.4 to 3.9 % at any threshold in this range - so the choice is not
+// about rejection but about how much of the loop is left. The threshold
+// is in effect a signal-strength floor: a keyed signal only n dB above
+// the noise produces an activity reading of about n dB, so on the weakest
+// capture in the set (7.5 dB) the loop updates on 17 % of blocks at 2 dB
+// and 4 % at 6 dB. Scored over the eleven captures that carry a usable
+// signal the whole range is a wash - +0.17 to +0.42 dB against the gate
+// off, every interval spanning zero - so 3 dB is chosen as the lowest
+// setting that gets the whole benefit while leaving the most of the loop
+// alive on a weak one.
+//
+// Bounded rather than free: past this range the gate stops the mode
+// instead of degrading. At 14 dB the loop updates on 14 % of blocks and
+// two captures lose 4 to 6 dB. There is nothing above 6 dB worth
+// reaching, so the menu does not offer it and the props file cannot
+// carry it - see div_settings_validate().
+//
+#define DIV_CW_ACT_OFF       0.0
+#define DIV_CW_ACT_DEFAULT   3.0
+#define DIV_CW_ACT_MAX       6.0
 
 
 //
@@ -696,6 +750,13 @@ double div_cw_centre           = 0.0;
 double div_cw_width            = 600.0;
 
 //
+// The CW activity threshold in force, in dB, and the statistic it is
+// compared against. See DIV_CW_ACT_DEFAULT and div_cw_solve().
+//
+double div_cw_activity         = DIV_CW_ACT_DEFAULT;
+double div_cw_act_db           = 0.0;
+
+//
 // So is the coherence threshold, and for a stronger reason than the
 // windows: the four references do not compare the same quantity, so one
 // number cannot mean one thing.
@@ -736,7 +797,7 @@ double div_band_cohmin         = 0.20;
 double div_carrier_cohmin      = 0.30;
 double div_digital_cohmin      = 0.30;
 double div_rade_cohmin         = 0.0;
-double div_cw_cohmin           = 0.20;
+double div_cw_cohmin           = 0.10;
 
 //
 // Set when the requested window had to be pulled inside the Nyquist
@@ -955,6 +1016,15 @@ static double         *bin_xx = NULL, *bin_yy = NULL;
 static int             acc_valid = 0;
 
 //
+// The CW activity gate's temporal reference: the quietest the window's
+// peak bin has recently been. One scalar, not one per bin - see the note
+// in div_cw_solve(). Reset with the rest of the statistics, so a retune,
+// a filter change or a notch move starts it again.
+//
+static double          cw_act_lo = 0.0;
+static int             cw_act_valid = 0;
+
+//
 // Scratch for the FSK/Digital noise-floor median. Sized at
 // DIV_OCC_MAX_SAMPLES rather than DIV_MAX_NFFT because the estimate is
 // strided down to that many bins however wide the region is.
@@ -1005,6 +1075,15 @@ struct div_context {
   int       weighting;
   int       att0;
   int       att1;
+  //
+  // The operator's manual notches, mirrored here for the same reason the
+  // filter edges are: they say which part of the passband is wanted, the
+  // analysis has to honour that, and a change of one has to reset the
+  // statistics like any other context change.
+  //
+  int       notch_on[3];
+  double    notch_centre[3];
+  double    notch_width[3];
 };
 
 static struct div_context lastctx;
@@ -1121,6 +1200,8 @@ static void div_reset_stats(void) {
   }
 
   acc_valid = 0;
+  cw_act_lo = 0.0;
+  cw_act_valid = 0;
   arm_floor_valid = 0;
   arm_floor0 = arm_floor1 = 0.0;
   div_nf0 = div_nf1 = 0.0;
@@ -1410,6 +1491,17 @@ static void div_get_context(struct div_context *ctx) {
   ctx->weighting      = div_auto_weighting;
   ctx->att0           = adc[0].attenuation;
   ctx->att1           = adc[1].attenuation;
+
+  //
+  // Taken from receiver 0 for the same reason everything else here is:
+  // the analysis runs on the pair of streams feeding it, and the ear
+  // split's second receiver is a copy that follows this one.
+  //
+  for (int i = 0; i < 3; i++) {
+    ctx->notch_on[i]     = rx->multi_notch_enable[i];
+    ctx->notch_centre[i] = rx->multi_notch_center[i];
+    ctx->notch_width[i]  = rx->multi_notch_width[i];
+  }
 }
 
 //
@@ -1418,6 +1510,26 @@ static void div_get_context(struct div_context *ctx) {
 // three frequency comparisons below are against where the estimate was
 // actually made. See DIV_RETUNE_HZ.
 //
+//
+// The notches, compared exactly. A notch that is off is not compared at
+// all: its centre and width still hold whatever the operator last set,
+// and sliding a disabled notch about must not throw the estimate away.
+//
+static int div_notches_differ(const struct div_context *a, const struct div_context *b) {
+  for (int i = 0; i < 3; i++) {
+    if (a->notch_on[i] != b->notch_on[i]) { return 1; }
+
+    if (!a->notch_on[i]) { continue; }
+
+    if (a->notch_centre[i] != b->notch_centre[i] ||
+        a->notch_width[i]  != b->notch_width[i]) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 static int div_context_changed(const struct div_context *a, const struct div_context *b) {
   return llabs(a->frequency      - b->frequency)      > DIV_RETUNE_HZ ||
          llabs(a->ctun_frequency - b->ctun_frequency) > DIV_RETUNE_HZ ||
@@ -1433,7 +1545,55 @@ static int div_context_changed(const struct div_context *a, const struct div_con
          a->width          != b->width          ||
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
-         a->att1           != b->att1;
+         a->att1           != b->att1           ||
+         div_notches_differ(a, b);
+}
+
+//
+// Does bin k lie entirely inside one of the operator's manual notches?
+//
+// The operator has said that part of the passband is not wanted. This
+// analysis does not see that: the transform is taken from the two raw
+// antenna streams, upstream of WDSP, so a notched interferer is still
+// sitting in our spectrum at full strength and will be picked as a peak
+// and solved for like anything else. Excluding the bins here is the only
+// way the declaration reaches the estimate.
+//
+// The frame. multi_notch_center is what reaches RXANBPEditNotch(), and
+// nbp.c forms its passband as "flow + offset" with
+// offset = ndb->tunefreq + ndb->shift. tunefreq is never set by piHPSDR
+// and stays at the zero create_notchdb() leaves, and shift is what
+// rx_set_offset_for() passes to RXANBPSetShiftFrequency() - the VFO
+// offset with the CW sidetone already folded in, which is exactly
+// div_frame_off(). So a notch centre lives in the raw frame, and
+//
+//   div_shift_to_bin(s) = -(s + frame_off),  s = centre - frame_off
+//
+// collapses to a bin frequency of simply -centre. The sidetone cancels,
+// which is why this needs no CW special case - the one thing that makes
+// it worth writing the derivation down rather than the result.
+//
+// "Entirely inside" rather than "overlapping": a bin straddling a notch
+// edge still carries wanted signal, and at a coarse Resolution a narrow
+// notch is narrower than one bin, where excluding on overlap would throw
+// away the whole region the operator was trying to keep.
+//
+static int div_bin_notched(const struct div_context *ctx, int k) {
+  const double lo = ((double)k - 0.5) * binhz;
+  const double hi = ((double)k + 0.5) * binhz;
+
+  for (int i = 0; i < 3; i++) {
+    if (!ctx->notch_on[i] || !(ctx->notch_width[i] > 0.0)) { continue; }
+
+    const double a = -(ctx->notch_centre[i] - 0.5 * ctx->notch_width[i]);
+    const double b = -(ctx->notch_centre[i] + 0.5 * ctx->notch_width[i]);
+    const double nlo = (a < b) ? a : b;
+    const double nhi = (a < b) ? b : a;
+
+    if (lo >= nlo && hi <= nhi) { return 1; }
+  }
+
+  return 0;
 }
 
 //
@@ -2761,7 +2921,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
 static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   const int n = khi - klo + 1;
 
-  if (n < 3 || nfft <= 0) {
+  if (n < DIV_CW_MIN_BINS || nfft <= 0) {
     div_auto_occ_valid = 0;
     div_auto_coherence = 0.0;
     div_auto_holding = 1;
@@ -2775,8 +2935,12 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // near the filter edges from hijacking the tracker. Noise floor estimation in step 2
   // continues to use off-tone bins across the full passband on an equal-weight basis.
   //
+  // Bins the operator has notched out take no part in any of it - not the
+  // search, not the floor, not the accumulation. See div_bin_notched().
+  //
   int peak = klo;
   double peakval = -1.0;
+  double peak_raw = 0.0;
   double p_passband_sum = 0.0;
   int passband_bins = 0;
 
@@ -2785,6 +2949,8 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   const double inv_two_sigma2 = (sigma > 0.0) ? (1.0 / (2.0 * sigma * sigma)) : 0.0;
 
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
@@ -2803,10 +2969,16 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
     if (p_weighted > peakval) {
       peakval = p_weighted;
       peak = k;
+      peak_raw = p;
     }
   }
 
-  if (peakval <= 0.0 || passband_bins <= 0) {
+  //
+  // Nothing left to look at. Either the window is empty or the notches
+  // cover all of it, which is a thing an operator can set up and which
+  // must hold rather than solve on whatever survived.
+  //
+  if (peakval <= 0.0 || passband_bins < DIV_CW_MIN_BINS) {
     div_auto_occ_valid = 0;
     div_auto_coherence = 0.0;
     div_auto_holding = 1;
@@ -2837,6 +3009,8 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
 
   for (int k = klo; k <= khi && nns < DIV_NF_SAMPLES; k += nf_stride) {
     if (abs(k - peak) < 4) { continue; }
+
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2871,27 +3045,111 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   }
 
   //
-  // 3. Evaluate Tone Power & Gates (Tone SNR & Spectral Crest Factor)
+  // 3. The crest gate: is the energy concentrated at the peak, or spread
+  // across the passband the way a keyclick or an impulse spreads it?
   //
-  double p_tone = 0.0;
+  // Measured over a fixed DIV_CW_CREST_BINS either side of the peak and
+  // deliberately *not* over the accumulation span. Both are a ratio of
+  // means, so widening the accumulation would lower the numerator - the
+  // extra bins are skirt - and quietly tighten a threshold that was set
+  // and measured at three bins. Keeping the gate's span fixed is what
+  // lets DIV_CW_BINS be chosen on estimator variance alone.
+  //
+  // The span may run off the end of the window or across a notch, so
+  // count what was actually summed rather than assuming the full width.
+  //
+  double p_crest = 0.0;
+  int crest_bins = 0;
 
-  for (int d = -DIV_CW_BINS; d <= DIV_CW_BINS; d++) {
-    int idx = (peak + d) % nfft;
+  for (int d = -DIV_CW_CREST_BINS; d <= DIV_CW_CREST_BINS; d++) {
+    const int k = peak + d;
+
+    if (k < klo || k > khi) { continue; }
+
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
 
-    p_tone += (double)fftout0[idx][0] * fftout0[idx][0]
-            + (double)fftout0[idx][1] * fftout0[idx][1]
-            + (double)fftout1[idx][0] * fftout1[idx][0]
-            + (double)fftout1[idx][1] * fftout1[idx][1];
+    p_crest += (double)fftout0[idx][0] * fftout0[idx][0]
+             + (double)fftout0[idx][1] * fftout0[idx][1]
+             + (double)fftout1[idx][0] * fftout1[idx][0]
+             + (double)fftout1[idx][1] * fftout1[idx][1];
+    crest_bins++;
   }
 
-  double n_floor_avg = 0.5 * (n0_floor + n1_floor);
-  double tone_snr = (n_floor_avg > 0.0) ? (p_tone / (3.0 * n_floor_avg)) : 0.0;
-  double passband_mean = p_passband_sum / (double)passband_bins;
-  double crest_factor = (passband_mean > 0.0) ? (p_tone / (3.0 * passband_mean)) : 0.0;
+  if (crest_bins < 1) {
+    div_auto_occ_valid = 0;
+    div_auto_coherence = 0.0;
+    div_auto_holding = 1;
+    return;
+  }
 
-  int is_keydown   = (tone_snr >= DIV_CW_SNR_THRESH);
+  double passband_mean = p_passband_sum / (double)passband_bins;
+  double crest_factor = (passband_mean > 0.0)
+                        ? (p_crest / ((double)crest_bins * passband_mean)) : 0.0;
+
+  //
+  // Is anything being keyed right now?
+  //
+  // The test this replaces compared the window's peak bin against a low
+  // percentile of that same window. That is the maximum of a sample
+  // against its own tenth percentile, which for a few dozen noise bins
+  // sits around +17 dB whether the key is down or up: it rejected 0 of
+  // 4123 blocks over thirteen captures and could not have done otherwise.
+  //
+  // Telling a keyed signal from a steady one needs a reference the block
+  // does not contain, and it cannot be the keying rate: at 10 to 35 WPM
+  // the envelope moves at 4 to 15 Hz, and one analysis block per 43 to
+  // 171 ms samples that below Nyquist at every Resolution the menu
+  // offers. What does survive is that Morse stops - between letters,
+  // between words, between overs - and a carrier does not.
+  //
+  // So: the window's peak power against the quietest that peak has
+  // recently been. Deliberately the peak over bins and not a per-bin
+  // contrast: a single noise bin is exponentially distributed and swings
+  // 15 dB on its own, so a window-wide test built from per-bin contrast
+  // never goes quiet, while the max over bins is stable enough for one
+  // threshold to work. On the capture with a carrier sitting two bins
+  // from the zero beat this reads 0.0 dB through the gap between overs,
+  // 31.1 dB while stations work and 42.2 dB on key-down.
+  //
+  //
+  // Seeded from this block's own off-tone noise, not from the first
+  // peak. Seeding from the peak means the statistic reads 0 dB until the
+  // signal first stops, so a cold start - and every context change, which
+  // on a tuning operator is most blocks - holds until the other station
+  // pauses. Seeded from the noise the first block already reads the
+  // tone's own signal-to-noise, which is the right answer for a keyed
+  // signal, and a steady carrier still closes the gate within
+  // (SNR / DIV_CW_ACT_RISE_DB) seconds as the floor climbs into it.
+  //
+  // n0_floor and n1_floor are per arm and per bin; peak_raw carries both
+  // arms in one bin, so their sum is the level peak_raw would sit at with
+  // nothing but noise in that bin. The two are directly comparable.
+  //
+  {
+    const double rise = pow(10.0, 0.1 * DIV_CW_ACT_RISE_DB * blocktime);
+
+    if (!cw_act_valid) {
+      cw_act_lo = n0_floor + n1_floor;
+      cw_act_valid = 1;
+    }
+
+    if (peak_raw < cw_act_lo) {
+      cw_act_lo = peak_raw;
+    } else {
+      cw_act_lo *= rise;
+
+      if (cw_act_lo > peak_raw) { cw_act_lo = peak_raw; }
+    }
+
+    div_cw_act_db = (cw_act_lo > 0.0 && peak_raw > 0.0)
+                    ? 10.0 * log10(peak_raw / cw_act_lo) : 0.0;
+  }
+
+  int is_keydown   = (div_cw_act_db >= div_cw_activity);
   int is_transient = (crest_factor < DIV_CW_CREST_THRESH);
 
   if (!is_keydown || is_transient) {
@@ -2924,7 +3182,10 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   div_auto_carrier = div_carrier_hz;
 
   //
-  // 4. Key-DOWN: Accumulate spectra over 3 tone bins (peak-1 .. peak+1)
+  // 4. Key-DOWN: accumulate over the tone span, peak-DIV_CW_BINS upwards.
+  //
+  // Skipping the same bins the gates skipped, so the weight is solved
+  // from exactly the spectrum the tests were applied to.
   //
   double alpha = 1.0 - exp(-blocktime / div_auto_tau);
 
@@ -2936,7 +3197,13 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   double sig_xy_re = 0.0, sig_xy_im = 0.0, sig_xx = 0.0, sig_yy = 0.0;
 
   for (int d = -DIV_CW_BINS; d <= DIV_CW_BINS; d++) {
-    int idx = (peak + d) % nfft;
+    const int k = peak + d;
+
+    if (k < klo || k > khi) { continue; }
+
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
 
@@ -4427,6 +4694,7 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->digital_width  = div_digital_width;
   s->cw_centre      = div_cw_centre;
   s->cw_width       = div_cw_width;
+  s->cw_activity    = div_cw_activity;
 }
 
 //
@@ -4470,6 +4738,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_digital_width      = s->digital_width;
   div_cw_centre          = s->cw_centre;
   div_cw_width           = s->cw_width;
+  div_cw_activity        = s->cw_activity;
 }
 
 //
@@ -4881,6 +5150,16 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // div_bin_range() does the real limiting against the Nyquist frequency
   // at the rate in use.
   //
+  //
+  // The activity gate is a bounded control, not a free one: everything
+  // above DIV_CW_ACT_MAX stops the mode rather than degrading it, so a
+  // props file carrying a larger number - hand-edited, or written by a
+  // later version - is pulled back rather than honoured.
+  //
+  if (!(s->cw_activity >= DIV_CW_ACT_OFF)) { s->cw_activity = DIV_CW_ACT_DEFAULT; }
+
+  if (s->cw_activity > DIV_CW_ACT_MAX)    { s->cw_activity = DIV_CW_ACT_MAX; }
+
   double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width, &s->cw_width };
   double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre, &s->cw_centre };
 
@@ -4927,6 +5206,7 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
   SetPropF1("diversity_group[%d].cw_cohmin",       g, s->cw_cohmin);
   SetPropF1("diversity_group[%d].cw_centre",       g, s->cw_centre);
   SetPropF1("diversity_group[%d].cw_width",        g, s->cw_width);
+  SetPropF1("diversity_group[%d].cw_activity",     g, s->cw_activity);
 }
 
 //
@@ -4961,6 +5241,26 @@ static void div_group_restore(int g, DIV_SETTINGS *s) {
   GetPropF1("diversity_group[%d].digital_width",  g, s->digital_width);
   GetPropF1("diversity_group[%d].cw_centre",       g, s->cw_centre);
   GetPropF1("diversity_group[%d].cw_width",        g, s->cw_width);
+  GetPropF1("diversity_group[%d].cw_activity",     g, s->cw_activity);
+}
+
+//
+// Per-group defaults, applied to the seed before the file is read.
+//
+// Only where a group actually wants something different from the global
+// default, and only as a *seed*: div_group_restore() runs straight after
+// this, so an operator who has set a value of their own keeps it and a
+// fresh install is the only thing this decides.
+//
+// CW wants a short averaging time. The CW captures were recorded at 0.33
+// to 1.05 s; swept over eleven of them the short end of the slider scores
+// +0.20 dB mean against -0.40 at 1.0 s and -0.19 at 2.0 s, and is best or
+// near-best on eight. That is a CW result and not a general one - Finding
+// 48 settled 0.5 s for everything else and it stands - which is why this
+// is a per-group seed rather than a change to the global default.
+//
+static void div_group_seed(int g, DIV_SETTINGS *s) {
+  if (g == DIV_GROUP_CW) { s->tau = 0.2; }
 }
 
 void diversity_auto_save_state(void) {
@@ -5004,6 +5304,7 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
+  SetPropF0("diversity_cw_activity",         div_cw_activity);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -5042,6 +5343,7 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_digital_width",       div_digital_width);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
+  GetPropF0("diversity_cw_activity",         div_cw_activity);
 
   //
   // Migrate a reference written under the old numbering. Absent key means
@@ -5112,6 +5414,7 @@ void diversity_auto_restore_state(void) {
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_set[g] = base;
+    div_group_seed(g, &div_group_set[g]);
     div_group_restore(g, &div_group_set[g]);
     div_settings_validate(&div_group_set[g]);
 

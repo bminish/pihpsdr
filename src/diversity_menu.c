@@ -87,6 +87,7 @@ static double div_tau_to_pos(double tau) {
 static GtkWidget *tau_scale = NULL;
 static GtkWidget *coh_scale = NULL;
 static GtkWidget *res_combo = NULL;
+static GtkWidget *cwact_combo = NULL;
 static GtkWidget *norm_b = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
@@ -106,6 +107,29 @@ static GtkWidget *att_spin[2] = { NULL, NULL };
 static GtkWidget *centre_label = NULL;
 static GtkWidget *width_label = NULL;
 static GtkWidget *res_label = NULL;
+static GtkWidget *cwact_label = NULL;
+
+//
+// The CW activity gate. Four positions rather than a slider, because the
+// measured surface is flat across the useful range and falls off a cliff
+// above it - see DIV_CW_ACT_DEFAULT in diversity_auto.c. A control that
+// cannot be set to a harmful value needs no warning in its tooltip.
+//
+static const double cwact_val[] = { 0.0, 3.0, 4.0, 6.0 };
+
+static int cwact_index(double v) {
+  int best = 1;
+  double bd = 1e9;
+
+  for (unsigned i = 0; i < sizeof(cwact_val) / sizeof(cwact_val[0]); i++) {
+    const double d = fabs(v - cwact_val[i]);
+
+    if (d < bd) { bd = d; best = (int)i; }
+  }
+
+  return best;
+}
+
 static GtkWidget *coh_label = NULL;
 
 //
@@ -298,6 +322,7 @@ static void cleanup(void) {
     tau_scale = NULL;
     coh_scale = NULL;
     res_combo = NULL;
+    cwact_combo = NULL;
     norm_b = NULL;
     status_label = NULL;
     arm_label = NULL;
@@ -322,6 +347,7 @@ static void cleanup(void) {
     centre_label = NULL;
     width_label = NULL;
     res_label = NULL;
+    cwact_label = NULL;
     coh_label = NULL;
     //
     // Hold is an operating state with no indicator outside this dialog,
@@ -689,6 +715,7 @@ static void update_visibility(void) {
   div_show_row(centre_label, centre_spin, placeable);
   div_show_row(width_label,  width_spin,  placeable);
   div_show_row(res_label,    res_combo,   uses_fft);
+  div_show_row(cwact_label,  cwact_combo, is_cw);
   //
   // Three references have a threshold, not four. The threshold is stored
   // per reference because the quantities are not comparable, so one
@@ -1060,11 +1087,18 @@ static int status_update_cb(gpointer data) {
       snprintf(detail, sizeof(detail), "no signal");
     } else {
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
+
+      //
+      // The activity reading beside the tracked tone. It is the one
+      // number that says why the mode is or is not measuring, and
+      // reading it against the Key detect setting is how an operator
+      // sees that a signal is simply too weak for the threshold.
+      //
       if (div_auto_carrier_valid) {
-        snprintf(detail, sizeof(detail), "%+4.0fHz", div_auto_carrier);
+        snprintf(detail, sizeof(detail), "%+4.0fHz %2.0fdB",
+                 div_auto_carrier, div_cw_act_db);
       } else {
-        snprintf(detail, sizeof(detail), "occ %4.0fHz",
-                 div_auto_occ_hi - div_auto_occ_lo);
+        snprintf(detail, sizeof(detail), "key %2.0fdB", div_cw_act_db);
       }
     }
 
@@ -1262,6 +1296,10 @@ static void div_populate_from_settings(void) {
   if (coh_scale)    { gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min); }
 
   if (hold_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(hold_b), div_auto_hold); }
+
+  if (cwact_combo) {
+    gtk_combo_box_set_active(GTK_COMBO_BOX(cwact_combo), cwact_index(div_cw_activity));
+  }
 
   if (res_combo) {
     //
@@ -1533,6 +1571,17 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
   // whatever was stored at the last reference change.
   //
   diversity_auto_ref_store(div_auto_ref);
+  div_send_settings(DIV_ACTION_NONE);
+}
+
+static void cwact_changed_cb(GtkWidget *widget, gpointer data) {
+  if (updating_from_server) { return; }
+
+  int i = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
+
+  if (i < 0 || i >= (int)(sizeof(cwact_val) / sizeof(cwact_val[0]))) { i = 1; }
+
+  div_cw_activity = cwact_val[i];
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1934,6 +1983,35 @@ void diversity_menu(GtkWidget *parent) {
                               "line.");
   gtk_grid_attach(GTK_GRID(grid), res_combo, 1, 13, 1, 1);
   g_signal_connect(res_combo, "changed", G_CALLBACK(res_changed_cb), NULL);
+  cwact_label = gtk_label_new("Key detect");
+  gtk_widget_set_name(cwact_label, "boldlabel");
+  gtk_widget_set_halign(cwact_label, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), cwact_label, 0, 14, 1, 1);
+  cwact_combo = gtk_combo_box_text_new();
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cwact_combo), "Off - track whatever is loudest");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cwact_combo), "Normal (3 dB)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cwact_combo), "Firm (4 dB)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cwact_combo), "Strict (6 dB)");
+  gtk_combo_box_set_active(GTK_COMBO_BOX(cwact_combo), cwact_index(div_cw_activity));
+  gtk_widget_set_tooltip_text(cwact_combo,
+                              "Only measure while something is actually being keyed.\n\n"
+                              "The loop compares the strongest bin in the window with the "
+                              "quietest that bin has recently been. Morse stops - between "
+                              "letters, between words, between overs - and a steady "
+                              "carrier does not, so this is what tells them apart. With it "
+                              "off, a heterodyne near your zero beat takes the tracker "
+                              "whenever the other station pauses: on the capture this was "
+                              "measured against, 38 % of blocks against 3 %.\n\n"
+                              "Higher is not better. Every setting here rejects a carrier "
+                              "equally well; what rises with the setting is the signal "
+                              "strength needed before the loop will work at all, because "
+                              "a signal n dB out of the noise reads about n dB here. "
+                              "Normal is the lowest setting that gets the whole benefit. "
+                              "Turn it off only to compare.\n\n"
+                              "Needs a block shorter than a keying element, so it is least "
+                              "effective at the 6 Hz Resolution setting.");
+  gtk_grid_attach(GTK_GRID(grid), cwact_combo, 1, 14, 1, 1);
+  g_signal_connect(cwact_combo, "changed", G_CALLBACK(cwact_changed_cb), NULL);
   //
   // Row 13 was Weighting, and there is no such control now. Coherence
   // weighting selected the most coherent bins and then reported the
@@ -2086,6 +2164,7 @@ void diversity_menu(GtkWidget *parent) {
       centre_label, centre_spin,
       width_label,  width_spin,
       res_label,    res_combo,
+      cwact_label,  cwact_combo,
       coh_label,    coh_scale,
       att_label,    att_box,
       balance_label, balance_scale
