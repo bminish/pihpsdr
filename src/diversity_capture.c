@@ -36,6 +36,7 @@
 //
 
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>      // g_mkdir_with_parents()
 #include <semaphore.h>
 #include <stdlib.h>
 #include <string.h>
@@ -210,7 +211,25 @@ int diversity_capture_start(int sample_rate, int nfft) {
   const char *note = g_getenv("PIHPSDR_DIVCAP_NOTE");
   const int   secs = divcap_env_int("PIHPSDR_DIVCAP_SECONDS", 60, 1, 3600);
 
-  if (dir == NULL || *dir == '\0') { dir = "."; }
+  //
+  // Captures land in captures/ unless PIHPSDR_DIVCAP_DIR says otherwise.
+  //
+  // A subdirectory rather than the working directory because the set runs
+  // to tens of gigabytes and a stray "git add ." with a minute of 192 kHz
+  // I/Q loose in the tree is not a mistake worth leaving available. It is
+  // in .gitignore by directory name, so a capture cannot be committed by
+  // accident whatever it is called, and docs/diversity-measurements.md
+  // names every capture it draws on so the files can be matched back up.
+  //
+  // Created here rather than assumed: the first capture on a fresh clone
+  // would otherwise fail at fopen() with nothing but ENOENT to say why.
+  //
+  if (dir == NULL || *dir == '\0') { dir = "captures"; }
+
+  if (g_mkdir_with_parents(dir, 0755) != 0) {
+    t_perror("diversity_capture_start:mkdir");
+    return 0;
+  }
 
   {
     time_t     now = time(NULL);

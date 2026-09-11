@@ -44,7 +44,7 @@ Configuration is environment only — deliberately, so that nothing about
 this survives in an operator's `.props` file once it is removed:
 
 ```
-PIHPSDR_DIVCAP_DIR       where the files go            default "."
+PIHPSDR_DIVCAP_DIR       where the files go            default "captures"
 PIHPSDR_DIVCAP_SECONDS   stops itself after this long  default 60
 PIHPSDR_DIVCAP_NOTE      free text stored in the file  default ""
 ```
@@ -52,6 +52,18 @@ PIHPSDR_DIVCAP_NOTE      free text stored in the file  default ""
 Then tune the station, open the Diversity menu and press **Capture**. The
 button counts blocks as they are written and comes back out by itself when
 the budget is up.
+
+**Where they land.** `captures/` under the working directory, created on
+the first capture. The whole directory is in `.gitignore` by name, so a
+minute of 192 kHz I/Q cannot be committed by accident whatever the file is
+called - the set runs to tens of gigabytes. Nothing else knows the path:
+every tool here takes the file as an argument, so
+
+```
+./run_ref captures/divcap-20260911-143433.divc --ref cw --out w.csv
+```
+
+is the shape of every command below with a real capture in it.
 
 **Write a note.** `docs/diversity-guide.md` records that the engine does
 not watch antenna or attenuator changes, and that on pre-Orion2 boards the
@@ -351,7 +363,8 @@ grown as the instrument has:
 | `src/diversity_auto.c` | the `#ifdef DIVERSITY_CAPTURE` blocks: the include, the drop stash, the previous-context memory and `divcap_ctx_differs()`, the reset flag in `div_process_block()`, the tap, the stash in the worker, `diversity_auto_capture_start()`, and the stop hook |
 | `src/diversity_menu.c` | the `#ifdef DIVERSITY_CAPTURE` blocks: the include, the button callback, the button, the label refresh |
 | `Makefile` | the `ifdef DIVCAP` block after the `OBJS` list |
-| `.gitignore` | the `*.divc` lines |
+| `.gitignore` | the `captures/`, `*.divc` and `src/.divcap-*` lines |
+| the tree | `captures/` itself, once nothing left needs the recordings |
 
 and check:
 

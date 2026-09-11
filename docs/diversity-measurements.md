@@ -33,7 +33,10 @@ in 4123 blocks, and the one component that works is worth about a tenth of
 a decibel. What came out of it is a working discriminant between a keyed
 signal and a steady carrier, which cuts false locks on the capture that
 has one from 38 % of blocks to 3 %. 51 is the notch carve-out, which is
-proved inert when unused and **has no on-air measurement at all**.
+proved inert when unused and **has no on-air measurement at all** - and
+cannot have one until the capture format records notches, because a notch
+leaves no trace in the recorded samples and a notched capture is
+indistinguishable from an un-notched one.
 
 Two of this document's own measurements are corrected in place there: a
 7-bin tone span that was really a looser crest gate, and a replica of the
@@ -646,6 +649,9 @@ recording.
 | `135857` | 14.030050 | CWL | **CW** | nfft 8192, **23.4 Hz bins and 21 bins in the whole window** - a weak carrier inside the tone span, and the operator stepping the dial 1 Hz at a time |
 | `143433` | 14.028550 | CWL | **CW** | **the carrier capture**: a heterodyne two bins from the zero beat that holds through a 15 s gap where every station stops. Finding 50 |
 | `143734` | 14.026975 | CWL | **CW**, **hand-placed** | **keyclicks**: a station whose keying transients raise the whole passband 18.8 dB, nulled from a 110 Hz window on the skirt at +140 Hz |
+| `230608`, `230752`, `231135`, `231353` | 1.98400 | DIGU | Window | **RADE V2**, 160 m, nfft 16384, averaging 0.60 s. **Recorded, not yet analysed** |
+| `232337`, `232455`, `232557`, `232845`, `232951`, `233958` | 1.98400 | DIGU | FSK/Digital | **RADE V2**, 160 m, averaging 2.93 s; `232557` runs 134 s and `232951`/`233958` are short (32 s, 23 s). **Recorded, not yet analysed** |
+| `234023` | 1.98400 | DIGU | FSK/Digital | **RADE V2** at nfft 32768, 5.86 Hz bins, 47 s. **Recorded, not yet analysed** |
 
 `202743` begins on 7.177 MHz and retunes to 7.09203 MHz at block 9. The
 recorder did **not** set the context-changed bit for it: `rec_flags` is
@@ -736,6 +742,20 @@ Finding 50.
 Together with `001054`, `001157`, `002710` and `142333` they make
 **thirteen CW captures**, which is the first time any single mode in this
 document has had enough of them to put an interval on an answer.
+
+**Eleven captures of RADE V2** were taken on 160 m on the evening of
+September 11, four on the Window reference and seven on FSK/Digital, all
+at 1.984 MHz in `DIGU`. **None of them has been analysed.** They are
+recorded here so that they can be found later: a V2 correlator is intended
+and these are the material for it, in the same way the 7.047 MHz set was
+the material for V1. Nothing in this document rests on them, and no
+finding below should be read as covering them.
+
+Two things about the set are worth noting before anyone starts. All eleven
+are at 11.72 Hz bins except `234023`, which is the only one at 5.86 Hz;
+and `232557` is 134 s long against the usual 60, so the block budget was
+raised for it. Neither has a note, which by now is the standing complaint
+of this section.
 
 `231724` and `232052` are a matched pair: same band, same path, five
 minutes apart, one running each reference. That comparison did more work
@@ -7790,9 +7810,38 @@ combinations of four references and four captures replay bit-identically
 to the commit before. That is the check that matters, because this touches
 the accumulation loop of every reference.
 
-There is no on-air measurement of what it is worth, because no capture in
-the set was recorded with a notch set. That is the next thing to record
-against it - see "What to record next".
+### Captures exist for it, and the format cannot use them
+
+Captures *have* been taken with notches set. They cannot be scored, and
+the reason is worth recording because it is the same shape of gap as the
+attenuator fields before format version 2, only worse.
+
+**A notch leaves no trace in a capture.** The tap in `div_process_block()`
+records the two raw antenna streams, and WDSP's notch is applied a long
+way downstream of it - that is the whole reason this finding exists. So
+the recorded samples of a notched capture are bit-for-bit what they would
+have been without the notch. And `struct divcap_block` mirrors
+`filter_low`, `filter_high`, both attenuators and the rest of the analysis
+context, but has **no notch fields**, so the settings are not in the file
+either.
+
+The consequence is not just that the capture cannot be replayed with the
+notch honoured. It is that **a notched capture cannot be told from an
+un-notched one at all** - there is no bit anywhere in the file that
+differs. They can only be identified by the operator saying which they
+are, from memory or from a note, and none of these has a note.
+
+So this finding still has no on-air number, and getting one needs a format
+change first: `att0`/`att1` were added in version 2 by taking the pad
+before the first `double`, and a version 4 would have to add
+`notch_on[3]`, `notch_centre[3]` and `notch_width[3]` - 28 bytes, which is
+past what the existing padding will absorb, so the block record grows and
+old readers have to be versioned off it rather than kept compatible.
+
+Until that is done, the right thing is to **take notch captures in pairs**
+- one minute with the notch in, one without, same signal, recorded back to
+back - and say so in the note. A pair identifies itself by its timestamps
+even when the files cannot.
 
 ## False alarms
 
@@ -8843,12 +8892,17 @@ has to be remembered.
 
 ### For the notch carve-out and the CW null
 
-- **A capture with a notch set.** Any signal, any reference, with one of
-  the three manual notches parked on an interferer inside the passband and
-  a second capture of the same minute without it. *Closes:* Finding 51 has
-  no on-air number at all - only the proof that it changes nothing when no
-  notch is set. *Ideal:* a carrier or a birdie inside a voice passband,
-  strong enough that the weight visibly follows it with the notch off.
+- **The format first, then the notch captures.** Captures with notches set
+  have been taken, and none of them can be used: a notch leaves no trace
+  in the recorded samples and `struct divcap_block` has no notch fields,
+  so a notched capture is indistinguishable from an un-notched one. See
+  the end of Finding 51. *Closes:* Finding 51 has no on-air number at all,
+  only the proof that it changes nothing when no notch is set. *Needs:* a
+  version 4 block record carrying `notch_on[3]`, `notch_centre[3]` and
+  `notch_width[3]`; then a pair of captures, one minute with the notch in
+  and one without, same signal, back to back. *Ideal:* a carrier or a
+  birdie inside a voice passband, strong enough that the weight visibly
+  follows it with the notch off.
 - **Two or three Null captures with the ADC1 attenuator stepped.** Same
   offender, Null objective, a fixed signal, the branch noise ratio moved
   underneath it. *Closes:* whether Null should carry `N0/N1` after all.
@@ -10161,6 +10215,21 @@ it records and replays with the same build.
 make DIVCAP=1                       # radio with the capture button
 make -C test/diversity/devtools     # replay_rade, run_ref, test_capture
 ```
+
+**The recordings live in `captures/`**, which the capture instrument
+creates and writes to unless `PIHPSDR_DIVCAP_DIR` says otherwise. The
+directory is in `.gitignore` by name and is *not* in the repository - the
+set is tens of gigabytes - so every command in this document that names a
+capture means `captures/divcap-<stamp>.divc`:
+
+```
+./run_ref captures/divcap-20260911-143433.divc --ref cw --mode sum --out w.csv
+```
+
+Captures are referred to throughout by the last six digits of their stamp,
+which is unique across the set. The full name is
+`divcap-YYYYMMDD-HHMMSS.divc`, so `143433` is
+`captures/divcap-20260911-143433.divc`.
 
 `RADE_ALIAS_ALPHA`, `RADE_ALIAS_MIN` and `RADE_ALIAS_MARGIN` are in the
 tunable manifest, so the sweeps under "What was changed" are

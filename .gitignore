@@ -34,6 +34,12 @@ test/diversity/test_modal
 test/diversity/test_cw
 
 # development-only diversity I/Q captures (see test/diversity/devtools)
+#
+# captures/ is where diversity_capture_start() writes unless
+# PIHPSDR_DIVCAP_DIR says otherwise. It is deliberately not in git - the
+# set runs to tens of gigabytes - but the findings measured from it are,
+# in docs/diversity-measurements.md, which names every capture it uses.
+captures/
 *.divc
 src/.divcap-*
 test/diversity/devtools/build/
