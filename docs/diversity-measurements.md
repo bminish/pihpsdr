@@ -33,10 +33,11 @@ in 4123 blocks, and the one component that works is worth about a tenth of
 a decibel. What came out of it is a working discriminant between a keyed
 signal and a steady carrier, which cuts false locks on the capture that
 has one from 38 % of blocks to 3 %. 51 is the notch carve-out, which is
-proved inert when unused and **has no on-air measurement at all** - and
-cannot have one until the capture format records notches, because a notch
-leaves no trace in the recorded samples and a notched capture is
-indistinguishable from an un-notched one.
+proved inert when unused and **confirmed on air by the operator as
+mechanism, with no number against it** - and cannot have a number until
+the capture format records notches, because a notch leaves no trace in the
+recorded samples and a notched capture is indistinguishable from an
+un-notched one. That gap is known and is not being treated as urgent.
 
 Two of this document's own measurements are corrected in place there: a
 7-bin tone span that was really a looser crest gate, and a replica of the
@@ -7843,6 +7844,32 @@ Until that is done, the right thing is to **take notch captures in pairs**
 back - and say so in the note. A pair identifies itself by its timestamps
 even when the files cannot.
 
+### What the operator reports, which is not nothing
+
+The carve-out has been used on air. The operator's report is that it does
+what it says: the notched bins are omitted, the loop does not chase the
+notched signal, and nothing else about the mode changes.
+
+That is worth having and it is worth being exact about what it settles.
+It is a report of **mechanism**, and mechanism is the part that could have
+been silently wrong - the frame derivation has three chances to be off by
+the sidetone, and a carve-out that excluded the wrong bins would look
+plausible on the panadapter and quietly bias every weight. An operator who
+notches an interferer and sees the combiner stop following it has checked
+the thing the code most needed checking.
+
+It does not settle **magnitude**, and no operator report can. Nothing here
+says what the carve-out is worth in decibels, on what kind of interferer,
+or whether there is a case where excluding the bins costs more than
+leaving them in - a notch parked over most of a narrow passband is the
+obvious candidate and is exactly the case the bin-count correction in
+`div_arm_from_floor()` was made for. Those want the pairs above.
+
+So: the mechanism is confirmed on air and the number is outstanding. On
+the three-yardstick scale at the top of this document that is the first
+rung, not the third, and this finding should not be cited as if it were
+measured.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -8892,17 +8919,20 @@ has to be remembered.
 
 ### For the notch carve-out and the CW null
 
-- **The format first, then the notch captures.** Captures with notches set
-  have been taken, and none of them can be used: a notch leaves no trace
-  in the recorded samples and `struct divcap_block` has no notch fields,
-  so a notched capture is indistinguishable from an un-notched one. See
-  the end of Finding 51. *Closes:* Finding 51 has no on-air number at all,
-  only the proof that it changes nothing when no notch is set. *Needs:* a
-  version 4 block record carrying `notch_on[3]`, `notch_centre[3]` and
-  `notch_width[3]`; then a pair of captures, one minute with the notch in
-  and one without, same signal, back to back. *Ideal:* a carrier or a
-  birdie inside a voice passband, strong enough that the weight visibly
-  follows it with the notch off.
+- **The format first, then the notch captures.** *Low priority* - the
+  carve-out is confirmed working on air by the operator, and what is
+  missing is a number rather than confidence that it does the right thing.
+  Captures with notches set have been taken and none can be used: a notch
+  leaves no trace in the recorded samples and `struct divcap_block` has no
+  notch fields, so a notched capture is indistinguishable from an
+  un-notched one. See the end of Finding 51. *Closes:* the magnitude
+  question - what the carve-out is worth, on what kind of interferer, and
+  whether a notch covering most of a narrow passband costs more than it
+  saves. *Needs:* a version 4 block record carrying `notch_on[3]`,
+  `notch_centre[3]` and `notch_width[3]`; then a pair of captures, one
+  minute with the notch in and one without, same signal, back to back.
+  *Ideal:* a carrier or a birdie inside a voice passband, strong enough
+  that the weight visibly follows it with the notch off.
 - **Two or three Null captures with the ADC1 attenuator stepped.** Same
   offender, Null objective, a fixed signal, the branch noise ratio moved
   underneath it. *Closes:* whether Null should carry `N0/N1` after all.
