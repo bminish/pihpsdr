@@ -155,6 +155,49 @@ int main(void) {
     printf("  PASS: Engine locked and updated weight on Key-DOWN resume\n");
   }
 
+  //
+  // Phase 4: the operator notches the tone out.
+  //
+  // The analysis runs on the raw antenna streams, upstream of WDSP, so
+  // the tone is still there at full strength - the only thing that keeps
+  // it out of the estimate is div_bin_notched(). With the only signal in
+  // the window notched away there is nothing left to track, so the loop
+  // must stop producing a weight rather than solve on the noise.
+  //
+  // The notch centre is in the raw frame: bin frequency = -centre, and
+  // the tone sits at f_raw, so the notch goes at -f_raw.
+  //
+  receiver[0]->multi_notch_enable[0] = 1;
+  receiver[0]->multi_notch_center[0] = -f_raw;
+  receiver[0]->multi_notch_width[0]  = 200.0;
+  run_blocks(60, f_raw, 0.5, 0.02, hr, hi);
+  g_usleep(200000);
+  printf("[4. Notched] holding=%d, occ_valid=%d\n", div_auto_holding, div_auto_occ_valid);
+
+  if (!div_auto_holding) {
+    printf("  FAIL: solved on a tone the operator had notched out\n");
+    fails++;
+  } else {
+    printf("  PASS: notched bins took no part in the estimate\n");
+  }
+
+  //
+  // ...and with the notch moved well clear, the same tone is tracked
+  // again. Guards against "holding" being an accident of phase 4 rather
+  // than the exclusion doing its job.
+  //
+  receiver[0]->multi_notch_center[0] = -f_raw + 3000.0;
+  run_blocks(60, f_raw, 0.5, 0.02, hr, hi);
+  g_usleep(200000);
+  printf("[5. Notch moved clear] holding=%d\n", div_auto_holding);
+
+  if (div_auto_holding) {
+    printf("  FAIL: still holding with the notch moved off the tone\n");
+    fails++;
+  } else {
+    printf("  PASS: tracking resumed once the notch moved clear\n");
+  }
+
   diversity_auto_stop();
   printf("Result: %s\n", fails ? "FAIL" : "PASS");
   return fails ? 1 : 0;

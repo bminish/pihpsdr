@@ -114,6 +114,88 @@ int main(void) {
     if (!moved) fails++;
     diversity_auto_stop();
   }
-  printf("%s\n", fails ? "FAIL" : "PASS - every mode produced a weight");
+  //
+  // ...and the same references again with the operator's notch sitting on
+  // the only signal in the window.
+  //
+  // The analysis runs on the raw antenna streams, upstream of WDSP, so
+  // the carrier is still there at full strength; div_bin_notched() is the
+  // only thing keeping it out of the estimate. Every reference that works
+  // from the transform has to honour it, which is what this checks - a
+  // carve-out applied to one reference and forgotten in another is the
+  // failure mode here.
+  //
+  // RADE V1 is deliberately absent: it is handed the block in the time
+  // domain and has no bins to leave out.
+  //
+  // The notch centre is in the raw frame, so the bin frequency is
+  // -centre; the carrier sits at +37 Hz, so the notch goes at -37.
+  //
+  printf("\n--- with a notch over the signal ---\n");
+  struct { const char *name; int ref; } nocases[] = {
+    { "Window", DIV_REF_BAND       },
+    { "Carrier", DIV_REF_CARRIER   },
+    { "Digital", DIV_REF_DIGITAL_IQ },
+    { "CW",      DIV_REF_CW        },
+  };
+
+  for (unsigned c = 0; c < sizeof(nocases)/sizeof(nocases[0]); c++) {
+    div_auto_ref = nocases[c].ref;
+    div_auto_mode = DIV_AUTO_SUM;
+    div_auto_follow_filter = 1;
+    div_auto_tau = 1.0;
+    div_auto_coherence_min = 0.1;
+    div_cos = 1.0; div_sin = 0.0; div_gain = 0.0; div_phase = 0.0;
+    //
+    // Wide enough to swallow both tones whole at any bin width this
+    // test can run at, so "nothing is left" is unambiguous.
+    //
+    rx0.multi_notch_enable[0] = 1;
+    rx0.multi_notch_center[0] = -37.0;
+    rx0.multi_notch_width[0]  = 400.0;
+    rx0.multi_notch_enable[1] = 1;
+    rx0.multi_notch_center[1] = -1500.0;
+    rx0.multi_notch_width[1]  = 400.0;
+    diversity_auto_start();
+    double ph = 0, ph2 = 0;
+    srand(9);
+
+    for (int blk = 0; blk < 400; blk++) {
+      for (int n = 0; n < 512; n++) {
+        ph  += 2.0*M_PI*37.0/192000.0;
+        ph2 += 2.0*M_PI*1500.0/192000.0;
+        double s = cos(ph) + 0.7*cos(ph2), t = sin(ph) + 0.7*sin(ph2);
+        double n0 = 0.01*(2.0*rand()/RAND_MAX-1.0);
+        double n1 = 0.01*(2.0*rand()/RAND_MAX-1.0);
+        double a0r = s + n0,            a0i = t + n0;
+        double a1r = hr*s - hi*t + n1,  a1i = hr*t + hi*s + n1;
+        diversity_auto_sample(a0r, a0i, a1r, a1i);
+      }
+
+      g_usleep(200);
+    }
+
+    g_usleep(400000);
+    //
+    // The engine may legitimately hold, or solve on what is left of the
+    // window - what it must not do is converge on the notched tone, which
+    // is the only thing in here with a channel of hr/hi.
+    //
+    const double gain_h = 20.0*log10(sqrt(hr*hr + hi*hi));
+    const double phase_h = atan2(hi, hr)*180.0/M_PI;
+    int locked_on_notched = (fabs(div_gain - gain_h) < 1.0) &&
+                            (fabs(div_phase + phase_h) < 10.0);
+    printf("%-8s -> gain %+7.2f dB  phase %+7.1f deg  holding %d  %s\n",
+           nocases[c].name, div_gain, div_phase, div_auto_holding,
+           locked_on_notched ? "*** SOLVED ON A NOTCHED SIGNAL ***" : "OK");
+
+    if (locked_on_notched) { fails++; }
+
+    diversity_auto_stop();
+    rx0.multi_notch_enable[0] = 0;
+    rx0.multi_notch_enable[1] = 0;
+  }
+
+  printf("%s\n", fails ? "FAIL" : "PASS - every mode produced a weight, and none used a notched bin");
   return fails ? 1 : 0;
 }

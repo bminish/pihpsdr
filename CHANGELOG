@@ -3,6 +3,19 @@ LIST OF RECENT PIHPSDR CHANGES
 September 2026:
 ---------------
 
+- diversity: bins the operator has notched out take no part in the
+  auto-phasing estimate, in every reference that works from the transform
+  - the wideband Window accumulation and the combine over it, the Carrier
+  tracker's peak search, all four passes of the FSK/Digital occupancy
+  split, the CW solve, and the per-arm noise floor. The analysis runs on
+  the two raw antenna streams, upstream of WDSP, so a notched interferer
+  was still sitting in the spectrum at full strength and could be picked
+  as the signal to work on. Notching an interferer is now also a way to
+  tell the combiner to ignore it. RADE V1 is the exception: the correlator
+  is handed the block in the time domain, so there are no bins to leave
+  out. Moving or enabling a notch resets the statistics like any other
+  context change. With no notch set the engine is bit-identical to before
+
 - diversity: the CW/Morse reference tells a keyed signal from a steady one.
   It compares the strongest bin in the window with the quietest that bin has
   recently been - Morse stops between letters, words and overs and a carrier

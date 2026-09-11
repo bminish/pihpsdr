@@ -385,7 +385,7 @@
 #define DIV_CW_BINS          1      // 1 bin either side of peak tone (3 bins total)
 //
 // Below this many usable bins there is nothing to measure. Reached by a
-// very narrow filter.
+// very narrow filter, and by notches covering most of the window.
 //
 #define DIV_CW_MIN_BINS      6
 //
@@ -1019,7 +1019,7 @@ static int             acc_valid = 0;
 // The CW activity gate's temporal reference: the quietest the window's
 // peak bin has recently been. One scalar, not one per bin - see the note
 // in div_cw_solve(). Reset with the rest of the statistics, so a retune,
-// or a filter change starts it again.
+// a filter change or a notch move starts it again.
 //
 static double          cw_act_lo = 0.0;
 static int             cw_act_valid = 0;
@@ -1075,6 +1075,15 @@ struct div_context {
   int       weighting;
   int       att0;
   int       att1;
+  //
+  // The operator's manual notches, mirrored here for the same reason the
+  // filter edges are: they say which part of the passband is wanted, the
+  // analysis has to honour that, and a change of one has to reset the
+  // statistics like any other context change.
+  //
+  int       notch_on[3];
+  double    notch_centre[3];
+  double    notch_width[3];
 };
 
 static struct div_context lastctx;
@@ -1482,6 +1491,17 @@ static void div_get_context(struct div_context *ctx) {
   ctx->weighting      = div_auto_weighting;
   ctx->att0           = adc[0].attenuation;
   ctx->att1           = adc[1].attenuation;
+
+  //
+  // Taken from receiver 0 for the same reason everything else here is:
+  // the analysis runs on the pair of streams feeding it, and the ear
+  // split's second receiver is a copy that follows this one.
+  //
+  for (int i = 0; i < 3; i++) {
+    ctx->notch_on[i]     = rx->multi_notch_enable[i];
+    ctx->notch_centre[i] = rx->multi_notch_center[i];
+    ctx->notch_width[i]  = rx->multi_notch_width[i];
+  }
 }
 
 //
@@ -1490,6 +1510,26 @@ static void div_get_context(struct div_context *ctx) {
 // three frequency comparisons below are against where the estimate was
 // actually made. See DIV_RETUNE_HZ.
 //
+//
+// The notches, compared exactly. A notch that is off is not compared at
+// all: its centre and width still hold whatever the operator last set,
+// and sliding a disabled notch about must not throw the estimate away.
+//
+static int div_notches_differ(const struct div_context *a, const struct div_context *b) {
+  for (int i = 0; i < 3; i++) {
+    if (a->notch_on[i] != b->notch_on[i]) { return 1; }
+
+    if (!a->notch_on[i]) { continue; }
+
+    if (a->notch_centre[i] != b->notch_centre[i] ||
+        a->notch_width[i]  != b->notch_width[i]) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 static int div_context_changed(const struct div_context *a, const struct div_context *b) {
   return llabs(a->frequency      - b->frequency)      > DIV_RETUNE_HZ ||
          llabs(a->ctun_frequency - b->ctun_frequency) > DIV_RETUNE_HZ ||
@@ -1505,7 +1545,65 @@ static int div_context_changed(const struct div_context *a, const struct div_con
          a->width          != b->width          ||
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
-         a->att1           != b->att1          ;
+         a->att1           != b->att1           ||
+         div_notches_differ(a, b);
+}
+
+//
+// Does bin k lie entirely inside one of the operator's manual notches?
+//
+// The operator has said that part of the passband is not wanted. This
+// analysis does not see that: the transform is taken from the two raw
+// antenna streams, upstream of WDSP, so a notched interferer is still
+// sitting in our spectrum at full strength and will be picked as a peak
+// and solved for like anything else. Excluding the bins here is the only
+// way the declaration reaches the estimate.
+//
+// Applied by every reference that works from the transform: the wideband
+// Window accumulation and the coherence-weighted combine over it, the
+// Carrier tracker's peak search, all four passes of the occupancy split,
+// the CW solve, and the per-arm noise floor. RADE V1 is the exception and
+// cannot be covered - rade_corr_process() is handed the block in the time
+// domain and does its own correlation, so there are no bins here to leave
+// out. It is also the one reference where it would buy least: the pilot
+// correlator is looking for a specific waveform at a specific offset, not
+// for whatever is loudest.
+//
+// The frame. multi_notch_center is what reaches RXANBPEditNotch(), and
+// nbp.c forms its passband as "flow + offset" with
+// offset = ndb->tunefreq + ndb->shift. tunefreq is never set by piHPSDR
+// and stays at the zero create_notchdb() leaves, and shift is what
+// rx_set_offset_for() passes to RXANBPSetShiftFrequency() - the VFO
+// offset with the CW sidetone already folded in, which is exactly
+// div_frame_off(). So a notch centre lives in the raw frame, and
+//
+//   div_shift_to_bin(s) = -(s + frame_off),  s = centre - frame_off
+//
+// collapses to a bin frequency of simply -centre. The sidetone cancels,
+// which is why this needs no CW special case - the one thing that makes
+// it worth writing the derivation down rather than the result.
+//
+// "Entirely inside" rather than "overlapping": a bin straddling a notch
+// edge still carries wanted signal, and at a coarse Resolution a narrow
+// notch is narrower than one bin, where excluding on overlap would throw
+// away the whole region the operator was trying to keep.
+//
+static int div_bin_notched(const struct div_context *ctx, int k) {
+  const double lo = ((double)k - 0.5) * binhz;
+  const double hi = ((double)k + 0.5) * binhz;
+
+  for (int i = 0; i < 3; i++) {
+    if (!ctx->notch_on[i] || !(ctx->notch_width[i] > 0.0)) { continue; }
+
+    const double a = -(ctx->notch_centre[i] - 0.5 * ctx->notch_width[i]);
+    const double b = -(ctx->notch_centre[i] + 0.5 * ctx->notch_width[i]);
+    const double nlo = (a < b) ? a : b;
+    const double nhi = (a < b) ? b : a;
+
+    if (lo >= nlo && hi <= nhi) { return 1; }
+  }
+
+  return 0;
 }
 
 //
@@ -1810,6 +1908,13 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
       k = ehi;
       continue;
     }
+
+    //
+    // A notch outside the passband is unusual but perfectly legal, and a
+    // bin the operator has notched is the one place in the band where
+    // the level says nothing about the noise.
+    //
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2509,6 +2614,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   int ns = 0;
 
   for (int k = klo; k <= khi && ns < DIV_OCC_MAX_SAMPLES; k += stride) {
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2552,6 +2658,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   // First pass: which bins carry signal, and the channel over them.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2621,6 +2728,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
   // Distance from the signal is what keeps the signal out of R instead.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2676,6 +2784,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
     nsig = nnoise = 0;
 
     for (int k = klo; k <= khi; k++) {
+      if (div_bin_notched(ctx, k)) { continue; }
 
       int idx = k % nfft;
 
@@ -2851,6 +2960,9 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // near the filter edges from hijacking the tracker. Noise floor estimation in step 2
   // continues to use off-tone bins across the full passband on an equal-weight basis.
   //
+  // Bins the operator has notched out take no part in any of it - not the
+  // search, not the floor, not the accumulation. See div_bin_notched().
+  //
   int peak = klo;
   double peakval = -1.0;
   double peak_raw = 0.0;
@@ -2862,6 +2974,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   const double inv_two_sigma2 = (sigma > 0.0) ? (1.0 / (2.0 * sigma * sigma)) : 0.0;
 
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2886,8 +2999,9 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   }
 
   //
-  // Nothing left to look at: the window is empty, or too narrow to say
-  // anything. Hold rather than solve on whatever survived.
+  // Nothing left to look at. Either the window is empty or the notches
+  // cover all of it, which is a thing an operator can set up and which
+  // must hold rather than solve on whatever survived.
   //
   if (peakval <= 0.0 || passband_bins < DIV_CW_MIN_BINS) {
     div_auto_occ_valid = 0;
@@ -2921,6 +3035,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   for (int k = klo; k <= khi && nns < DIV_NF_SAMPLES; k += nf_stride) {
     if (abs(k - peak) < 4) { continue; }
 
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -2965,8 +3080,8 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // and measured at three bins. Keeping the gate's span fixed is what
   // lets DIV_CW_BINS be chosen on estimator variance alone.
   //
-  // The span may run off the end of the window, so count what was
-  // actually summed rather than assuming the full width.
+  // The span may run off the end of the window or across a notch, so
+  // count what was actually summed rather than assuming the full width.
   //
   double p_crest = 0.0;
   int crest_bins = 0;
@@ -2976,6 +3091,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
 
     if (k < klo || k > khi) { continue; }
 
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -3110,6 +3226,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
 
     if (k < klo || k > khi) { continue; }
 
+    if (div_bin_notched(ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -3385,6 +3502,11 @@ static void div_process_block(void) {
     //
     const int expect = div_rade_side_expected(&ctx);
     const int bank = (expect == 0) ? -1 : (expect < 0 ? 0 : 1);
+    //
+    // The one reference a manual notch does not reach: the correlator is
+    // given the block in the time domain, so div_bin_notched() has nothing
+    // to act on here. See the note there.
+    //
     int ok = rade_corr_process(work0, work1, nfft, bank,
                                div_frame_off(&ctx), div_auto_tau, div_auto_hang,
                                &wr, &wi);
@@ -3538,6 +3660,12 @@ static void div_process_block(void) {
     double peakval = -1.0;
 
     for (int k = klo_s; k <= khi_s; k++) {
+      //
+      // A notched carrier is one the operator has said they do not want
+      // tracked, which is exactly the heterodyne this search would
+      // otherwise lock to first.
+      //
+      if (div_bin_notched(&ctx, k)) { continue; }
 
       int idx = k % nfft;
 
@@ -3633,6 +3761,13 @@ static void div_process_block(void) {
   }
 
   double cur_xx = 0.0, cur_yy = 0.0, cur_xy_re = 0.0, cur_xy_im = 0.0;
+  //
+  // Bins actually used, which is the window less whatever the operator
+  // has notched out of it. div_arm_from_floor() scales a per-bin noise
+  // floor by this to compare with the window powers beside it, so it has
+  // to be the count accumulated and not the width of the window.
+  //
+  int used_bins = 0;
 
   //
   // Per-bin running spectra. Keeping these per bin rather than as four
@@ -3640,11 +3775,13 @@ static void div_process_block(void) {
   // antennas agree in each - see below.
   //
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(&ctx, k)) { continue; }
 
     int idx = k % nfft;
 
     if (idx < 0) { idx += nfft; }
 
+    used_bins++;
     double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
     double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
     //
@@ -3726,6 +3863,7 @@ static void div_process_block(void) {
   double cur_p = 0.0, acc_p = 0.0;
 
   for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(&ctx, k)) { continue; }
 
     int idx = k % nfft;
 
@@ -3811,7 +3949,7 @@ static void div_process_block(void) {
     // before it has been written.
     //
     double db = 0.0;
-    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, khi - klo + 1, &db);
+    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, used_bins, &db);
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
