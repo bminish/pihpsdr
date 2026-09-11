@@ -361,6 +361,7 @@ void rx_panadapter_update(RECEIVER *rx) {
       break;
 
     case DIV_REF_DIGITAL_IQ:
+    case DIV_REF_CW:
       //
       // Again the search region. What was found occupied inside it is
       // drawn over the top further down, so both are visible at once:
@@ -423,11 +424,11 @@ void rx_panadapter_update(RECEIVER *rx) {
       cairo_fill(cr);
 
       //
-      // In digital mode, shade the bins found occupied inside the region.
+      // In digital or CW mode, shade the bins found occupied inside the region.
       // Same accent again but stronger, so it reads as "this part of the
       // region is what is being measured" rather than as a second thing.
       //
-      if (div_auto_ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
+      if ((div_auto_ref == DIV_REF_DIGITAL_IQ || div_auto_ref == DIV_REF_CW) && div_auto_occ_valid) {
         double ol = rx->cAp * div_auto_occ_lo + xoffset + rx->cBp;
         double oh = rx->cAp * div_auto_occ_hi + xoffset + rx->cBp;
 

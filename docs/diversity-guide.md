@@ -171,8 +171,9 @@ occupancy split needs a signal that stands clear of the noise across a
 region with room to spare, and a narrow filter on ordinary band CW gives
 it neither: the strongest carrier is only 3.6 to 4.5 dB over the region
 median, and enough noise bins clear the threshold to keep the loop
-adapting on nothing. Use **Window** there. The same numbers are in
-`docs/diversity-measurements.md` if you want to see the working.
+adapting on nothing. Use **CW / Morse** there, or **Window**. The same
+numbers are in `docs/diversity-measurements.md` if you want to see the
+working.
 
 **And not for a signal that fills the passband either**, whatever the
 name of the mode suggests. It works by finding the bins that stand out
@@ -194,6 +195,45 @@ whole of the workaround.
 The status line shows the occupied width it found, and the panadapter
 shades those bins more strongly inside the search region — if the dark
 band is not on your signal, the region is in the wrong place.
+
+### CW / Morse (OOK MRC)
+
+For hand-sent CW in a narrow filter. Tick **Window follows RX filter** and
+it takes the passband as its search region, finds the strongest tone in
+it, and combines over that tone and its immediate neighbours.
+
+Two things make it different from pointing **Window** at the same filter.
+
+**It prefers the middle of the passband.** The search is weighted by a
+bell curve centred on the filter, so a signal near your zero beat wins
+over one of similar strength near the filter edge. That is the right bias
+in CW specifically, because the passband is built around the pitch you
+tune to — a station you are zero-beat on sits at the centre by
+construction. Measured over eleven captures it puts the tracker on the
+wanted tone 82.6 % of the time against 80.5 % for a plain "loudest bin"
+search, and on a wide filter with QRM either side it is worth rather more
+than that average suggests.
+
+**It knows the two antennas may not be equally noisy.** The Sum weight
+carries the branch noise ratio, measured from the off-tone bins inside
+your own passband. Leaving it out costs about 1 dB on these captures.
+
+Use it for:
+
+- **Ordinary CW**, as the first thing to try in a CW filter.
+- **A weak signal with QRM off to one side**, where the bell curve is
+  doing real work.
+
+`Null` is the wrong objective here — it points the null at the one thing
+in the window you want to hear, and measured across the CW captures it
+costs about 6 dB. `Best` is not recommended either; its per-arm estimate
+in this mode is cruder than the one **Window** builds. Use `Sum`.
+
+Honest limits, because they are measured: against simply listening to the
+better of the two antennas, this reference is roughly a wash on average —
+it is ahead on eight captures of eleven and the mean gain is a few tenths
+of a decibel. The case it clearly wins is a passband with more than one
+thing in it. See `docs/diversity-measurements.md`.
 
 ### Carrier (AM/SAM)
 

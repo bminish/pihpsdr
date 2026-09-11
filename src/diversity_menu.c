@@ -123,6 +123,7 @@ static const struct {
 } ref_rows[] = {
   { DIV_REF_BAND,       "Window (wideband)"            },
   { DIV_REF_DIGITAL_IQ, "FSK/Digital (occupancy MVDR)" },
+  { DIV_REF_CW,         "CW / Morse (OOK MRC)"         },
   { DIV_REF_CARRIER,    "Carrier (AM/SAM)"             },
   { DIV_REF_RADE_V1,    "RADE V1 pilot (MVDR)"         }
 };
@@ -623,22 +624,9 @@ static void update_visibility(void) {
   //
   const gboolean is_band    = (ref == DIV_REF_BAND);
   const gboolean is_carrier = (ref == DIV_REF_CARRIER);
-  //
-  // FSK/Digital places a search region the same way Window places a
-  // window, and takes the follow tick for the same reason: following the
-  // passband puts the region on the right side of the tuned frequency in
-  // every mode without a sideband table, which is how this mode avoids
-  // needing one.
-  //
   const gboolean is_digital = (ref == DIV_REF_DIGITAL_IQ);
-  //
-  // Carrier takes the tick too, and means something slightly different by
-  // it: not the whole passband, but a fixed narrow search at the centre of
-  // it, which is where an AM or SAM carrier is. Its own centre and width
-  // are kept while it is ticked, in div_carrier_centre/width, and come
-  // back untouched when it is cleared.
-  //
-  const gboolean follows    = is_band || is_digital || is_carrier;
+  const gboolean is_cw      = (ref == DIV_REF_CW);
+  const gboolean follows    = is_band || is_digital || is_carrier || is_cw;
   const gboolean placeable  = follows && !div_auto_follow_filter;
   //
   // Everything except the pilot correlator works from the transform, so
@@ -1031,6 +1019,24 @@ static int status_update_cb(gpointer data) {
     } else {
       state = rade_corr_confirming ? "confrm" : "search";
       snprintf(detail, sizeof(detail), "%s", div_rade_side_text());
+    }
+
+    break;
+
+  case DIV_REF_CW:
+    snprintf(tag, sizeof(tag), "CW %.0fHz%s", div_auto_binhz, clamp);
+
+    if (!div_auto_occ_valid) {
+      state = div_auto_hold ? "HOLD" : "search";
+      snprintf(detail, sizeof(detail), "no signal");
+    } else {
+      state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
+      if (div_auto_carrier_valid) {
+        snprintf(detail, sizeof(detail), "%+4.0fHz", div_auto_carrier);
+      } else {
+        snprintf(detail, sizeof(detail), "occ %4.0fHz",
+                 div_auto_occ_hi - div_auto_occ_lo);
+      }
     }
 
     break;
