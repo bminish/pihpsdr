@@ -25,6 +25,13 @@ a new question about what the loop leaves applied while it holds. Getting
 them needed **three fixes to the instrumentation itself**, which are in
 "What was changed" and which qualify a good deal of what is above them.
 
+**Findings 50 to 55 record a feature branch that was abandoned**, and add
+seven captures - two STANAG and five RADE V1 taken 2026-09-14. They change
+the shipping code only by adding a measurement nothing acts on: the
+per-subcarrier channel, and the residual that says whether the inter-arm
+channel is a delay at all. The delay correction and the per-bin equalizer
+they were written to serve are both on `radeV1-eq` and neither is here.
+
 **Finding 11** - the MVDR solve returning a weight of exactly zero, the
 second antenna muted, the menu showing -27 dB, on between half and all of
 the frames of every RADE capture in this document bar one - has been
@@ -195,6 +202,32 @@ searched - false-alarms at every `RADE_USE_RATIO` up to and including
 `112151` left at 5 % is now none. It produces no weight while it does it,
 and it closes the direction the threshold assessment left open: the
 constant cannot come down.
+
+**Findings 50 to 55 are a whole feature branch that did not work, kept so
+it is not tried twice.** `radeV1-eq` added differential delay
+compensation and per-bin equalization; both were scored and both were
+abandoned, and the branch is on the remote if the detail is ever wanted.
+The delay correction cost SNR on every capture class tried even after two
+real bugs in it were fixed - it was delaying the wrong arm, and
+discarding 42.7 % of its own estimates - because the delay it corrects is
+antenna *separation* and two antennas at one site have none. Per-bin
+equalization driven from the pilots has **68.7 degrees of phase
+prediction error against the 90 a coin gives**; driven from the analysis
+window instead it measures ten times as much, works on any signal rather
+than only RADE, and reaches +0.25 to +0.30 dB on two STANAG captures -
+but is still a coin flip per capture on the other 93.
+
+**What came back here is the measurement, not the correction**: the
+correlator publishes the per-subcarrier channel and the delay that falls
+out of it, `replay_rade` reports the residual left after removing the
+straight line a delay would have made, and nothing in the audio path
+reads any of it. That column is the one that says whether a delay is even
+the right description of the channel, which no confidence figure from the
+estimator itself can. Three traps are recorded with them and all three had
+already produced wrong numbers: a latency-matched control stream turned a
+"+14 frames where nothing else decoded" result into buffer alignment,
+`librade` frame counts vary by up to 27 frames on a re-run of identical
+code, and `run_ref --pace 0` silently drops two thirds of the blocks.
 
 **Finding 47 is now fixed, and the fix is a different estimator rather
 than a better guard.** The branch noise floor no longer comes from a
@@ -7479,6 +7512,227 @@ the most.
 **It does not settle whether A or B is the right fallback**, or what the
 stand-down for RADE V1 should look like. It settles that there has to be
 one.
+
+## Finding 50: differential delay compensation, and why it never helped
+
+Built on branch `radeV1-eq`, scored on 93 captures plus five taken on
+2026-09-14, and abandoned. **The measurement it rests on is now in the
+correlator here; the correction is not, and this is why.**
+
+The idea was that the two arms see the same signal offset in time, so the
+phase of `g1*conj(g0)` across the 30 subcarriers is a straight line whose
+slope gives the offset. Delay the early arm by it and the two line up.
+
+**As first written it delayed the wrong arm.** A positive estimate means
+arm 1 arrives *late*, and the only causal fix is to delay arm 0; the code
+delayed arm 1 instead, doubling the misalignment - 43.2 degrees of error
+at 1.2 kHz becoming 86.4. It also clamped negative estimates to zero,
+which discarded 42.7 % of them on real captures, so in the half of cases
+where delaying arm 1 *was* right it did nothing at all.
+
+Both were fixed. **It still did not help.** Over 93 captures the corrected
+version scored -0.49 dB mean against the plain scalar combiner, slightly
+worse than the inverted one it replaced, and on the five 2026-09-14
+captures it cost SNR on every one - 6.5 dB to 5.4, 8.8 to 7.6, 3.0 to 1.1,
+13.3 to 12.5, 21.7 to 21.2.
+
+**The estimator was not the problem either.** Replacing the unwrap-then-
+regress fit with a coherence-weighted circular mean of the phase step
+between adjacent subcarriers - no unwrapping, so one bad subcarrier costs
+one term instead of every term above it - cut the estimate's spread over a
+capture from 1405 us to 311 us, a 4.5-fold reduction in variance, and made
+no difference to the decode.
+
+What it is: **an estimate with nothing to estimate.** The delay this
+corrects is antenna *separation*, and a doublet and a loop at one site are
+nanoseconds apart. See Finding 51 for what is actually there instead.
+
+## Finding 51: a straight line fitted to a channel that is not a delay still returns a number
+
+This is the finding worth keeping, and `replay_rade` now reports it as
+`delay_resid_deg`.
+
+A delay makes the inter-arm phase response linear in frequency. Multipath
+does not: several paths into each antenna make each arm's channel
+frequency-selective, so their ratio has nulls and fast phase excursions in
+it. Fitting a line to that produces a slope, and the slope has a coherence
+and a confidence and means nothing. **Nothing in the estimator can tell
+the two cases apart - only the residual after removing the line can.**
+
+Validated against channels with a known answer:
+
+| channel | residual |
+| :--- | ---: |
+| pure delay, 0 / 50 / 200 / 800 us | 0.00 deg |
+| two-path, echo amplitude 0.3 / 0.6 / 0.9 | 15 / 36 / 68 deg |
+| pure delay at 20 / 10 / 5 dB subcarrier SNR | 7 / 25 / 39 deg |
+
+**The third row is the caveat and it is a large one.** Noise inflates the
+residual on its own, and at 5 dB per-subcarrier SNR a pure delay already
+reads 39 degrees with no multipath present. So the residual is read with
+`delay_coh` beside it, always: a large residual at low coherence says only
+that the measurement is poor. It is a residual that stays large while
+coherence is *high* that is evidence of structure a delay cannot explain.
+
+On the five 2026-09-14 captures:
+
+| capture | coh | mean abs delay | spread | residual |
+| :--- | ---: | ---: | ---: | ---: |
+| `153751` 7.177 MHz | 0.376 | 347 us | 1745 us | 95.8 deg |
+| `153952` 7.177 MHz | 0.429 | 225 us | 1350 us | 83.3 deg |
+| `154203` 7.177 MHz | 0.279 | 478 us | 2099 us | 97.1 deg |
+| `154454` 5.3685 MHz | 0.660 | 253 us | 1150 us | 56.3 deg |
+| `154736` 5.3685 MHz | 0.746 | 102 us | 565 us | 49.5 deg |
+
+The 5 MHz pair was recorded as heavy multipath and has much the better
+coherence, as very strong signals should. **What cannot be claimed from
+this table is that multipath dominates the residual**: at coherence 0.75
+the noise floor above is already near 40 degrees, so most of the 49.5 is
+unexplained by it but not much. An earlier draft of this section said the
+inter-arm channel "is not a delay" and that was further than the numbers
+go.
+
+What the table does say, independent of the residual: **the estimate
+wanders by 565 to 2099 microseconds over a minute** on signals this
+strong, which is not the behaviour of a fixed geometric offset.
+
+## Finding 52: per-bin equalization driven from the pilots has no predictive power
+
+Phase 2 was to equalize the two arms bin by bin rather than with one
+wideband weight. The first implementation **never ran at all** - the
+function computing the per-bin weights was defined and never called, so
+the weights stayed at the flat 1+0j their initialiser gave them and the
+path was the scalar combiner with 512 samples of latency added. There was
+also nothing to call it with: the per-subcarrier channel never left the
+correlator.
+
+That is worth recording for a different reason. **Its headline result
+survived scoring**: on one capture the STFT path decoded 14 frames where
+every other stream decoded none. Adding a control stream - the baseline
+combiner through a plain 512-sample delay line, no FFT, no weights -
+produced *exactly* the same 14 frames and 3.7 dB. The gain was buffer
+alignment at the decode threshold and nothing else. **A path that adds
+latency needs a latency-matched control before any of its numbers mean
+anything.**
+
+Once the estimate was plumbed through properly, the mechanism worked and
+the answer was still no. Held-out scoring (Finding 55) put the mean phase
+prediction error at **68.7 degrees against the 90 a coin would give**, and
+every tunable's optimum sat at the setting that equalized least -
+`sub_tau` longest, `sub_smooth` widest, `sub_mincoh` highest - whose
+common limit is a flat weight, which is the scalar combiner. Mean benefit
+over the 33 captures that lock: **-0.12 dB**.
+
+**Thirty subcarriers measured once per 120 ms frame do not carry enough
+to estimate a channel worth applying.**
+
+## Finding 53: the same equalizer driven from the window measures ten times as much, and the gate was backwards
+
+The window reference already accumulates a smoothed cross-spectrum over
+every bin in the analysis window - some 256 of them per block on a 3 kHz
+window - and it measures the two antenna paths rather than the modem, so
+**any signal with energy in a bin is its own pilot there**. It scored all
+93 captures where the pilot path could speak for 33, and it works on SSB,
+STANAG, FSK or band noise.
+
+Nothing new is measured: for `y = z0 + W z1` the MRC weight is
+`conj(h1)/conj(h0)`, and with `bin_xy` accumulated as `X0*conj(X1)` that
+is `bin_xy/bin_xx` - one division on quantities `div_process_block()`
+already holds.
+
+**The coherence gate was making things worse on 66 of 93 captures.** A
+bucket below the threshold published a *flat* weight - and flat is not
+neutral. Flat means the wideband weight, which on these captures boosts
+arm 1 by up to 13 dB, so the gate was pushing that boost into exactly the
+bins where arm 1 held nothing but noise. Publishing zero instead - arm 0
+alone, the real "no opinion" - moved the mean from -0.046 dB to +0.245 dB.
+
+Better still, the gate is not the right mechanism at all. **Bounding the
+weight beats refusing to use it**, and the two together were worse than
+the bound alone. The clamp is a direct trade, over 95 captures:
+
+| weight clamp | mean | worst capture |
+| :--- | ---: | ---: |
+| 1.3 | +0.08 dB | -0.53 dB |
+| 1.6 | +0.11 dB | -0.67 dB |
+| 2.0 | +0.14 dB | -0.93 dB |
+| 3.0 | +0.17 dB | -1.50 dB |
+
+Where it landed: **positive on the two STANAG captures in every
+configuration tried** (+0.25 and +0.30 dB, being 11 % and 43 % of the
+scalar combiner's own shortfall against a genie), mean +0.137 dB over the
+93 RADE captures, positive on 61 of them, worst case -0.93 dB. Real
+leverage, unlike the pilot path's +/-0.1 dB, but still close to a coin
+flip per capture.
+
+**Estimate quality does not predict where it will help** (r = -0.26, and
+not monotonic). A flat channel predicts perfectly and has nothing to
+equalize, so estimator quality and opportunity partly cancel. Separating
+them wants a measure of how much the weight varies across the window,
+which nobody has built.
+
+## Finding 54: the analysis window must not be wider than the signal in it
+
+Tested because the equalizer won on STANAG, where the filter was 3.8 to
+4.4 kHz, and lost on RADE, where it was 2 kHz. The obvious reading is that
+per-bin equalization needs bandwidth. **It is wrong.** Widening the window
+on `154736` from 1 to 12 kHz:
+
+| window | bins | phase prediction | equalizer benefit | headroom |
+| ---: | ---: | ---: | ---: | ---: |
+| 1000 Hz | 85 | 17.8 deg | -0.058 dB | 0.65 dB |
+| 2000 Hz | 170 | 21.3 deg | -0.073 dB | 0.88 dB |
+| 5000 Hz | 426 | 33.8 deg | -0.553 dB | 1.75 dB |
+| 12000 Hz | 1024 | 110.9 deg | -1.069 dB | 2.10 dB |
+
+Headroom rises the whole way and everything else collapses. Outside the
+modem's own ~1.5 kHz occupancy there is only noise and adjacent QRM, and
+bins with no coherent signal in them poison the estimate faster than the
+extra span helps.
+
+**The STANAG advantage was not width, it was that the STANAG signal
+filled its filter.** The rule is that the window should match the occupied
+bandwidth and never exceed it - the opposite of what "a wider window gives
+the estimator more to work with" would suggest.
+
+## Finding 55: scoring a channel estimate without a decoder
+
+`librade` frame counts were the only objective available for the work
+above, and they are a poor one for tuning: half an hour a sweep point, on
+the third of captures that lock, against a run-to-run variance of tens of
+frames. **Re-running identical code on identical input moved the baseline
+by up to 27 frames on one capture and 55 in aggregate**, so any
+single-capture claim below about +/-30 frames is noise - which included
+the +14 of Finding 52.
+
+`replay_rade` now scores the estimate one frame ahead instead. The
+estimate entering a block was formed from earlier blocks only and is
+judged against that block's own untouched measurement, so a longer average
+cannot win by smoothing its way towards its own answer. It reports the
+phase prediction error, and the SNR given up against a genie that knows
+the channel, for the per-bin and the wideband weight separately.
+
+**It agrees with the decoder wherever the decoder can speak, and it runs
+93 captures in nine seconds rather than half an hour.**
+
+Two traps found while building it, both of which had already produced
+wrong numbers:
+
+* **The obvious metric is unbounded.** Scoring the predicted MRC weight
+  directly gave a normalised error of 2570, because the measured weight is
+  `conj(x01)/p0` and `p0` goes to nothing in a fade - it was measuring
+  `1/p0` and nothing about the estimate. The phase is bounded and is what
+  phase-only equalization actually sets.
+* **`run_ref --pace 0` is not a measurement mode.** It drops two thirds of
+  the blocks and the count varies run to run, 197 to 222 of 703. At the
+  default pace it is exactly reproducible - 702 blocks, identical to four
+  decimals on three consecutive runs. A sweep taken with `--pace 0` is
+  comparing different subsets of the capture.
+
+The absolute figure from the genie comparison is not a real shortfall: the
+genie is scored against the same noisy measurement as everyone else and
+wins partly by fitting that noise. Differences between tuning points are
+what it is for.
 
 ## False alarms
 
