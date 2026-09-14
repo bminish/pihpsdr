@@ -502,6 +502,9 @@ double rade_corr_arm_cos  = 1.0;
 double rade_corr_arm_sin  = 0.0;
 int    rade_corr_mirrored = 0;
 int    rade_corr_confirming = 0;
+double rade_corr_delay_sec = 0.0;
+int    rade_corr_delay_valid = 0;
+double rade_corr_phase_slope = 0.0;
 
 typedef struct {
   double re, im;
@@ -763,6 +766,9 @@ void rade_corr_reset(void) {
   rade_corr_arm_valid = 0;
   rade_corr_arm_cos = 1.0;
   rade_corr_arm_sin = 0.0;
+  rade_corr_delay_sec = 0.0;
+  rade_corr_delay_valid = 0;
+  rade_corr_phase_slope = 0.0;
   //
   // These two are only ever written when a lock is taken, so without this
   // they survive a reset - and the menu goes on showing the last lock's
@@ -1523,6 +1529,65 @@ static int rade_track(double tau, double hang, double *wr, double *wi) {
   e0 /= (double)RADE_GUARD_BINS;
   e1 /= (double)RADE_GUARD_BINS;
   e01 = cscale(e01, 1.0 / (double)RADE_GUARD_BINS);
+
+  //
+  // Per-subcarrier channel and phase slope estimation for Phase 1 differential delay.
+  //
+  double phi_sub[RADE_CORR_NC];
+  double w_sub[RADE_CORR_NC];
+  double sum_w = 0.0, sum_f = 0.0, sum_phi = 0.0;
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    int k = RADE_CARRIER_K0 + c;
+    const double hz = lock_f + gsign * (double)k * dbin;
+    cplx g0 = rade_dft_bin(ring0, lock_a, hz);
+    cplx g1 = rade_dft_bin(ring1, lock_a, hz);
+    cplx x01_c = cmul(g1, cconj(g0));
+    phi_sub[c] = atan2(x01_c.im, x01_c.re);
+    w_sub[c] = sqrt(cabs2(g0) * cabs2(g1));
+  }
+
+  // Unwrap phases across subcarriers
+  double phi_unwrap[RADE_CORR_NC];
+  phi_unwrap[0] = phi_sub[0];
+  for (int c = 1; c < RADE_CORR_NC; c++) {
+    double diff = phi_sub[c] - phi_unwrap[c - 1];
+    diff = remainder(diff, 2.0 * M_PI);
+    phi_unwrap[c] = phi_unwrap[c - 1] + diff;
+  }
+
+  // Weighted linear regression of phi vs subcarrier audio frequency (750 + c*50 Hz)
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    double f_hz = 750.0 + (double)c * 50.0;
+    sum_w += w_sub[c];
+    sum_f += w_sub[c] * f_hz;
+    sum_phi += w_sub[c] * phi_unwrap[c];
+  }
+
+  if (sum_w > 1e-20) {
+    double f_mean = sum_f / sum_w;
+    double phi_mean = sum_phi / sum_w;
+    double s_ff = 0.0, s_fphi = 0.0;
+    for (int c = 0; c < RADE_CORR_NC; c++) {
+      double f_hz = 750.0 + (double)c * 50.0;
+      double df = f_hz - f_mean;
+      double dphi = phi_unwrap[c] - phi_mean;
+      s_ff += w_sub[c] * df * df;
+      s_fphi += w_sub[c] * df * dphi;
+    }
+    if (s_ff > 1e-12) {
+      double slope = s_fphi / s_ff; // rad / Hz
+      double delay_sec = -slope / (2.0 * M_PI);
+      double alpha_d = 1.0 - exp(-RADE_FRAME_SECS / (tau > 0.05 ? tau : 0.05));
+      if (!rade_corr_delay_valid) {
+        rade_corr_delay_sec = delay_sec;
+      } else {
+        rade_corr_delay_sec += alpha_d * (delay_sec - rade_corr_delay_sec);
+      }
+      rade_corr_phase_slope = slope;
+      rade_corr_delay_valid = 1;
+    }
+  }
   //
   // The pilot's own energy over the span, which is what the residual loop
   // used to accumulate a term at a time.

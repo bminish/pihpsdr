@@ -82,6 +82,14 @@ extern double rade_corr_arm_db;
 extern int    rade_corr_arm_valid;
 
 //
+// Estimated differential delay (seconds) and linear phase slope (rad/Hz)
+// across the RADE V1 OFDM subcarriers.
+//
+extern double rade_corr_delay_sec;
+extern int    rade_corr_delay_valid;
+extern double rade_corr_phase_slope;
+
+//
 // The unit weight that brings arm 1 onto arm 0 in phase, i.e. conj(h1/h0)
 // normalised. The antenna-selection objective needs a direction and not a
 // magnitude, and this is the one the MVDR weight is not: MVDR's phase

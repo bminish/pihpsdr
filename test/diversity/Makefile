@@ -22,7 +22,7 @@ CFLAGS  = -O2 -Wall -I$(TOP)/src -I$(TOP)/wdsp \
 LIBS    = `pkg-config --libs gtk+-3.0 fftw3f` -lm
 SRC     = $(TOP)/src/diversity_auto.c $(TOP)/src/rade_correlator.c
 
-all: test_modes_live test_window test_rade test_digital test_cw test_props test_modal bench_cpu
+all: test_modes_live test_window test_rade test_digital test_cw test_props test_modal test_delay test_equalizer bench_cpu
 
 test_modes_live: test_modes_live.c $(SRC)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
@@ -45,10 +45,16 @@ test_props: test_props.c $(SRC)
 test_modal: test_modal.c $(SRC)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
 
+test_delay: test_delay.c $(SRC)
+	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
+
+test_equalizer: test_equalizer.c $(SRC)
+	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
+
 bench_cpu: bench_cpu.c $(SRC)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
 
-run: test_modes_live test_window test_rade test_digital test_cw test_props test_modal
+run: test_modes_live test_window test_rade test_digital test_cw test_props test_modal test_delay test_equalizer
 	./test_props
 	@echo
 	./test_modal
@@ -62,9 +68,13 @@ run: test_modes_live test_window test_rade test_digital test_cw test_props test_
 	./test_rade
 	@echo
 	./test_digital
+	@echo
+	./test_delay
+	@echo
+	./test_equalizer
 
 bench: bench_cpu
 	./bench_cpu
 
 clean:
-	rm -f test_modes_live test_window test_rade test_digital test_cw test_props test_modal bench_cpu
+	rm -f test_modes_live test_window test_rade test_digital test_cw test_props test_modal test_delay test_equalizer bench_cpu

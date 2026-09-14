@@ -89,6 +89,8 @@ static GtkWidget *coh_scale = NULL;
 static GtkWidget *res_combo = NULL;
 static GtkWidget *cwact_combo = NULL;
 static GtkWidget *norm_b = NULL;
+static GtkWidget *delay_b = NULL;
+static GtkWidget *perbin_b = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
@@ -1070,11 +1072,15 @@ static int status_update_cb(gpointer data) {
       // That is a fade, not a loss - the lock is kept for the Hang time.
       //
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "fade" : "LOCK");
-      snprintf(detail, sizeof(detail), "%s %3.0f%%",
-               div_rade_side_text(), 100.0 * rade_corr_quality);
+      snprintf(detail, sizeof(detail), "%s %2.0f%% D%+.0fu E%s",
+               div_rade_side_text(), 100.0 * rade_corr_quality,
+               rade_corr_delay_valid ? (rade_corr_delay_sec * 1e6) : 0.0,
+               div_perbin_enabled ? "on" : "off");
     } else {
       state = rade_corr_confirming ? "confrm" : "search";
-      snprintf(detail, sizeof(detail), "%s", div_rade_side_text());
+      snprintf(detail, sizeof(detail), "%s D%s E%s", div_rade_side_text(),
+               div_delay_enabled ? "on" : "off",
+               div_perbin_enabled ? "on" : "off");
     }
 
     break;
@@ -1287,9 +1293,15 @@ static void div_populate_from_settings(void) {
 
   if (norm_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise); }
 
+<<<<<<< HEAD
   if (split_combo)  { gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), div_split); }
 
   if (balance_scale) { gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance); }
+=======
+  if (delay_b)      { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(delay_b), div_delay_enabled); }
+
+  if (perbin_b)     { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(perbin_b), div_perbin_enabled); }
+>>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
 
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
 
@@ -1615,6 +1627,7 @@ static void norm_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
+<<<<<<< HEAD
 //
 // The ear split is local to the radio and does not travel: the remote
 // audio path carries one mono sample per receiver, so there is no second
@@ -1622,10 +1635,14 @@ static void norm_cb(GtkWidget *widget, gpointer data) {
 // and the control is insensitive on a client.
 //
 static void split_cb(GtkWidget *widget, gpointer data) {
+=======
+static void delay_cb(GtkWidget *widget, gpointer data) {
+>>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
   (void)data;
 
   if (updating_from_auto || updating_from_server) { return; }
 
+<<<<<<< HEAD
   div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   update_manual_sensitivity();
   update_visibility();
@@ -1636,12 +1653,24 @@ static void split_cb(GtkWidget *widget, gpointer data) {
 // does not travel either.
 //
 static void balance_cb(GtkWidget *widget, gpointer data) {
+=======
+  div_delay_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  div_send_settings(DIV_ACTION_NONE);
+}
+
+static void perbin_cb(GtkWidget *widget, gpointer data) {
+>>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
   (void)data;
 
   if (updating_from_auto || updating_from_server) { return; }
 
+<<<<<<< HEAD
   div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
   radio_calc_split_balance();
+=======
+  div_perbin_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  div_send_settings(DIV_ACTION_NONE);
+>>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
 }
 
 // cppcheck-suppress constParameterCallback
@@ -1759,6 +1788,22 @@ void diversity_menu(GtkWidget *parent) {
     gtk_box_pack_start(GTK_BOX(topbox), split_combo, FALSE, FALSE, 0);
     g_signal_connect(split_combo, "changed", G_CALLBACK(split_cb), NULL);
   }
+
+  delay_b = gtk_check_button_new_with_label("Delay");
+  gtk_widget_set_tooltip_text(delay_b,
+                              "Phase 1: Fractional delay equalizer.\n"
+                              "Compensates differential propagation delay across subcarriers.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(delay_b), div_delay_enabled);
+  gtk_box_pack_start(GTK_BOX(topbox), delay_b, FALSE, FALSE, 0);
+  g_signal_connect(delay_b, "toggled", G_CALLBACK(delay_cb), NULL);
+
+  perbin_b = gtk_check_button_new_with_label("Eq Bins");
+  gtk_widget_set_tooltip_text(perbin_b,
+                              "Phase 2: STFT Overlap-Add frequency-domain block equalizer.\n"
+                              "Applies subcarrier bin-by-bin MVDR/MRC channel equalization.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(perbin_b), div_perbin_enabled);
+  gtk_box_pack_start(GTK_BOX(topbox), perbin_b, FALSE, FALSE, 0);
+  g_signal_connect(perbin_b, "toggled", G_CALLBACK(perbin_cb), NULL);
 
   gtk_grid_attach(GTK_GRID(grid), topbox, 1, 0, 1, 1);
 

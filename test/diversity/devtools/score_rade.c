@@ -369,16 +369,18 @@ int main(int argc, char **argv) {
   const int flags = RADE_USE_C_ENCODER | RADE_USE_C_DECODER |
                     (verbose ? 0 : RADE_VERBOSE_0);
   struct stream st[MAX_STREAM];
-  const int nst = 3 + nw;
+  const int nst = 5 + nw;
 
-  if (!stream_open(&st[0], "arm0",     model, flags, -1) ||
-      !stream_open(&st[1], "arm1",     model, flags, -2) ||
-      !stream_open(&st[2], "correlator", model, flags, -3)) {
+  if (!stream_open(&st[0], "arm0",        model, flags, -1) ||
+      !stream_open(&st[1], "arm1",        model, flags, -2) ||
+      !stream_open(&st[2], "baseline",    model, flags, -3) ||
+      !stream_open(&st[3], "phase1_delay",model, flags, -4) ||
+      !stream_open(&st[4], "phase2_stft", model, flags, -5)) {
     return 1;
   }
 
   for (int i = 0; i < nw; i++) {
-    if (!stream_open(&st[3 + i], wname[i], model, flags, i)) { return 1; }
+    if (!stream_open(&st[5 + i], wname[i], model, flags, i)) { return 1; }
   }
 
   if (!rade_corr_start((int)h.sample_rate)) {
@@ -442,6 +444,11 @@ int main(int argc, char **argv) {
       const cplx z0 = ring_get(ring0, a);
       const cplx z1 = ring_get(ring1, a);
 
+      double i1_d = z1.re, q1_d = z1.im;
+      if (rade_corr_locked && rade_corr_delay_valid && fabs(rade_corr_delay_sec) > 1e-9) {
+        div_delay_filter_sample(8000.0, rade_corr_delay_sec, &i1_d, &q1_d);
+      }
+
       for (int i = 0; i < nst; i++) {
         double ar, ai;
 
@@ -451,6 +458,15 @@ int main(int argc, char **argv) {
         } else if (st[i].src == -2) {
           ar = z1.re;
           ai = z1.im;
+        } else if (st[i].src == -3) {
+          ar = z0.re + (wr * z1.re - wi * z1.im);
+          ai = z0.im + (wr * z1.im + wi * z1.re);
+        } else if (st[i].src == -4) {
+          ar = z0.re + (wr * i1_d - wi * q1_d);
+          ai = z0.im + (wr * q1_d + wi * i1_d);
+        } else if (st[i].src == -5) {
+          div_cos = wr; div_sin = wi;
+          div_stft_combine_sample(8000.0, z0.re, z0.im, i1_d, q1_d, &ar, &ai);
         } else {
           double ur = wr, ui = wi;
 

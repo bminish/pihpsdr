@@ -699,9 +699,167 @@
 
 int    div_auto_mode           = DIV_AUTO_OFF;
 int    div_auto_ref            = DIV_REF_BAND;
+int    div_delay_enabled       = 1;
+double div_delay_sec           = 0.0;
 int    div_auto_follow_filter  = 1;
 double div_auto_centre         = 0.0;
 double div_auto_width          = 1000.0;
+
+#define DIV_DELAY_RING_SIZE 256
+static float delay_ring_i1[DIV_DELAY_RING_SIZE];
+static float delay_ring_q1[DIV_DELAY_RING_SIZE];
+static int   delay_ring_idx = 0;
+
+void div_delay_filter_sample(double ddc_rate, double delay_sec, double *i1, double *q1) {
+  if (ddc_rate <= 0.0 || !div_delay_enabled || fabs(delay_sec) < 1e-9) {
+    return;
+  }
+
+  delay_ring_i1[delay_ring_idx] = (float)*i1;
+  delay_ring_q1[delay_ring_idx] = (float)*q1;
+
+  double delay_samples = delay_sec * ddc_rate;
+  if (delay_samples < 0.0) { delay_samples = 0.0; }
+  if (delay_samples > 100.0) { delay_samples = 100.0; }
+
+  int int_delay = (int)floor(delay_samples);
+  double d = delay_samples - (double)int_delay;
+
+  double c[5];
+  c[0] = (d - 1.0) * (d - 2.0) * (d - 3.0) * (d - 4.0) / 24.0;
+  c[1] = d * (d - 2.0) * (d - 3.0) * (d - 4.0) / -6.0;
+  c[2] = d * (d - 1.0) * (d - 3.0) * (d - 4.0) / 4.0;
+  c[3] = d * (d - 1.0) * (d - 2.0) * (d - 4.0) / -6.0;
+  c[4] = d * (d - 1.0) * (d - 2.0) * (d - 3.0) / 24.0;
+
+  double delay_i1 = 0.0, delay_q1 = 0.0;
+  for (int k = 0; k < 5; k++) {
+    int tap_idx = (delay_ring_idx - int_delay - k) % DIV_DELAY_RING_SIZE;
+    if (tap_idx < 0) { tap_idx += DIV_DELAY_RING_SIZE; }
+    delay_i1 += c[k] * (double)delay_ring_i1[tap_idx];
+    delay_q1 += c[k] * (double)delay_ring_q1[tap_idx];
+  }
+
+  *i1 = delay_i1;
+  *q1 = delay_q1;
+
+  delay_ring_idx = (delay_ring_idx + 1) % DIV_DELAY_RING_SIZE;
+}
+
+#define STFT_N 512
+#define STFT_HOP 256
+
+int div_perbin_enabled = 0;
+static float perbin_w_re[STFT_N];
+static float perbin_w_im[STFT_N];
+
+static float stft_ring0_i[STFT_N], stft_ring0_q[STFT_N];
+static float stft_ring1_i[STFT_N], stft_ring1_q[STFT_N];
+static float stft_out_i[STFT_N], stft_out_q[STFT_N];
+static int   stft_in_idx = 0;
+
+static fftwf_complex *stft_in0 = NULL, *stft_in1 = NULL;
+static fftwf_complex *stft_out0 = NULL, *stft_out1 = NULL;
+static fftwf_complex *stft_comb_in = NULL, *stft_comb_out = NULL;
+static fftwf_plan     stft_plan_fwd0, stft_plan_fwd1, stft_plan_bwd;
+static int           stft_init_done = 0;
+
+static void stft_init(void) {
+  if (stft_init_done) return;
+  stft_in0  = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_in1  = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_out0 = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_out1 = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_comb_in  = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_comb_out = fftwf_malloc(sizeof(fftwf_complex) * STFT_N);
+  stft_plan_fwd0 = fftwf_plan_dft_1d(STFT_N, stft_in0, stft_out0, FFTW_FORWARD, FFTW_ESTIMATE);
+  stft_plan_fwd1 = fftwf_plan_dft_1d(STFT_N, stft_in1, stft_out1, FFTW_FORWARD, FFTW_ESTIMATE);
+  stft_plan_bwd  = fftwf_plan_dft_1d(STFT_N, stft_comb_in, stft_comb_out, FFTW_BACKWARD, FFTW_ESTIMATE);
+  for (int k = 0; k < STFT_N; k++) {
+    perbin_w_re[k] = 1.0f;
+    perbin_w_im[k] = 0.0f;
+  }
+  stft_init_done = 1;
+}
+
+void div_update_perbin_weights(double ddc_rate, const double *w_re, const double *w_im, int n_sub) {
+  if (!stft_init_done) stft_init();
+  double bin_hz = ddc_rate / (double)STFT_N;
+  for (int k = 0; k < STFT_N; k++) {
+    double freq = (k <= STFT_N/2) ? (double)k * bin_hz : (double)(k - STFT_N) * bin_hz;
+    double c_float = (fabs(freq) - 750.0) / 50.0;
+    if (c_float >= 0.0 && c_float < (double)(n_sub - 1)) {
+      int c0 = (int)floor(c_float);
+      int c1 = c0 + 1;
+      double alpha = c_float - (double)c0;
+      perbin_w_re[k] = (float)((1.0 - alpha) * w_re[c0] + alpha * w_re[c1]);
+      perbin_w_im[k] = (float)((1.0 - alpha) * w_im[c0] + alpha * w_im[c1]);
+    } else {
+      perbin_w_re[k] = 1.0f;
+      perbin_w_im[k] = 0.0f;
+    }
+  }
+}
+
+void div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, double q1, double *i_out, double *q_out) {
+  if (!stft_init_done) stft_init();
+
+  int idx = stft_in_idx % STFT_N;
+  stft_ring0_i[idx] = (float)i0;
+  stft_ring0_q[idx] = (float)q0;
+  stft_ring1_i[idx] = (float)i1;
+  stft_ring1_q[idx] = (float)q1;
+
+  stft_in_idx++;
+
+  if ((stft_in_idx % STFT_HOP) == 0 && stft_in_idx >= STFT_N) {
+    int start_pos = (stft_in_idx - STFT_N) % STFT_N;
+    for (int n = 0; n < STFT_N; n++) {
+      int p = (start_pos + n) % STFT_N;
+      double win = sin(M_PI * (double)n / (double)STFT_N);
+      stft_in0[n][0] = stft_ring0_i[p] * win;
+      stft_in0[n][1] = stft_ring0_q[p] * win;
+      stft_in1[n][0] = stft_ring1_i[p] * win;
+      stft_in1[n][1] = stft_ring1_q[p] * win;
+    }
+
+    fftwf_execute(stft_plan_fwd0);
+    fftwf_execute(stft_plan_fwd1);
+
+    for (int k = 0; k < STFT_N; k++) {
+      float rel_r = perbin_w_re[k];
+      float rel_i = perbin_w_im[k];
+      // Net combining weight for bin k = W_rel(k) * (div_cos + j div_sin)
+      float wr = rel_r * (float)div_cos - rel_i * (float)div_sin;
+      float wi = rel_r * (float)div_sin + rel_i * (float)div_cos;
+
+      stft_comb_in[k][0] = stft_out0[k][0] + (wr * stft_out1[k][0] - wi * stft_out1[k][1]);
+      stft_comb_in[k][1] = stft_out0[k][1] + (wi * stft_out1[k][0] + wr * stft_out1[k][1]);
+    }
+
+    fftwf_execute(stft_plan_bwd);
+
+    const double norm = 1.0 / (double)STFT_N;
+    int out_start = (stft_in_idx - STFT_N) % STFT_N;
+    if (out_start < 0) out_start += STFT_N;
+
+    for (int n = 0; n < STFT_N; n++) {
+      double win = sin(M_PI * (double)n / (double)STFT_N);
+      int p = (out_start + n) % STFT_N;
+      stft_out_i[p] += (float)(stft_comb_out[n][0] * win * norm);
+      stft_out_q[p] += (float)(stft_comb_out[n][1] * win * norm);
+    }
+  }
+
+  int out_p = (stft_in_idx - 1 - STFT_N) % STFT_N;
+  if (out_p < 0) out_p += STFT_N;
+
+  *i_out = stft_out_i[out_p];
+  *q_out = stft_out_q[out_p];
+
+  stft_out_i[out_p] = 0.0f;
+  stft_out_q[out_p] = 0.0f;
+}
 //
 // The Averaging default. 0.5 s, not the 2.0 s that shipped until
 // Finding 48.
@@ -3529,6 +3687,12 @@ static void div_process_block(void) {
     //
     div_arm_publish(rade_corr_arm_valid, rade_corr_arm_db);
 
+    if (rade_corr_locked && rade_corr_delay_valid) {
+      div_delay_sec = rade_corr_delay_sec;
+    } else if (!rade_corr_locked) {
+      div_delay_sec = 0.0;
+    }
+
     //
     // The coherence gate reaches this mode too.
     //
@@ -4723,6 +4887,8 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->follow_filter  = div_auto_follow_filter;
   s->weighting      = div_auto_weighting;
   s->normalise      = div_auto_normalise;
+  s->delay_enabled  = div_delay_enabled;
+  s->perbin_enabled = div_perbin_enabled;
   s->hold           = div_auto_hold;
   s->centre         = div_auto_centre;
   s->width          = div_auto_width;
@@ -4758,6 +4924,8 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_auto_follow_filter = s->follow_filter;
   div_auto_weighting     = s->weighting;
   div_auto_normalise     = s->normalise;
+  div_delay_enabled      = s->delay_enabled;
+  div_perbin_enabled     = s->perbin_enabled;
   div_auto_centre        = s->centre;
   div_auto_width         = s->width;
   div_auto_tau           = s->tau;
@@ -5339,6 +5507,8 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_auto_coherence_min",  div_auto_coherence_min);
   SetPropI0("diversity_auto_weighting",      div_auto_weighting);
   SetPropI0("diversity_auto_normalise",      div_auto_normalise);
+  SetPropI0("diversity_delay_enabled",       div_delay_enabled);
+  SetPropI0("diversity_perbin_enabled",      div_perbin_enabled);
   SetPropF0("diversity_auto_resolution",     div_auto_resolution);
   SetPropF0("diversity_band_cohmin",         div_band_cohmin);
   SetPropF0("diversity_carrier_cohmin",      div_carrier_cohmin);
@@ -5371,6 +5541,8 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_auto_coherence_min",  div_auto_coherence_min);
   GetPropI0("diversity_auto_weighting",      div_auto_weighting);
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
+  GetPropI0("diversity_delay_enabled",       div_delay_enabled);
+  GetPropI0("diversity_perbin_enabled",      div_perbin_enabled);
   GetPropF0("diversity_auto_resolution",     div_auto_resolution);
   //
   // A file written before these existed carries none of them, and GetProp

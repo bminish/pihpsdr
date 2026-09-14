@@ -1649,6 +1649,13 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
     diversity_auto_sample(i0, q0, i1, q1);
   }
 
+  //
+  // Phase 1: Apply fractional sample delay filter to arm 1 if delay compensation is active.
+  //
+  if (div_delay_enabled && fabs(div_delay_sec) > 1e-9) {
+    div_delay_filter_sample((double)rx->sample_rate, div_delay_sec, &i1, &q1);
+  }
+
   switch (div_split_active() ? div_split : DIV_SPLIT_OFF) {
   case DIV_SPLIT_RAW:
     //
@@ -1681,8 +1688,13 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
     // Note that we sum the second channel onto the first one
     // and then simply pass to add_iq_samples
     //
-    double i_sample = i0 + (div_cos * i1 - div_sin * q1);
-    double q_sample = q0 + (div_sin * i1 + div_cos * q1);
+    double i_sample, q_sample;
+    if (div_perbin_enabled) {
+      div_stft_combine_sample((double)rx->sample_rate, i0, q0, i1, q1, &i_sample, &q_sample);
+    } else {
+      i_sample = i0 + (div_cos * i1 - div_sin * q1);
+      q_sample = q0 + (div_sin * i1 + div_cos * q1);
+    }
     //
     // ...and hold it at the level of arm 0 alone, if the operator asked
     // for that. div_norm is 1.0 otherwise, and always in Null. The array

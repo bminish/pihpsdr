@@ -84,6 +84,11 @@ enum {
 
 extern int    div_auto_mode;
 extern int    div_auto_ref;
+extern int    div_delay_enabled;       // Phase 1 fractional delay compensation
+extern double div_delay_sec;           // currently estimated delay (seconds)
+extern void   div_delay_filter_sample(double ddc_rate, double delay_sec, double *i1, double *q1);
+extern int    div_perbin_enabled;      // Phase 2 STFT per-bin equalization
+extern void   div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, double q1, double *i_out, double *q_out);
 extern int    div_auto_follow_filter;   // analysis window follows the RX filter
 extern double div_auto_centre;          // window centre (Hz, rel. to tuned freq)
 extern double div_auto_width;           // window width (Hz)
@@ -270,6 +275,8 @@ typedef struct _div_settings {
   int    follow_filter;
   int    weighting;
   int    normalise;
+  int    delay_enabled;
+  int    perbin_enabled;
   int    hold;
   double centre, width;
   double tau, hang, coherence_min, resolution;
