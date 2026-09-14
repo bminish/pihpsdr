@@ -103,6 +103,33 @@ extern int    div_perbin_enabled;      // Phase 2 STFT per-bin equalization
 extern void   div_update_perbin_weights(const double *w_re, const double *w_im,
                                         const double *hz, int n_sub);
 extern void   div_perbin_flat(void);
+
+//
+// Window-driven per-bin equalizer tunables, and the setter replay_rade
+// sweeps them through. Signal-agnostic: the window reference measures the
+// two antenna paths, not the modem, so these apply to any mode.
+//
+extern int    div_eq_points;
+extern double div_eq_mincoh;
+extern double div_eq_maxgain;
+extern int    div_eq_phaseonly;
+extern int    div_eq_gatemode;
+//
+// Held-out scoring of the window-driven weights. Set div_eq_xval to
+// accumulate; the devtools read the totals. Off in the radio.
+//
+extern int    div_eq_xval;
+extern double div_eq_xval_phase;
+extern double div_eq_xval_lp;
+extern double div_eq_xval_ls;
+extern long   div_eq_xval_n;
+extern void   div_eq_xval_reset(void);
+
+extern void        div_eq_defaults(void);
+extern int         div_eq_has(const char *name);
+extern int         div_eq_set(const char *name, double value);
+extern double      div_eq_get(const char *name);
+extern const char *div_eq_name(int i);
 extern void   div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, double q1, double *i_out, double *q_out);
 extern int    div_auto_follow_filter;   // analysis window follows the RX filter
 extern double div_auto_centre;          // window centre (Hz, rel. to tuned freq)

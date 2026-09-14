@@ -156,7 +156,8 @@ int main(int argc, char **argv) {
       set[nset].name  = s;
       set[nset].value = atof(eq + 1);
 
-      if (!rade_tuning_set(set[nset].name, set[nset].value)) {
+      if (!div_eq_set(set[nset].name, set[nset].value) &&
+          !rade_tuning_set(set[nset].name, set[nset].value)) {
         fprintf(stderr, "replay: unknown setting \"%s\"\n", set[nset].name);
         usage(argv[0]);
         return 2;
@@ -171,7 +172,7 @@ int main(int argc, char **argv) {
 
       *eq = '\0';
 
-      if (!rade_tuning_set(s, 0.0)) {
+      if (!div_eq_has(s) && !rade_tuning_set(s, 0.0)) {
         fprintf(stderr, "replay: unknown setting \"%s\"\n", s);
         usage(argv[0]);
         return 2;
@@ -275,11 +276,18 @@ int main(int argc, char **argv) {
      * inherit anything from another.
      */
     rade_tuning_defaults();
+    div_eq_defaults();
 
-    for (int s = 0; s < nset; s++) { rade_tuning_set(set[s].name, set[s].value); }
+    for (int s = 0; s < nset; s++) {
+      if (!div_eq_set(set[s].name, set[s].value)) {
+        rade_tuning_set(set[s].name, set[s].value);
+      }
+    }
 
     for (int a = 0; a < naxis; a++) {
-      rade_tuning_set(axis[a].name, axis[a].lo + idx[a] * axis[a].step);
+      const double v = axis[a].lo + idx[a] * axis[a].step;
+
+      if (!div_eq_set(axis[a].name, v)) { rade_tuning_set(axis[a].name, v); }
     }
 
     struct divcap_result r;
@@ -315,7 +323,11 @@ int main(int argc, char **argv) {
     if (opts.weights != NULL) { fclose(opts.weights); opts.weights = NULL; }
 
     for (int a = 0; a < naxis; a++) {
-      fprintf(out, "%g,", rade_tuning_get(axis[a].name));
+      {
+        const char *nm = axis[a].name;
+
+        fprintf(out, "%g,", div_eq_has(nm) ? div_eq_get(nm) : rade_tuning_get(nm));
+      }
     }
 
     fprintf(out, "%d,%.2f,%d,%.4f,%.2f,%.2f,%.4f,%.5f,%d,%.5f,%.4f,%.4f,%+.4f",

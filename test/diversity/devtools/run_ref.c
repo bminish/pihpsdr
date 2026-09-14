@@ -327,6 +327,16 @@ int main(int argc, char **argv) {
          (double)h.sample_rate / (double)eng_nfft,
          1000.0 * eng_nfft / (double)h.sample_rate);
   rade_tuning_defaults();
+  div_eq_defaults();
+
+  /*
+   * Score the per-bin weights against data they were not built from.
+   * Costs one pass over the window per block and is off in the radio.
+   */
+  div_eq_xval = 1;
+  div_eq_xval_reset();
+  /* the publish is gated on this, and it is the configuration under test */
+  div_perbin_enabled = 1;
 
   for (int i = 0; i < nset; i++) {
     char buf[128];
@@ -340,7 +350,7 @@ int main(int argc, char **argv) {
 
     *eq = '\0';
 
-    if (!rade_tuning_set(buf, atof(eq + 1))) {
+    if (!div_eq_set(buf, atof(eq + 1)) && !rade_tuning_set(buf, atof(eq + 1))) {
       fprintf(stderr, "%s: unknown setting \"%s\"\n", argv[0], buf);
       return 2;
     }
@@ -416,6 +426,17 @@ int main(int argc, char **argv) {
   printf("%s: %ld block(s) through the %s reference -> %s\n", path, nb, refname, outp);
   printf("  final weight %+.4f %+.4f  (%.1f dB %+.0f deg), holding=%d coherence=%.3f\n",
          div_cos, div_sin, div_gain, div_phase, div_auto_holding, div_auto_coherence);
+
+  if (div_eq_xval_n > 0) {
+    const double ph = div_eq_xval_phase / (double)div_eq_xval_n;
+    const double lp = div_eq_xval_lp    / (double)div_eq_xval_n;
+    const double ls = div_eq_xval_ls    / (double)div_eq_xval_n;
+    printf("XVAL\tblocks=%ld\tpoints=%d\tphase_deg=%.2f\t"
+           "loss_perbin_db=%.4f\tloss_scalar_db=%.4f\teq_gain_db=%+.4f\n",
+           div_eq_xval_n, div_eq_points, ph, lp, ls, ls - lp);
+  } else {
+    printf("XVAL\tno blocks scored (reference produced no window statistics)\n");
+  }
   free(arm0);
   free(arm1);
   return 0;

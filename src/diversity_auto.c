@@ -826,7 +826,116 @@ static void stft_init(void) {
 // arrival because the bin grid depends on the DDC rate, which only
 // div_stft_combine_sample() knows.
 //
-#define DIV_SUB_MAX 64
+//
+// Tunables for the window-driven per-bin equalizer.
+//
+// These are not in test/diversity/devtools/tunable.manifest: that
+// mechanism lifts #defines out of src/rade_correlator.c, and this lives
+// here. They are plain globals with a setter instead, which replay_rade
+// sweeps through div_eq_set() - see div_eq_fields below.
+//
+// div_eq_points     points published across the window. Fewer means more
+//                   bins averaged into each, trading resolution for
+//                   variance. 32 across a 3 kHz window is about 94 Hz,
+//                   which is the STFT's own bin width at 48 kHz.
+// div_eq_mincoh     a bucket whose mean coherence is below this is
+//                   published flat rather than guessed at.
+// div_eq_maxgain    clamp on |relative weight|, either way up.
+// div_eq_phaseonly  1 aligns phase alone, 0 lets magnitude through too.
+// div_eq_gatemode   what a bucket below div_eq_mincoh falls back to.
+//                   0 publishes a flat weight, which means the wideband
+//                   weight - and that is an active choice, not a neutral
+//                   one: where the wideband weight is boosting arm 1 hard,
+//                   flat pushes that boost into bins where arm 1 has
+//                   nothing but noise. 1 publishes zero instead, i.e. arm
+//                   0 alone in that bin, which is the real "no opinion".
+//
+// The averaging time is deliberately absent: the per-bin spectra are
+// smoothed by the operator's own Averaging control, so there is one time
+// constant here and not two.
+//
+#define DIV_EQ_MAXPOINTS 256
+
+int    div_eq_points    = 32;
+double div_eq_mincoh    = 0.30;
+double div_eq_maxgain   = 4.0;
+int    div_eq_phaseonly = 1;
+int    div_eq_gatemode  = 0;
+
+static const struct {
+  const char *name;
+  int         is_int;
+  void       *p;
+} div_eq_fields[] = {
+  { "eq_points",    1, &div_eq_points    },
+  { "eq_mincoh",    0, &div_eq_mincoh    },
+  { "eq_maxgain",   0, &div_eq_maxgain   },
+  { "eq_phaseonly", 1, &div_eq_phaseonly },
+  { "eq_gatemode",  1, &div_eq_gatemode  },
+  { NULL, 0, NULL }
+};
+
+//
+// Back to the shipped values. A sweep calls this at every point, so one
+// point can never inherit another's - the same contract
+// rade_tuning_defaults() has.
+//
+void div_eq_defaults(void) {
+  div_eq_points    = 32;
+  div_eq_mincoh    = 0.30;
+  div_eq_maxgain   = 4.0;
+  div_eq_phaseonly = 1;
+  div_eq_gatemode  = 0;
+}
+
+//
+// Is this one of ours? Needed separately from div_eq_set() so a caller can
+// test a name without writing to it.
+//
+int div_eq_has(const char *name) {
+  for (int i = 0; div_eq_fields[i].name != NULL; i++) {
+    if (strcmp(div_eq_fields[i].name, name) == 0) { return 1; }
+  }
+
+  return 0;
+}
+
+int div_eq_set(const char *name, double v) {
+  for (int i = 0; div_eq_fields[i].name != NULL; i++) {
+    if (strcmp(div_eq_fields[i].name, name) != 0) { continue; }
+
+    if (div_eq_fields[i].is_int) {
+      *(int *)div_eq_fields[i].p = (int)(v + (v < 0.0 ? -0.5 : 0.5));
+    } else {
+      *(double *)div_eq_fields[i].p = v;
+    }
+
+    return 1;
+  }
+
+  return 0;
+}
+
+double div_eq_get(const char *name) {
+  for (int i = 0; div_eq_fields[i].name != NULL; i++) {
+    if (strcmp(div_eq_fields[i].name, name) != 0) { continue; }
+
+    return div_eq_fields[i].is_int ? (double) * (int *)div_eq_fields[i].p
+           : *(double *)div_eq_fields[i].p;
+  }
+
+  return 0.0;
+}
+
+const char *div_eq_name(int i) {
+  int n = 0;
+
+  while (div_eq_fields[n].name != NULL) { n++; }
+
+  return (i >= 0 && i < n) ? div_eq_fields[i].name : NULL;
+}
+
+#define DIV_SUB_MAX 256
 
 static double sub_wr[DIV_SUB_MAX];
 static double sub_wi[DIV_SUB_MAX];
@@ -3627,6 +3736,268 @@ static int divcap_ctx_differs(const struct div_context *a,
 #endif
 
 //
+// Held-out scoring of the window-driven weights.
+//
+// Called with the weights of the PREVIOUS block still published and this
+// block's raw bins in fftout0/fftout1, so what is scored was formed
+// without any of the data it is being judged against. Same three numbers
+// the RADE path is scored on in divcap_replay.c, so the two estimators
+// are directly comparable.
+//
+// Off unless div_eq_xval is set, which only the devtools do.
+//
+int    div_eq_xval = 0;
+double div_eq_xval_phase = 0.0;
+double div_eq_xval_lp = 0.0;
+double div_eq_xval_ls = 0.0;
+long   div_eq_xval_n = 0;
+
+void div_eq_xval_reset(void) {
+  div_eq_xval_phase = div_eq_xval_lp = div_eq_xval_ls = 0.0;
+  div_eq_xval_n = 0;
+}
+
+static void div_eq_xval_score(const struct div_context *ctx,
+                              int klo, int khi, int nfft) {
+  if (!div_eq_xval || sub_n < 2) { return; }
+
+  const double step = sub_hz[1] - sub_hz[0];
+
+  if (fabs(step) < 1e-9) { return; }
+
+  //
+  // The wideband weight as it stands, i.e. before this block moves it.
+  // Both the per-bin and the scalar figure use the same one, so the
+  // difference between them is the per-bin contribution alone.
+  //
+  const double uwr = div_cos, uwi = div_sin;
+  double perr = 0.0, pw = 0.0, lp = 0.0, ls = 0.0;
+  int n = 0;
+
+  for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+    const double p0 = i0 * i0 + q0 * q0;
+    const double p1 = i1 * i1 + q1 * q1;
+
+    if (p0 <= 1e-30 || p1 <= 1e-30) { continue; }
+
+    //
+    // x01 = X1 * conj(X0), the same sense the RADE path measures in.
+    //
+    const double xr = i1 * i0 + q1 * q0;
+    const double xi = q1 * i0 - i1 * q0;
+
+    //
+    // The relative weight this bin would have been given, from the points
+    // published before this block.
+    //
+    const double cf = (((double)k * binhz) - sub_hz[0]) / step;
+    double rr = 1.0, ri = 0.0;
+
+    if (cf >= 0.0 && cf <= (double)(sub_n - 1)) {
+      int c0 = (int)floor(cf);
+
+      if (c0 > sub_n - 2) { c0 = sub_n - 2; }
+
+      const double a = cf - (double)c0;
+      rr = (1.0 - a) * sub_wr[c0] + a * sub_wr[c0 + 1];
+      ri = (1.0 - a) * sub_wi[c0] + a * sub_wi[c0 + 1];
+    }
+
+    const double pr = rr * uwr - ri * uwi;
+    const double pi = rr * uwi + ri * uwr;
+    const double xmag = sqrt(xr * xr + xi * xi);
+    double dphi = atan2(pi, pr) + atan2(xi, xr);
+
+    while (dphi >  M_PI) { dphi -= 2.0 * M_PI; }
+
+    while (dphi < -M_PI) { dphi += 2.0 * M_PI; }
+
+    perr += xmag * fabs(dphi) * 180.0 / M_PI;
+    pw   += xmag;
+
+    const double best = p0 + p1;
+
+    for (int which = 0; which < 2; which++) {
+      const double ur = which ? uwr : pr;
+      const double ui = which ? uwi : pi;
+      const double num = p0 + (ur * ur + ui * ui) * p1 + 2.0 * (ur * xr - ui * xi);
+      const double den = 1.0 + ur * ur + ui * ui;
+      const double got = (den > 0.0) ? (num / den) : 0.0;
+      const double loss = (got > 1e-30 && best > 1e-30) ? 10.0 * log10(best / got) : 0.0;
+
+      if (which) { ls += loss; } else { lp += loss; }
+    }
+
+    n++;
+  }
+
+  if (n > 0 && pw > 1e-30) {
+    div_eq_xval_phase += perr / pw;
+    div_eq_xval_lp    += lp / (double)n;
+    div_eq_xval_ls    += ls / (double)n;
+    div_eq_xval_n++;
+  }
+}
+
+//
+// Per-bin equalizer weights from the window reference's own spectra.
+//
+// The measurement is the same bin_xy/bin_xx the wideband weight is solved
+// from, and it is a property of the two antenna paths rather than of
+// whatever is being received: any signal with energy in a bin is its own
+// pilot there. So this runs on SSB, DRM, STANAG, FSK or plain band noise,
+// none of which the RADE path can say anything about.
+//
+// It also has far more to average. RADE offers 30 subcarriers once per
+// 120 ms frame; a 3 kHz window at the default resolution is some 256 bins
+// per block, which is the shortage the held-out scoring diagnosed.
+//
+// For the combiner y = z0 + W z1 the MRC weight is conj(h1)/conj(h0), and
+// with bin_xy accumulated as X0*conj(X1) that is bin_xy/bin_xx directly.
+//
+static void div_band_perbin_publish(const struct div_context *ctx,
+                                    int klo, int khi, int nfft) {
+  if (!div_perbin_enabled) { return; }
+
+  const int nbins = khi - klo + 1;
+  int np = div_eq_points;
+
+  if (np > DIV_EQ_MAXPOINTS) { np = DIV_EQ_MAXPOINTS; }
+
+  if (np > nbins)            { np = nbins; }
+
+  if (np < 2 || nbins < 2) {
+    div_perbin_flat();
+    return;
+  }
+
+  double sr[DIV_EQ_MAXPOINTS], si[DIV_EQ_MAXPOINTS], sw[DIV_EQ_MAXPOINTS];
+  int    sn[DIV_EQ_MAXPOINTS];
+
+  for (int p = 0; p < np; p++) { sr[p] = si[p] = sw[p] = 0.0; sn[p] = 0; }
+
+  //
+  // One weight per bin, gathered into evenly spaced buckets. Even spacing
+  // is required, not cosmetic: the consumer indexes the published points
+  // arithmetically rather than searching them.
+  //
+  for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double xx = bin_xx[idx], yy = bin_yy[idx];
+
+    if (xx <= 1e-30 || yy <= 1e-30) { continue; }
+
+    const double xr = bin_xy_re[idx], xi = bin_xy_im[idx];
+    double g2 = (xr * xr + xi * xi) / (xx * yy);
+
+    if (g2 > 1.0) { g2 = 1.0; }
+
+    if (g2 <= 0.0) { continue; }
+
+    double wr = xr / xx, wi = xi / xx;
+
+    if (div_eq_phaseonly) {
+      const double m = sqrt(wr * wr + wi * wi);
+
+      if (m > 1e-30) { wr /= m; wi /= m; } else { wr = 1.0; wi = 0.0; }
+    }
+
+    int p = (int)(((long)(k - klo) * np) / nbins);
+
+    if (p < 0)   { p = 0; }
+
+    if (p >= np) { p = np - 1; }
+
+    sr[p] += g2 * wr;
+    si[p] += g2 * wi;
+    sw[p] += g2;
+    sn[p]++;
+  }
+
+  //
+  // Take out the wideband part, so what is published is the shape alone
+  // and a flat result is exactly the scalar combiner.
+  //
+  double mr = 0.0, mi = 0.0, mw = 0.0;
+
+  for (int p = 0; p < np; p++) {
+    mr += sr[p];
+    mi += si[p];
+    mw += sw[p];
+  }
+
+  if (mw <= 1e-12) {
+    div_perbin_flat();
+    return;
+  }
+
+  mr /= mw;
+  mi /= mw;
+  const double m2 = mr * mr + mi * mi;
+
+  if (m2 <= 1e-30) {
+    div_perbin_flat();
+    return;
+  }
+
+  double w_re[DIV_EQ_MAXPOINTS], w_im[DIV_EQ_MAXPOINTS], hz[DIV_EQ_MAXPOINTS];
+
+  for (int p = 0; p < np; p++) {
+    //
+    // Bucket centres, evenly spaced across the window in bin units, and
+    // bin k is at k*binhz in the raw frame - the frame the STFT indexes
+    // its own bins by.
+    //
+    hz[p] = ((double)klo + ((double)p + 0.5) * (double)nbins / (double)np) * binhz;
+
+    const double coh = (sn[p] > 0) ? (sw[p] / (double)sn[p]) : 0.0;
+
+    if (sn[p] == 0 || sw[p] <= 1e-12 || coh < div_eq_mincoh) {
+      w_re[p] = div_eq_gatemode ? 0.0 : 1.0;
+      w_im[p] = 0.0;
+      continue;
+    }
+
+    const double br = sr[p] / sw[p], bi = si[p] / sw[p];
+    //
+    // Divide by the mean: rel = b / mean = b * conj(mean) / |mean|^2
+    //
+    double rr = (br * mr + bi * mi) / m2;
+    double ri = (bi * mr - br * mi) / m2;
+    const double m = sqrt(rr * rr + ri * ri);
+
+    if (m > div_eq_maxgain) {
+      rr *= div_eq_maxgain / m;
+      ri *= div_eq_maxgain / m;
+    } else if (m < 1.0 / div_eq_maxgain && m > 1e-30) {
+      rr *= (1.0 / div_eq_maxgain) / m;
+      ri *= (1.0 / div_eq_maxgain) / m;
+    } else if (m <= 1e-30) {
+      rr = 1.0;
+      ri = 0.0;
+    }
+
+    w_re[p] = rr;
+    w_im[p] = ri;
+  }
+
+  div_update_perbin_weights(w_re, w_im, hz, np);
+}
+
+//
 // Process one block. Runs on the analysis thread.
 //
 static void div_process_block(void) {
@@ -3650,6 +4021,9 @@ static void div_process_block(void) {
   //
   if (ctx.ref != DIV_REF_RADE_V1) {
     div_delay_sec = 0.0;
+  }
+
+  if (ctx.ref != DIV_REF_RADE_V1 && ctx.ref != DIV_REF_BAND) {
     div_perbin_flat();
   }
 
@@ -4211,6 +4585,23 @@ static void div_process_block(void) {
                       + (double)fftout1[idx][1] * fftout1[idx][1]);
     acc_p     += w * (xx + yy);
     wsum      += w;
+  }
+
+  //
+  // Per-bin equalizer weights from this window's own spectra.
+  //
+  // Placed here, after the bins have been accumulated and before any of
+  // the gates below, so the weights are refreshed on every block the
+  // window produced statistics for - including the ones where the solve
+  // goes on to hold.
+  //
+  if (ctx.ref == DIV_REF_BAND) {
+    //
+    // Score before publishing: what is scored is then the estimate as it
+    // stood entering this block, against this block's own raw bins.
+    //
+    div_eq_xval_score(&ctx, klo, khi, nfft);
+    div_band_perbin_publish(&ctx, klo, khi, nfft);
   }
 
   //
@@ -5652,6 +6043,10 @@ void diversity_auto_save_state(void) {
   SetPropI0("diversity_auto_normalise",      div_auto_normalise);
   SetPropI0("diversity_delay_enabled",       div_delay_enabled);
   SetPropI0("diversity_perbin_enabled",      div_perbin_enabled);
+  SetPropI0("diversity_eq_points",           div_eq_points);
+  SetPropF0("diversity_eq_mincoh",           div_eq_mincoh);
+  SetPropF0("diversity_eq_maxgain",          div_eq_maxgain);
+  SetPropI0("diversity_eq_phaseonly",        div_eq_phaseonly);
   SetPropF0("diversity_auto_resolution",     div_auto_resolution);
   SetPropF0("diversity_band_cohmin",         div_band_cohmin);
   SetPropF0("diversity_carrier_cohmin",      div_carrier_cohmin);
@@ -5686,6 +6081,10 @@ void diversity_auto_restore_state(void) {
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
   GetPropI0("diversity_delay_enabled",       div_delay_enabled);
   GetPropI0("diversity_perbin_enabled",      div_perbin_enabled);
+  GetPropI0("diversity_eq_points",           div_eq_points);
+  GetPropF0("diversity_eq_mincoh",           div_eq_mincoh);
+  GetPropF0("diversity_eq_maxgain",          div_eq_maxgain);
+  GetPropI0("diversity_eq_phaseonly",        div_eq_phaseonly);
   GetPropF0("diversity_auto_resolution",     div_auto_resolution);
   //
   // A file written before these existed carries none of them, and GetProp
