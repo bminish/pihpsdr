@@ -36,6 +36,8 @@
 //
 
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
+#include <errno.h>
 #include <semaphore.h>
 #include <stdlib.h>
 #include <string.h>
@@ -210,7 +212,26 @@ int diversity_capture_start(int sample_rate, int nfft) {
   const char *note = g_getenv("PIHPSDR_DIVCAP_NOTE");
   const int   secs = divcap_env_int("PIHPSDR_DIVCAP_SECONDS", 60, 1, 3600);
 
-  if (dir == NULL || *dir == '\0') { dir = "."; }
+  //
+  // Default to captures/ rather than the working directory. A 60 s
+  // capture at 192 kHz is 184 MB, and dropping those into whatever
+  // directory the radio happened to be started from is how two of them
+  // ended up loose in the source tree. The env var still overrides.
+  //
+  if (dir == NULL || *dir == '\0') { dir = "captures"; }
+
+  //
+  // Create it if it is not there. Falling back to the working directory
+  // rather than refusing is deliberate: a capture in the wrong place is
+  // recoverable and a capture not taken is not, and the operator is
+  // usually pressing the button because something interesting is on air
+  // right now.
+  //
+  if (g_mkdir_with_parents(dir, 0755) != 0) {
+    t_print("%s: cannot create \"%s\" (%s), writing to the working directory\n",
+            __func__, dir, g_strerror(errno));
+    dir = ".";
+  }
 
   {
     time_t     now = time(NULL);

@@ -44,7 +44,7 @@ Configuration is environment only — deliberately, so that nothing about
 this survives in an operator's `.props` file once it is removed:
 
 ```
-PIHPSDR_DIVCAP_DIR       where the files go            default "."
+PIHPSDR_DIVCAP_DIR       where the files go            default "captures"
 PIHPSDR_DIVCAP_SECONDS   stops itself after this long  default 60
 PIHPSDR_DIVCAP_NOTE      free text stored in the file  default ""
 ```
