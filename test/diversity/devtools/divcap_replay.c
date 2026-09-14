@@ -129,6 +129,10 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
   /* Held-out validation accumulators; see divcap_replay.h. */
   double xv_nmse_sum = 0.0, xv_lp_sum = 0.0, xv_ls_sum = 0.0;
   double wr_prev = 0.0, wi_prev = 0.0;
+
+  /* "is it a delay?" accumulators; see divcap_replay.h. */
+  double dl_resid = 0.0, dl_abs = 0.0, dl_coh = 0.0;
+  double dl_min = 1e18, dl_max = -1e18;
   divcap_noise_seed(o->seed);
 
   if (o->weights != NULL) {
@@ -347,6 +351,70 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
     }
 
     if (ok) { wr_prev = wr; wi_prev = wi; }
+
+    /*
+     * Is what the delay estimator is looking at actually a delay?
+     *
+     * The mean phase step between adjacent subcarriers is measured here
+     * the same way the correlator measures it - as a circular mean of
+     * unit vectors, so no unwrapping - and then removed. What is left is
+     * the part of the inter-arm phase response that a differential delay
+     * cannot explain.
+     *
+     * Deliberately recomputed from the published cross-spectra rather
+     * than taken from rade_corr_phase_slope: the step is then measured in
+     * the same index order the residual is summed over, so which pilot
+     * bank is locked and which way its frequencies run cannot put a sign
+     * error into the answer.
+     */
+    if (rade_corr_locked && rade_corr_delay_valid) {
+      double sr = 0.0, si = 0.0, sw = 0.0;
+
+      for (int c = 0; c + 1 < RADE_CORR_NC; c++) {
+        const double ar = rade_corr_sub_xre[c],     ai = rade_corr_sub_xim[c];
+        const double br = rade_corr_sub_xre[c + 1], bi = rade_corr_sub_xim[c + 1];
+        /* b * conj(a) */
+        const double dr = br * ar + bi * ai;
+        const double di = bi * ar - br * ai;
+        const double m  = sqrt(dr * dr + di * di);
+        const double w  = (rade_corr_sub_coh[c] < rade_corr_sub_coh[c + 1])
+                          ? rade_corr_sub_coh[c] : rade_corr_sub_coh[c + 1];
+
+        if (m > 1e-30) { sr += w * dr / m; si += w * di / m; sw += w; }
+      }
+
+      if (sw > 1e-12 && (sr * sr + si * si) > 1e-30) {
+        const double dphi = atan2(si, sr);          /* radians per subcarrier */
+        const double ph0  = atan2(rade_corr_sub_xim[0], rade_corr_sub_xre[0]);
+        double acc = 0.0, accw = 0.0;
+
+        for (int c = 1; c < RADE_CORR_NC; c++) {
+          double r = atan2(rade_corr_sub_xim[c], rade_corr_sub_xre[c])
+                     - (ph0 + dphi * (double)c);
+
+          while (r >  M_PI) { r -= 2.0 * M_PI; }
+
+          while (r < -M_PI) { r += 2.0 * M_PI; }
+
+          const double w = rade_corr_sub_coh[c];
+          acc  += w * r * r;
+          accw += w;
+        }
+
+        if (accw > 1e-12) {
+          const double us = rade_corr_delay_sec * 1e6;
+          dl_resid += sqrt(acc / accw) * 180.0 / M_PI;
+          dl_abs   += fabs(us);
+          dl_coh   += sw / (double)(RADE_CORR_NC - 1);
+
+          if (us < dl_min) { dl_min = us; }
+
+          if (us > dl_max) { dl_max = us; }
+
+          r->delay_frames++;
+        }
+      }
+    }
     const double t = (double)r->blocks * (double)nfft / (double)h->sample_rate;
 
     if (o->weights != NULL) {
@@ -388,6 +456,13 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
     if (!have_prev) { prev = m; }
 
     have_prev = 1;
+  }
+
+  if (r->delay_frames > 0) {
+    r->delay_resid_deg = dl_resid / r->delay_frames;
+    r->delay_abs_us    = dl_abs   / r->delay_frames;
+    r->delay_coh       = dl_coh   / r->delay_frames;
+    r->delay_spread_us = dl_max - dl_min;
   }
 
   if (r->xval_frames > 0) {

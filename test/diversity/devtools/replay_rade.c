@@ -248,7 +248,8 @@ int main(int argc, char **argv) {
   fprintf(out, "blocks,seconds,acquisitions,locked_frac,first_lock_s,"
           "mean_snr_db,mean_quality,weight_jitter,"
           "xval_frames,xval_phase_deg,xval_loss_perbin_db,xval_loss_scalar_db,"
-          "xval_eq_gain_db");
+          "xval_eq_gain_db,"
+          "delay_frames,delay_abs_us,delay_spread_us,delay_coh,delay_resid_deg");
 
   if (verify) { fprintf(out, ",verify_checked,verify_bad"); }
 
@@ -336,6 +337,9 @@ int main(int argc, char **argv) {
             r.first_lock, r.mean_snr, r.mean_quality, r.weight_jitter,
             r.xval_frames, r.xval_phase_deg, r.xval_loss_perbin, r.xval_loss_scalar,
             r.xval_loss_scalar - r.xval_loss_perbin);
+    fprintf(out, ",%d,%.1f,%.1f,%.3f,%.1f",
+            r.delay_frames, r.delay_abs_us, r.delay_spread_us,
+            r.delay_coh, r.delay_resid_deg);
 
     if (verify) { fprintf(out, ",%d,%d", r.verify_checked, r.verify_bad); }
 
