@@ -1293,15 +1293,13 @@ static void div_populate_from_settings(void) {
 
   if (norm_b)       { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(norm_b), div_auto_normalise); }
 
-<<<<<<< HEAD
   if (split_combo)  { gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), div_split); }
 
   if (balance_scale) { gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance); }
-=======
+
   if (delay_b)      { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(delay_b), div_delay_enabled); }
 
   if (perbin_b)     { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(perbin_b), div_perbin_enabled); }
->>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
 
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
 
@@ -1627,7 +1625,6 @@ static void norm_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
-<<<<<<< HEAD
 //
 // The ear split is local to the radio and does not travel: the remote
 // audio path carries one mono sample per receiver, so there is no second
@@ -1635,14 +1632,10 @@ static void norm_cb(GtkWidget *widget, gpointer data) {
 // and the control is insensitive on a client.
 //
 static void split_cb(GtkWidget *widget, gpointer data) {
-=======
-static void delay_cb(GtkWidget *widget, gpointer data) {
->>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
   (void)data;
 
   if (updating_from_auto || updating_from_server) { return; }
 
-<<<<<<< HEAD
   div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   update_manual_sensitivity();
   update_visibility();
@@ -1653,24 +1646,30 @@ static void delay_cb(GtkWidget *widget, gpointer data) {
 // does not travel either.
 //
 static void balance_cb(GtkWidget *widget, gpointer data) {
-=======
+  (void)data;
+
+  if (updating_from_auto || updating_from_server) { return; }
+
+  div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
+  radio_calc_split_balance();
+}
+
+static void delay_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  if (updating_from_auto || updating_from_server) { return; }
+
   div_delay_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   div_send_settings(DIV_ACTION_NONE);
 }
 
 static void perbin_cb(GtkWidget *widget, gpointer data) {
->>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
   (void)data;
 
   if (updating_from_auto || updating_from_server) { return; }
 
-<<<<<<< HEAD
-  div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
-  radio_calc_split_balance();
-=======
   div_perbin_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   div_send_settings(DIV_ACTION_NONE);
->>>>>>> 5f0b49b3 (diversity: Phase 1 Delay & Phase 2 Eq Bins equalizer with UI diagnostics)
 }
 
 // cppcheck-suppress constParameterCallback
