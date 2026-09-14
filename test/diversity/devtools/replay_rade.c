@@ -245,7 +245,9 @@ int main(int argc, char **argv) {
   for (int a = 0; a < naxis; a++) { fprintf(out, "%s,", axis[a].name); }
 
   fprintf(out, "blocks,seconds,acquisitions,locked_frac,first_lock_s,"
-          "mean_snr_db,mean_quality,weight_jitter");
+          "mean_snr_db,mean_quality,weight_jitter,"
+          "xval_frames,xval_phase_deg,xval_loss_perbin_db,xval_loss_scalar_db,"
+          "xval_eq_gain_db");
 
   if (verify) { fprintf(out, ",verify_checked,verify_bad"); }
 
@@ -316,10 +318,12 @@ int main(int argc, char **argv) {
       fprintf(out, "%g,", rade_tuning_get(axis[a].name));
     }
 
-    fprintf(out, "%d,%.2f,%d,%.4f,%.2f,%.2f,%.4f,%.5f",
+    fprintf(out, "%d,%.2f,%d,%.4f,%.2f,%.2f,%.4f,%.5f,%d,%.5f,%.4f,%.4f,%+.4f",
             r.blocks, r.seconds, r.acquisitions,
             (r.blocks > 0) ? (double)r.locked_blocks / r.blocks : 0.0,
-            r.first_lock, r.mean_snr, r.mean_quality, r.weight_jitter);
+            r.first_lock, r.mean_snr, r.mean_quality, r.weight_jitter,
+            r.xval_frames, r.xval_phase_deg, r.xval_loss_perbin, r.xval_loss_scalar,
+            r.xval_loss_scalar - r.xval_loss_perbin);
 
     if (verify) { fprintf(out, ",%d,%d", r.verify_checked, r.verify_bad); }
 

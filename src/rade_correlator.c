@@ -571,6 +571,20 @@ int    rade_corr_sub_valid = 0;
 unsigned rade_corr_sub_gen = 0;
 
 //
+// This frame's measurement, before any smoothing: the cross-spectrum and
+// the two arm powers per subcarrier.
+//
+// Published because the smoothed estimate cannot be judged against itself.
+// Held-out validation needs the estimate carried in from earlier frames on
+// one side and an untouched measurement of the frame it is being asked to
+// predict on the other, and this is that measurement.
+//
+double rade_corr_sub_xre[RADE_CORR_NC];
+double rade_corr_sub_xim[RADE_CORR_NC];
+double rade_corr_sub_p0[RADE_CORR_NC];
+double rade_corr_sub_p1[RADE_CORR_NC];
+
+//
 // frame_off as handed to rade_corr_process(), needed to put the subcarrier
 // frequencies back into the raw frame.
 //
@@ -1290,6 +1304,11 @@ static void rade_sub_update(double f_centre, double gsign, double dbin) {
     const cplx x  = cmul(g1, cconj(g0));
     const double p0 = cabs2(g0);
     const double p1 = cabs2(g1);
+
+    rade_corr_sub_xre[c] = x.re;
+    rade_corr_sub_xim[c] = x.im;
+    rade_corr_sub_p0[c]  = p0;
+    rade_corr_sub_p1[c]  = p1;
 
     if (!sub_have) {
       sub_x[c]  = x;

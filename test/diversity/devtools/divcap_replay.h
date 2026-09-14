@@ -23,6 +23,41 @@ struct divcap_result {
   double weight_jitter;     // rms deviation of the weight from its mean
   int    verify_checked;
   int    verify_bad;
+
+  //
+  // Held-out validation of the per-subcarrier channel estimate.
+  //
+  // Everything here is scored one frame ahead: the estimate carried into
+  // a frame was formed from earlier frames only, and it is judged against
+  // that frame's own untouched measurement. Nothing is scored against
+  // data that shaped it, so a longer average cannot win by smoothing its
+  // way towards its own answer - which is what makes these usable as a
+  // tuning objective with no decoder in the loop.
+  //
+  int    xval_frames;       // frames that carried a usable estimate
+  //
+  // Mean error, in degrees, between the phase the estimate predicted for a
+  // subcarrier and the phase that subcarrier actually measured, weighted
+  // by cross-spectral magnitude. Phase rather than the weight itself
+  // because the measured MRC weight is unbounded in a deep fade.
+  //
+  double xval_phase_deg;
+  //
+  // SNR given up against a genie that knows the channel exactly, in dB,
+  // averaged over subcarriers. Lower is better.
+  //
+  // The absolute figure is NOT a real shortfall: the genie is handed the
+  // same noisy measurement everyone else is scored against, so it wins
+  // partly by fitting that noise, and several dB of the number is that.
+  // What is comparable is the same figure between two tuning points, and
+  // the difference between the two below on one run.
+  //
+  // xval_loss_perbin uses the per-subcarrier weights, xval_loss_scalar the
+  // one wideband weight. The difference between them is what per-bin
+  // equalization is worth on this capture, before any decoder is involved.
+  //
+  double xval_loss_perbin;
+  double xval_loss_scalar;
 };
 
 //

@@ -125,6 +125,10 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
 
   memset(r, 0, sizeof(*r));
   r->first_lock = -1.0;
+
+  /* Held-out validation accumulators; see divcap_replay.h. */
+  double xv_nmse_sum = 0.0, xv_lp_sum = 0.0, xv_ls_sum = 0.0;
+  double wr_prev = 0.0, wi_prev = 0.0;
   divcap_noise_seed(o->seed);
 
   if (o->weights != NULL) {
@@ -252,8 +256,97 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
     double wr = 0.0, wi = 0.0;
     const double tau  = (o->tau  > 0.0) ? o->tau  : m.tau;
     const double hang = (o->hang > 0.0) ? o->hang : m.hang;
+
+    /*
+     * Snapshot the estimate BEFORE this block is folded into it. This is
+     * the prediction: formed from earlier frames only, and about to be
+     * judged against a measurement it has not seen.
+     */
+    const int    xv_have = rade_corr_locked && rade_corr_sub_valid;
+    double xv_rel_re[RADE_CORR_NC], xv_rel_im[RADE_CORR_NC];
+    const double xv_wr = wr_prev, xv_wi = wi_prev;
+
+    if (xv_have) {
+      memcpy(xv_rel_re, rade_corr_sub_wr, sizeof(xv_rel_re));
+      memcpy(xv_rel_im, rade_corr_sub_wi, sizeof(xv_rel_im));
+    }
+
     const int ok = rade_corr_process(arm0, arm1, nfft, m.expect_bank,
                                      m.frame_off, tau, hang, &wr, &wi);
+
+    /*
+     * ...and score it against what this block actually measured.
+     */
+    if (xv_have && rade_corr_locked) {
+      double nerr = 0.0, nref = 0.0;
+      double lp = 0.0, ls = 0.0;
+      int n = 0;
+
+      for (int c = 0; c < RADE_CORR_NC; c++) {
+        const double p0 = rade_corr_sub_p0[c];
+        const double p1 = rade_corr_sub_p1[c];
+        const double xr = rade_corr_sub_xre[c];
+        const double xi = rade_corr_sub_xim[c];
+
+        if (p0 <= 1e-30 || p1 <= 1e-30) { continue; }
+
+        const double pr = xv_rel_re[c] * xv_wr - xv_rel_im[c] * xv_wi;
+        const double pi = xv_rel_re[c] * xv_wi + xv_rel_im[c] * xv_wr;
+
+        /*
+         * How far the predicted weight's phase is from the one this block
+         * measured, in degrees, weighted by cross-spectral magnitude so a
+         * subcarrier with nothing in it does not vote.
+         *
+         * Phase rather than the weight itself: the measured MRC weight is
+         * conj(x01)/p0, which is unbounded when arm 0 is in a deep fade,
+         * and a squared error on it measures 1/p0 rather than anything
+         * about the estimate. The phase is bounded and it is what
+         * phase-only equalization is actually setting.
+         */
+        const double xmag = sqrt(xr * xr + xi * xi);
+        double dphi = atan2(pi, pr) + atan2(xi, xr);   /* arg(W_meas) = -arg(x01) */
+
+        while (dphi >  M_PI) { dphi -= 2.0 * M_PI; }
+
+        while (dphi < -M_PI) { dphi += 2.0 * M_PI; }
+
+        nerr += xmag * fabs(dphi) * 180.0 / M_PI;
+        nref += xmag;
+
+        /*
+         * SNR given up against a genie. For z0 + W*z1 the output SNR goes
+         * as |g0 + W g1|^2 / (1 + |W|^2), and the genie reaches p0 + p1.
+         *
+         *   |g0 + W g1|^2 = p0 + |W|^2 p1 + 2 Re(W * x01)
+         */
+        const double best = p0 + p1;
+
+        for (int which = 0; which < 2; which++) {
+          const double ur = which ? xv_wr : pr;
+          const double ui = which ? xv_wi : pi;
+          const double num = p0 + (ur * ur + ui * ui) * p1
+                             + 2.0 * (ur * xr - ui * xi);
+          const double den = 1.0 + ur * ur + ui * ui;
+          const double got = (den > 0.0) ? (num / den) : 0.0;
+          const double loss = (got > 1e-30 && best > 1e-30)
+                              ? 10.0 * log10(best / got) : 0.0;
+
+          if (which) { ls += loss; } else { lp += loss; }
+        }
+
+        n++;
+      }
+
+      if (n > 0 && nref > 1e-30) {
+        r->xval_frames++;
+        xv_nmse_sum += nerr / nref;
+        xv_lp_sum   += lp / (double)n;
+        xv_ls_sum   += ls / (double)n;
+      }
+    }
+
+    if (ok) { wr_prev = wr; wi_prev = wi; }
     const double t = (double)r->blocks * (double)nfft / (double)h->sample_rate;
 
     if (o->weights != NULL) {
@@ -295,6 +388,12 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
     if (!have_prev) { prev = m; }
 
     have_prev = 1;
+  }
+
+  if (r->xval_frames > 0) {
+    r->xval_phase_deg   = xv_nmse_sum / r->xval_frames;
+    r->xval_loss_perbin = xv_lp_sum   / r->xval_frames;
+    r->xval_loss_scalar = xv_ls_sum   / r->xval_frames;
   }
 
   r->seconds = (double)r->blocks * (double)nfft / (double)h->sample_rate;

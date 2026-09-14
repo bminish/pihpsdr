@@ -116,6 +116,17 @@ extern int      rade_corr_sub_valid;
 extern unsigned rade_corr_sub_gen;
 
 //
+// This frame's raw measurement per subcarrier, before smoothing: the
+// cross-spectrum g1*conj(g0) and the two arm powers. A smoothed estimate
+// cannot be scored against itself, so held-out validation reads its
+// ground truth here.
+//
+extern double rade_corr_sub_xre[RADE_CORR_NC];
+extern double rade_corr_sub_xim[RADE_CORR_NC];
+extern double rade_corr_sub_p0[RADE_CORR_NC];
+extern double rade_corr_sub_p1[RADE_CORR_NC];
+
+//
 // The unit weight that brings arm 1 onto arm 0 in phase, i.e. conj(h1/h0)
 // normalised. The antenna-selection objective needs a direction and not a
 // magnitude, and this is the one the MVDR weight is not: MVDR's phase
