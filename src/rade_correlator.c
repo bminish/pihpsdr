@@ -489,6 +489,54 @@ static const double rade_acq_sigma[RADE_ACQ_CHECKS] = { 7.5, 6.75, RADE_LOCK_SIG
 #define RADE_DEC_TAPS_PER_PHASE  16
 #define RADE_DEC_CUTOFF          3000.0
 
+//
+// Per-subcarrier channel estimation, for the differential delay estimate
+// (Phase 1) and the per-bin equalizer (Phase 2).
+//
+// Both are fed from one smoothed cross-spectrum per subcarrier. The
+// averaging time is the first thing to sweep on real HF: too short and
+// the estimate is noise, too long and it cannot follow a fade. These are
+// in tunable.manifest, so replay_rade and score_rade can sweep them
+// without a rebuild.
+//
+// RADE_SUB_TAU        seconds of averaging on g1*conj(g0) per subcarrier.
+// RADE_SUB_MINCOH     below this inter-arm coherence a subcarrier is not
+//                     trusted and its equalizer weight is forced flat.
+// RADE_SUB_MAXGAIN    clamp on |relative weight|. A subcarrier where arm 0
+//                     is in a deep fade wants an unbounded weight on arm 1;
+//                     that is correct MRC and it amplifies noise, so it is
+//                     bounded here.
+// RADE_SUB_SMOOTH     neighbours either side averaged across frequency.
+//                     Trades equalizer resolution against estimator
+//                     variance - 0 disables.
+// RADE_SUB_PHASEONLY  1: unit-magnitude weights, phase alignment only.
+//                     0: full MRC, magnitude as well. Phase-only is the
+//                     safe default because it cannot amplify a faded bin.
+//
+#define RADE_SUB_TAU        1.0
+#define RADE_SUB_MINCOH     0.30
+#define RADE_SUB_MAXGAIN    4.0
+#define RADE_SUB_SMOOTH     2
+#define RADE_SUB_PHASEONLY  1
+
+//
+// Differential delay. The estimate is the coherence-weighted circular mean
+// of the phase step between adjacent subcarriers, which needs no phase
+// unwrapping: unwrapping across 30 subcarriers propagates one bad step
+// through every subcarrier above it, and on marginal captures it does.
+//
+// The step is unambiguous while |dphi| < pi, i.e. |tau| < 1/(2*50) = 10 ms,
+// which is far outside anything HF multipath presents.
+//
+// RADE_DELAY_TAU      seconds of averaging on the delay estimate.
+// RADE_DELAY_MINCOH   mean coherence below which no estimate is published.
+// RADE_DELAY_MAXUS    microseconds; an estimate beyond this is rejected
+//                     rather than clamped, because it means the fit failed.
+//
+#define RADE_DELAY_TAU      2.0
+#define RADE_DELAY_MINCOH   0.40
+#define RADE_DELAY_MAXUS    2000.0
+
 #define RADE_RING       (8 * RADE_CORR_NMF)
 #define RADE_ACQ_SPAN   (2 * RADE_CORR_NMF + RADE_CORR_M + RADE_CORR_NCP)
 
@@ -505,6 +553,28 @@ int    rade_corr_confirming = 0;
 double rade_corr_delay_sec = 0.0;
 int    rade_corr_delay_valid = 0;
 double rade_corr_phase_slope = 0.0;
+double rade_corr_delay_coh = 0.0;
+double rade_corr_delay_raw = 0.0;
+
+//
+// Per-subcarrier equalizer weights, relative to the wideband weight, and
+// the baseband frequency each one sits at. The frequencies are in the RAW
+// frame - the one the DDC delivers and the STFT in receiver.c indexes its
+// bins by - not the correlator's own shifted frame, so the consumer does
+// not have to re-derive frame_off or the inversion. See rade_sub_update().
+//
+double rade_corr_sub_wr[RADE_CORR_NC];
+double rade_corr_sub_wi[RADE_CORR_NC];
+double rade_corr_sub_coh[RADE_CORR_NC];
+double rade_corr_sub_hz[RADE_CORR_NC];
+int    rade_corr_sub_valid = 0;
+unsigned rade_corr_sub_gen = 0;
+
+//
+// frame_off as handed to rade_corr_process(), needed to put the subcarrier
+// frequencies back into the raw frame.
+//
+static double sub_frame_off = 0.0;
 
 typedef struct {
   double re, im;
@@ -512,6 +582,17 @@ typedef struct {
 
 static inline cplx cset(double r, double i)      { cplx c = {r, i}; return c; }
 static inline cplx cadd(cplx a, cplx b)          { return cset(a.re + b.re, a.im + b.im); }
+static inline cplx csub(cplx a, cplx b)          { return cset(a.re - b.re, a.im - b.im); }
+
+//
+// The smoothed cross-spectrum the delay estimate and the equalizer share.
+// Kept as running averages rather than recomputed per frame, so one noisy
+// frame cannot move either answer far.
+//
+static cplx   sub_x[RADE_CORR_NC];
+static double sub_p0[RADE_CORR_NC];
+static double sub_p1[RADE_CORR_NC];
+static int    sub_have = 0;
 static inline cplx cmul(cplx a, cplx b)          { return cset(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re); }
 static inline cplx cscale(cplx a, double s)      { return cset(a.re * s, a.im * s); }
 static inline cplx cconj(cplx a)                 { return cset(a.re, -a.im); }
@@ -769,6 +850,20 @@ void rade_corr_reset(void) {
   rade_corr_delay_sec = 0.0;
   rade_corr_delay_valid = 0;
   rade_corr_phase_slope = 0.0;
+  rade_corr_delay_coh = 0.0;
+  rade_corr_delay_raw = 0.0;
+  rade_corr_sub_valid = 0;
+  sub_have = 0;
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    rade_corr_sub_wr[c]  = 1.0;
+    rade_corr_sub_wi[c]  = 0.0;
+    rade_corr_sub_coh[c] = 0.0;
+    rade_corr_sub_hz[c]  = 0.0;
+    sub_x[c]  = cset(0.0, 0.0);
+    sub_p0[c] = 0.0;
+    sub_p1[c] = 0.0;
+  }
   //
   // These two are only ever written when a lock is taken, so without this
   // they survive a reset - and the menu goes on showing the last lock's
@@ -1172,6 +1267,203 @@ static void rade_mvdr_weight(double *wr, double *wi) {
 }
 
 //
+// Measure the channel one subcarrier at a time, and from that produce both
+// the differential delay and the per-bin equalizer weights.
+//
+// The two answers come from the same smoothed cross-spectrum because they
+// are the same measurement read two ways: the delay is its phase *slope*
+// across frequency, the equalizer weights are what is left once the
+// wideband weight has been taken out.
+//
+static void rade_sub_update(double f_centre, double gsign, double dbin) {
+  const double a = 1.0 - exp(-RADE_FRAME_SECS /
+                             (RADE_SUB_TAU > 0.05 ? RADE_SUB_TAU : 0.05));
+
+  //
+  // One smoothed cross-spectrum and two smoothed powers per subcarrier.
+  //
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    const int k = RADE_CARRIER_K0 + c;
+    const double hz = f_centre + gsign * (double)k * dbin;
+    const cplx g0 = rade_dft_bin(ring0, lock_a, hz);
+    const cplx g1 = rade_dft_bin(ring1, lock_a, hz);
+    const cplx x  = cmul(g1, cconj(g0));
+    const double p0 = cabs2(g0);
+    const double p1 = cabs2(g1);
+
+    if (!sub_have) {
+      sub_x[c]  = x;
+      sub_p0[c] = p0;
+      sub_p1[c] = p1;
+    } else {
+      sub_x[c]  = cadd(sub_x[c], cscale(csub(x, sub_x[c]), a));
+      sub_p0[c] += a * (p0 - sub_p0[c]);
+      sub_p1[c] += a * (p1 - sub_p1[c]);
+    }
+
+    //
+    // The subcarrier's frequency in the RAW frame. The correlator's ring
+    // was rotated up by frame_off to bring the tuned carrier to zero, so
+    // going back is a subtraction. Everything about the inversion is
+    // already carried by gsign and the bank choice.
+    //
+    rade_corr_sub_hz[c] = hz - sub_frame_off;
+
+    //
+    // Inter-arm coherence. This is the quantity worth gating on: a
+    // subcarrier can be strong on both arms and still tell us nothing if
+    // the two are not coherent, and that is exactly the case a magnitude
+    // weight would be fooled by.
+    //
+    const double den = sub_p0[c] * sub_p1[c];
+    double coh = (den > 1e-30) ? (cabs2(sub_x[c]) / den) : 0.0;
+    if (coh > 1.0) { coh = 1.0; }
+    rade_corr_sub_coh[c] = coh;
+  }
+
+  sub_have = 1;
+
+  //
+  // ---- Differential delay -------------------------------------------
+  //
+  // The phase step between adjacent subcarriers, accumulated as unit
+  // vectors weighted by the weaker coherence of each pair. No unwrapping,
+  // so one bad subcarrier costs one term instead of every term above it.
+  //
+  cplx step = cset(0.0, 0.0);
+  double cohsum = 0.0;
+
+  for (int c = 0; c + 1 < RADE_CORR_NC; c++) {
+    const cplx d = cmul(sub_x[c + 1], cconj(sub_x[c]));
+    const double m = sqrt(cabs2(d));
+    const double w = (rade_corr_sub_coh[c] < rade_corr_sub_coh[c + 1])
+                     ? rade_corr_sub_coh[c] : rade_corr_sub_coh[c + 1];
+
+    if (m > 1e-30) {
+      step = cadd(step, cscale(d, w / m));
+      cohsum += w;
+    }
+  }
+
+  const double mean_coh = cohsum / (double)(RADE_CORR_NC - 1);
+  rade_corr_delay_coh = mean_coh;
+
+  if (cohsum > 1e-12 && mean_coh >= RADE_DELAY_MINCOH) {
+    //
+    // gsign flips the sense of "next subcarrier up" in the raw frame, so
+    // it has to come back out of the slope here.
+    //
+    const double dphi  = atan2(step.im, step.re) * gsign;
+    const double slope = dphi / dbin;                  // rad / Hz
+    const double raw   = -dphi / (2.0 * M_PI * dbin);  // seconds
+
+    if (fabs(raw) * 1e6 <= RADE_DELAY_MAXUS) {
+      const double ad = 1.0 - exp(-RADE_FRAME_SECS /
+                                  (RADE_DELAY_TAU > 0.05 ? RADE_DELAY_TAU : 0.05));
+      rade_corr_delay_raw = raw;
+      rade_corr_phase_slope = slope;
+
+      if (!rade_corr_delay_valid) {
+        rade_corr_delay_sec = raw;
+      } else {
+        rade_corr_delay_sec += ad * (raw - rade_corr_delay_sec);
+      }
+
+      rade_corr_delay_valid = 1;
+    }
+  }
+
+  //
+  // ---- Per-subcarrier equalizer weights -----------------------------
+  //
+  // The MRC weight that maximises SNR for z0 + W*z1 is W = conj(h1)/conj(h0),
+  // which in measured terms is conj(x01)/|g0|^2.
+  //
+  cplx w_abs[RADE_CORR_NC];
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    const double p0 = (sub_p0[c] > 1e-30) ? sub_p0[c] : 1e-30;
+    cplx w = cscale(cconj(sub_x[c]), 1.0 / p0);
+
+    if (RADE_SUB_PHASEONLY) {
+      const double m = sqrt(cabs2(w));
+      w = (m > 1e-30) ? cscale(w, 1.0 / m) : cset(1.0, 0.0);
+    }
+
+    w_abs[c] = w;
+  }
+
+  //
+  // Take out the wideband part, so what is published is the *shape* only
+  // and W_net = W_rel * (div_cos + j div_sin) still reduces to the scalar
+  // combiner - which is what keeps Invert and Null working across all bins.
+  //
+  cplx mean = cset(0.0, 0.0);
+  double msum = 0.0;
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    const double w = rade_corr_sub_coh[c];
+    mean = cadd(mean, cscale(w_abs[c], w));
+    msum += w;
+  }
+
+  cplx rel[RADE_CORR_NC];
+  const double mean_p = (msum > 1e-12) ? cabs2(cscale(mean, 1.0 / msum)) : 0.0;
+
+  if (mean_p > 1e-30) {
+    const cplx mbar = cscale(mean, 1.0 / msum);
+    const double inv = 1.0 / cabs2(mbar);
+
+    for (int c = 0; c < RADE_CORR_NC; c++) {
+      rel[c] = cscale(cmul(w_abs[c], cconj(mbar)), inv);
+    }
+  } else {
+    for (int c = 0; c < RADE_CORR_NC; c++) { rel[c] = cset(1.0, 0.0); }
+  }
+
+  //
+  // Smooth across frequency, weighted by coherence so a subcarrier we do
+  // not trust does not drag its neighbours with it.
+  //
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    cplx acc = cset(0.0, 0.0);
+    double accw = 0.0;
+
+    for (int j = c - RADE_SUB_SMOOTH; j <= c + RADE_SUB_SMOOTH; j++) {
+      if (j < 0 || j >= RADE_CORR_NC) { continue; }
+
+      acc = cadd(acc, cscale(rel[j], rade_corr_sub_coh[j]));
+      accw += rade_corr_sub_coh[j];
+    }
+
+    cplx v = (accw > 1e-12) ? cscale(acc, 1.0 / accw) : cset(1.0, 0.0);
+
+    //
+    // A subcarrier we cannot measure gets a flat weight rather than a
+    // guess: flat is the scalar combiner, which is the thing to fall back
+    // to when there is nothing better to say.
+    //
+    if (rade_corr_sub_coh[c] < RADE_SUB_MINCOH) { v = cset(1.0, 0.0); }
+
+    const double m = sqrt(cabs2(v));
+
+    if (m > RADE_SUB_MAXGAIN) {
+      v = cscale(v, RADE_SUB_MAXGAIN / m);
+    } else if (m < 1.0 / RADE_SUB_MAXGAIN && m > 1e-30) {
+      v = cscale(v, (1.0 / RADE_SUB_MAXGAIN) / m);
+    } else if (m <= 1e-30) {
+      v = cset(1.0, 0.0);
+    }
+
+    rade_corr_sub_wr[c] = v.re;
+    rade_corr_sub_wi[c] = v.im;
+  }
+
+  rade_corr_sub_valid = 1;
+  rade_corr_sub_gen++;
+}
+
+//
 // Once locked, measure the channel on both arms at the tracked timing and
 // frequency, update the covariance of what is left over, and solve.
 //
@@ -1530,64 +1822,7 @@ static int rade_track(double tau, double hang, double *wr, double *wi) {
   e1 /= (double)RADE_GUARD_BINS;
   e01 = cscale(e01, 1.0 / (double)RADE_GUARD_BINS);
 
-  //
-  // Per-subcarrier channel and phase slope estimation for Phase 1 differential delay.
-  //
-  double phi_sub[RADE_CORR_NC];
-  double w_sub[RADE_CORR_NC];
-  double sum_w = 0.0, sum_f = 0.0, sum_phi = 0.0;
-
-  for (int c = 0; c < RADE_CORR_NC; c++) {
-    int k = RADE_CARRIER_K0 + c;
-    const double hz = lock_f + gsign * (double)k * dbin;
-    cplx g0 = rade_dft_bin(ring0, lock_a, hz);
-    cplx g1 = rade_dft_bin(ring1, lock_a, hz);
-    cplx x01_c = cmul(g1, cconj(g0));
-    phi_sub[c] = atan2(x01_c.im, x01_c.re);
-    w_sub[c] = sqrt(cabs2(g0) * cabs2(g1));
-  }
-
-  // Unwrap phases across subcarriers
-  double phi_unwrap[RADE_CORR_NC];
-  phi_unwrap[0] = phi_sub[0];
-  for (int c = 1; c < RADE_CORR_NC; c++) {
-    double diff = phi_sub[c] - phi_unwrap[c - 1];
-    diff = remainder(diff, 2.0 * M_PI);
-    phi_unwrap[c] = phi_unwrap[c - 1] + diff;
-  }
-
-  // Weighted linear regression of phi vs subcarrier audio frequency (750 + c*50 Hz)
-  for (int c = 0; c < RADE_CORR_NC; c++) {
-    double f_hz = 750.0 + (double)c * 50.0;
-    sum_w += w_sub[c];
-    sum_f += w_sub[c] * f_hz;
-    sum_phi += w_sub[c] * phi_unwrap[c];
-  }
-
-  if (sum_w > 1e-20) {
-    double f_mean = sum_f / sum_w;
-    double phi_mean = sum_phi / sum_w;
-    double s_ff = 0.0, s_fphi = 0.0;
-    for (int c = 0; c < RADE_CORR_NC; c++) {
-      double f_hz = 750.0 + (double)c * 50.0;
-      double df = f_hz - f_mean;
-      double dphi = phi_unwrap[c] - phi_mean;
-      s_ff += w_sub[c] * df * df;
-      s_fphi += w_sub[c] * df * dphi;
-    }
-    if (s_ff > 1e-12) {
-      double slope = s_fphi / s_ff; // rad / Hz
-      double delay_sec = -slope / (2.0 * M_PI);
-      double alpha_d = 1.0 - exp(-RADE_FRAME_SECS / (tau > 0.05 ? tau : 0.05));
-      if (!rade_corr_delay_valid) {
-        rade_corr_delay_sec = delay_sec;
-      } else {
-        rade_corr_delay_sec += alpha_d * (delay_sec - rade_corr_delay_sec);
-      }
-      rade_corr_phase_slope = slope;
-      rade_corr_delay_valid = 1;
-    }
-  }
+  rade_sub_update(lock_f, gsign, dbin);
   //
   // The pilot's own energy over the span, which is what the residual loop
   // used to accumulate a term at a time.
@@ -1664,6 +1899,12 @@ int rade_corr_process(const float *arm0, const float *arm1, int n,
                       int expect_bank, double frame_off, double tau,
                       double hang, double *wr, double *wi) {
   if (!running) { return 0; }
+
+  //
+  // Kept so the subcarrier frequencies can be published in the raw frame
+  // rather than the correlator's own shifted one.
+  //
+  sub_frame_off = frame_off;
 
   //
   // Shift so the tuned carrier sits at zero, decimate to 8 kHz, and push

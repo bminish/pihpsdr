@@ -31,7 +31,15 @@
     .freq_limit  = 0.5 * 100.0 + 10.0,  /* 0.5*RADE_ACQ_FRANGE + 10 */ \
     .alias_alpha = 0.03,             \
     .alias_min   = 32,               \
-    .alias_margin = 1.5              \
+    .alias_margin = 1.5,             \
+    .sub_tau      = 1.0,             \
+    .sub_mincoh   = 0.30,            \
+    .sub_maxgain  = 4.0,             \
+    .sub_smooth   = 2,               \
+    .sub_phaseonly = 1,              \
+    .delay_tau    = 2.0,             \
+    .delay_mincoh = 0.40,            \
+    .delay_maxus  = 2000.0           \
   }
 
 static const rade_tuning_t rade_tuning_shipped = RADE_TUNING_INIT;
@@ -66,6 +74,14 @@ static const struct {
   { "alias_alpha", T_DBL, offsetof(rade_tuning_t, alias_alpha)  },
   { "alias_min",   T_INT, offsetof(rade_tuning_t, alias_min)    },
   { "alias_margin", T_DBL, offsetof(rade_tuning_t, alias_margin) },
+  { "sub_tau",      T_DBL, offsetof(rade_tuning_t, sub_tau)      },
+  { "sub_mincoh",   T_DBL, offsetof(rade_tuning_t, sub_mincoh)   },
+  { "sub_maxgain",  T_DBL, offsetof(rade_tuning_t, sub_maxgain)  },
+  { "sub_smooth",   T_INT, offsetof(rade_tuning_t, sub_smooth)   },
+  { "sub_phaseonly", T_INT, offsetof(rade_tuning_t, sub_phaseonly) },
+  { "delay_tau",    T_DBL, offsetof(rade_tuning_t, delay_tau)    },
+  { "delay_mincoh", T_DBL, offsetof(rade_tuning_t, delay_mincoh) },
+  { "delay_maxus",  T_DBL, offsetof(rade_tuning_t, delay_maxus)  },
   { NULL, 0, 0 }
 };
 

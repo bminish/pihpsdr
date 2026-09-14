@@ -125,38 +125,78 @@ static long gen_delay(float **buf, double delay_sec, double noise) {
   return nd;
 }
 
-static void test_fractional_delay_filter(void) {
-  printf("--- Test 1: Fractional-Sample FIR Delay Filter ---\n");
-  double rate = 48000.0;
-  double target_delay_sec = 50e-6; // 50 microseconds = 2.4 samples at 48k
-
-  double freq = 1000.0;
-  double phase_err_sum = 0.0;
+//
+// What matters is not that the filter delays by tau, but that feeding it a
+// pair which is tau apart brings the pair together. Those are different
+// claims, and only the second one is the job: an implementation that
+// delayed the wrong arm would pass the first and double the error.
+//
+// Checked for both signs, because either arm can be the early one and the
+// estimate is not clamped.
+//
+static double align_error_deg(double rate, double tau_sec, double signal_tau) {
+  double freq = 1200.0;
+  double err_sum = 0.0;
   int count = 0;
 
-  for (int n = 0; n < 100; n++) {
+  div_delay_enabled = 1;
+
+  for (int n = 0; n < 4000; n++) {
     double t = (double)n / rate;
-    double i1 = cos(2.0 * M_PI * freq * t);
-    double q1 = sin(2.0 * M_PI * freq * t);
+    //
+    // arm 1 arrives signal_tau later than arm 0.
+    //
+    double i0 = cos(2.0 * M_PI * freq * t);
+    double q0 = sin(2.0 * M_PI * freq * t);
+    double i1 = cos(2.0 * M_PI * freq * (t - signal_tau));
+    double q1 = sin(2.0 * M_PI * freq * (t - signal_tau));
 
-    div_delay_filter_sample(rate, target_delay_sec, &i1, &q1);
+    div_delay_apply(rate, tau_sec, &i0, &q0, &i1, &q1);
 
-    if (n > 10) {
-      double expected_t = t - target_delay_sec;
-      double expected_i1 = cos(2.0 * M_PI * freq * expected_t);
-      double expected_q1 = sin(2.0 * M_PI * freq * expected_t);
-      double err = fabs(i1 - expected_i1) + fabs(q1 - expected_q1);
-      phase_err_sum += err;
+    if (n > 200) {
+      //
+      // Residual phase of arm 1 relative to arm 0. Zero means aligned.
+      //
+      double re = i1 * i0 + q1 * q0;
+      double im = q1 * i0 - i1 * q0;
+      err_sum += fabs(atan2(im, re)) * 180.0 / M_PI;
       count++;
     }
   }
 
-  double mean_err = phase_err_sum / (double)count;
-  printf("Fractional delay filter mean error on 1kHz tone (50us delay): %e\n", mean_err);
-  if (mean_err < 0.01) {
-    printf("--> PASS: Fractional FIR delay filter accurate!\n");
+  return err_sum / (double)count;
+}
+
+static void test_fractional_delay_filter(void) {
+  printf("--- Test 1: Differential Delay Alignment ---\n");
+  const double rate = 48000.0;
+  const double freq = 1200.0;
+
+  struct { double tau; const char *what; } cases[] = {
+    {  100e-6, "arm 1 late  (+100 us)" },
+    { -100e-6, "arm 1 early (-100 us)" },
+    {   37e-6, "arm 1 late  (+37 us, sub-sample)" },
+  };
+
+  int bad = 0;
+
+  for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    const double tau = cases[i].tau;
+    const double uncorrected = fabs(360.0 * freq * tau);
+    //
+    // Feed the estimate the correlator would produce for this pair.
+    //
+    const double after = align_error_deg(rate, tau, tau);
+    printf("  %-34s uncorrected %6.2f deg -> corrected %6.3f deg\n",
+           cases[i].what, uncorrected, after);
+
+    if (after > 0.5) { bad = 1; }
+  }
+
+  if (!bad) {
+    printf("--> PASS: both signs of differential delay are aligned to <0.5 deg!\n");
   } else {
-    printf("--> FAIL: Fractional FIR delay filter error too high!\n");
+    printf("--> FAIL: differential delay not corrected!\n");
     exit(1);
   }
 }

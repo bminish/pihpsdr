@@ -86,8 +86,23 @@ extern int    div_auto_mode;
 extern int    div_auto_ref;
 extern int    div_delay_enabled;       // Phase 1 fractional delay compensation
 extern double div_delay_sec;           // currently estimated delay (seconds)
-extern void   div_delay_filter_sample(double ddc_rate, double delay_sec, double *i1, double *q1);
+//
+// Aligns the two arms. A positive delay_sec means arm 1 is late, and it is
+// then arm 0 that is delayed; negative delays arm 1. Both arms always pass
+// through, so their responses match and the history stays continuous.
+//
+extern void   div_delay_apply(double ddc_rate, double delay_sec,
+                              double *i0, double *q0, double *i1, double *q1);
+
 extern int    div_perbin_enabled;      // Phase 2 STFT per-bin equalization
+//
+// Per-subcarrier weights RELATIVE to the wideband weight, with the raw
+// baseband frequency of each. div_perbin_flat() drops back to the scalar
+// combiner when there is no estimate to apply.
+//
+extern void   div_update_perbin_weights(const double *w_re, const double *w_im,
+                                        const double *hz, int n_sub);
+extern void   div_perbin_flat(void);
 extern void   div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, double q1, double *i_out, double *q_out);
 extern int    div_auto_follow_filter;   // analysis window follows the RX filter
 extern double div_auto_centre;          // window centre (Hz, rel. to tuned freq)

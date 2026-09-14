@@ -62,6 +62,27 @@ typedef struct {
   double alias_alpha;
   int    alias_min;
   double alias_margin;
+  //
+  // Per-subcarrier channel estimation. sub_tau is the averaging on the
+  // cross-spectrum the equalizer and the delay estimate share; sub_mincoh
+  // the coherence a subcarrier must reach before its weight is trusted;
+  // sub_maxgain the clamp that stops a faded bin asking for an unbounded
+  // weight; sub_smooth the neighbours averaged either side; sub_phaseonly
+  // 1 to align phase alone and 0 for full MRC.
+  //
+  double sub_tau;
+  double sub_mincoh;
+  double sub_maxgain;
+  int    sub_smooth;
+  int    sub_phaseonly;
+  //
+  // Differential delay: averaging, the mean-coherence gate below which no
+  // estimate is published, and the magnitude beyond which a fit is
+  // rejected as failed rather than clamped.
+  //
+  double delay_tau;
+  double delay_mincoh;
+  double delay_maxus;
 } rade_tuning_t;
 
 extern rade_tuning_t rade_tuning;
@@ -101,6 +122,14 @@ extern double      rade_tuning_get(const char *name);
 #define RADE_ALIAS_ALPHA  (rade_tuning.alias_alpha)
 #define RADE_ALIAS_MIN    (rade_tuning.alias_min)
 #define RADE_ALIAS_MARGIN (rade_tuning.alias_margin)
+#define RADE_SUB_TAU        (rade_tuning.sub_tau)
+#define RADE_SUB_MINCOH     (rade_tuning.sub_mincoh)
+#define RADE_SUB_MAXGAIN    (rade_tuning.sub_maxgain)
+#define RADE_SUB_SMOOTH     (rade_tuning.sub_smooth)
+#define RADE_SUB_PHASEONLY  (rade_tuning.sub_phaseonly)
+#define RADE_DELAY_TAU      (rade_tuning.delay_tau)
+#define RADE_DELAY_MINCOH   (rade_tuning.delay_mincoh)
+#define RADE_DELAY_MAXUS    (rade_tuning.delay_maxus)
 #define rade_acq_at       (rade_tuning.acq_at)
 #define rade_acq_sigma    (rade_tuning.acq_sigma)
 

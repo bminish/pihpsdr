@@ -1650,10 +1650,14 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
   }
 
   //
-  // Phase 1: Apply fractional sample delay filter to arm 1 if delay compensation is active.
+  // Phase 1: line the two arms up in time. Whichever arm is early is the
+  // one delayed, so the sign of the estimate is not thrown away, and both
+  // arms pass through the same filter so the pair stays matched. Runs
+  // unconditionally once enabled - at zero delay it is a fixed two-sample
+  // bulk delay on both arms and nothing else.
   //
-  if (div_delay_enabled && fabs(div_delay_sec) > 1e-9) {
-    div_delay_filter_sample((double)rx->sample_rate, div_delay_sec, &i1, &q1);
+  if (div_delay_enabled) {
+    div_delay_apply((double)rx->sample_rate, div_delay_sec, &i0, &q0, &i1, &q1);
   }
 
   switch (div_split_active() ? div_split : DIV_SPLIT_OFF) {

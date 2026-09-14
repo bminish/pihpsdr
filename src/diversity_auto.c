@@ -705,45 +705,77 @@ int    div_auto_follow_filter  = 1;
 double div_auto_centre         = 0.0;
 double div_auto_width          = 1000.0;
 
-#define DIV_DELAY_RING_SIZE 256
-static float delay_ring_i1[DIV_DELAY_RING_SIZE];
-static float delay_ring_q1[DIV_DELAY_RING_SIZE];
-static int   delay_ring_idx = 0;
+//
+// Phase 1: differential delay compensation.
+//
+// rade_corr_delay_sec is positive when arm 1 arrives LATE. The only causal
+// way to line that up is to delay arm 0 - delaying arm 1, which is what
+// this did until the sign was traced, moves it further out and doubles the
+// error. A negative estimate means arm 1 is early, and then it is arm 1
+// that gets delayed. Neither sign is discarded.
+//
+// Both arms always run through a delay line, even at zero delay:
+//
+//   - the two then have the same interpolation response, so the combiner
+//     is not comparing a filtered arm against an unfiltered one;
+//   - the ring history stays continuous when the estimate crosses zero or
+//     the operator toggles the control, so there is no click;
+//   - the nominal operating point sits at DIV_DELAY_BULK, the centre of
+//     the 5-tap span, where Lagrange interpolation is most accurate. At
+//     zero differential delay both arms land exactly on a tap and the
+//     path is bit-transparent apart from the bulk delay.
+//
+#define DIV_DELAY_RING  1024
+#define DIV_DELAY_BULK  2.0     // samples; centre of the 5-tap span
+#define DIV_DELAY_MAX   900.0   // samples; ring headroom, taps included
 
-void div_delay_filter_sample(double ddc_rate, double delay_sec, double *i1, double *q1) {
-  if (ddc_rate <= 0.0 || !div_delay_enabled || fabs(delay_sec) < 1e-9) {
-    return;
-  }
+struct div_dline {
+  float ri[DIV_DELAY_RING];
+  float rq[DIV_DELAY_RING];
+  int   p;
+};
 
-  delay_ring_i1[delay_ring_idx] = (float)*i1;
-  delay_ring_q1[delay_ring_idx] = (float)*q1;
+static struct div_dline div_dl0, div_dl1;
 
-  double delay_samples = delay_sec * ddc_rate;
-  if (delay_samples < 0.0) { delay_samples = 0.0; }
-  if (delay_samples > 100.0) { delay_samples = 100.0; }
+static void div_dline_run(struct div_dline *d, double samples, double *i, double *q) {
+  d->ri[d->p] = (float)*i;
+  d->rq[d->p] = (float)*q;
 
-  int int_delay = (int)floor(delay_samples);
-  double d = delay_samples - (double)int_delay;
+  if (samples < 0.0)            { samples = 0.0; }
+  if (samples > DIV_DELAY_MAX)  { samples = DIV_DELAY_MAX; }
 
+  const int    n = (int)floor(samples);
+  const double f = samples - (double)n;
   double c[5];
-  c[0] = (d - 1.0) * (d - 2.0) * (d - 3.0) * (d - 4.0) / 24.0;
-  c[1] = d * (d - 2.0) * (d - 3.0) * (d - 4.0) / -6.0;
-  c[2] = d * (d - 1.0) * (d - 3.0) * (d - 4.0) / 4.0;
-  c[3] = d * (d - 1.0) * (d - 2.0) * (d - 4.0) / -6.0;
-  c[4] = d * (d - 1.0) * (d - 2.0) * (d - 3.0) / 24.0;
+  c[0] = (f - 1.0) * (f - 2.0) * (f - 3.0) * (f - 4.0) / 24.0;
+  c[1] =  f        * (f - 2.0) * (f - 3.0) * (f - 4.0) / -6.0;
+  c[2] =  f        * (f - 1.0) * (f - 3.0) * (f - 4.0) /  4.0;
+  c[3] =  f        * (f - 1.0) * (f - 2.0) * (f - 4.0) / -6.0;
+  c[4] =  f        * (f - 1.0) * (f - 2.0) * (f - 3.0) / 24.0;
 
-  double delay_i1 = 0.0, delay_q1 = 0.0;
+  double oi = 0.0, oq = 0.0;
+
   for (int k = 0; k < 5; k++) {
-    int tap_idx = (delay_ring_idx - int_delay - k) % DIV_DELAY_RING_SIZE;
-    if (tap_idx < 0) { tap_idx += DIV_DELAY_RING_SIZE; }
-    delay_i1 += c[k] * (double)delay_ring_i1[tap_idx];
-    delay_q1 += c[k] * (double)delay_ring_q1[tap_idx];
+    int t = (d->p - n - k) % DIV_DELAY_RING;
+
+    if (t < 0) { t += DIV_DELAY_RING; }
+
+    oi += c[k] * (double)d->ri[t];
+    oq += c[k] * (double)d->rq[t];
   }
 
-  *i1 = delay_i1;
-  *q1 = delay_q1;
+  *i = oi;
+  *q = oq;
+  d->p = (d->p + 1) % DIV_DELAY_RING;
+}
 
-  delay_ring_idx = (delay_ring_idx + 1) % DIV_DELAY_RING_SIZE;
+void div_delay_apply(double ddc_rate, double delay_sec,
+                     double *i0, double *q0, double *i1, double *q1) {
+  if (ddc_rate <= 0.0) { return; }
+
+  const double t = div_delay_enabled ? (delay_sec * ddc_rate) : 0.0;
+  div_dline_run(&div_dl0, DIV_DELAY_BULK + (t > 0.0 ?  t : 0.0), i0, q0);
+  div_dline_run(&div_dl1, DIV_DELAY_BULK + (t < 0.0 ? -t : 0.0), i1, q1);
 }
 
 #define STFT_N 512
@@ -756,7 +788,13 @@ static float perbin_w_im[STFT_N];
 static float stft_ring0_i[STFT_N], stft_ring0_q[STFT_N];
 static float stft_ring1_i[STFT_N], stft_ring1_q[STFT_N];
 static float stft_out_i[STFT_N], stft_out_q[STFT_N];
-static int   stft_in_idx = 0;
+//
+// Counts every sample ever fed in. 64-bit because an int wraps into
+// undefined behaviour after about 1.6 hours at 384 kHz, and the radio is
+// expected to run rather longer than that. STFT_N and STFT_HOP are powers
+// of two, so the modulo arithmetic below is exact on an unsigned counter.
+//
+static uint64_t stft_in_idx = 0;
 
 static fftwf_complex *stft_in0 = NULL, *stft_in1 = NULL;
 static fftwf_complex *stft_out0 = NULL, *stft_out1 = NULL;
@@ -782,29 +820,111 @@ static void stft_init(void) {
   stft_init_done = 1;
 }
 
-void div_update_perbin_weights(double ddc_rate, const double *w_re, const double *w_im, int n_sub) {
-  if (!stft_init_done) stft_init();
-  double bin_hz = ddc_rate / (double)STFT_N;
+//
+// The subcarrier weights as the correlator last published them, and the
+// frequency each one sits at. Held here rather than mapped to bins on
+// arrival because the bin grid depends on the DDC rate, which only
+// div_stft_combine_sample() knows.
+//
+#define DIV_SUB_MAX 64
+
+static double sub_wr[DIV_SUB_MAX];
+static double sub_wi[DIV_SUB_MAX];
+static double sub_hz[DIV_SUB_MAX];
+static int    sub_n = 0;
+static int    perbin_dirty = 1;
+static double perbin_rate = 0.0;
+
+//
+// Publish a new set of per-subcarrier weights. hz[] must be in the same
+// frame the STFT indexes its bins by - the raw DDC baseband - which is
+// what rade_corr_sub_hz[] gives. Nothing here needs to know which sideband
+// the modem is on or where it was tuned: that is all carried in hz[].
+//
+void div_update_perbin_weights(const double *w_re, const double *w_im,
+                               const double *hz, int n_sub) {
+  if (n_sub < 2 || n_sub > DIV_SUB_MAX) { return; }
+
+  for (int c = 0; c < n_sub; c++) {
+    sub_wr[c] = w_re[c];
+    sub_wi[c] = w_im[c];
+    sub_hz[c] = hz[c];
+  }
+
+  sub_n = n_sub;
+  perbin_dirty = 1;
+}
+
+//
+// Back to the scalar combiner. Called whenever the estimate goes away, so
+// a stale channel shape cannot outlive the lock that measured it.
+//
+void div_perbin_flat(void) {
+  sub_n = 0;
+  perbin_dirty = 1;
+}
+
+//
+// Map the subcarrier weights onto the STFT bin grid.
+//
+// The subcarriers are evenly spaced and monotonic in frequency, ascending
+// or descending depending on which sideband the modem sits in, so the
+// bracketing pair for a bin is an index rather than a search. Bins outside
+// the modem's span get a flat weight: there is no measurement there, and
+// flat is the scalar combiner.
+//
+static void div_perbin_rebuild(double ddc_rate) {
+  if (sub_n < 2 || ddc_rate <= 0.0) {
+    for (int k = 0; k < STFT_N; k++) {
+      perbin_w_re[k] = 1.0f;
+      perbin_w_im[k] = 0.0f;
+    }
+
+    perbin_dirty = 0;
+    perbin_rate  = ddc_rate;
+    return;
+  }
+
+  const double bin_hz = ddc_rate / (double)STFT_N;
+  const double step   = sub_hz[1] - sub_hz[0];
+
   for (int k = 0; k < STFT_N; k++) {
-    double freq = (k <= STFT_N/2) ? (double)k * bin_hz : (double)(k - STFT_N) * bin_hz;
-    double c_float = (fabs(freq) - 750.0) / 50.0;
-    if (c_float >= 0.0 && c_float < (double)(n_sub - 1)) {
-      int c0 = (int)floor(c_float);
-      int c1 = c0 + 1;
-      double alpha = c_float - (double)c0;
-      perbin_w_re[k] = (float)((1.0 - alpha) * w_re[c0] + alpha * w_re[c1]);
-      perbin_w_im[k] = (float)((1.0 - alpha) * w_im[c0] + alpha * w_im[c1]);
+    const double f = (k <= STFT_N / 2) ? (double)k * bin_hz
+                     : (double)(k - STFT_N) * bin_hz;
+    const double cf = (fabs(step) > 1e-9) ? ((f - sub_hz[0]) / step) : -1.0;
+
+    if (cf >= 0.0 && cf <= (double)(sub_n - 1)) {
+      int c0 = (int)floor(cf);
+
+      if (c0 > sub_n - 2) { c0 = sub_n - 2; }
+
+      const int    c1 = c0 + 1;
+      const double a  = cf - (double)c0;
+      perbin_w_re[k] = (float)((1.0 - a) * sub_wr[c0] + a * sub_wr[c1]);
+      perbin_w_im[k] = (float)((1.0 - a) * sub_wi[c0] + a * sub_wi[c1]);
     } else {
       perbin_w_re[k] = 1.0f;
       perbin_w_im[k] = 0.0f;
     }
   }
+
+  perbin_dirty = 0;
+  perbin_rate  = ddc_rate;
 }
 
 void div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, double q1, double *i_out, double *q_out) {
   if (!stft_init_done) stft_init();
 
-  int idx = stft_in_idx % STFT_N;
+  //
+  // Rebuild the bin table when the correlator has published something new,
+  // or when the DDC rate moved under us. Once per modem frame at most, so
+  // the cost does not land on the per-sample path.
+  //
+  if (perbin_dirty || ddc_rate != perbin_rate) {
+    div_perbin_rebuild(ddc_rate);
+  }
+
+  int idx = (int)(stft_in_idx % STFT_N);
   stft_ring0_i[idx] = (float)i0;
   stft_ring0_q[idx] = (float)q0;
   stft_ring1_i[idx] = (float)i1;
@@ -813,7 +933,7 @@ void div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, d
   stft_in_idx++;
 
   if ((stft_in_idx % STFT_HOP) == 0 && stft_in_idx >= STFT_N) {
-    int start_pos = (stft_in_idx - STFT_N) % STFT_N;
+    int start_pos = (int)((stft_in_idx - STFT_N) % STFT_N);
     for (int n = 0; n < STFT_N; n++) {
       int p = (start_pos + n) % STFT_N;
       double win = sin(M_PI * (double)n / (double)STFT_N);
@@ -840,8 +960,7 @@ void div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, d
     fftwf_execute(stft_plan_bwd);
 
     const double norm = 1.0 / (double)STFT_N;
-    int out_start = (stft_in_idx - STFT_N) % STFT_N;
-    if (out_start < 0) out_start += STFT_N;
+    int out_start = (int)((stft_in_idx - STFT_N) % STFT_N);
 
     for (int n = 0; n < STFT_N; n++) {
       double win = sin(M_PI * (double)n / (double)STFT_N);
@@ -851,8 +970,7 @@ void div_stft_combine_sample(double ddc_rate, double i0, double q0, double i1, d
     }
   }
 
-  int out_p = (stft_in_idx - 1 - STFT_N) % STFT_N;
-  if (out_p < 0) out_p += STFT_N;
+  int out_p = (int)((stft_in_idx - 1 - STFT_N) % STFT_N);
 
   *i_out = stft_out_i[out_p];
   *q_out = stft_out_q[out_p];
@@ -3522,6 +3640,19 @@ static void div_process_block(void) {
 
   div_get_context(&ctx);
 
+  //
+  // Only the RADE reference measures a differential delay or a per-bin
+  // channel, and only it maintains them. Every other reference has to put
+  // them back, or the last RADE lock's answers go on being applied - to
+  // manual diversity too, since the delay filter does not ask which
+  // reference is running. This is what the switch away used to leave
+  // behind.
+  //
+  if (ctx.ref != DIV_REF_RADE_V1) {
+    div_delay_sec = 0.0;
+    div_perbin_flat();
+  }
+
 #ifdef DIVERSITY_CAPTURE
   int divcap_reset = 0;
 #endif
@@ -3687,10 +3818,22 @@ static void div_process_block(void) {
     //
     div_arm_publish(rade_corr_arm_valid, rade_corr_arm_db);
 
+    //
+    // Phase 1 and Phase 2 both live or die with the lock. On losing it the
+    // delay goes back to zero and the equalizer back to flat, rather than
+    // leaving either applying a channel that is no longer being measured.
+    //
     if (rade_corr_locked && rade_corr_delay_valid) {
       div_delay_sec = rade_corr_delay_sec;
     } else if (!rade_corr_locked) {
       div_delay_sec = 0.0;
+    }
+
+    if (rade_corr_locked && rade_corr_sub_valid) {
+      div_update_perbin_weights(rade_corr_sub_wr, rade_corr_sub_wi,
+                                rade_corr_sub_hz, RADE_CORR_NC);
+    } else if (!rade_corr_locked) {
+      div_perbin_flat();
     }
 
     //

@@ -39,3 +39,16 @@ define RADE_FREQ_LIMIT
 define RADE_ALIAS_ALPHA
 define RADE_ALIAS_MIN
 define RADE_ALIAS_MARGIN
+
+#
+# Per-subcarrier channel estimation: the equalizer weights and the
+# differential delay. These are the ones to sweep against real HF.
+#
+define RADE_SUB_TAU
+define RADE_SUB_MINCOH
+define RADE_SUB_MAXGAIN
+define RADE_SUB_SMOOTH
+define RADE_SUB_PHASEONLY
+define RADE_DELAY_TAU
+define RADE_DELAY_MINCOH
+define RADE_DELAY_MAXUS

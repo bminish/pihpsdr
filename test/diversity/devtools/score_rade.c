@@ -436,6 +436,27 @@ int main(int argc, char **argv) {
      * it the right way up, so conjugate that case - the same fact the
      * correlator expresses by choosing a pilot bank.
      */
+    /*
+     * Publish the per-subcarrier weights to the equalizer.
+     *
+     * rade_corr_sub_hz[] is in the RAW frame, which is what receiver.c
+     * indexes its STFT bins by. Here the streams are taken from the
+     * correlator's own ring, which is the raw frame rotated up by
+     * frame_off - so frame_off goes back on before the mapping is right.
+     * Getting this wrong would silently equalize the wrong bins.
+     */
+    if (rade_corr_locked && rade_corr_sub_valid) {
+      double hz[RADE_CORR_NC];
+
+      for (int c = 0; c < RADE_CORR_NC; c++) {
+        hz[c] = rade_corr_sub_hz[c] + m.frame_off;
+      }
+
+      div_update_perbin_weights(rade_corr_sub_wr, rade_corr_sub_wi, hz, RADE_CORR_NC);
+    } else if (!rade_corr_locked) {
+      div_perbin_flat();
+    }
+
     const int mirror = (m.expect_bank >= 0) ? (m.expect_bank == 1) : rade_corr_mirrored;
 
     const double sgn = mirror ? -1.0 : 1.0;
@@ -444,9 +465,17 @@ int main(int argc, char **argv) {
       const cplx z0 = ring_get(ring0, a);
       const cplx z1 = ring_get(ring1, a);
 
+      /*
+       * Both arms go through the aligner: whichever is early is the one
+       * delayed. At zero estimate this is a matched bulk delay on both and
+       * nothing else, so the phase1 stream stays comparable to baseline.
+       */
+      double i0_d = z0.re, q0_d = z0.im;
       double i1_d = z1.re, q1_d = z1.im;
-      if (rade_corr_locked && rade_corr_delay_valid && fabs(rade_corr_delay_sec) > 1e-9) {
-        div_delay_filter_sample(8000.0, rade_corr_delay_sec, &i1_d, &q1_d);
+      {
+        const double tau = (rade_corr_locked && rade_corr_delay_valid)
+                           ? rade_corr_delay_sec : 0.0;
+        div_delay_apply(8000.0, tau, &i0_d, &q0_d, &i1_d, &q1_d);
       }
 
       for (int i = 0; i < nst; i++) {
@@ -462,11 +491,11 @@ int main(int argc, char **argv) {
           ar = z0.re + (wr * z1.re - wi * z1.im);
           ai = z0.im + (wr * z1.im + wi * z1.re);
         } else if (st[i].src == -4) {
-          ar = z0.re + (wr * i1_d - wi * q1_d);
-          ai = z0.im + (wr * q1_d + wi * i1_d);
+          ar = i0_d + (wr * i1_d - wi * q1_d);
+          ai = q0_d + (wr * q1_d + wi * i1_d);
         } else if (st[i].src == -5) {
           div_cos = wr; div_sin = wi;
-          div_stft_combine_sample(8000.0, z0.re, z0.im, i1_d, q1_d, &ar, &ai);
+          div_stft_combine_sample(8000.0, i0_d, q0_d, i1_d, q1_d, &ar, &ai);
         } else {
           double ur = wr, ui = wi;
 

@@ -90,6 +90,32 @@ extern int    rade_corr_delay_valid;
 extern double rade_corr_phase_slope;
 
 //
+// Mean inter-arm coherence behind the delay estimate, and the unsmoothed
+// estimate itself. Both are diagnostics - the gate is applied internally.
+//
+extern double rade_corr_delay_coh;
+extern double rade_corr_delay_raw;
+
+//
+// Per-subcarrier equalizer weights, RELATIVE to the wideband weight: a
+// flat 1+0j reproduces the scalar combiner exactly, which is what keeps
+// Invert and Null working when these are applied per bin.
+//
+// rade_corr_sub_hz[] gives each subcarrier's baseband frequency in the
+// RAW frame - the frame the DDC delivers and the STFT indexes its bins
+// by - so a consumer needs no knowledge of frame_off or the inversion.
+//
+// rade_corr_sub_gen increments whenever the weights are recomputed, so a
+// consumer can rebuild its own bin table only when there is something new.
+//
+extern double   rade_corr_sub_wr[RADE_CORR_NC];
+extern double   rade_corr_sub_wi[RADE_CORR_NC];
+extern double   rade_corr_sub_coh[RADE_CORR_NC];
+extern double   rade_corr_sub_hz[RADE_CORR_NC];
+extern int      rade_corr_sub_valid;
+extern unsigned rade_corr_sub_gen;
+
+//
 // The unit weight that brings arm 1 onto arm 0 in phase, i.e. conj(h1/h0)
 // normalised. The antenna-selection objective needs a direction and not a
 // magnitude, and this is the one the MVDR weight is not: MVDR's phase

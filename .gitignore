@@ -32,6 +32,8 @@ test/diversity/test_digital
 test/diversity/test_props
 test/diversity/test_modal
 test/diversity/test_cw
+test/diversity/test_delay
+test/diversity/test_equalizer
 
 # development-only diversity I/Q captures (see test/diversity/devtools)
 *.divc
