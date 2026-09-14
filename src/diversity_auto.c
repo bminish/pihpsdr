@@ -838,10 +838,20 @@ static void stft_init(void) {
 //                   bins averaged into each, trading resolution for
 //                   variance. 32 across a 3 kHz window is about 94 Hz,
 //                   which is the STFT's own bin width at 48 kHz.
-// div_eq_mincoh     a bucket whose mean coherence is below this is
-//                   published flat rather than guessed at.
-// div_eq_maxgain    clamp on |relative weight|, either way up.
+// div_eq_mincoh     a bucket whose mean coherence is below this falls
+//                   back rather than being believed. 0 - off - by
+//                   measurement: bounding the weight turns out to be a
+//                   better safety mechanism than refusing to use it, and
+//                   the two together were worse than the clamp alone.
+// div_eq_maxgain    clamp on |relative weight|, either way up. This is
+//                   the safety mechanism, and it is a direct trade: over
+//                   95 captures 1.3 gave mean +0.08 dB with a -0.53 dB
+//                   worst case and 3.0 gave +0.17 dB with -1.50. 2.0 sits
+//                   where the worst case is still under a dB.
 // div_eq_phaseonly  1 aligns phase alone, 0 lets magnitude through too.
+//                   0 by measurement: on both STANAG captures and across
+//                   the RADE corpus, letting magnitude through beat
+//                   phase-only. The clamp below is what keeps that safe.
 // div_eq_gatemode   what a bucket below div_eq_mincoh falls back to.
 //                   0 publishes a flat weight, which means the wideband
 //                   weight - and that is an active choice, not a neutral
@@ -856,10 +866,10 @@ static void stft_init(void) {
 //
 #define DIV_EQ_MAXPOINTS 256
 
-int    div_eq_points    = 32;
-double div_eq_mincoh    = 0.30;
-double div_eq_maxgain   = 4.0;
-int    div_eq_phaseonly = 1;
+int    div_eq_points    = 64;
+double div_eq_mincoh    = 0.0;
+double div_eq_maxgain   = 2.0;
+int    div_eq_phaseonly = 0;
 int    div_eq_gatemode  = 0;
 
 static const struct {
@@ -881,10 +891,10 @@ static const struct {
 // rade_tuning_defaults() has.
 //
 void div_eq_defaults(void) {
-  div_eq_points    = 32;
-  div_eq_mincoh    = 0.30;
-  div_eq_maxgain   = 4.0;
-  div_eq_phaseonly = 1;
+  div_eq_points    = 64;
+  div_eq_mincoh    = 0.0;
+  div_eq_maxgain   = 2.0;
+  div_eq_phaseonly = 0;
   div_eq_gatemode  = 0;
 }
 
