@@ -245,7 +245,8 @@ int main(int argc, char **argv) {
   for (int a = 0; a < naxis; a++) { fprintf(out, "%s,", axis[a].name); }
 
   fprintf(out, "blocks,seconds,acquisitions,locked_frac,first_lock_s,"
-          "mean_snr_db,mean_quality,weight_jitter");
+          "mean_snr_db,mean_quality,weight_jitter,"
+          "delay_frames,delay_abs_us,delay_spread_us,delay_coh,delay_resid_deg");
 
   if (verify) { fprintf(out, ",verify_checked,verify_bad"); }
 
@@ -320,6 +321,9 @@ int main(int argc, char **argv) {
             r.blocks, r.seconds, r.acquisitions,
             (r.blocks > 0) ? (double)r.locked_blocks / r.blocks : 0.0,
             r.first_lock, r.mean_snr, r.mean_quality, r.weight_jitter);
+    fprintf(out, ",%d,%.1f,%.1f,%.3f,%.1f",
+            r.delay_frames, r.delay_abs_us, r.delay_spread_us,
+            r.delay_coh, r.delay_resid_deg);
 
     if (verify) { fprintf(out, ",%d,%d", r.verify_checked, r.verify_bad); }
 

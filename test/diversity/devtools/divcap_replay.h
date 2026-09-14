@@ -23,6 +23,39 @@ struct divcap_result {
   double weight_jitter;     // rms deviation of the weight from its mean
   int    verify_checked;
   int    verify_bad;
+
+  //
+  // Is the inter-arm channel a differential delay at all?
+  //
+  // A delay makes the phase of g1*conj(g0) a straight line in frequency.
+  // Multipath does not: several paths into each antenna make each arm's
+  // channel frequency-selective, so their ratio has nulls and fast phase
+  // excursions in it, and the best-fit line through that means nothing.
+  //
+  // delay_resid_deg is what is left after removing that line, rms over
+  // the subcarriers and weighted by coherence. On a synthetic pure delay
+  // it is 0.00 degrees at any magnitude; on a two-path channel it rises
+  // with the echo - 15, 36, 68 degrees at echo amplitudes 0.3, 0.6, 0.9.
+  //
+  // READ IT WITH delay_coh, ALWAYS. Noise inflates it on its own: a pure
+  // delay measured at 20, 10 and 5 dB subcarrier SNR reads 7, 25 and 39
+  // degrees with no multipath present at all. So a large residual at low
+  // coherence says only that the measurement is poor, and it is the
+  // residual that stays large while coherence is *high* that is evidence
+  // of structure a delay cannot explain.
+  //
+  // The line removed is the best fit to the same frame the residual is
+  // measured on, so this is the most favourable case for the delay
+  // hypothesis and a lower bound on what any delay would leave behind.
+  //
+  // The other three are what it has to be read against: a given residual
+  // means something different at 100 us than at 2000 us.
+  //
+  int    delay_frames;      // frames with a valid delay estimate
+  double delay_abs_us;      // mean |delay|
+  double delay_spread_us;   // max - min over the run
+  double delay_coh;         // mean inter-subcarrier coherence
+  double delay_resid_deg;   // rms phase left after removing the fitted line
 };
 
 //

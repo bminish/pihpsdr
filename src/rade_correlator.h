@@ -92,6 +92,26 @@ extern double rade_corr_arm_cos;
 extern double rade_corr_arm_sin;
 
 //
+// Differential delay across the RADE V1 subcarriers, the mean inter-arm
+// coherence it was measured at, and this frame's raw cross-spectrum and
+// smoothed coherence per subcarrier.
+//
+// MEASUREMENT ONLY - nothing in the audio path reads any of it. It is
+// here so a recorded capture can be asked whether the inter-arm channel
+// is a delay at all before anyone builds a correction for one. A straight
+// line fitted to a channel that is not a delay still returns a confident
+// number; the residual left after removing it is what says so, and that
+// needs the per-subcarrier phases. See divcap_replay.h and
+// docs/diversity-measurements.md Findings 50 to 55.
+//
+extern double rade_corr_delay_sec;
+extern int    rade_corr_delay_valid;
+extern double rade_corr_delay_coh;
+extern double rade_corr_sub_xre[RADE_CORR_NC];
+extern double rade_corr_sub_xim[RADE_CORR_NC];
+extern double rade_corr_sub_coh[RADE_CORR_NC];
+
+//
 // ddc_rate must be a whole multiple of RADE_CORR_FS, since the correlator
 // decimates down to it (48k/96k/192k/384k all are).
 // Returns 0 if the correlator cannot run at this rate.

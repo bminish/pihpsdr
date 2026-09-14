@@ -62,6 +62,16 @@ typedef struct {
   double alias_alpha;
   int    alias_min;
   double alias_margin;
+  //
+  // Per-subcarrier channel measurement. sub_tau is the averaging on the
+  // cross-spectrum the coherence is taken from; the delay_ three are the
+  // averaging, the coherence gate and the sanity bound on the delay
+  // estimate. None of them change what the radio does.
+  //
+  double sub_tau;
+  double delay_tau;
+  double delay_mincoh;
+  double delay_maxus;
 } rade_tuning_t;
 
 extern rade_tuning_t rade_tuning;
@@ -101,6 +111,10 @@ extern double      rade_tuning_get(const char *name);
 #define RADE_ALIAS_ALPHA  (rade_tuning.alias_alpha)
 #define RADE_ALIAS_MIN    (rade_tuning.alias_min)
 #define RADE_ALIAS_MARGIN (rade_tuning.alias_margin)
+#define RADE_SUB_TAU      (rade_tuning.sub_tau)
+#define RADE_DELAY_TAU    (rade_tuning.delay_tau)
+#define RADE_DELAY_MINCOH (rade_tuning.delay_mincoh)
+#define RADE_DELAY_MAXUS  (rade_tuning.delay_maxus)
 #define rade_acq_at       (rade_tuning.acq_at)
 #define rade_acq_sigma    (rade_tuning.acq_sigma)
 

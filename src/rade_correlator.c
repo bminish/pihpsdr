@@ -489,6 +489,28 @@ static const double rade_acq_sigma[RADE_ACQ_CHECKS] = { 7.5, 6.75, RADE_LOCK_SIG
 #define RADE_DEC_TAPS_PER_PHASE  16
 #define RADE_DEC_CUTOFF          3000.0
 
+//
+// Per-subcarrier channel measurement.
+//
+// Nothing here is applied to the audio. It exists so that a capture can
+// be asked whether the inter-arm channel is the kind of thing a
+// differential-delay correction could help with, before anyone writes one
+// - see docs/diversity-measurements.md, Findings 50 to 55.
+//
+// RADE_SUB_TAU       seconds of averaging on g1*conj(g0) per subcarrier.
+//                    The coherence below is meaningless without it: a
+//                    single observation is coherent with itself by
+//                    construction.
+// RADE_DELAY_TAU     seconds of averaging on the delay estimate.
+// RADE_DELAY_MINCOH  mean coherence below which no estimate is published.
+// RADE_DELAY_MAXUS   microseconds; beyond this the fit is rejected as
+//                    failed rather than clamped.
+//
+#define RADE_SUB_TAU        1.0
+#define RADE_DELAY_TAU      2.0
+#define RADE_DELAY_MINCOH   0.40
+#define RADE_DELAY_MAXUS    2000.0
+
 #define RADE_RING       (8 * RADE_CORR_NMF)
 #define RADE_ACQ_SPAN   (2 * RADE_CORR_NMF + RADE_CORR_M + RADE_CORR_NCP)
 
@@ -500,6 +522,26 @@ double rade_corr_arm_db   = 0.0;
 int    rade_corr_arm_valid = 0;
 double rade_corr_arm_cos  = 1.0;
 double rade_corr_arm_sin  = 0.0;
+
+//
+// Differential delay across the subcarriers, and the mean inter-arm
+// coherence it was measured at. Published, never acted on.
+//
+double rade_corr_delay_sec = 0.0;
+int    rade_corr_delay_valid = 0;
+double rade_corr_delay_coh = 0.0;
+
+//
+// This frame's raw measurement per subcarrier - the cross-spectrum
+// g1*conj(g0) - and the coherence of the smoothed one behind it.
+//
+// Both are needed to judge a delay estimate: the phases say what shape
+// the inter-arm channel has, and the coherence says how much of that
+// shape is signal. See divcap_replay.h.
+//
+double rade_corr_sub_xre[RADE_CORR_NC];
+double rade_corr_sub_xim[RADE_CORR_NC];
+double rade_corr_sub_coh[RADE_CORR_NC];
 int    rade_corr_mirrored = 0;
 int    rade_corr_confirming = 0;
 
@@ -509,6 +551,16 @@ typedef struct {
 
 static inline cplx cset(double r, double i)      { cplx c = {r, i}; return c; }
 static inline cplx cadd(cplx a, cplx b)          { return cset(a.re + b.re, a.im + b.im); }
+static inline cplx csub(cplx a, cplx b)          { return cset(a.re - b.re, a.im - b.im); }
+
+//
+// The smoothed cross-spectrum and per-arm powers the coherence and the
+// delay estimate are taken from.
+//
+static cplx   sub_x[RADE_CORR_NC];
+static double sub_p0[RADE_CORR_NC];
+static double sub_p1[RADE_CORR_NC];
+static int    sub_have = 0;
 static inline cplx cmul(cplx a, cplx b)          { return cset(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re); }
 static inline cplx cscale(cplx a, double s)      { return cset(a.re * s, a.im * s); }
 static inline cplx cconj(cplx a)                 { return cset(a.re, -a.im); }
@@ -763,6 +815,19 @@ void rade_corr_reset(void) {
   rade_corr_arm_valid = 0;
   rade_corr_arm_cos = 1.0;
   rade_corr_arm_sin = 0.0;
+  rade_corr_delay_sec = 0.0;
+  rade_corr_delay_valid = 0;
+  rade_corr_delay_coh = 0.0;
+  sub_have = 0;
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    rade_corr_sub_xre[c] = 0.0;
+    rade_corr_sub_xim[c] = 0.0;
+    rade_corr_sub_coh[c] = 0.0;
+    sub_x[c]  = cset(0.0, 0.0);
+    sub_p0[c] = 0.0;
+    sub_p1[c] = 0.0;
+  }
   //
   // These two are only ever written when a lock is taken, so without this
   // they survive a reset - and the menu goes on showing the last lock's
@@ -1169,6 +1234,101 @@ static void rade_mvdr_weight(double *wr, double *wi) {
 // Once locked, measure the channel on both arms at the tracked timing and
 // frequency, update the covariance of what is left over, and solve.
 //
+//
+// Measure the channel one subcarrier at a time, and from it the
+// differential delay across them.
+//
+// The delay is the coherence-weighted circular mean of the phase step
+// between adjacent subcarriers. No unwrapping: unwrapping across 30
+// subcarriers propagates one bad step through every subcarrier above it,
+// and on marginal captures it does.
+//
+// The step is unambiguous while |dphi| < pi, i.e. |tau| < 1/(2*50) = 10
+// ms, far outside anything HF presents.
+//
+// Nothing here is applied. It is published so that a replay can ask
+// whether a delay is even the right description of the channel - a
+// question the estimate's own confidence cannot answer, because a
+// straight line fitted to something that is not one still returns a
+// number. See divcap_replay.h.
+//
+static void rade_sub_measure(double f_centre, double gsign, double dbin) {
+  const double a = 1.0 - exp(-RADE_FRAME_SECS /
+                             (RADE_SUB_TAU > 0.05 ? RADE_SUB_TAU : 0.05));
+
+  for (int c = 0; c < RADE_CORR_NC; c++) {
+    const int k = RADE_CARRIER_K0 + c;
+    const double hz = f_centre + gsign * (double)k * dbin;
+    const cplx g0 = rade_dft_bin(ring0, lock_a, hz);
+    const cplx g1 = rade_dft_bin(ring1, lock_a, hz);
+    const cplx x  = cmul(g1, cconj(g0));
+    const double p0 = cabs2(g0);
+    const double p1 = cabs2(g1);
+
+    rade_corr_sub_xre[c] = x.re;
+    rade_corr_sub_xim[c] = x.im;
+
+    if (!sub_have) {
+      sub_x[c]  = x;
+      sub_p0[c] = p0;
+      sub_p1[c] = p1;
+    } else {
+      sub_x[c]  = cadd(sub_x[c], cscale(csub(x, sub_x[c]), a));
+      sub_p0[c] += a * (p0 - sub_p0[c]);
+      sub_p1[c] += a * (p1 - sub_p1[c]);
+    }
+
+    const double den = sub_p0[c] * sub_p1[c];
+    double coh = (den > 1e-30) ? (cabs2(sub_x[c]) / den) : 0.0;
+
+    if (coh > 1.0) { coh = 1.0; }
+
+    rade_corr_sub_coh[c] = coh;
+  }
+
+  sub_have = 1;
+
+  cplx step = cset(0.0, 0.0);
+  double cohsum = 0.0;
+
+  for (int c = 0; c + 1 < RADE_CORR_NC; c++) {
+    const cplx d = cmul(sub_x[c + 1], cconj(sub_x[c]));
+    const double m = sqrt(cabs2(d));
+    const double w = (rade_corr_sub_coh[c] < rade_corr_sub_coh[c + 1])
+                     ? rade_corr_sub_coh[c] : rade_corr_sub_coh[c + 1];
+
+    if (m > 1e-30) {
+      step = cadd(step, cscale(d, w / m));
+      cohsum += w;
+    }
+  }
+
+  const double mean_coh = cohsum / (double)(RADE_CORR_NC - 1);
+  rade_corr_delay_coh = mean_coh;
+
+  if (cohsum > 1e-12 && mean_coh >= RADE_DELAY_MINCOH) {
+    //
+    // gsign flips the sense of "the next subcarrier up" in the raw frame,
+    // so it has to come back out of the answer here.
+    //
+    const double dphi = atan2(step.im, step.re) * gsign;
+    const double raw  = -dphi / (2.0 * M_PI * dbin);
+
+    if (fabs(raw) * 1e6 <= RADE_DELAY_MAXUS) {
+      const double ad = 1.0 - exp(-RADE_FRAME_SECS /
+                                  (RADE_DELAY_TAU > 0.05 ? RADE_DELAY_TAU : 0.05));
+
+      if (!rade_corr_delay_valid) {
+        rade_corr_delay_sec = raw;
+      } else {
+        rade_corr_delay_sec += ad * (raw - rade_corr_delay_sec);
+      }
+
+      rade_corr_delay_valid = 1;
+    }
+  }
+}
+
 static int rade_track(double tau, double hang, double *wr, double *wi) {
   cplx pw[RADE_CORR_M];
   rade_pilot_at(lock_f, pw);
@@ -1523,6 +1683,8 @@ static int rade_track(double tau, double hang, double *wr, double *wi) {
   e0 /= (double)RADE_GUARD_BINS;
   e1 /= (double)RADE_GUARD_BINS;
   e01 = cscale(e01, 1.0 / (double)RADE_GUARD_BINS);
+
+  rade_sub_measure(lock_f, gsign, dbin);
   //
   // The pilot's own energy over the span, which is what the residual loop
   // used to accumulate a term at a time.

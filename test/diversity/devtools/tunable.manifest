@@ -39,3 +39,12 @@ define RADE_FREQ_LIMIT
 define RADE_ALIAS_ALPHA
 define RADE_ALIAS_MIN
 define RADE_ALIAS_MARGIN
+
+#
+# Per-subcarrier channel measurement. Published, never applied - see
+# docs/diversity-measurements.md Findings 50 to 55.
+#
+define RADE_SUB_TAU
+define RADE_DELAY_TAU
+define RADE_DELAY_MINCOH
+define RADE_DELAY_MAXUS
