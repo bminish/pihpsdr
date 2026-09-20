@@ -18,7 +18,10 @@ settled for now. **Findings 20 and 22 have been acted on**: the wideband
 Sum weight now carries the branch noise ratio, and the CW passband error
 under Finding 8, the missing attenuator fields and the linear Averaging
 scale are fixed with it - see "What was changed, and what it scored".
-Findings 17, 21 and 23 remain measurements only. **Findings 34 to 39 add
+Findings 17, 21 and 23 remain measurements only. **Finding 56 is a
+fault, not a tuning measurement**, and is the only entry here that says
+the feature can be worse than switching it off: it is listed under "What
+is still open". **Findings 34 to 39 add
 ten captures and no changes to the shipping code**: they close the
 attenuation-budget item, re-score the averaging slider on decode, and open
 a new question about what the loop leaves applied while it holds. Getting
@@ -7734,6 +7737,231 @@ genie is scored against the same noisy measurement as everyone else and
 wins partly by fitting that noise. Differences between tuning points are
 what it is for.
 
+## Finding 56: a disconnected ADC0 makes the radio deaf, and every give-up path in the loop points at it
+
+One capture, `112712`, taken 2026-09-20 on 40 m LSB: Angelia, protocol 2,
+192 kHz, nfft 16384 (11.72 Hz bins), 703 blocks, 59.99 s, dial 7134970 /
+CTUN 7154973, filter -2850..-150, Window reference following the filter,
+objective Sum, averaging 0.597 s, hang 10 s, both attenuators at 0. No
+context change, no engine reset and no dropped block in the whole file.
+
+**Its note field is empty**, which is the one thing
+`test/diversity/devtools/README.md` says a capture must not be, and this
+is the finding that needed it: everything below about which antenna was on
+which ADC is read off the samples.
+
+**For the first 47.8 s arm 0 is a disconnected ADC, and the combiner
+spends 8.79 s of that minute handing the operator its silence.**
+
+### Arm 0 is not a quiet antenna, it is an unfed converter
+
+Over blocks 0 to 559 arm 0 sits at -112.3 dBFS against arm 1's -81.2, a
+31.1 dB median gap; in the operator's own passband - +150 to +2850 Hz in
+the tapped frame - it is -48.0 dB against arm 1's -18.9, a gap of 29.3 dB.
+That much could be a bad antenna. The spectrum says otherwise:
+
+| over the whole +/-76.8 kHz span | arm 0, blocks 0-559 | arm 1, blocks 0-559 | arm 0, blocks 560-702 |
+|---|---|---|---|
+| peak - median | **3.1 dB** | 48.4 dB | 42.7 dB |
+| p99 - p10 | **3.0 dB** | 32.7 dB | 32.1 dB |
+| spectral flatness (geo/arith mean) | **-0.1 dB** | -14.7 dB | -13.8 dB |
+
+A connected HF port at 192 kHz is full of structure - broadcast carriers,
+band edges, 40-plus dB of peak over median. Arm 0 is white to within a
+tenth of a decibel of a perfectly flat spectrum, and carries 20 LSB rms
+per component at the protocol's 2^-23 scaling against arm 1's 729. It is
+the converter's own noise and nothing else.
+
+At block 560 - 47.8 s - arm 0 comes up 45 dB in four blocks and is
+thereafter a median 13.3 dB *hotter* than arm 1, with the same 43 dB of
+spectral structure. Someone moved the antenna routing. **Nothing in the
+recording marks it**, because antenna selection is not in
+`div_get_context()`: `rec_flags` bit 0 is clear on that block and on every
+other block in the file.
+
+### How arm 0 got to be the dead one
+
+`rx_add_div_iq_samples()` forms `z = z0 + w*z1` with arm 0 pinned at unit
+gain. `w` is the only control there is, so arm 0 is structurally
+privileged: it is in the output whatever happens, and "arm 0 alone" is
+`w = 0`, exact and always reachable.
+
+Which stream is arm 0 is not the operator's choice. Both protocols
+override the receiver's own ADC when diversity is switched on -
+`new_protocol.c:1425`, "We always use DDC0 for the signals from ADC0, and
+DDC1 for the signals from ADC1", and `old_protocol.c:2112`, "use ADC0 for
+RX1 and ADC1 for RX2 (fixed setting)". `receiver[0]->adc` is ignored.
+
+**So an operator receiving on ADC1 with nothing on ADC0 acquires a dead
+arm 0 at the instant they press Diversity**, and there is no control
+anywhere in the feature that says which arm carries the antenna.
+
+### The gate was right; the hold was not
+
+The coherence gate did exactly its job. Over the 560 dead-arm blocks the
+engine's own magnitude-squared coherence has a median of 0.0012 and a
+maximum of 0.0171 against a 0.20 threshold, and **not one block passed**.
+The loop held for the whole 47.8 s, which is the correct answer to two
+antennas that agree about nothing.
+
+The damage is entirely in what the hold applies. `div_hold_or_stand_down()`
+fired three times:
+
+| blocks | t | below the held weight | at the arm-0 floor | worst output vs the live arm |
+|---|---|---|---|---|
+| 102-105 | 8.70-9.05 s | 0.34 s | - | -24.57 dB |
+| 202-220 | 17.24-18.86 s | 1.62 s | 1.02 s | -34.42 dB |
+| 352-450 | 30.04-38.49 s | 8.45 s | **7.77 s** | -35.22 dB |
+
+**10.41 s of 59.99 - 17 % of the capture - with the output pulled below
+the weight the loop was standing on, and 8.79 s of it indistinguishable
+from arm 0 alone**, "at the arm-0 floor" meaning the combined passband
+power is within 0.1 dB of arm 0's own. Over those blocks the output is the
+disconnected converter and nothing else: a median of 26.4 dB below the
+live antenna, worst block 35.2 dB.
+
+The zero is approached rather than written. `div_hold_or_stand_down()`
+asks for `w = 0` but `div_apply_weight()` slews, so the recorded weight
+decays exponentially - it passes -60 dB on block 372 and bottoms out at
+1.5e-25 - and the audio is at the converter floor long before the
+arithmetic is. A reader looking for an exact zero in the file will not
+find one; what marks the stand-down is `|w|` falling below anything the
+loop would ever solve for.
+
+The code says why, and says it in as many words. The comment above the
+stand-down reads "slew the weight to zero - arm 0 alone, the antenna the
+operator would have been listening to with the feature switched off".
+**That premise is false in this configuration**, and it is the only
+premise the stand-down rests on.
+
+The stand-down sits upstream of the objective, so the choice of objective
+does not help. `run_ref --ref band --mode null|sum|best` puts the same 71
+blocks - 6.06 s - below `|w| = 1e-7` on all three, identical block for
+block, because none of the three objectives runs on any of them. It
+differs from the live run's figure only because `run_ref` starts
+from `w = 1` rather than the -5.2 dB that was in force at block 0.
+
+### Every other way the loop gives up points at arm 0 too
+
+* `div_hold_or_stand_down()` asks for `w = 0`, as above.
+* `div_apply_best()` writes `w = 0` whenever `div_auto_arm_pick == 0`, and
+  0 is where the pick starts.
+* `DIV_AUTO_NULL` solves `w = -Sxy/Syy`, which goes to zero as the arms
+  decorrelate - and a dead arm guarantees they do. The objective whose job
+  is to cancel cannot tell "nothing to cancel" from "cancel everything".
+* `rade_mvdr_weight()` writes `w = 0` on a degenerate solve. The comment
+  there already notes that this "mutes the second antenna and shows in the
+  menu as the -27 dB floor with phase 0, indistinguishable from a real
+  answer".
+
+**The failure mode of a disconnected ADC0 is therefore silence, not a lost
+array gain.** There is no path in the loop that fails towards the antenna
+that is working.
+
+### Best is the one objective that could have saved it, and it is unreachable
+
+`DIV_AUTO_BEST` exists to give the output to whichever antenna is
+measuring better, and with arm 1 ahead by 18.5 dB it would have. It never
+runs. `div_apply_best()` is called only after the coherence gate has
+opened, and a dead arm holds that gate shut by construction: over the 560
+dead-arm blocks `run_ref --mode best` leaves `arm_pick` at 0 on **every
+one of them**.
+
+The mode that selects the better antenna cannot act in the only case where
+one antenna has nothing at all.
+
+### The statistic that should have caught it credits a dead arm with 9.8 dB
+
+`div_arm_from_floor()` publishes the per-arm advantage, and it is valid on
+560 blocks of 560 here - `arm_valid = 1` throughout, `arm_db` a median of
++18.5 dB. **A flag that reads "both arms carry a signal" on a port with no
+antenna on it is not a flag a guard can be keyed on.**
+
+The reason is structural, not a property of this capture. The function
+compares `p`, a *mean* over the window bins, against `n`, the *10th
+percentile* of the bins outside it. Those are two different statistics of
+the same distribution, so on an arm carrying nothing but noise the
+difference does not go to zero - it goes to their ratio. For exponential
+bins that is `1/(-ln 0.9) - 1 = 8.49`, or **9.29 dB**, and white Gaussian
+noise pushed through this capture's own window and bin sets gives 9.21 dB.
+
+Measured on arm 0 over the dead epoch: **median 9.77 dB**, within 0.6 dB
+of it - the excess is that converter noise is not quite ideal Gaussian -
+and clearing the `DIV_ARM_MIN_DB` 6 dB gate on **100 %** of blocks. The
+published advantage is thus arm 1's own figure less that near-constant:
+26.2 dB becoming 16.3 on a per-block recomputation, against the engine's
+own smoothed +18.5 - the 2 dB between them is `DIV_FLOOR_TAU` and
+`DIV_NF_TAU`, not a disagreement. **The dead arm is reported as a working
+antenna 16 to 18 dB down rather than as no antenna, and there is no level
+at which it would be reported as absent.**
+
+Finding 49's caveat already said a per-block percentile reads about
+6.5 dB low and that "it is only harmless where the same bias falls on both
+arms of a ratio". This is the case where it does not: arm 1's numerator is
+a real signal and arm 0's is the bias itself.
+
+### And the branch noise ratio reads a dead port as the quiet branch
+
+The Sum weight carries `N0/N1` (Findings 20 and 22). Over the dead epoch
+that ratio is **-12.6 dB**, against +16.0 dB in the tail once arm 0 is
+connected. Maximum ratio combining cannot distinguish a front end with
+very little noise from one with no antenna, and because arm 0's gain is
+fixed at unity, "weight the quiet branch heavily" is spelled `w -> 0`.
+
+So even on a block where the gate falsely opened - the shipped threshold
+passes about one no-signal block in twenty, Findings 26 and 29 - the Sum
+scale would divide the live arm's weight by eighteen. **Every mechanism in
+the loop is pulling the same way.**
+
+### What a guard should key on
+
+Not the arm advantage, which never goes invalid, and not the coherence,
+which is what a dead arm destroys. The table at the top is the
+discriminator: **spectral flatness over the DDC span, with 14 dB of
+margin** - -0.1 dB on the disconnected port against -13.8 to -16.5 dB on
+every live arm in the file, in both epochs and on both arms. It is
+absolute, needs no second arm to compare against, and needs no per-band
+threshold, because it does not measure level.
+
+That test wants to run on every block, outside the coherence gate,
+because the port can die while the feature is running - a relay, a coax,
+an antenna switch - which is the case a check at the point of enabling
+diversity cannot cover. What it should change:
+
+* the stand-down must freeze rather than zero when arm 0 is not viable -
+  the weight is still in `quiet_wr`/`quiet_wi`, so this is the branch that
+  already exists for the band filling up;
+* `div_apply_best()` must not be able to pick a dead arm 0, and must be
+  reachable when the gate is shut;
+* `DIV_AUTO_NULL`'s zero and `rade_mvdr_weight()`'s degenerate zero need
+  the same refusal.
+
+On this capture freezing alone recovers the whole 10.41 s, because the
+-5.2 dB in force at block 0 was audible throughout.
+
+### What this does not say
+
+**It is one capture, and the tail is not a second one.** Blocks 560 to 702
+have both arms live and the loop is *correct* there, which is worth saying
+because the weight readout looks alarming: it settles between +14 and
++19 dB against a +20 dB clamp. That is the formula, not a rail. At block 608 the
+measured channel is `|acc_xy/acc_xx| = -14.77 dB` and the branch noise
+ratio is +16.6 dB, so maximum ratio combining asks for
+`45.7 x 0.182 = 8.3`, or +18.4 dB, against the +18.67 dB applied. Arm 1 is
+the weak, quiet antenna and amplifying it eightfold is the right answer.
+
+**Nothing here is scored on decode.** The capture is 40 m speech, there is
+no modem to count frames on, and the tap is ahead of the AGC - so what the
+operator actually heard through 8.79 s of converter floor, and how long the
+AGC took to recover afterwards, is not in the file and is not measurable
+from it.
+
+**The 45 dB step at block 560 is not analysed.** The engine did not reset
+on it - antenna routing is not in the context - and the loop went from
+holding to a near-clamp weight in 14 blocks, on accumulators that had been
+decaying against a dead arm for 47.8 s. Whether that transient matters is
+a separate question and this capture is the only evidence for it.
+
 ## False alarms
 
 Locks produced on captures with no RADE signal anywhere. Cells are
@@ -8078,6 +8306,26 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
+- **A disconnected antenna port makes the feature deaf, and every give-up
+  path in the loop aims at it.** Finding 56. The combiner forms
+  `z = z0 + w*z1` with arm 0 at unit gain, both protocols force arm 0 to
+  ADC0 when diversity is enabled whatever the receiver was set to, and
+  `w = 0` - "arm 0 alone" - is what the stand-down, `div_apply_best()`'s
+  initial pick, a decorrelated Null solve and a degenerate MVDR solve all
+  write. On `112712` that is 8.79 s of the minute at 26.4 dB below the
+  only live antenna, with 10.41 s pulled below the weight the loop was
+  standing on. The loop is not wrong about anything it measures - the
+  coherence gate holds correctly on all 560 blocks - and the two
+  statistics that could have caught it point the other way: the branch
+  noise ratio reads the dead port as the quiet branch at -12.6 dB, and
+  `div_arm_from_floor()` credits a white arm with 9.8 dB - it compares a
+  mean against a 10th percentile, so on pure noise it returns their ratio
+  rather than zero - and so never goes invalid. **A guard at the
+  point of enabling diversity does not close this**, because the port can
+  die while the feature runs. The discriminator with margin in it is
+  spectral flatness over the DDC span: -0.1 dB on the disconnected port
+  against -13.8 to -16.5 dB on every live arm in the file. Nothing has
+  been changed.
 - **RADE V1 has no fallback, and what it leaves applied is a weight the
   operator cannot reach.** Finding 49. `div_process_block()`'s RADE branch
   sets `div_auto_holding` and returns when the correlator produces no
@@ -10027,6 +10275,36 @@ against each candidate. That was not true before the FSK/Digital per-bin
 test was split out into `DIV_OCC_COH` - until then, moving the gate moved
 which bins the estimate was made from, and every point needed its own run. See
 [`test/diversity/devtools/README.md`](../test/diversity/devtools/README.md).
+
+**Finding 56 needs no tools beyond `run_ref`, and most of it needs none at
+all.** The three stand-down episodes are read straight out of the `.divc`
+with the layout in `src/diversity_capture.h`: `live_cos`/`live_sin` is the
+weight actually applied, and `|w|` decaying below anything the loop would
+solve for - 1e-7 is well clear - is the stand-down, since
+`div_hold_or_stand_down()` is the only path that asks for zero. Do not
+test for an exact zero: the write is slewed, so the recorded weight only
+approaches it. The output figures are
+`|Z0 + w*Z1|^2 / |Z1|^2` summed over the operator's passband - +150 to
++2850 Hz in the tapped frame, from `div_shift_to_bin()` on
+`filter_low`/`filter_high` with `offset` zero - Blackman windowed over the
+whole 16384-sample block.
+
+The spectral-structure table is the per-arm **average** spectrum over the
+blocks of an epoch, not per block, taken over `DIV_NF_SPAN` of Nyquist
+(+/-76.8 kHz here); flatness is the geometric mean over the arithmetic
+mean of those bins. Per block the statistic is far too noisy to separate
+the two cases - it is the averaging that opens the 14 dB gap.
+
+`div_arm_from_floor()`'s 9.77 dB is reproduced by taking `p` as the mean
+over the window bins and `n` as `nbins` times the 10th percentile of the
+bins outside `filter +/- DIV_NF_SKIRT_HZ`. The reference to compare it
+against is not the closed form on its own - **check it against a
+simulation through the same window and the same two bin sets**, which
+gives 9.21 dB where the exponential closed form gives 9.29, because the
+window correlates adjacent bins and the two sets are not the same size. The mode-independence of the stand-down is
+`run_ref --ref band --mode null|sum|best`, counting blocks where
+`hypot(wr,wi)` is zero; `--mode best` also prints the `arm_pick` column
+that shows the pick never leaving arm 0.
 
 Findings 11, 13 and 15 need things the committed tools do not provide.
 They were taken from a throwaway copy of
