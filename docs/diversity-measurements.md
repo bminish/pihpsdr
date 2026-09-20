@@ -7875,6 +7875,10 @@ measured.
 
 ## Finding 56: a disconnected ADC0 makes the radio deaf, and every give-up path in the loop points at it
 
+(The jump from 51 is deliberate. Numbers 52 to 55 belong to the abandoned
+`radeV1-eq` work recorded on `feature/diversity-binaural`, and this finding
+keeps one number on both branches because the code comments cite it.)
+
 One capture, `112712`, taken 2026-09-20 on 40 m LSB: Angelia, protocol 2,
 192 kHz, nfft 16384 (11.72 Hz bins), 703 blocks, 59.99 s, dial 7134970 /
 CTUN 7154973, filter -2850..-150, Window reference following the filter,
