@@ -48,12 +48,17 @@
 // rather than pretending to be portable.
 //
 #define DIVCAP_MAGIC        "PIHPDIVC"
-#define DIVCAP_VERSION      3u
+#define DIVCAP_VERSION      4u
 //
 // Version 1 had no attenuator fields: att0/att1 occupied the pad after
 // weighting and read as zero. A v1 file is still replayable - the block
 // record is the same 208 bytes - but its attenuator values are unknown
 // rather than zero, and the tools say so.
+//
+// Version 3 had no arm-swap bit: the arms were never exchanged and arm 0
+// was always ADC0, so a v3 file's clear bit 2 means what it says and such
+// a file replays unchanged. Nothing about the layout changed; the version
+// is what says the bit is written.
 //
 // Version 2 and below never wrote rec_flags: the writer assigned it a
 // literal zero, so the "context changed here" bit documented below was
@@ -98,6 +103,36 @@
 // continuous run and diverges from the recorded state from that block on.
 //
 #define DIVCAP_FLAG_ENGINE_RESET 0x2u
+//
+// Bit 2 says arm 0 was ADC1 rather than ADC0 on this block, because the
+// operator had RX1 set to ADC1. Unlike the two above it is not an event,
+// it is a context field: it describes the block rather than the
+// transition into it.
+//
+// It is what makes a capture self-describing about which antenna is on
+// which arm. Without it two recordings of the same pair of antennas,
+// taken either way round, are indistinguishable - and the arms are not
+// symmetric, so that is the difference between a replay that means
+// something and one that does not.
+//
+// It lives in the flags word because the block record has no room left.
+// The layout is exactly 208 bytes with no padding anywhere in it - att0
+// and att1 took the last of it - so another int32 would make the record
+// 216 and break every reader. A bit in a word with thirty spare is the
+// cheaper lie, and the alternative, a second record type, is not worth it
+// for an instrument that is to be deleted.
+//
+// Written from format version 4. On an older file it reads zero, which is
+// correct for those: the arms were not exchanged, so arm 0 was ADC0.
+// That is the one respect in which this differs from rec_flags before v3
+// - there, zero could not be distinguished from "not written"; here the
+// only value an older writer could have meant is the one a reader gets.
+//
+// It is compared as part of the context, so a swap thrown mid-recording
+// sets bit 0 and bit 1 on that block like any other context change, and
+// divcap_replay() follows the reset.
+//
+#define DIVCAP_FLAG_ARM_SWAP     0x4u
 
 //
 // Written once at the head of the file.

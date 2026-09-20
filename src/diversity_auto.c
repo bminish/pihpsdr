@@ -1076,6 +1076,15 @@ struct div_context {
   int       att0;
   int       att1;
   //
+  // Which converter feeds arm 0. Not used by anything here - the exchange
+  // happens in rx_add_div_iq_samples(), so by the time a block reaches
+  // this file the arms are already in the operator's order. It is in the
+  // context because moving it means the accumulated statistics describe a
+  // different pair of antennas, which is exactly what this struct exists
+  // to notice. See div_arm_swapped().
+  //
+  int       swap;
+  //
   // The operator's manual notches, mirrored here for the same reason the
   // filter edges are: they say which part of the passband is wanted, the
   // analysis has to honour that, and a change of one has to reset the
@@ -1472,6 +1481,40 @@ static int div_rade_side_expected(const struct div_context *ctx) {
 }
 
 //
+// Which converter feeds arm 0 - the stream the combiner carries at unit
+// gain, and the one every fallback resolves to.
+//
+// The combiner forms z = z0 + w*z1 with arm 0 pinned at unity, so arm 0
+// is not symmetric with arm 1: it is in the output whatever the loop
+// does, and every way the loop has of giving up - the stand-down, Best's
+// initial pick, a decorrelated Null solve, a degenerate MVDR solve -
+// resolves to w = 0, which is arm 0 alone. That is the right fallback
+// only if arm 0 is the antenna the operator would otherwise be listening
+// to. Measured on capture `112712`, where it was not: 8.79 s of a minute
+// at 26.4 dB below the only live antenna. See Finding 56 in
+// docs/diversity-measurements.md.
+//
+// The answer is the operator's own: receiver[0]->adc is which converter
+// they set RX1 to. Both protocols override it while diversity runs -
+// ADC0 is forced to DDC0 and ADC1 to DDC1, because the array needs both -
+// so it is otherwise inert here, and it is still the only statement in
+// the program of which antenna they meant to listen to. Following it
+// needs no control of its own and cannot disagree with one.
+//
+// Read live rather than latched, so that moving the RX menu's ADC while
+// diversity runs exchanges the arms there and then. The change reaches
+// the analysis through div_get_context() like any other, which throws the
+// statistics away and starts again on what is now a different pair of
+// antennas.
+//
+// rx_restore_state() clamps adc to 0 on a single-converter radio, so this
+// needs no n_adc test of its own.
+//
+int div_arm_swapped(void) {
+  return (receivers > 0 && receiver[0] != NULL && receiver[0]->adc == 1);
+}
+
+//
 // Snapshot everything the bin mask depends on.
 //
 static void div_get_context(struct div_context *ctx) {
@@ -1491,6 +1534,7 @@ static void div_get_context(struct div_context *ctx) {
   ctx->weighting      = div_auto_weighting;
   ctx->att0           = adc[0].attenuation;
   ctx->att1           = adc[1].attenuation;
+  ctx->swap           = div_arm_swapped();
 
   //
   // Taken from receiver 0 for the same reason everything else here is:
@@ -1546,6 +1590,7 @@ static int div_context_changed(const struct div_context *a, const struct div_con
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
          a->att1           != b->att1           ||
+         a->swap           != b->swap           ||
          div_notches_differ(a, b);
 }
 
@@ -3345,6 +3390,7 @@ static int divcap_ctx_differs(const struct div_context *a,
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
          a->att1           != b->att1           ||
+         a->swap           != b->swap           ||
          a->centre         != b->centre         ||
          a->width          != b->width;
 }
@@ -3407,6 +3453,13 @@ static void div_process_block(void) {
     }
 
     if (divcap_reset) { m.rec_flags |= DIVCAP_FLAG_ENGINE_RESET; }
+
+    //
+    // Which converter arm 0 came from. A context field living in the
+    // flags word, because the block record is full: see
+    // DIVCAP_FLAG_ARM_SWAP.
+    //
+    if (ctx.swap) { m.rec_flags |= DIVCAP_FLAG_ARM_SWAP; }
 
     divcap_prevctx    = ctx;
     divcap_haveprev   = 1;
