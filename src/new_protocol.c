@@ -55,6 +55,7 @@
 #include "new_protocol.h"
 #include "radio.h"
 #include "receiver.h"
+#include "diversity_auto.h"
 #include "rigctl.h"
 #include "saturnmain.h"
 #include "toolbar.h"
@@ -2188,10 +2189,16 @@ static void process_div_iq_data(const unsigned char*buffer) {
     //
     rx_add_div_iq_samples(receiver[0], leftsampledouble0, rightsampledouble0, leftsampledouble1, rightsampledouble1);
     //
-    // if RX2 exists, feed ADC2 data to  RX2
+    // if RX2 exists, feed it the arm the combiner weights rather than a
+    // fixed converter, so that what RX2 shows is the other antenna
+    // whichever way round the operator has them. See div_arm_swapped().
     //
     if (receivers > 1 && (receiver[0]->sample_rate == receiver[1]->sample_rate)) {
-      rx_add_iq_samples(receiver[1], leftsampledouble1, rightsampledouble1);
+      if (div_arm_swapped()) {
+        rx_add_iq_samples(receiver[1], leftsampledouble0, rightsampledouble0);
+      } else {
+        rx_add_iq_samples(receiver[1], leftsampledouble1, rightsampledouble1);
+      }
     }
   }
 }

@@ -52,6 +52,7 @@
 #include "old_protocol.h"
 #include "radio.h"
 #include "receiver.h"
+#include "diversity_auto.h"
 #include "transmitter.h"
 #include "vfo.h"
 
@@ -1373,7 +1374,18 @@ static void process_ozy_byte(int b) {
         right_sample_double_aux = right_sample_double;
         rx_add_div_iq_samples(receiver[0], left_sample_double_main, right_sample_double_main, left_sample_double_aux,
                               right_sample_double_aux);
-        if (receivers > 1) { rx_add_iq_samples(receiver[1], left_sample_double_aux, right_sample_double_aux); }
+        //
+        // RX2 takes the arm the combiner weights rather than a fixed
+        // converter, so that what it shows is the other antenna whichever
+        // way round the operator has them. See div_arm_swapped().
+        //
+        if (receivers > 1) {
+          if (div_arm_swapped()) {
+            rx_add_iq_samples(receiver[1], left_sample_double_main, right_sample_double_main);
+          } else {
+            rx_add_iq_samples(receiver[1], left_sample_double_aux, right_sample_double_aux);
+          }
+        }
       }
     }
     if ((!radio_is_transmitting() || duplex) && !diversity_enabled) {

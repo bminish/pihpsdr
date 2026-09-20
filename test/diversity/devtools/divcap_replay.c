@@ -93,7 +93,8 @@ static int ctx_differs(const struct divcap_block *a, const struct divcap_block *
          a->width          != b->width          ||
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
-         a->att1           != b->att1;
+         a->att1           != b->att1           ||
+         ((a->rec_flags ^ b->rec_flags) & DIVCAP_FLAG_ARM_SWAP) != 0;
 }
 
 static int near(double a, double b) {
