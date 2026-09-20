@@ -270,10 +270,7 @@ long long tune_timeout;
 int meter_type = 1;
 int extended_meter = 1;
 
-static int pre_tune_mode;
-static int pre_tune_cw_internal;
-
-int vox = 0;
+//int vox = 0;
 int CAT_cw_is_active = 0;
 int MIDI_cw_is_active = 0;
 int hpsdr_ptt = 0;  // PTT line *from* radio (only P1 and P2)
@@ -947,7 +944,7 @@ static void radio_create_visual(void) {
       } else {
         transmitter = tx_create_transmitter(CHANNEL_TX, my_width, my_width, rx_height);
       }
-      radio_calc_drive_level();
+      radio_calc_drive_level(0);
       if (protocol == NEW_PROTOCOL || protocol == ORIGINAL_PROTOCOL) {
         tx_ps_set_sample_rate(transmitter, protocol == NEW_PROTOCOL ? 192000 : active_receiver->sample_rate);
         receiver[PS_TX_FEEDBACK] = rx_create_pure_signal_receiver(PS_TX_FEEDBACK,
@@ -1736,7 +1733,7 @@ void radio_start_radio(void) {
     test_menu(top_window);
   }
   if (transmitter != NULL && (protocol == ORIGINAL_PROTOCOL || protocol == NEW_PROTOCOL)) {
-    radio_calc_drive_level();
+    radio_calc_drive_level(0);
     //
     // Switching PureSignal on/off with P2 stops/restarts
     // the protocol, so we do it here, after having
@@ -1889,7 +1886,6 @@ void radio_change_sample_rate(int rate) {
 }
 
 static void rxtx(int state) {
-  int i;
   //
   // My measurements on the timing within rxtx indicates that
   // the time spent in rxtx() dominated by the WDSP slew-downs.
@@ -1900,7 +1896,7 @@ static void rxtx(int state) {
   // to a number of samples that have to be delivered to the
   // channel before it is completely shut down.
   // In most cases, rxtx() takes about 30 +/- 10 msec.
-  // If running duplex, RXTX is faster since there is not
+  // If running duplex, RXTX is faster since there is no
   // receiver slew-down.
   //
   if (transmitter == NULL) {
@@ -1946,14 +1942,17 @@ static void rxtx(int state) {
       alex_forward_max = 0;
     }
     if (!duplex) {
-      for (i = 0; i < receivers; i++) {
+      for (int i = 0; i < receivers; i++) {
         receiver[i]->displaying = 0;
         if (!radio_is_remote) {
           //
-          // wait for slew-down only if this is the last receiver
-          // to be switched off
+          // First, shuw down all receivers "without wait" so they can
+          // slew down in parallel. Later, wait for all of them to
+          // have the shutdown completed.
+          // The idea here is that shutting down 2RX does not take
+          // significantly longer than shutting down 1RX.
           //
-          rx_off(receiver[i], SET(i == (receivers - 1)));
+          rx_off(receiver[i], 0);
           rx_set_displaying(receiver[i]);
         } else {
           send_startstop_rxspectrum(cl_sock_tcp, i, 0);
@@ -1974,21 +1973,37 @@ static void rxtx(int state) {
       // pair, and one ear cutting while the other fades is exactly the
       // artefact a listener notices.
       //
-      // They do NOT go down together, and cannot. rx_off() ignores its
-      // wait argument - upstream hard-wired SetChannelState(id, 0, 1)
-      // because shutting one receiver down without waiting and the other
-      // with left a WDSP thread hanging - so this blocks until the flush
-      // completes, after the loop above has already blocked on RX0's.
-      // Two channels, two waits, in sequence.
+      // It joins the no-wait pass here and the wait pass below, so the two
+      // ears slew together rather than one after the other. That is new.
+      // rx_off() used to ignore its wait argument - it was hard-wired to
+      // SetChannelState(id, 0, 1) because shutting one receiver down
+      // without waiting and the other with left a WDSP thread hanging - so
+      // the split used to cost a second full flush on every RX/TX
+      // turnaround, which in CW is the delay between the key going down and
+      // the first element. Upstream has since made rx_off() honour the
+      // argument and shut its own receivers down in two passes for exactly
+      // this reason, so that cost is gone.
       //
-      // That is the price of running a second receiver and a 2-RX radio
-      // has always paid it; what is new is that a one-panel radio pays it
-      // once the split is on. It lands on the RX/TX turnaround, which in
-      // CW is the delay between the key going down and the first element,
-      // so it is worth knowing about rather than being surprised by.
+      // div_split_recheck() requires receivers < 2, so receiver[1] is never
+      // in the loops that walk `receivers` while the split is on and cannot
+      // be shut down twice.
       //
       if (!radio_is_remote && div_split_active()) {
         rx_off(receiver[1], 0);
+      }
+
+      //
+      // Now wait for all receiver slew-downs to be completed
+      //
+      if (!radio_is_remote) {
+        for (int i = 0; i < receivers; i++) {
+          rx_off(receiver[i], 1);
+        }
+
+        //
+        // ...and for the second ear, for the same reason it is not above.
+        //
+        if (div_split_active()) { rx_off(receiver[1], 1); }
       }
     }
     if (transmitter->dialog) {
@@ -2077,7 +2092,7 @@ static void rxtx(int state) {
         }
         if (transmitter->tune) { do_silence = 5; } // 31 ms "silence" for TUNEing in any mode
       }
-      for (i = 0; i < receivers; i++) {
+      for (int i = 0; i < receivers; i++) {
         gtk_fixed_put(GTK_FIXED(fixed), receiver[i]->panel, receiver[i]->x, receiver[i]->y);
         receiver[i]->displaying = 1;
         if (!radio_is_remote) {
@@ -2134,7 +2149,7 @@ int radio_client_set_vox(gpointer data) {
     }
     mox = 0;
     transmitter->tune = 0;
-    vox = state;
+    //vox = state;
     g_idle_add(ext_vfo_update, NULL);
   }
   return G_SOURCE_REMOVE;
@@ -2149,7 +2164,6 @@ int radio_client_set_mox(gpointer data) {
     vox_cancel();  // remove time-out
     mox = state;
     transmitter->tune = 0;
-    vox = 0;
     g_idle_add(ext_vfo_update, NULL);
   }
   return G_SOURCE_REMOVE;
@@ -2159,7 +2173,13 @@ int radio_client_set_twotone(gpointer data) {
   if (transmitter != NULL) {
     transmitter->twotone = GPOINTER_TO_INT(data);
   }
-  g_idle_add(ext_vfo_update, NULL);
+  return G_SOURCE_REMOVE;
+}
+
+int radio_client_set_txnoise(gpointer data) {
+  if (transmitter != NULL) {
+    transmitter->txnoise = GPOINTER_TO_INT(data);
+  }
   return G_SOURCE_REMOVE;
 }
 
@@ -2168,9 +2188,8 @@ int radio_client_set_tune(gpointer data) {
   if (transmitter != NULL) {
     if (state != transmitter->tune) {
       vox_cancel();
-      if (vox || mox) {
+      if (mox) {
         rxtx(0);
-        vox = 0;
         mox = 0;
       }
       rxtx(state);
@@ -2231,15 +2250,14 @@ void radio_set_mox(int state) {
   }
   if (state && TxInhibit) { return; }
   //
-  // - setting MOX (no matter in which direction) stops TUNEing
   // - setting MOX (no matter in which direction) ends a pending VOX
   // - activating MOX while VOX is pending continues transmission
   // - deactivating MOX while VOX is pending makes a TX/RX transition
   //
-  if (transmitter->tune) {
-    radio_set_tune(0);
-  }
   vox_cancel();
+  if (!state) {
+    tx_set_signal(transmitter, 0, 0, 0);
+  }
   //
   // If MOX is activated while VOX is already pending,
   // then switch from VOX to MOX mode but no RX/TX
@@ -2249,8 +2267,7 @@ void radio_set_mox(int state) {
     rxtx(state);
   }
   mox  = state;
-  transmitter->tune = 0;
-  vox  = 0;
+  //vox  = 0;
   schedule_high_priority();
   schedule_receive_specific();
   g_idle_add(ext_vfo_update, NULL);
@@ -2754,28 +2771,12 @@ void radio_set_diversity(int state) {
   g_idle_add(ext_vfo_update, NULL);
 }
 
-void radio_set_vox(int state) {
+void radio_set_txnoise(TRANSMITTER *tx, int state) {
   if (radio_is_remote) {
-    send_vox(cl_sock_tcp, state);
+    send_txnoise(cl_sock_tcp, state);
     return;
   }
-  if (transmitter == NULL) { return; }
-  if (mox || transmitter->tune) { return; }
-  if (state && TxInhibit) { return; }
-  if (vox != state) {
-    //
-    // VOX change can be unsolicited.
-    // However, this should not happen, since VOX
-    // is fired on the client's side.
-    //
-    if (remoteclient.running) {
-      send_vox(remoteclient.sock_tcp, state);
-    }
-    rxtx(state);
-    vox = state;
-    schedule_high_priority();
-    schedule_receive_specific();
-  }
+  tx_set_signal(tx, 0, state, 0);
   g_idle_add(ext_vfo_update, NULL);
 }
 
@@ -2784,7 +2785,7 @@ void radio_set_twotone(TRANSMITTER *tx, int state) {
     send_twotone(cl_sock_tcp, state);
     return;
   }
-  tx_set_twotone(tx, state);
+  tx_set_signal(tx, 0, 0, state);
   g_idle_add(ext_vfo_update, NULL);
 }
 
@@ -2811,151 +2812,84 @@ void radio_set_tune(int state) {
     tx_set_out_of_band(transmitter);
   }
   // if state==tune, this function is a no-op
-  if (transmitter->tune != state) {
-    vox_cancel();
-    if (vox || mox) {
-      rxtx(0);
-      vox = 0;
-      mox = 0;
+  if (transmitter->tune == state) {
+    return;
+  }
+  if (state) {
+    //
+    // Ron has reported that TX underruns occur if TUNEing with
+    // compressor or CFC engaged, and that this can be
+    // suppressed by either turning off the phase rotator or
+    // by *NOT* silencing the TX audio samples while TUNEing.
+    //
+    // Experimentally, this means the phase rotator may make
+    // funny things when it sees only zero samples.
+    //
+    // A clean solution is to disable compressor/CFC temporarily
+    // while TUNEing.
+    //
+    int save_cfc  = transmitter->cfc;
+    int save_cmpr = transmitter->compressor;
+    transmitter->cfc = 0;
+    transmitter->compressor = 0;
+    tx_set_compressor(transmitter);
+    //
+    // Keep previous state in transmitter data, so we just need
+    // call tx_set_compressor when TUNEing ends.
+    //
+    transmitter->cfc = save_cfc;
+    transmitter->compressor = save_cmpr;
+    if (transmitter->puresignal && ! transmitter->ps_oneshot) {
+      //
+      // DL1YCF:
+      // Some users have reported that especially when having
+      // very long (10 hours) operating times with PS, hitting
+      // the "TUNE" button makes the PS algorithm crazy, such that
+      // it produces a very broad line spectrum. Experimentally, it
+      // has been observed that this can be avoided by hitting
+      // "Off" in the PS menu before hitting "TUNE", and hitting
+      // "Restart" in the PS menu when tuning is complete.
+      //
+      // It is therefore suggested to to so implicitly when PS
+      // is enabled.
+      // Added April 2024: if in "OneShot" mode, this is probably
+      //                   not necessary and the PS reset also
+      //                   most likely not wanted here
+      //
+      // So before start tuning: Reset PS engine
+      //
+      tx_ps_reset(transmitter);
+      usleep(50000);
     }
-    if (state) {
-      //
-      // Ron has reported that TX underruns occur if TUNEing with
-      // compressor or CFC engaged, and that this can be
-      // suppressed by either turning off the phase rotator or
-      // by *NOT* silencing the TX audio samples while TUNEing.
-      //
-      // Experimentally, this means the phase rotator may make
-      // funny things when it sees only zero samples.
-      //
-      // A clean solution is to disable compressor/CFC temporarily
-      // while TUNEing.
-      //
-      int save_cfc  = transmitter->cfc;
-      int save_cmpr = transmitter->compressor;
-      transmitter->cfc = 0;
-      transmitter->compressor = 0;
-      tx_set_compressor(transmitter);
-      //
-      // Keep previous state in transmitter data, so we just need
-      // call tx_set_compressor when TUNEing ends.
-      //
-      transmitter->cfc = save_cfc;
-      transmitter->compressor = save_cmpr;
-      if (transmitter->puresignal && ! transmitter->ps_oneshot) {
-        //
-        // DL1YCF:
-        // Some users have reported that especially when having
-        // very long (10 hours) operating times with PS, hitting
-        // the "TUNE" button makes the PS algorithm crazy, such that
-        // it produces a very broad line spectrum. Experimentally, it
-        // has been observed that this can be avoided by hitting
-        // "Off" in the PS menu before hitting "TUNE", and hitting
-        // "Restart" in the PS menu when tuning is complete.
-        //
-        // It is therefore suggested to to so implicitly when PS
-        // is enabled.
-        // Added April 2024: if in "OneShot" mode, this is probably
-        //                   not necessary and the PS reset also
-        //                   most likely not wanted here
-        //
-        // So before start tuning: Reset PS engine
-        //
-        tx_ps_reset(transmitter);
-        usleep(50000);
-      }
-      if (full_tune) {
-        if (OCfull_tune_time != 0) {
-          struct timeval te;
-          gettimeofday(&te, NULL);
-          tune_timeout = (te.tv_sec * 1000LL + te.tv_usec / 1000) + (long long)OCfull_tune_time;
-        }
-      }
-      if (memory_tune) {
-        if (OCmemory_tune_time != 0) {
-          struct timeval te;
-          gettimeofday(&te, NULL);
-          tune_timeout = (te.tv_sec * 1000LL + te.tv_usec / 1000) + (long long)OCmemory_tune_time;
-        }
+    if (full_tune) {
+      if (OCfull_tune_time != 0) {
+        struct timeval te;
+        gettimeofday(&te, NULL);
+        tune_timeout = (te.tv_sec * 1000LL + te.tv_usec / 1000) + (long long)OCfull_tune_time;
       }
     }
-    schedule_high_priority();
-    if (state) {
-      if (!duplex) {
-        for (int i = 0; i < receivers; i++) {
-          //
-          // wait for slew-down only if this is the last receiver
-          //
-          rx_off(receiver[i], SET(i == (receivers - 1)));
-          receiver[i]->displaying = 0;
-          rx_set_displaying(receiver[i]);
-          schedule_high_priority();
-        }
-
-        if (div_split_active()) { rx_off(receiver[1], 0); }
+    if (memory_tune) {
+      if (OCmemory_tune_time != 0) {
+        struct timeval te;
+        gettimeofday(&te, NULL);
+        tune_timeout = (te.tv_sec * 1000LL + te.tv_usec / 1000) + (long long)OCmemory_tune_time;
       }
-      int txmode = vfo_get_tx_mode();
-      pre_tune_mode = txmode;
-      pre_tune_cw_internal = cw_keyer_internal;
-      double freq = 0.0;
-#if 0
-      // Code currently not active:
-      // depending on the mode, do not necessarily tune on the dial frequency
-      // if this frequency is not within the pass-band
-      //
-      // in USB/DIGU      tune 1000 Hz above dial freq
-      // in LSB/DIGL,     tune 1000 Hz below dial freq
-      //
-      switch (txmode) {
-      case modeLSB:
-      case modeDIGL:
-        freq = -1000.0;
-        break;
-      case modeUSB:
-      case modeDIGU:
-        freq = 1000.0;
-        break;
-      default:
-        freq = 0.0;
-        break;
-      }
-#endif
-      tx_set_singletone(transmitter, 1, freq);
-      switch (txmode) {
-      case modeCWL:
-        cw_keyer_internal = 0;
-        tx_set_mode(transmitter, modeLSB);
-        break;
-      case modeCWU:
-        cw_keyer_internal = 0;
-        tx_set_mode(transmitter, modeUSB);
-        break;
-      }
-      transmitter->tune = state;
-      radio_calc_drive_level();
-      rxtx(state);
-    } else {
-      tx_set_singletone(transmitter, 0, 0.0);
-      rxtx(state);
-      switch (pre_tune_mode) {
-      case modeCWL:
-      case modeCWU:
-        tx_set_mode(transmitter, pre_tune_mode);
-        cw_keyer_internal = pre_tune_cw_internal;
-        break;
-      }
-      if (transmitter->puresignal && !transmitter->ps_oneshot) {
-        //
-        // DL1YCF:
-        // If we have done a "PS reset" when we started tuning,
-        // resume PS engine now.
-        //
-        tx_ps_resume(transmitter);
-      }
-      tx_set_compressor(transmitter);
-      transmitter->tune = state;
-      radio_calc_drive_level();
     }
+    radio_calc_drive_level(1);
+    tx_set_signal(transmitter, 1, 0, 0);
+  } else {
+    t_print("%s state=%d\n", __func__, state);
+    tx_set_signal(transmitter, 0, 0, 0);
+    if (transmitter->puresignal && !transmitter->ps_oneshot) {
+      //
+      // DL1YCF:
+      // If we have done a "PS reset" when we started tuning,
+      // resume PS engine now.
+      //
+      tx_ps_resume(transmitter);
+    }
+    tx_set_compressor(transmitter);
+    radio_calc_drive_level(0);
   }
   schedule_high_priority();
   schedule_transmit_specific();
@@ -2963,11 +2897,9 @@ void radio_set_tune(int state) {
   g_idle_add(ext_vfo_update, NULL);
 }
 
-int radio_is_transmitting(void) {
-  int ret = 0;
-  if (transmitter != NULL) { ret = mox | vox | transmitter->tune; }
-  return ret;
-}
+//int radio_is_transmitting(void) {
+//  return mox;; // | vox;
+//}
 
 double radio_get_drive(void) {
   if (transmitter != NULL) {
@@ -2996,10 +2928,10 @@ static int calcLevel(double d) {
   return level;
 }
 
-void radio_calc_drive_level(void) {
+void radio_calc_drive_level(int tune) {
   int level;
   if (transmitter == NULL) { return; }
-  if (transmitter->tune && !transmitter->tune_use_drive) {
+  if (tune && !transmitter->tune_use_drive) {
     level = calcLevel(transmitter->tune_drive);
   } else {
     level = calcLevel(transmitter->drive);
@@ -3180,6 +3112,7 @@ void radio_set_af_gain(int id, double value) {
 
 void radio_set_agc_gain(int id, double value) {
   if (id >= receivers) { return; }
+  if (receiver[id]->agc_automatic_gain) { return; }
   receiver[id]->agc_gain = value;
   rx_set_agc(receiver[id]);
   g_idle_add(sliders_agc_gain, GINT_TO_POINTER(100 * suppress_popup_sliders + id));
@@ -3476,7 +3409,7 @@ void radio_set_drive(double value) {
   switch (protocol) {
   case ORIGINAL_PROTOCOL:
   case NEW_PROTOCOL:
-    radio_calc_drive_level();
+    radio_calc_drive_level(0);
     break;
   case SOAPYSDR_PROTOCOL:
 #ifdef SOAPYSDR
@@ -3524,7 +3457,7 @@ void radio_apply_band_settings(int flag, int id) {
     if (transmitter != NULL) {
       const BAND *txband = band_get_band(vfo[vfo_get_tx_vfo()].band);
       transmitter->antenna = txband->TxAntenna;
-      radio_calc_drive_level();
+      radio_calc_drive_level(0);
     }
     if (flag) {
       adc[rxadc].preamp = rxband->preamp;
@@ -3570,7 +3503,7 @@ void radio_tx_vfo_changed(void) {
   //
   if (transmitter != NULL) {
     tx_set_mode(transmitter, vfo_get_tx_mode());
-    radio_calc_drive_level();
+    radio_calc_drive_level(0);
   }
   schedule_high_priority();         // possibly update RX/TX antennas
   schedule_transmit_specific();     // possibly un-set "CW mode"

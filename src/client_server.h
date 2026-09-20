@@ -119,6 +119,7 @@ enum _header_type_enum {
   CMD_TXFFT,
   CMD_TXFILTER,
   CMD_TXMENU,
+  CMD_TXNOISE,
   CMD_TXPROFILE,
   CMD_TX_DISPLAY,
   CMD_TX_EQ,
@@ -130,7 +131,6 @@ enum _header_type_enum {
   CMD_VFO_STEPSIZE,
   CMD_VFO_SWAP,
   CMD_VOLUME,
-  CMD_VOX,
   CMD_XIT,
   CMD_XVTR,
   CMD_ZOOM,
@@ -154,7 +154,14 @@ enum _header_type_enum {
   CLIENT_SERVER_COMMANDS,
 };
 
-#define CLIENT_SERVER_VERSION 0x0130000A // 32-bit version number
+//
+// Upstream's 1.31.0.0 base, with our own patch level on top. All four
+// bytes are compared exactly by client_thread.c, so this must differ from
+// upstream's own number: the diversity work adds fields to DIV_SETTINGS,
+// DIV_STATUS_DATA and DIVERSITY_COMMAND, so a 1.31.0.0 client and this
+// server would agree on the version and disagree on the packets.
+//
+#define CLIENT_SERVER_VERSION 0x0131000A // 32-bit version number
 #define SPECTRUM_DATA_SIZE 4096          // Maximum width of a panadapter
 #define AUDIO_DATA_SIZE 512              // 512 (mono) samples
 
@@ -600,6 +607,7 @@ typedef struct __attribute__((__packed__)) _receiver_data {
   mydouble nb_hang;
   mydouble nb_advtime;
   mydouble nb_thresh;
+  mydouble nnr_floor;
   mydouble nr4_reduction_amount;
   mydouble nr4_smoothing_factor;
   mydouble nr4_whitening_factor;
@@ -643,6 +651,7 @@ typedef struct __attribute__((__packed__)) _receiver_data {
   uint8_t nr2_post_nlevel; // 0 ... 100
   uint8_t nr2_post_factor; // 0 ... 100
   uint8_t nr2_post_rate;   // 0 ... 100
+  uint8_t nnr_model;
   uint8_t nr4_noise_scaling_type;
   uint8_t anf;
   uint8_t snb;
@@ -963,6 +972,7 @@ typedef struct __attribute__((__packed__)) _noise_command {
   mydouble nb_thresh;
   mydouble nr2_trained_threshold;
   mydouble nr2_trained_t2;
+  mydouble nnr_floor;
   mydouble nr4_reduction_amount;
   mydouble nr4_smoothing_factor;
   mydouble nr4_whitening_factor;
@@ -988,6 +998,7 @@ typedef struct __attribute__((__packed__)) _noise_command {
   uint8_t  nr2_post_nlevel;
   uint8_t  nr2_post_factor;
   uint8_t  nr2_post_rate;
+  uint8_t  nnr_model;
   uint8_t  nr4_noise_scaling_type;
 } NOISE_COMMAND;
 
@@ -1126,6 +1137,7 @@ extern void send_swap_iq(int s, int swap_iq);
 extern void send_toggle_tune(int s);
 extern void send_tune(int s, int state);
 extern void send_twotone(int s, int state);
+extern void send_txnoise(int s, int state);
 extern void send_txprofile(int s, int what, int m);
 extern void send_tx_compressor(int s);
 extern void send_tx_data(int s);
@@ -1142,7 +1154,6 @@ extern void send_vfo_step(int s, int v, int steps);
 extern void send_vfo_stepsize(int s, int v, int stepsize);
 extern void send_vfo_swap(int sock);
 extern void send_volume(int s, int rx, double volume);
-extern void send_vox(int s, int state);
 extern void send_xit(int s, int id);
 extern void send_xvtr_changed(int s);
 extern void send_zoom(int s, const RECEIVER *rx);
