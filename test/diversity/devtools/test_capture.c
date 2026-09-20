@@ -63,6 +63,19 @@ int div_indep_att = 1;
  */
 #define ATT1_B     11
 #define ATT_STEP_B 100
+/*
+ * ...and a move of RX1's ADC later on, which is the other context field
+ * the samples cannot show. Only the context half of it is exercised here:
+ * the exchange itself is in rx_add_div_iq_samples() and this harness
+ * calls diversity_auto_sample() directly, so what is under test is that
+ * the engine notices the operator's ADC move, restarts on it, and that
+ * the writer records which arm order the block was taken in.
+ *
+ * A block of its own, well clear of the attenuator step, so that the two
+ * context changes are counted separately rather than one masking the
+ * other.
+ */
+#define SWAP_STEP_B 130
 //
 // The engine tells the menu when a mode change swapped one block of
 // modal settings for another. There is no menu here.
@@ -244,6 +257,8 @@ int main(int argc, char **argv) {
   for (int b = 0; b < nblocks; b++) {
     if (b == ATT_STEP_B) { adc[1].attenuation = ATT1_B; }
 
+    if (b == SWAP_STEP_B) { rx0.adc = 1; }
+
     for (int n = 0; n < NFFT; n++) {
       diversity_auto_sample(buf[4 * pos + 0], buf[4 * pos + 1],
                             buf[4 * pos + 2], buf[4 * pos + 3]);
@@ -331,11 +346,23 @@ int main(int argc, char **argv) {
     struct divcap_block m, prev;
     int bad = 0, checked = 0, steps = 0, flag_wrong = 0, resets = 0;
     int have_prev = 0;
+    int swap_seen = 0, swap_back = 0;
 
     while (fread(&m, sizeof(m), 1, f) == 1 && m.rec_magic == DIVCAP_REC_MAGIC) {
       if (m.att0 != ATT0) { bad++; }
 
       if (m.att1 != ATT1 && m.att1 != ATT1_B) { bad++; }
+
+      /*
+       * The arm-swap bit is a context field rather than an event, so it
+       * must be clear on every block up to the throw and set on every
+       * block after it - never flickering back.
+       */
+      if ((m.rec_flags & DIVCAP_FLAG_ARM_SWAP) != 0) {
+        swap_seen++;
+      } else if (swap_seen != 0) {
+        swap_back++;
+      }
 
       /*
        * rec_flags, checked against the fields it describes rather than
@@ -351,6 +378,7 @@ int main(int argc, char **argv) {
                              m.frequency != prev.frequency ||
                              m.ref != prev.ref || m.follow != prev.follow ||
                              m.weighting != prev.weighting ||
+                             ((m.rec_flags ^ prev.rec_flags) & DIVCAP_FLAG_ARM_SWAP) != 0 ||
                              m.centre != prev.centre || m.width != prev.width);
         const int flagged = (m.rec_flags & DIVCAP_FLAG_CTX_CHANGED) != 0;
 
@@ -384,7 +412,23 @@ int main(int argc, char **argv) {
      * would mean the writer is not writing them again, which is the
      * defect this check exists to prevent coming back.
      */
-    if (flag_wrong != 0 || steps != 1 || resets != 1) {
+    if (flag_wrong != 0 || steps != 2 || resets != 2) {
+      printf("  FAIL\n");
+      fails++;
+    } else {
+      printf("  ok\n");
+    }
+
+    printf("swap:    %d block(s) with arm 0 on ADC1, %d reversion(s)",
+           swap_seen, swap_back);
+
+    /*
+     * Some blocks either side of the throw, and the bit never goes back.
+     * Zero on the left would mean the writer is not recording it; a
+     * reversion would mean it is being written from something other than
+     * the context.
+     */
+    if (swap_seen == 0 || swap_seen == checked || swap_back != 0) {
       printf("  FAIL\n");
       fails++;
     } else {
