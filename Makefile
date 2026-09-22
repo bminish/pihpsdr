@@ -651,6 +651,23 @@ src/vox_menu.o \
 src/xvtr_menu.o \
 src/waterfall.o
 
+ifdef divcap   # DIVCAP
+#
+# Make variables are case-sensitive, so "make divcap=1" defines a variable
+# nothing reads, leaves DIVCAP undefined, and takes the plain path - which
+# does not merely skip the instrument, it strips it: the else branch below
+# deletes the stamp and the three objects. The build then exits 0 and looks
+# like it worked, and the only sign is a missing Capture button.
+#
+# Everything here lives inside the conditional, like the block below and
+# for the same reason: remove.sh strips each "ifdef" line carrying the
+# DIVCAP token together with everything down to its endif, so a comment
+# placed above the ifdef would survive the removal and leave the token
+# behind. That is what the DIVCAP in the comment on the ifdef line is for.
+#
+$(error Use DIVCAP=1, not divcap=1 - make variables are case-sensitive)
+endif
+
 ifdef DIVCAP
 #
 # DEVELOPMENT ONLY - diversity I/Q capture.
