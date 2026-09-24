@@ -1614,6 +1614,9 @@ quantisation and follows the few Hz per minute a station drifts.
 - [`diversity-binaural-proposal.md`](diversity-binaural-proposal.md) —
   the request the ear split grew out of, and the three of its findings
   that did not survive contact with the code
+- [`diversity-menu-persistent-proposal.md`](diversity-menu-persistent-proposal.md) —
+  proposal, not built: letting the Diversity dialog stay open while other
+  menus come and go, and what in the one-menu-at-a-time plumbing that takes
 - [`diversity-auto-phasing.md`](diversity-auto-phasing.md) — design
   history, including the approaches that were tried and abandoned. Not a
   description of current behaviour
