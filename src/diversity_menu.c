@@ -47,6 +47,7 @@ static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
+static GtkWidget *mode_combo = NULL;
 
 //
 // The Averaging slider is geometric, not linear.
@@ -163,6 +164,7 @@ static void cleanup(void) {
     // applying anything with nothing on screen to explain it.
     //
     diversity_auto_set_hold(0);
+    mode_combo = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     active_menu  = NO_MENU;
@@ -539,9 +541,11 @@ static void mode_changed_cb(GtkWidget *widget, gpointer data) {
 static void invert_cb(GtkWidget *widget, gpointer data) {
   if (div_auto_mode == DIV_MANUAL || div_auto_mode == DIV_AUTO_BEST) { return; }
 
-  //gtk_combo_box_set_active(GTK_COMBO_BOX(auto_combo),
-  //                         (div_auto_mode == DIV_AUTO_NULL) ? DIV_AUTO_SUM
-  //                         : DIV_AUTO_NULL);
+  if (mode_combo == NULL) { return; }
+
+  gtk_combo_box_set_active(GTK_COMBO_BOX(mode_combo),
+                           (div_auto_mode == DIV_AUTO_NULL) ? DIV_AUTO_SUM
+                           : DIV_AUTO_NULL);
 }
 
 // cppcheck-suppress constParameterCallback
@@ -893,6 +897,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_auto_mode);
   gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 5, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(mode_changed_cb), NULL);
+  mode_combo = btn;
   //gtk_widget_set_tooltip_text(auto_combo,
   //                          "Sum combines both antennas. Best measures the "
   //                          "signal-to-noise ratio on each and hands the "
