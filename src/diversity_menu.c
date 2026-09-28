@@ -49,6 +49,9 @@ static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *mode_combo = NULL;
 static GtkWidget *hold_b = NULL;
+static GtkWidget *centre_spin = NULL;
+static GtkWidget *width_spin = NULL;
+static GtkWidget *coh_scale = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -169,6 +172,9 @@ static void cleanup(void) {
     //
     mode_combo = NULL;
     hold_b = NULL;
+    centre_spin = NULL;
+    width_spin = NULL;
+    coh_scale = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     active_menu  = NO_MENU;
@@ -714,7 +720,6 @@ static void div_window_store(int ref) {
   diversity_auto_ref_store(ref);
 }
 
-#if 0
 static void div_window_recall(int ref) {
   diversity_auto_ref_recall(ref);
 
@@ -731,14 +736,18 @@ static void div_window_recall(int ref) {
     updating_from_auto = 0;
   }
 }
-#endif
 
 static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   int previous = div_auto_ref;
   int was_off = (div_auto_mode == DIV_MANUAL);
   div_window_store(previous);
   div_auto_ref = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  //div_window_recall(div_auto_ref);
+  //
+  // Bring in the new reference's own window and threshold. Without this
+  // the new reference ran on the old one's threshold and inherited its
+  // window, which the next centre or width move then filed under it.
+  //
+  div_window_recall(div_auto_ref);
 
   //
   // On RADE V1 the wanted signal is the one the pilot correlator is
@@ -1030,6 +1039,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), div_auto_centre);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 1, 3, 1);
   g_signal_connect(btn, "value_changed", G_CALLBACK(centre_cb), NULL);
+  centre_spin = btn;
   lbl = gtk_label_new("Window width");
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
@@ -1038,6 +1048,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), div_auto_width);
   gtk_grid_attach(GTK_GRID(agrid), btn, 7, 1, 3, 1);
   g_signal_connect(btn, "value_changed", G_CALLBACK(width_cb), NULL);
+  width_spin = btn;
   lbl = gtk_label_new("Resolution");
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
@@ -1082,6 +1093,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_range_set_value(GTK_RANGE(btn), 100.0 * div_auto_coherence_min);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 4, 5, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(coh_cb), NULL);
+  coh_scale = btn;
   lbl = gtk_label_new("Hang (s)");
   //gtk_widget_set_tooltip_text(hang_label,
   //                            "How long a RADE lock is held after the pilot stops "
