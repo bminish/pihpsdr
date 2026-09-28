@@ -410,10 +410,13 @@ double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 // div_auto_width always hold the pair for whichever reference is
 // selected; these hold the pairs for the rest.
 //
+#define DIV_WIDTH_DEFAULT          1000.0
+#define DIV_DIGITAL_WIDTH_DEFAULT  2600.0
+
 double div_band_centre         = 0.0;
-double div_band_width          = 1000.0;
+double div_band_width          = DIV_WIDTH_DEFAULT;
 double div_carrier_centre      = 0.0;
-double div_carrier_width       = 1000.0;
+double div_carrier_width       = DIV_WIDTH_DEFAULT;
 //
 // The digital default is the whole SSB audio passband rather than a
 // narrow slice: occupancy narrows it from there, so the operator does not
@@ -421,7 +424,7 @@ double div_carrier_width       = 1000.0;
 // the follow tick cleared.
 //
 double div_digital_centre      = 0.0;
-double div_digital_width       = 2600.0;
+double div_digital_width       = DIV_DIGITAL_WIDTH_DEFAULT;
 
 //
 // So is the coherence threshold, and for a stronger reason than the
@@ -2886,6 +2889,38 @@ void diversity_auto_ref_recall(int ref) {
   }
 
   div_auto_coherence_min = div_cohmin_for_ref(ref);
+}
+
+//
+// Unticking "Window follows RX filter" hands the window to the operator.
+// If the selected reference has no window of the operator's own yet -
+// still at its built-in default, or collapsed to the 20 Hz floor - start
+// it on the passband that was being followed a moment ago, rather than on
+// a default that can straddle the carrier or be too narrow to hold
+// anything. A window the operator has placed is left alone.
+//
+// The follow window is filter_low..filter_high and a hand-placed one is
+// div_window_zero() + centre +/- width/2, so this reproduces it exactly,
+// CW included.
+//
+void diversity_auto_seed_window(void) {
+  if (div_auto_ref == DIV_REF_RADE_V1) { return; }
+
+  const double def_width = (div_auto_ref == DIV_REF_DIGITAL_IQ) ? DIV_DIGITAL_WIDTH_DEFAULT
+                           : DIV_WIDTH_DEFAULT;
+  const int unset = (div_auto_width <= 20.0) ||
+                    (div_auto_centre == 0.0 && div_auto_width == def_width);
+
+  if (!unset) { return; }
+
+  const double lo = (double)receiver[0]->filter_low;
+  const double hi = (double)receiver[0]->filter_high;
+
+  if (hi - lo < 20.0) { return; }
+
+  div_auto_centre = 0.5 * (lo + hi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+  div_auto_width  = hi - lo;
+  diversity_auto_ref_store(div_auto_ref);
 }
 
 void diversity_auto_get_settings(DIV_SETTINGS *s) {
