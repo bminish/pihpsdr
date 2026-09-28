@@ -154,10 +154,10 @@
 // rate to land near this, so the frequency resolution and the block
 // duration are the same whatever the radio is running at.
 //
-// The default target; the operator can ask for finer bins - see
-// div_auto_resolution.
+// The default target, used when there are no saved settings; the
+// operator can choose 12, 6 or 3 Hz - see div_auto_resolution.
 //
-#define DIV_TARGET_BIN_HZ   12.0
+#define DIV_TARGET_BIN_HZ   6.0
 #define DIV_MIN_NFFT        4096
 #define DIV_MAX_NFFT        65536
 
