@@ -3202,6 +3202,7 @@ static void radio_restore_state(void) {
     GetPropF0("diversity_phase",                             man_div_phase);
     GetPropF0("diversity_cos",                               man_div_cos);
     GetPropF0("diversity_sin",                               man_div_sin);
+    diversity_auto_restore_state();
     GetPropI0("new_pa_board",                                new_pa_board);
     GetPropI0("region",                                      region);
     GetPropI0("atlas_penelope",                              atlas_penelope);
