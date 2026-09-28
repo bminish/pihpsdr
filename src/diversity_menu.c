@@ -649,6 +649,11 @@ gboolean diversity_menu_settings_changed(gpointer data) {
 gboolean diversity_client_set_settings(gpointer data) {
   const DIV_SETTINGS_COMMAND *c = (const DIV_SETTINGS_COMMAND *)data;
   DIV_SETTINGS set;
+  //
+  // Start from what is in force: the per-reference thresholds are not on
+  // the wire, and would otherwise be loaded from uninitialised stack.
+  //
+  diversity_auto_get_settings(&set);
   set.mode           = c->mode;
   set.ref            = c->ref;
   set.follow_filter  = c->follow_filter;
