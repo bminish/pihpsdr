@@ -94,3 +94,30 @@ The simulation covers noise only. How often the corrected floor holds a
 *real* weak signal that the old one would have tracked should be scored
 with `run_ref` on the capture set, particularly Carrier captures at
 short averaging.
+
+## Update 2026-09-30: scored on recorded captures (on TEST)
+
+LC-012 was scored on seven weak captures with and without the corrected
+floor (`docs/changes.md` on `TEST`, "Scored on recorded captures"; tools
+in `test/diversity/devtools/py/` there). Two things above need
+qualifying:
+
+- **Real dead air is mostly correlated noise.** Noise-only blocks reach
+  a coherence of 0.11 to 0.95 (95th percentile), far above any floor.
+  That's common-mode or band noise, a real correlation, so a correct
+  floor rejects fewer real blocks than the Monte Carlo suggests.
+- **With the flat Sum weight, tracking uncorrelated noise does not cost
+  the "about 3 dB" stated above.** Sum's weight is Sxy/Sxx, and its
+  magnitude shrinks with the coherence: in dead air it falls to −14 to
+  −20 dB, effectively arm 0 alone, even on arms matched to equal noise.
+  The 3 dB figure assumed a unity-magnitude weight, which Sum does not
+  produce.
+
+So the floor fault above is real (the pass rates are as measured), but
+on this capture set it causes no measurable harm with Sum. At `TEST`'s
+default thresholds the corrected floor is inert on six of seven captures
+and costs 0.13 dB on the Carrier one at 0.2 s averaging. Where it binds
+below the default, it holds the station's weight through dead air
+instead of letting it shrink, costing 0.1 to 3.9 dB. That bears on the
+stand-down design on this branch. Null, Best, and Carrier or Digital on
+matched arms were not measured.
