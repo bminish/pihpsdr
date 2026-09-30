@@ -2822,6 +2822,27 @@ static double div_cohmin_for_ref(int ref) {
   }
 }
 
+//
+// Write a threshold into a reference's own slot, clamped to the slider's
+// range. Used for values arriving from a client, which have not been
+// through div_settings_validate().
+//
+static void div_cohmin_set_for_ref(int ref, double v) {
+  if (!(v >= 0.0)) { v = 0.0; }
+
+  if (v > 0.95)    { v = 0.95; }
+
+  switch (ref) {
+  case DIV_REF_CARRIER:    div_carrier_cohmin = v; break;
+
+  case DIV_REF_DIGITAL_IQ: div_digital_cohmin = v; break;
+
+  case DIV_REF_RADE_V1:    div_rade_cohmin = v;    break;
+
+  default:                 div_band_cohmin = v;    break;
+  }
+}
+
 void diversity_auto_ref_store(int ref) {
   if (ref == DIV_REF_CARRIER) {
     div_carrier_centre = div_auto_centre;
@@ -2890,6 +2911,7 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
 // below want opposite things done with it.
 //
 static void div_settings_load(const DIV_SETTINGS *s) {
+  const int same_ref     = (s->ref == div_auto_ref);
   div_auto_mode          = s->mode;
   div_auto_ref           = s->ref;
   div_auto_follow_filter = s->follow_filter;
@@ -2913,6 +2935,16 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   // reference was set to, which for a file written before this existed is
   // 0.30 against a mode that had no gate at all.
   //
+  // The one exception is a block that keeps the reference it found: then
+  // s->coherence_min is the threshold for that same reference, and it is
+  // how a client's slider move arrives - the wire format carries only the
+  // live value, not the four slots. On a reference change the live value
+  // may still be the previous reference's, so the slot wins.
+  //
+  if (same_ref) {
+    div_cohmin_set_for_ref(div_auto_ref, s->coherence_min);
+  }
+
   div_auto_coherence_min = div_cohmin_for_ref(div_auto_ref);
   div_band_centre        = s->band_centre;
   div_band_width         = s->band_width;
