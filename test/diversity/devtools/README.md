@@ -45,7 +45,7 @@ Checked on `TEST` at the port:
 
 | Check | Result |
 |---|---|
-| `make -C test/diversity run` | all six pass; gaps reported (branch noise ratio, Level output, stand-down, carrier follow, wire helpers, RADE quality pin) |
+| `make -C test/diversity run` | all six pass; gaps reported (branch noise ratio, Level output, stand-down, carrier follow, wire helpers) |
 | `test_capture` round trip | writer → reader → replay, 160 blocks, 0 differ |
 | `replay_rade captures/divcap-20260903-190516.divc` | 4 acquisitions, 0.714 locked, −11.37 dB, 0.101: Finding 45's "new" row exactly |
 | `score_rade` on the same capture | arm 0 332 frames, 97.9 %; arm 1 223 frames, 99.1 %: Finding 45 exactly |
