@@ -1365,7 +1365,7 @@ void diversity_menu(GtkWidget *parent) {
                               "The label counts blocks written.");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), div_capture_active != 0);
   g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
-  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 5, 3, 1);
+  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 5, 4, 1);
 
   if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
 
