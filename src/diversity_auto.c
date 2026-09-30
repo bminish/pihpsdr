@@ -2340,8 +2340,7 @@ static void div_process_block(void) {
     // to act on here. See the note there.
     //
     int ok = rade_corr_process(work0, work1, nfft, bank,
-                               div_frame_off(&ctx), div_auto_tau, div_auto_hang,
-                               &wr, &wi);
+                               div_frame_off(&ctx), div_auto_tau, &wr, &wi);
     //
     // The overlay follows the passband, locked or not. It used to switch
     // to the bank the correlator reported once it locked, which is how a
@@ -3600,28 +3599,15 @@ void diversity_auto_mode_changed(int mode) {
 }
 
 //
-// How long a RADE lock is held after the pilot stops being detectable,
-// before the correlator gives up on it and searches from cold.
+// The Hang setting no longer does anything. There is no timeout on a
+// RADE lock: it is held, weight and all, through any fade, and replaced
+// only when the resync search finds a new one (RADE_RESYNC_DA in
+// rade_correlator.c). In the other references the coherence gate is the
+// arbiter, and hang time has no part to play there either.
 //
-// It no longer has a control, and it no longer decides a changeover: the
-// correlator searches while the lock is frozen and moves to a new station
-// as soon as it finds one, so the hang only says how long to go on
-// believing in a station that has stopped when nothing has replaced it.
-// Throughout, and after it, the weight in force is held; it is only ever
-// written from a confirmed lock.
-//
-// Swept from 1 to 10 s on the recorded RADE captures that can be scored
-// on decode, it moves lock uptime from 38 % to 94 % but synced frames by
-// +10, +11, +10, +10 - inside the scatter of the measurement - and does
-// nothing on eleven of thirteen captures through the shipping engine. The
-// correlator's uptime describes the health of the pilot lock and is very
-// nearly uncoupled from what the modem does with the audio, so this was a
-// number an operator could tune that did not predict the result.
-//
-// The long end is the value kept: it re-acquires least often, and with
-// the resync search in place that costs nothing at a changeover.
-//
-// div_auto_hang's initialiser is the same 10.0.
+// The field stays on the wire and in the props file so neither changes
+// shape, pinned to this value by div_settings_validate(); nothing reads
+// it. div_auto_hang's initialiser is the same 10.0.
 //
 #define DIV_HANG_DEFAULT 10.0
 
