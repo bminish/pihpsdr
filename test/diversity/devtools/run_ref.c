@@ -267,7 +267,7 @@ int main(int argc, char **argv) {
   else if (!strcmp(refname, "carrier")) { ref = DIV_REF_CARRIER; }
   else if (!strcmp(refname, "rade"))    { ref = DIV_REF_RADE_V1; }
   else if (!strcmp(refname, "digital")) { ref = DIV_REF_DIGITAL_IQ; }
-  /* "cw": the CW reference is not on TEST */
+  else if (!strcmp(refname, "cw"))      { ref = DIV_REF_CW; }
   else { fprintf(stderr, "%s: unknown reference \"%s\"\n", argv[0], refname); return 2; }
 
   struct divcap_header h;
