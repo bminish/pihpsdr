@@ -931,12 +931,18 @@ Noted while porting, not yet decided:
 - Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule. LC-012's
   capture scoring bears on it: see "Scored on recorded captures" under
   LC-012.
+- A RADE V2 correlator. There is no V2 reference on `TEST` yet. Three V2
+  captures (two stations, 40 m, heavy multipath, both decoding at about
+  0 to 8 dB) are logged as T-008 in `docs/test-findings.md` as the
+  starting set.
 - `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
   the notches) are not in this branch's `docs/diversity-measurements.md`.
   See the note at its top.
 
 ## History
 
+- 2026-09-30: T-008, three RADE V2 captures logged for a future V2
+  correlator (not analysed).
 - 2026-09-30: code review of everything on `TEST`. Fixups: LC-011 (dead
   Hang repair), LC-013 (a misplaced comment), LC-016 (the threshold
   comment), LC-012 (two comments), LC-009 (a 20 Hz window is no longer
