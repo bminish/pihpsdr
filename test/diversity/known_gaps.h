@@ -18,7 +18,6 @@
 #define GAP_LEVEL_OUTPUT       "4f24f5c3: hold the combined output at the level of one antenna"
 #define GAP_STANDDOWN          "fc0b3d1e: the combiner stands down on an empty band"
 #define GAP_CARRIER_FOLLOW     "41f8700c: the carrier search can follow the filter too"
-#define GAP_CW_REFERENCE       "6027208a, d3b73b8a: the CW / Morse reference"
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
 
 #include <stdio.h>
