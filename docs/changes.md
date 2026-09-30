@@ -136,6 +136,7 @@ next resync). **Dropped** means abandoned.
 | LC-012 | Behaviour | Coherence gate never below its own noise floor        | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 | LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
 | LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
+| LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | PR prepared |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -146,12 +147,18 @@ it, but it does not use anything LC-008 adds.
   widget pointers LC-008 keeps.
 - LC-011 must never be taken without LC-010. On its own it would fix
   every RADE changeover at a 10 s search blackout.
+- LC-015's changed line in `ref_changed_cb()` sits next to the one LC-008
+  changes. So its upstream PR is a separate commit, cut from
+  `upstream/TEST` (branch `pr/diversity-menu-ref-row`), not a cherry-pick.
 - LC-014 needs LC-010 (the resync search is what replaces a lock) and
   LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 go
   upstream together.
 - Reverting LC-008 means reverting LC-012, LC-011 and LC-009 first, and
   reverting LC-010 or LC-011 means reverting LC-014 first; they conflict
   otherwise. Every other change reverts cleanly from the tip.
+
+**First PR:** LC-015 (see its entry), prepared on
+`pr/diversity-menu-ref-row` against dl1ycf's `TEST`, awaiting review.
 
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
@@ -671,6 +678,44 @@ mechanism. See "Settled decisions" at the top.
 
 **Depends on** LC-010 and LC-011.
 
+### LC-015 — The "Measure on" menu runs the reference it shows
+
+**Problem.** The combo lists Window, FSK/Digital, Carrier, RADE V1. The
+`DIV_REF_*` enum is BAND, CARRIER, RADE_V1, DIGITAL_IQ. And
+`ref_changed_cb()` stored the combo row as the reference. So the menu ran
+a different reference from the one it showed:
+
+| Row | Menu shows | Engine ran |
+|---|---|---|
+| 0 | Window | Window |
+| 1 | FSK/Digital | Carrier |
+| 2 | Carrier | RADE V1 |
+| 3 | RADE V1 | FSK/Digital |
+
+Opening the menu had the same fault in reverse.
+
+**How it was found.** Five captures taken on 2026-09-30 with "RADE V1"
+selected (`172640`, `172847`, `172907`, `173144`, `173330`). The operator
+saw the "correlator" appear to lock and follow junk. Every block of all
+five records reference 3 (FSK/Digital), and the RADE correlator's lock
+state is 0 throughout: it never ran. What looked like a RADE tracking
+regression was the FSK/Digital occupancy solve fitting to whatever was
+loudest in the passband. These captures therefore say nothing about RADE
+tracking; that still needs RADE captures taken with this fix in.
+
+**Change.** A row table, `div_ref_rows[]`, maps rows to references and
+back, keeping the order the menu shows. `div_ref_to_row()` is the name
+the populate code under `#if 0` already calls. The objective and
+resolution combos were checked and are correct.
+
+**Origin.** The bug is upstream. The feature branch had this mapping as
+`ref_rows[]`, and it was lost when the menu was rewritten for upstream.
+
+**Upstream.** Prepared as a one-commit PR against dl1ycf's `TEST`: branch
+`pr/diversity-menu-ref-row`, cut from `upstream/TEST` at `883243c0`,
+`src/diversity_menu.c` only, +30 −2. It builds. Not pushed; awaiting
+review.
+
 ---
 
 ## Local tooling (never upstream)
@@ -805,6 +850,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-015 (the "Measure on" row/reference mismatch) fixed,
+  and prepared as the first upstream PR.
 - 2026-09-30: LC-014 (no RADE lock timeout) and LT-005. LC-011's
   description corrected, and "Settled decisions" added.
 - 2026-09-30: LC-013 (notch carve-out) and LT-004 (notch replay and
