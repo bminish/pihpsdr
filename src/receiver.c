@@ -1309,6 +1309,26 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
   ASSERT_SERVER();
   double i_sample, q_sample;
 
+  //
+  // The protocols hand these over as DDC0 then DDC1, which diversity
+  // forces to ADC0 and ADC1. Arm 0 is the one carried at unit gain below
+  // and the one w = 0 leaves behind, so it has to be the antenna the
+  // operator would otherwise be listening to - which is the converter
+  // they set RX1 to. See div_arm_swapped().
+  //
+  // Done here rather than in each protocol because everything that needs
+  // the operator's order is downstream of this point: the analysis and
+  // both combines. The one thing that is not is the raw feed to RX2,
+  // which each protocol makes for itself and swaps there.
+  //
+  if (div_arm_swapped()) {
+    double ti = i0, tq = q0;
+    i0 = i1;
+    q0 = q1;
+    i1 = ti;
+    q1 = tq;
+  }
+
   if (div_auto_mode == DIV_MANUAL) {
     //
     // Take the "manual" values derived from the "manual" gain and phase
