@@ -17,7 +17,7 @@ OFF_OFFSET, OFF_SIDETONE, OFF_MODE = 32, 40, 48
 OFF_FILTER_LOW, OFF_FILTER_HIGH, OFF_REF = 52, 56, 60
 OFF_WEIGHTING, OFF_AUTO_MODE, OFF_TAU = 68, 100, 112
 
-REFS = {0: 'band', 1: 'carrier', 2: 'rade', 3: 'digital'}
+REFS = {0: 'band', 1: 'carrier', 2: 'rade', 3: 'digital', 4: 'cw'}
 
 
 def open_divc(path):
