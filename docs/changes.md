@@ -41,6 +41,37 @@ time.
    an upstream PR, and no LC commit may depend on them. Before trusting a
    change, score it with the tools (see "Local tooling" below).
 
+## Settled decisions (do not reopen without new evidence)
+
+These have been argued through and measured. Changing one needs a
+capture that shows the current rule failing, not a new line of
+reasoning.
+
+1. **No hang, no timeout, in any reference.**
+   - **RADE V1: a new lock replaces an old one.** Nothing else ends a
+     lock, short of a retune or other context change. While the pilot is
+     absent the lock and the weight are held, and the averages age at
+     the Averaging time. The resync search (LC-010) takes a new station
+     as soon as it finds one.
+   - **Every other reference: the correlation is the arbiter.** The
+     averages update every block, the coherence gate decides whether the
+     result is applied, and otherwise the last weight is held. Averaging
+     decides how fast old data is forgotten. Hang time has no part to
+     play.
+   - **Why:** measured on `TEST` and scored on decode (LC-014), a short
+     timer drops locks that would have recovered: 51 synced frames lost
+     on the one marginal capture. A long one does nothing, or costs a
+     little. A timer never helped.
+2. **Hold good solutions through fades.** When there's nothing new to
+   correlate on, keep the weight where it was: it's the best chance of
+   being right when the signal returns (LC-012, LC-014).
+3. **Don't add mechanisms for sub-1 % cases.** A new RADE station
+   landing within 4 samples of the old one's timing (0.9 % of
+   changeovers) is taken for the old one returning. If its pilot is
+   strong enough the tracker follows it and Averaging corrects the
+   weight; otherwise the old weight stays. We accept that. A timeout, or
+   a rule to catch it, costs more than the case does.
+
 ## Commands
 
 List the local changes and their IDs:
@@ -101,9 +132,10 @@ next resync). **Dropped** means abandoned.
 | LC-008 | Behaviour | Reference change recalls that reference's settings    | diversity_menu.c                          | —          | Local  |
 | LC-009 | Behaviour | Unticking Follow RX filter starts on the passband     | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 | LC-010 | Behaviour | RADE resyncs on a detection, not on a timeout         | rade_correlator.c                         | —          | Local  |
-| LC-011 | Behaviour | Hang pinned at 10 s, slider removed                   | diversity_auto.c, diversity_menu.c, rade_correlator.c | LC-010, [LC-008] | Local |
+| LC-011 | Behaviour | Hang slider removed (value unused since LC-014)       | diversity_auto.c, diversity_menu.c, rade_correlator.c | LC-010, [LC-008] | Local |
 | LC-012 | Behaviour | Coherence gate never below its own noise floor        | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 | LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
+| LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -114,13 +146,17 @@ it, but it does not use anything LC-008 adds.
   widget pointers LC-008 keeps.
 - LC-011 must never be taken without LC-010. On its own it would fix
   every RADE changeover at a 10 s search blackout.
-- Reverting LC-008 means reverting LC-012, LC-011 and LC-009 first; it
-  conflicts otherwise. Every other change reverts cleanly from the tip.
+- LC-014 needs LC-010 (the resync search is what replaces a lock) and
+  LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 go
+  upstream together.
+- Reverting LC-008 means reverting LC-012, LC-011 and LC-009 first, and
+  reverting LC-010 or LC-011 means reverting LC-014 first; they conflict
+  otherwise. Every other change reverts cleanly from the tip.
 
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
 settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
-LC-011 (RADE: resync, then Hang) and LC-012. LC-013 (notches) stands
+LC-011 + LC-014 (RADE: resync, Hang slider gone, no timeout) and LC-012. LC-013 (notches) stands
 alone and can go at any point. LC-006 goes last because it needs the
 measurement data behind it.
 
@@ -351,37 +387,41 @@ where it was.
 
 The on-air set could not show a difference, because in every capture
 one antenna alone decoded 97.9–100 % of frames. A capture with a marginal
-signal on both antennas is still needed. The `test_rade` harness is not
-on this branch yet.
+signal on both antennas is still needed. `test_rade` has since come
+across (LT-002), and both synthetic checks pass on `TEST`.
 
-### LC-011 — Hang is pinned at 10 s and loses its slider
+### LC-011 — The Hang slider is removed
 
 Ported from the Hang part of `01df2313` only; that commit's other five
-changes are not taken.
+changes are not taken. **Superseded in part by LC-014:** the value this
+change pinned no longer does anything.
 
-**Why.** Hang only existed for RADE V1, the one reference with a lock to
-give up. The other references already work on the threshold and
-Averaging alone: the averages update every block, the gate decides
-whether to apply the result, and the last weight is held otherwise.
-With LC-010, RADE works the same way. The pilot check decides when to
-hold, Averaging decides how fast old data is forgotten, and a new station
-is taken on detection. All Hang has left to decide is how long to keep
-believing in a station that stopped when nothing has replaced it, and
-the weight is held throughout either way.
+**What it does.** Removes the Hang slider and its callback.
+`div_settings_validate()` pins the value (`DIV_HANG_DEFAULT`, 10 s)
+instead of range-checking it, so an older props file or client can't
+bring one in. The field stays on the wire and in the props file, so
+neither changes shape.
 
-Evidence that the setting does not matter (Findings 33, 35 and 41 on the
-feature branch):
+**Why.** Hang only ever existed for RADE V1. The other references work on
+the coherence gate and Averaging alone: the averages update every block,
+the gate decides whether the result is applied, and otherwise the last
+weight is held. With LC-010, RADE takes a new station on detection too.
+So nothing is left for an operator to set.
 
-- 1 to 10 s moves lock uptime from 38 % to 94 %, but synced frames by
-  only +10, +11, +10, +10 (inside the scatter).
-- Through the shipping engine it changes nothing on 11 of 13 RADE
-  captures. The two that move do so non-monotonically. The one data
-  point against 10 s specifically (`202743`: +16 frames up to 5.2 s,
-  −9 at 10 s) is within the ~15–20 frame scatter.
+**What this entry used to say, and why it was wrong.** It argued that the
+setting "does not matter" and kept 10 s because "it re-acquires least
+often". Three things were wrong with that:
 
-**Change.** `DIV_HANG_DEFAULT` is 10 s, `div_settings_validate()` pins the
-value instead of range-checking it, and the slider and its callback are
-removed. The field stays on the wire and in the props file.
+- **The evidence was stale.** It came from Findings 33, 35 and 41, which
+  were measured before the resync search existed, when Hang still gated
+  the search. The first bullet also merged two captures: the 38 % → 94 %
+  uptime was `165826`'s, and the "+10, +11, +10, +10" frames were
+  `234624`'s.
+- **It doesn't hold on `TEST`.** Re-measured with LC-010 in place, a
+  short timer is harmful (−51 frames on `165826` at 2 s). See LC-014.
+- **It framed a clock as a choice.** A timer that discards a lock nothing
+  has contradicted is arbitrary however long it is. See "Settled
+  decisions" at the top.
 
 **Order.** Must not be taken without LC-010. It also goes after LC-008,
 because the slider it removes sits directly under a line LC-008 adds.
@@ -573,6 +613,64 @@ applied to both the weight and the score, notched against un-notched,
 per reference (Window, Carrier, Digital). Also how often the loop acts,
 and whether the weight stops following the interferer.
 
+### LC-014 — A RADE lock has no timeout: a new lock replaces an old one
+
+**Problem.** After LC-010, the Hang timer's only remaining act was
+`rade_corr_reset()` on a lock nothing had contradicted, discarding it
+when a clock ran out. The weight was held either way, and a new station
+was already taken on detection.
+
+**Measured** on `TEST` through the whole engine (`run_ref`, Sum) and
+scored on decode by `score_rade`. Three runs each; synced frames against
+the better single antenna:
+
+| Capture | 2 s timer | 10 s timer | No timer (600 s) |
+|---|---|---|---|
+| `165826` (marginal) | **+6** | +57 | +57 |
+| `190516` | **+42** | +72 | +72 |
+| `190715` | **+47** | +57 | +57 |
+| `190932` | +3 | **−2** | +3 |
+| `202743`, `112151`, `190822`, `193105` | identical at all three | | |
+
+A short timer drops locks that would have recovered. A long one does
+nothing, or costs a little. The timer never helps.
+
+**Change.**
+
+- The timeout is gone. A lock is held, weight and all, until the resync
+  search finds a new one, or a retune or other context change resets
+  everything.
+- While the pilot is absent the averages age at the Averaging time, as
+  LC-010 made them.
+- The `hang` argument is removed from `rade_corr_process()` and
+  `rade_track()`. The Hang field stays on the wire and in the props file,
+  pinned, and nothing reads it.
+- CPU: a held lock with no pilot runs the same search a cold one does, so
+  it costs what having no lock would.
+
+**Accepted, deliberately.** A new station landing within 4 samples of the
+old timing (0.9 % of changeovers) is taken for the old one returning. In
+a synthetic test (station B at A's exact timing, 20 Hz away), the lock
+was not replaced within a minute. A rule to catch that case was built
+and measured: across all 38 RADE captures in the set, a pilot found at
+the held timing while frozen happened 6 times, never twice in a row, so
+the rule would have been safe. It was still rejected. If the impostor's
+pilot is strong enough the tracker follows it and Averaging corrects the
+weight; if not, the old weight stays. Neither outcome is worth a
+mechanism. See "Settled decisions" at the top.
+
+**Checked.**
+
+- `test_rade` passes: a changeover costs 3.50 s at any Hang value, and a
+  5.1 s fade at 31 dB worse SNR keeps its lock and its weight.
+- The whole-engine decode scores match the committed engine at a 600 s
+  timer on all eight RADE captures tried.
+- The unit suite passes.
+- `run_ref` is not byte-deterministic (see LT-005), so these figures come
+  from repeated runs.
+
+**Depends on** LC-010 and LC-011.
+
 ---
 
 ## Local tooling (never upstream)
@@ -589,6 +687,15 @@ recorded on the feature branches.
 | LT-002 | Test harness: seven unit tests, `replay_rade`, `run_ref`, `test_capture`, `score_rade`, `known_gaps.h` | `test/diversity/` |
 | LT-003 | Wideband scorer and matched-arm generator (Python) | `test/diversity/devtools/py/` |
 | LT-004 | Replay and score with manual notches: `run_ref --notch`, `score_wideband.py --notch` and `--peaks` | `test/diversity/devtools/` |
+| LT-005 | Follow LC-014: no Hang passed or swept; `--hang` is an error | `test/diversity/devtools/` |
+
+**LT-005.** `rade_corr_process()` no longer takes a hang, so the replay
+tools stop passing one. `run_ref --hang` and `replay_rade --hang` stop
+with an error pointing at LC-014 instead of silently doing nothing.
+Worth knowing when reading any replay: `run_ref` is not
+byte-deterministic. Its worker thread can shift a read by a block, and on
+`165826` one run in three at a 600 s timer scored +39 against +57. Repeat
+a replay before trusting a single difference.
 
 The tooling commits form a stack: each later one edits files an earlier
 one created. They revert in reverse order, and only LT-001 applies to
@@ -698,6 +805,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-014 (no RADE lock timeout) and LT-005. LC-011's
+  description corrected, and "Settled decisions" added.
 - 2026-09-30: LC-013 (notch carve-out) and LT-004 (notch replay and
   scoring) ported.
 - 2026-09-30: LT-001 and LT-002 ported (capture recorder, test harness),

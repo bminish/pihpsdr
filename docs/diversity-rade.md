@@ -1,6 +1,6 @@
 # RADE diversity: passband window and V1 pilot correlator
 
-> **On `TEST` (bminish/pihpsdr).** The correlator design record as it stands on `feature/diversity-binaural` (2026-09-22). `TEST` has the resync search (LC-010) and a Hang pinned at 10 s with no slider (LC-011). Other feature-branch changes described here may not be on `TEST`: see `docs/changes.md`.
+> **On `TEST` (bminish/pihpsdr).** The correlator design record as it stands on `feature/diversity-binaural` (2026-09-22). `TEST` has the resync search (LC-010) and no Hang at all: a RADE lock has no timeout, and a new lock replaces an old one (LC-011, LC-014; see "Settled decisions" in `docs/changes.md`). Where this document describes the hang, it describes feature-branch behaviour. Other feature-branch changes described here may not be on `TEST`: see `docs/changes.md`.
 
 Detail on the two FreeDV RADE reference modes. For how diversity and the
 automatic loop work in general, see [`diversity.md`](diversity.md). For
