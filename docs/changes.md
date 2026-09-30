@@ -437,10 +437,64 @@ carrier now needs a coherence of up to 0.5 before the loop acts on it.
 Longer averaging lowers the floor. That's the intended exchange: the
 loop waits for evidence instead of tracking noise.
 
-**Not yet measured on recorded captures.** The Monte Carlo covers noise
-only. Its effect on weak real signals (how often a genuine signal is now
-held) should be checked with `run_ref` on the capture set, once the
-harness is on this branch.
+**Scored on recorded captures (2026-09-30).** Seven weak captures from
+the findings, covering all three references, run through `TEST`'s engine
+with and without LC-012 (`run_ref`, Flat weighting, recorded averaging)
+and scored with `test/diversity/devtools/py/score_wideband.py`. The
+scorer reproduces Finding 38 on `235906` (12.56 against 12.75 dB at gate
+0, 4.28 against 4.24 at 0.30). Split-guard passband SNR, before → after:
+
+| Capture | Ref, averaging | At `TEST`'s default threshold | Threshold 0 (floor only) | Noise-only passes at 0 | Noise coherence p95 |
+|---|---|---|---|---|---|
+| `235906` 17 m USB | Window, 1.12 s | 4.21 → 4.21 | 12.94 → 6.28 | 99 → 50 % | 0.71 |
+| `123333` 17 m USB | Window, 0.32 s | 5.26 → 5.26 | 8.77 → 8.65 | 100 → 90 % | 0.11 |
+| `122843` 17 m USB | Window, 0.32 s | 2.74 → 2.74 | 2.79 → 2.61 | 99 → 89 % | 0.37 |
+| `011225` 60 m AM | Window, 0.20 s | 29.90 → 29.90 | 29.89 → 29.89 | 100 → 100 % | 0.94 |
+| `000412` 13.72 AM | Carrier, 0.20 s | **26.08 → 25.94** | 26.23 → 25.94 | 100 → 67 % | 0.95 |
+| `000537` 13.65 AM | Carrier, 2.19 s | 22.10 → 22.10 | 22.12 → 22.14 | 99 → 96 % | 0.79 |
+| `003309` FSK | Digital, 0.20 s | 18.96 → 18.96 | 19.15 → 19.12 | 97 → 89 % | 0.70 |
+
+What landed where expected:
+
+- **At the defaults it is inert** on six of seven, identical to the last
+  decimal, because the floor sits far below 0.20 or 0.30 there.
+- **It acts on Carrier at short averaging**, as predicted: on `000412`,
+  noise-only passes fall from 84 % to 67 %, for −0.13 dB.
+- **It holds after a reset.** On `235906` at threshold 0, the loop first
+  acts at block 55, not block 0: the opening dead air is uncorrelated,
+  and it is held.
+
+What did not:
+
+- **Real dead air is mostly correlated noise, not uncorrelated noise.**
+  Noise-only blocks reach a coherence of 0.11 to 0.95 (95th percentile),
+  far above the floor. That's common-mode or band noise, a real
+  correlation, which the floor correctly lets through. So the drop in
+  noise-only passes is much smaller than the Monte Carlo suggests.
+- **Tracking uncorrelated noise does not cost 3 dB with the flat Sum
+  weight.** The premise was a unity-magnitude weight with random phase.
+  But Sum's weight is Sxy/Sxx, whose magnitude shrinks with the
+  coherence. Before LC-012, the median |w| in dead air is −19.6 dB
+  (`235906` with its arms matched by `match_arms.py`) and −14 dB
+  (`123333`, matched): effectively arm 0 alone, a stand-down that happens
+  by itself. On matched arms, where the penalty should be largest, the
+  pre-LC-012 engine at threshold 0 scores the same as at the default
+  (`123333`: 2.83 against 2.87 dB).
+- **Where the floor does bind, holding costs a little.** It keeps the
+  station's weight (about −5.6 dB) through dead air instead of letting it
+  shrink: −0.47 dB on matched `235906`, −3.9 dB on the real, lopsided one
+  with the cold start excluded, −0.1 to −0.3 dB elsewhere. That only
+  happens with the threshold below its default.
+
+**Assessment.** Keep LC-012. It's inert at the defaults, costs 0.13 dB
+in the one case it was expected to act on, and it implements the hold
+rule. But its rationale is narrower than stated: on this set the floor
+prevents no measurable harm with the Sum objective, and "random tracking
+costs about 3 dB" is not supported for flat Sum. What the data shows
+instead is the stand-down question in a new form: in dead air, a Sum
+weight that is allowed to track shrinks on its own, and holding pays for
+the station's weight. Not measured: Null and Best, and Carrier or Digital
+on matched arms.
 
 ---
 
@@ -456,6 +510,14 @@ recorded on the feature branches.
 |---|---|---|
 | LT-001 | Capture recorder: `make DIVCAP=1`, Capture button, format-3 writer fix, `captures/` ignored | `src/diversity_capture.[ch]`, `Makefile`, `DIVERSITY_CAPTURE` blocks in `src/diversity_auto.c` and `src/diversity_menu.c`, `.gitignore` |
 | LT-002 | Test harness: seven unit tests, `replay_rade`, `run_ref`, `test_capture`, `score_rade`, `known_gaps.h` | `test/diversity/` |
+| LT-003 | Wideband scorer and matched-arm generator (Python) | `test/diversity/devtools/py/` |
+
+**LT-003** scores `run_ref` weight series on Window, Carrier and Digital
+captures: split-guard passband SNR as the findings define it, plus pass
+rates, coherence and |w| in signal and noise-only blocks. It's calibrated
+against Finding 38. `match_arms.py` writes a copy of a capture with arm 1
+scaled to arm 0's noise floor, because every capture in the set has
+lopsided arms. Usage is in the devtools README.
 
 **LT-001** brings the recorder the feature branches used. Upstream `TEST`
 kept the recorder's hooks in `diversity_auto.c` but not the recorder, the
@@ -501,8 +563,13 @@ cost of holding as 12.18 dB of extra noise between overs on `122843` and
 3.5 dB over two thirds of a minute on `235906`, where the held weight had
 been fitted with one arm 15 dB hotter. Its tuning also assumed a gate
 that "passes about one no-signal block in twenty", which is the floor
-LC-012 replaced. Before deciding, re-score both captures on `TEST` with
-`run_ref`.
+LC-012 replaced. Scoring LC-012 on captures has since added evidence
+(see "Scored on recorded captures" under LC-012): with the flat Sum
+weight, a loop allowed to track dead air lets its weight shrink to about
+−14 to −20 dB, which is a stand-down in effect. Holding the station's
+weight instead cost 0.5 to 3.9 dB on `235906` when the threshold was
+below its default. Stand-down itself is not on `TEST`, so it has not
+been scored here.
 
 ---
 
@@ -518,21 +585,21 @@ LC-012 replaced. Before deciding, re-score both captures on `TEST` with
 ## Pending: to be ported from `feature/auto-diversity`
 
 Features and documentation will be brought in from
-`feature/auto-diversity` one at a time.
-
-Noted while porting LC-010 to LC-012, not yet decided:
-
-- `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
-  already gates). Separate decision.
-- LC-012's effect on weak real signals is not yet scored. The Monte
-  Carlo covers noise only. Run `run_ref` on the Carrier captures at short
-  averaging, before and after.
-- `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
-  the notches) are not in this branch's `docs/diversity-measurements.md`.
-  See the note at its top. Each one gets the next `LC`
+`feature/auto-diversity` one at a time. Each one gets the next `LC`
 number, a commit (or a short run of commits) that follows the rules
 above, and an entry in the register and in the Fixes or Behaviour
 section, in the same push.
+
+Noted while porting, not yet decided:
+
+- `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
+  already gates). Separate decision.
+- Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule. LC-012's
+  capture scoring bears on it: see "Scored on recorded captures" under
+  LC-012.
+- `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
+  the notches) are not in this branch's `docs/diversity-measurements.md`.
+  See the note at its top.
 
 ## History
 
