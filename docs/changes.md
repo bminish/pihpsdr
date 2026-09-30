@@ -893,16 +893,25 @@ is 0.10, and a region of fewer than six bins is held.
 equally; above that range the gate stops the mode (AD-50). A constant
 also means no new setting and no wire change.
 
-**Measured** (`score_cw.py`, Sum, recorded averaging, eleven usable CW
-captures, against the better antenna):
+**Measured** (`score_cw.py`, Sum, recorded averaging, the eleven usable
+CW captures scored as 16 segments between retunes and filter changes,
+against the better antenna):
 
-| | Mean | Key-up blocks acted on |
+| | Mean | Segments ahead of the better antenna |
 |---|---|---|
-| Window (`TEST` before CW) | −1.02 dB | 4–73 % |
-| FSK/Digital | +0.02 dB | 4–59 % |
-| CW, LC-017 only | −0.12 dB | 31–94 % |
-| CW, with LC-018 | −0.08 dB | 2–50 % |
-| CW, with the steady noise ratio (as shipped) | −0.06 dB | 2–49 % |
+| Window (`TEST` before CW) | −0.70 dB | 5 / 16 |
+| FSK/Digital | −0.14 dB | 8 / 16 |
+| CW, LC-017 only | −0.70 dB | 8 / 16 |
+| CW, with LC-018 | −0.12 dB | 9 / 16 |
+| CW, with the steady noise ratio (as shipped) | −0.14 dB | 9 / 16 |
+
+These replace the first figures, which scored each capture as one
+passband and had the tone's neighbours wrong where the passband
+straddles 0 Hz (`score_cw.py` fixed, LT-007). Key-up blocks acted on:
+31–94 % with LC-017 alone, 2–50 % with LC-018. On three CW captures
+taken with the reference in (T-010 to T-012 in `docs/test-findings.md`)
+it is the best of the three references on strong contest signals, and
+gains 1.6 dB on a weak beacon.
 
 On `143433`, of the blocks the loop acted on, the tracker was within 1.5
 bins of the steady carrier on **52.4 %** without key detection and
@@ -1082,21 +1091,28 @@ Noted while porting, not yet decided:
   unwanted signal.
 - CW, from porting LC-017 to LC-019:
   - **The LC-012 floor binds on CW.** Three tone bins at CW's averaging
-    put it at its 0.5 cap. With it the loop acts on 38–99 % of key-down
-    blocks; without it (a scratch build), 46–99.7 %. It binds on 5 of
-    the 11 captures, and the mean moves from −0.06 to +0.02 dB without
-    it. That's small, and on these strong captures within the scorer's
-    reach, but no capture gains from the floor. Revisit with marginal CW
-    captures.
+    put it at its 0.5 cap, so it, not the 0.10 setting, is the gate.
+    Scored with and without it (a scratch build) over the 16 segments of
+    the eleven captures: mean −0.14 dB with it, −0.07 without; without
+    it is better on 7 segments and worse on 1. Small, and within the
+    scorer's reach on these strong captures, but the direction is
+    consistent. Revisit with marginal CW captures.
   - **LC-019's 0.2 s** wants re-sweeping on marginal CW captures.
   - **A strong carrier that appears** is accepted until key detection's
     floor climbs to it (LC-018, Limitation).
   - `score_cw.py` follows AD-50's yardstick but not its scripts, so
     AD-50's figures are not reproduced to the decimal. FSK/Digital
-    scores better here than there (+0.02 against −0.42).
+    scores better here than there (−0.14 against −0.42).
+  - **A beacon's steady tone is rejected as a carrier** by key detection
+    (T-012): the weight is held through it. FSK/Digital, which uses it,
+    scores 0.3 dB more on that capture. Only a concern for beacons or
+    tuning carriers that are themselves the wanted signal.
 
 ## History
 
+- 2026-09-30: T-010 to T-012, three CW captures (40 m and 20 m contest,
+  30 m beacon) through the CW reference; `score_cw.py` fixed (segments,
+  bin order) and LC-018's figures re-scored.
 - 2026-09-30: LC-020, the window row hidden while following the RX
   filter, and the tick relabelled "Follow RX Filter".
 - 2026-09-30: LC-017 to LC-019 (the CW reference, key detection, the
