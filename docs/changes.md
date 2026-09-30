@@ -78,6 +78,13 @@ reasoning.
    strong enough the tracker follows it and Averaging corrects the
    weight; otherwise the old weight stays. We accept that. A timeout, or
    a rule to catch it, costs more than the case does.
+4. **Averages age at the Averaging time, whether or not a gate accepts
+   the block.** Otherwise, under a gate that opens only some of the
+   time, the average's real age grows well past the Averaging time just
+   when conditions are hardest, and a new signal is averaged into data
+   from one that ended long ago. Window, Carrier and FSK/Digital update
+   every block anyway. RADE V1 ages through a freeze (LC-010). CW ages
+   every bin in its region every block (LC-017).
 
 ## Commands
 
@@ -163,6 +170,9 @@ next resync). **Dropped** means abandoned.
 | LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
 | LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | Proposed ([#150](https://github.com/dl1ycf/pihpsdr/pull/150)) |
 | LC-016 | Behaviour | RADE V1's Min coherence retired (pinned at 0, row hidden) | diversity_auto.c, diversity_menu.c    | LC-008, [LC-004] | Local |
+| LC-017 | Behaviour | A CW / Morse reference                                | diversity_auto.c/.h, diversity_menu.c, rx_panadapter.c | LC-009, LC-012, LC-013, LC-015 | Local |
+| LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
+| LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -181,10 +191,12 @@ it, but it does not use anything LC-008 adds.
   upstream together.
 - LC-016 uses LC-008's slider pointer and edits LC-004's slot writer, so
   it goes after both.
-- Reverting LC-008 means reverting LC-016, LC-012, LC-011 and LC-009
-  first; reverting LC-010 or LC-011 means reverting LC-014 first; and
-  reverting LC-004 means reverting LC-016 first. They conflict
-  otherwise. Every other change reverts cleanly from the tip.
+- Reverting from the tip: a change goes with its fixups and everything
+  that depends on it, newest first. Checked 2026-09-30: only LC-001,
+  LC-003, LC-005, LC-007, LC-014 and LC-019 revert cleanly on their own.
+  The fixups and the CW changes edit lines of most of the others. This
+  matters less than it did, because PR branches are cut fresh from
+  `upstream/TEST` with the fixups folded in (see "Cutting a PR branch").
 
 **First PR:** LC-015, opened 2026-09-30 as
 [dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150) from
@@ -195,7 +207,9 @@ restored, and restored sanely), then LC-003 + LC-004 (client/server
 settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
 LC-011 + LC-014 + LC-016 (RADE: resync, Hang slider gone, no timeout,
 no threshold) and LC-012. LC-013 (notches) stands
-alone and can go at any point. LC-006 goes last because it needs the
+alone and can go at any point. LC-017 + LC-018 + LC-019 (CW) go after
+LC-012, LC-013 and LC-015. The "Measure on" order and the CW row are the
+part most likely to interest upstream on their own. LC-006 goes last because it needs the
 measurement data behind it.
 
 ---
@@ -804,6 +818,118 @@ branch").
 
 **Depends on** LC-008 (the slider pointer) and, textually, LC-004.
 
+### LC-017 — A CW / Morse reference
+
+Ported from `ceeca2eb` (`feature/auto-diversity`), with the changes below.
+
+**What it does.** `DIV_REF_CW` searches the RX filter (or a hand-placed
+window) for the strongest tone, preferring the centre with a Gaussian
+weighting, because in CW the centre of the passband is the note the
+operator zero-beat. It accumulates the cross spectrum over that tone and
+one bin either side, and nothing else in the region.
+- **Sum** carries the branch noise ratio, from the off-tone bins.
+- **Null** is not scaled.
+- **Best** uses the per-arm SNR from the same floors.
+- A keyclick that lifts the whole region (tone per bin under 2× the
+  region's mean) is not accepted.
+
+**Changed from the feature branch.**
+
+- **The averages age every block** (see Settled decision 4). The feature
+  branch ran CW after the window accumulation, so every key-up block went
+  into the tone bins as noise and every accepted block was counted twice.
+  Here CW runs first, every bin in the region is scaled by (1 − α) each
+  block, and only an accepted block adds its tone bins. `test_cw` checks
+  it: after a 5 s gap a new channel is taken within two elements, and
+  with the ageing disabled the check fails (−62° against −78°).
+- **The noise ratio is steady.** The feature branch took it from one
+  block's 10th percentile of the off-tone bins, the fourth smallest of
+  the forty-odd a CW filter leaves, which moved by 10 dB from block to
+  block. On `test_cw`'s synthetic tone the Sum gain landed 2.5 to 9.6 dB
+  off. Now it's the mean of the quieter half of those bins, smoothed at
+  the Averaging time: within 0.1 dB. (A fixup commit.)
+- **The gate goes through LC-012's floor** over the three tone bins, with
+  the block count following the ageing.
+- **Hold, not stand-down.** The in-block key-down test is not ported: it
+  rejected 0 of 4123 blocks (AD-50). Key detection is LC-018.
+
+**Settings.** Own window (600 Hz default) and threshold slots, in
+`DIV_SETTINGS`, the per-group and flat props, store/recall, validation
+and the slider floor. A props file from before CW gives it CW's own
+threshold, not the live one. `DIV_REF_CW` is appended to the enum, so no
+saved reference moves. The wire is unchanged: like the other
+references' slots, CW's are not on it.
+
+**UI** (worth upstream's attention even if the engine is not taken):
+"Measure on" is now **Window, CW, FSK/Digital, Carrier, RADE V1**, with
+the labels in the row table so the order lives in one place. Carrier
+keeps its place between FSK/Digital and RADE V1. The status line reads `CW <bins> track
+<tone Hz>`, and the panadapter shades the search region and the tone.
+
+**Depends on** LC-012 (the gate floor), LC-013 (`div_bin_notched()`),
+LC-015 (the row table) and LC-009 (`diversity_auto_seed_window()`, now
+using `div_width_default()`).
+
+### LC-018 — The CW reference tells keying from a steady carrier
+
+Ported from `565c6e40`, with Key detect as a constant instead of a
+control.
+
+**Why.** A carrier in a CW passband holds steady through the gaps where
+every station stops, and LC-017 can't tell it from keying. The keying
+rate can't either: at 10 to 35 WPM the envelope moves at 4 to 15 Hz,
+which one block per 43 to 171 ms samples below Nyquist. What survives is
+that Morse stops.
+
+**Change.** A block is keyed when the region's peak stands 3 dB above the
+quietest that peak has recently been: a minimum that falls at once and
+climbs back at 12 dB/s, seeded from the block's own noise. An unkeyed
+block is held and the averages age through it. CW's Min coherence default
+is 0.10, and a region of fewer than six bins is held.
+
+**Why a constant.** Every setting from 2 to 6 dB rejects the carrier
+equally; above that range the gate stops the mode (AD-50). A constant
+also means no new setting and no wire change.
+
+**Measured** (`score_cw.py`, Sum, recorded averaging, eleven usable CW
+captures, against the better antenna):
+
+| | Mean | Key-up blocks acted on |
+|---|---|---|
+| Window (`TEST` before CW) | −1.02 dB | 4–73 % |
+| FSK/Digital | +0.02 dB | 4–59 % |
+| CW, LC-017 only | −0.12 dB | 31–94 % |
+| CW, with LC-018 | −0.08 dB | 2–50 % |
+| CW, with the steady noise ratio (as shipped) | −0.06 dB | 2–49 % |
+
+On `143433`, of the blocks the loop acted on, the tracker was within 1.5
+bins of the steady carrier on **52.4 %** without key detection and
+**6.5 %** with it (AD-50: 38.1 % → 3.4 %, by its own tolerance).
+
+**Limitation.** A strong carrier that *appears* is accepted as keying
+until the floor has climbed to it, at 12 dB/s: one 40 dB up for over
+3 s. A carrier present all along (the AD-50 case, and `test_cw`'s) is
+rejected as soon as the keying stops.
+
+**Depends on** LC-017.
+
+### LC-019 — A fresh install starts CW on the CW reference at 0.2 s
+
+**Change.** When the props file holds no diversity settings at all, the
+CW mode group (CWL, CWU) starts on the CW reference, with its own window
+and threshold, at 0.2 s averaging. Nothing else changes: a file from
+before the per-group blocks still seeds every group from its flat keys
+(`test_modal` section 3), and a group's own keys win over both. The
+operator can move the averaging like any other setting.
+
+**Why 0.2 s.** Swept over eleven CW captures on the feature branch, the
+short end of the slider scored +0.20 dB mean against −0.40 at 1.0 s and
+−0.19 at 2.0 s (`565c6e40`). That's a CW result, so it's a seed for this
+group rather than a global default. **To re-test:** few of those
+captures are marginal. Re-sweep as marginal CW captures come in.
+
+**Depends on** LC-017.
+
 ---
 
 ## Local tooling (never upstream)
@@ -824,6 +950,10 @@ Findings from captures taken on `TEST` itself are in
 | LT-004 | Replay and score with manual notches: `run_ref --notch`, `score_wideband.py --notch` and `--peaks` | `test/diversity/devtools/` |
 | LT-005 | Follow LC-014: no Hang passed or swept; `--hang` is an error | `test/diversity/devtools/` |
 | LT-006 | Test the RADE V1 threshold pin, props and client paths; close its known gap | `test/diversity/` |
+| LT-007 | CW scorer (`score_cw.py`); Findings AD-50 and AD-51 from auto-diversity | `test/diversity/devtools/py/`, `docs/diversity-measurements.md` |
+| LT-008 | `run_ref --ref cw`, and a `tone` column (the tracker's readout) | `test/diversity/devtools/run_ref.c` |
+| LT-009 | `test_modal` checks the fresh-install CW seed (LC-019) | `test/diversity/test_modal.c` |
+| LT-010 | `test_cw` for `TEST`'s CW reference; its known gap closed | `test/diversity/` |
 
 **LT-005.** `rade_corr_process()` no longer takes a hang, so the replay
 tools stop passing one. `run_ref --hang` and `replay_rade --hang` stop
@@ -886,7 +1016,6 @@ becomes its regression test.
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
 | Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
-| CW reference | `6027208a`, `d3b73b8a` | Not built: `test_cw` needs `DIV_REF_CW` |
 
 **Stand-down is not simply a gap.** On the feature branches, the combiner
 slews the weight to zero on an empty band and puts it back when the band
@@ -937,12 +1066,28 @@ Noted while porting, not yet decided:
   starting set. T-009 adds one on the lower sideband (spectrum inverted)
   under strong SSB interference, the case for discriminating against an
   unwanted signal.
-- `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
-  the notches) are not in this branch's `docs/diversity-measurements.md`.
-  See the note at its top.
+- CW, from porting LC-017 to LC-019:
+  - **The LC-012 floor binds on CW.** Three tone bins at CW's averaging
+    put it at its 0.5 cap. With it the loop acts on 38–99 % of key-down
+    blocks; without it (a scratch build), 46–99.7 %. It binds on 5 of
+    the 11 captures, and the mean moves from −0.06 to +0.02 dB without
+    it. That's small, and on these strong captures within the scorer's
+    reach, but no capture gains from the floor. Revisit with marginal CW
+    captures.
+  - **LC-019's 0.2 s** wants re-sweeping on marginal CW captures.
+  - **A strong carrier that appears** is accepted until key detection's
+    floor climbs to it (LC-018, Limitation).
+  - `score_cw.py` follows AD-50's yardstick but not its scripts, so
+    AD-50's figures are not reproduced to the decimal. FSK/Digital
+    scores better here than there (+0.02 against −0.42).
 
 ## History
 
+- 2026-09-30: LC-017 to LC-019 (the CW reference, key detection, the
+  fresh-install CW seed) and LT-007 to LT-010 (`score_cw.py` and Findings
+  AD-50/AD-51, `run_ref --ref cw` and its tone column, the LC-019 check,
+  `test_cw`). Settled decision 4 added: averages age whether or not a
+  gate accepts the block.
 - 2026-09-30: T-009, a RADE V2 capture on the lower sideband under SSB
   interference, logged for later work (not analysed).
 - 2026-09-30: T-008, three RADE V2 captures logged for a future V2
