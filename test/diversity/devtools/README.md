@@ -66,6 +66,47 @@ LD_LIBRARY_PATH=$D/rade_build/src test/diversity/devtools/score_rade captures/<f
 make DIVCAP=1                                   # radio with the Capture button; plain make strips it
 ```
 
+### Scoring a change on Window, Carrier and Digital captures
+
+`score_rade` scores RADE on decode. The other references have no decoder,
+so `py/score_wideband.py` scores `run_ref` weight series the way the
+findings do: the weight applied one block late (out = arm0 + w·arm1, as
+`receiver.c` combines), and the SNR is signal in the RX passband against
+noise in a guard band the loop never fitted on (Finding 18). It is
+calibrated against Finding 38 on `235906`: 12.56 against 12.75 dB at gate
+0, and 4.28 against 4.24 at 0.30.
+
+To compare a change, build `run_ref` once with it and once without (a
+scratch worktree with the change reverted), run both over the same
+capture with the same settings, and score them together:
+
+```
+test/diversity/devtools/run_ref captures/X.divc --ref band --mode sum \
+    --weighting flat --cohmin 0.20 --out after.csv
+/path/to/run_ref_without_it captures/X.divc --ref band --mode sum \
+    --weighting flat --cohmin 0.20 --out before.csv
+cd test/diversity/devtools/py && python3 score_wideband.py ../../../../captures/X.divc before.csv after.csv
+```
+
+Pass the settings explicitly. `run_ref` otherwise takes the weighting the
+capture recorded, and a Min coherence of 0.20 for every reference, which
+isn't what `TEST` uses (Window 0.20, Carrier and Digital 0.30, Flat).
+
+Beside the SNR, the scorer reports how often the loop acted in signal
+and in noise-only blocks, the coherence of the noise-only blocks, and the
+median |w| in each. The "from N" column scores from the first block
+after both runs have acted, which takes `run_ref`'s cold start (w = 1
+until the loop first acts) out of the comparison. Finding 38 shows that
+artifact alone can be worth 8 dB on a capture that opens in dead air.
+
+`py/match_arms.py IN.divc OUT.divc` writes a copy with arm 1 scaled to
+arm 0's guard-band noise. Every capture in the set has lopsided arms
+(arm 1 usually 14–15 dB hotter), so this is the only way to see what a
+weight does on a matched pair. Channel, signal and noise correlation are
+untouched.
+
+LC-012 was assessed this way; the results are in `docs/changes.md`.
+
 ## Why
 
 Every number in `src/rade_correlator.c` was set against a synthetic signal
