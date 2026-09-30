@@ -1696,8 +1696,9 @@ static int div_occ_cmp(const void *a, const void *b) {
 //   wide window;
 // - blocks: the exponential average holds (sum w)^2 / sum w^2 independent
 //   blocks, which is (2-alpha)/alpha in steady state and only one on the
-//   block after a reset, a retune or an averaging change - which is when
-//   a single-block estimate is most easily fooled.
+//   block after a reset or a retune - which is when a single-block
+//   estimate is most easily fooled. An averaging change does not reset;
+//   the count follows the new alpha over the next few blocks.
 //
 // A wide window at a long average has a floor of a fraction of a percent,
 // so the setting is what gates there; the five-bin Carrier reference at a
