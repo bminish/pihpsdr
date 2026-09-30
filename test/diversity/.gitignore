@@ -6,6 +6,9 @@ test_rade
 test_digital
 test_props
 test_modal
+# Built on the feature branches only (no CW reference on TEST); left behind
+# by a branch switch.
+test_cw
 devtools/build/
 devtools/replay_rade
 devtools/run_ref
