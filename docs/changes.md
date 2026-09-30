@@ -1183,6 +1183,52 @@ Noted while porting, not yet decided:
   starting set. T-009 adds one on the lower sideband (spectrum inverted)
   under strong SSB interference, the case for discriminating against an
   unwanted signal.
+- **The branch noise floor measured across frequency** (`8a393217`).
+  Ported and measured, **parked** on `wip/lc-025-noise-floor`; not on
+  `TEST`.
+  - *Why we want it.* Two things in the Window and Carrier references
+    need each antenna's noise level: the noise-ratio term in the Sum
+    weight (maximum-ratio combining scales arm 1 by N0/N1, so a noisier
+    antenna is backed off) and the per-arm SNR that Best chooses on.
+    `TEST` takes both from the quietest level seen over a recent stretch
+    of *time*. That needs the band to go quiet: on a signal with no gaps
+    it publishes nothing (the known gap, where Window Sum does not back
+    off an antenna 20 dB noisier), and on a fading carrier the minima land
+    in the fades, so a ratio of two fades is published as a ratio of two
+    noises (Finding 47 on the feature branch: +10.5 dB where the truth was
+    −0.35).
+  - *What it does.* Each block, each antenna's floor is taken from the
+    bins *outside* the RX filter, within the central 80 % of the DDC
+    passband: the mean of the 8th to 12th percentile of up to 1024 bins,
+    smoothed over 2 s. It feeds the Sum noise ratio
+    (`div_wideband_sum_scale()`) and the per-arm SNR
+    (`div_arm_from_floor()`, scaled by the bins actually summed, notches
+    allowed for). The time-based floor stays as the fallback. It is the
+    same principle as upstream's new panadapter noise floor (`b77d4237`,
+    a percentile across frequency), which cannot be used instead: that is
+    one value for RX1's *combined* output, taken from display pixels.
+  - *What it measured.* The estimate is right: within about 0.5 dB of
+    the guard-band truth on every capture checked, where `TEST`'s is
+    often far off. `test_digital`'s 20 dB case goes from +16.66 to
+    +29.97 dB SINR. But over 39 Window/Carrier captures, old engine
+    against new (`score_wideband.py`): **Sum** mean +0.23 dB, better on
+    23, worse on 11, down to −4.45 (`154822`), −2.84 (`122632`), −1.67
+    (`235906`); **Best** mean −0.02 dB, better on 24, worse on 10, and
+    **−17.97 dB on `154822`**.
+  - *Why some lose.* Not the estimate. The noise-ratio term is optimal
+    only for uncorrelated noise, and on `154822` the antennas' noise is
+    0.99 coherent (a common source): the old, "wrong" weight was partly
+    cancelling it, the correct ratio does not. Most losers have noise
+    coherence 0.64–0.99, but so do some winners, so correlation is not
+    the whole account. Best's collapse on `154822` comes with the readout
+    now available on every block while the arms are 0.4 dB apart: it
+    switches to arm 1 on 56 % of blocks, at the +20 dB selection weight.
+    Why that scores −13.7 dB is not yet understood.
+  - *Options.* Use it for Sum only; or solve Sum as MVDR with the noise
+    *covariance* from the same outside-filter bins, which reduces to the
+    noise-ratio weight for uncorrelated noise and cancels common noise
+    when it is correlated (`div_mvdr2()` exists); and look into Best's
+    switching before it gets an always-available readout.
 - CW, from porting LC-017 to LC-019:
   - **The LC-012 floor binds on CW.** Three tone bins at CW's averaging
     put it at its 0.5 cap, so it, not the 0.10 setting, is the gate.
@@ -1204,6 +1250,10 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: `8a393217` (branch noise floor across frequency) ported,
+  measured on 39 captures, and parked on `wip/lc-025-noise-floor`: the
+  estimate is right, but Sum loses on 11 captures and Best collapses on
+  one. See Pending.
 - 2026-09-30: LC-022 to LC-024, the three faults from
   `feature/auto-diversity`: arm 0 follows RX1's ADC, the transmit-gap and
   reset races, and the Carrier/CW readout from the zero beat with the
