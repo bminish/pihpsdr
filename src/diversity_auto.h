@@ -59,8 +59,8 @@ extern int    div_auto_follow_filter;   // analysis window follows the RX filter
 extern double div_auto_centre;          // window centre (Hz, rel. to tuned freq)
 extern double div_auto_width;           // window width (Hz)
 extern double div_auto_tau;             // adaptation time constant (seconds)
-extern double div_auto_hang;            // hold a RADE lock this long after the
-                                        // pilot goes away, before re-acquiring
+extern double div_auto_hang;            // unused: kept for the wire and props file
+                                        // (no RADE lock timeout - see DIV_HANG_DEFAULT)
 extern double div_auto_coherence_min;   // hold below this coherence
 extern int    div_auto_weighting;       // always DIV_WEIGHT_FLAT (see .c)
 extern double div_auto_resolution;      // requested bin width, Hz
