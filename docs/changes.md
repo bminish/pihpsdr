@@ -779,6 +779,8 @@ it. Usage is in `test/diversity/devtools/README.md`, whose first section
 covers this branch. The findings the tools produced so far are in
 `docs/diversity-measurements.md` and `docs/diversity-rade.md`, as
 recorded on the feature branches.
+Findings from captures taken on `TEST` itself are in
+`docs/test-findings.md`, numbered T-001 onwards.
 
 | ID | Summary | Where |
 |---|---|---|
@@ -902,6 +904,9 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: T-001, the first RADE capture on `TEST` (two stations on
+  20 m), recorded in `docs/test-findings.md`: no regression against the
+  feature branch, and the weak station is beyond any fixed combination.
 - 2026-09-30: LC-016 (RADE V1's Min coherence retired) and LT-006.
 - 2026-09-30: LC-015 (the "Measure on" row/reference mismatch) fixed,
   and opened as the first upstream PR, dl1ycf/pihpsdr#150.
