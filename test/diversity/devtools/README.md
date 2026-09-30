@@ -107,6 +107,35 @@ untouched.
 
 LC-012 was assessed this way; the results are in `docs/changes.md`.
 
+### Manual notches
+
+A capture cannot record a notch: WDSP applies it downstream of the tap,
+and the block record has no notch fields. But for the same reason, a
+replay with a notch set is exactly what the radio would have done with
+it. So:
+
+```
+cd test/diversity/devtools/py
+python3 score_wideband.py ../../../../captures/X.divc --peaks 6
+```
+
+lists the strongest narrowband peaks in the passband, with the notch
+centre that covers each and how steady it is. A carrier or heterodyne
+reads near 100 % of blocks; speech and keying read far less. Then give
+the same notch to both tools:
+
+```
+run_ref captures/X.divc --ref band ... --notch C:W --out notch.csv
+run_ref captures/X.divc --ref band ...             --out plain.csv
+python3 score_wideband.py captures/X.divc plain.csv notch.csv --notch C:W
+```
+
+`C:W` is centre and width in Hz, as the radio's notch menu stores them,
+up to three. With `--notch`, the scorer leaves the notched bins out of
+the passband, as WDSP leaves them out of the audio, using the engine's
+rule (a bin entirely inside the notch). So both runs are scored on the
+audio the operator would hear with the notch in.
+
 ## Why
 
 Every number in `src/rade_correlator.c` was set against a synthetic signal

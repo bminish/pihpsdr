@@ -27,7 +27,20 @@ Calibrated against Finding 38 on 235906 (Window / Sum, as recorded):
 gate 0.00 scores 12.56 dB against the published 12.75, gate 0.30 4.28
 against 4.24.
 
-usage: score_wideband.py CAPTURE.divc RUN1.csv [RUN2.csv ...]
+With --notch CENTRE:WIDTH (up to three, the values the radio's notch
+menu stores), the passband score leaves out the bins inside the notches,
+as WDSP leaves them out of the audio, using the engine's own rule: a bin
+at frequency f is notched when it lies entirely inside
+[-(C + W/2), -(C - W/2)] (div_bin_notched()). Give the same notches to
+run_ref and to this, so the weight and the score see the same passband.
+
+--peaks N lists the N strongest narrowband peaks in the passband, with
+the notch centre that would cover each and the share of blocks each
+stands 10 dB above the passband median in: a steady carrier or
+heterodyne reads near 100 %, speech or keying far less. That is where a
+notch test scenario starts.
+
+usage: score_wideband.py CAPTURE.divc [RUN.csv ...] [--notch C:W]... [--peaks N]
 """
 import csv
 import struct
@@ -99,21 +112,102 @@ def regions(rate, n, fo, flo, fhi):
     return pb, g
 
 
+def notched_mask(rate, n, notches):
+    """Bins entirely inside any notch, by div_bin_notched()'s rule."""
+    fr = np.fft.fftfreq(n, 1.0 / rate)
+    half = 0.5 * rate / n
+    m = np.zeros(n, bool)
+
+    for c, w in notches:
+        a, b = -(c - 0.5 * w), -(c + 0.5 * w)
+        nlo, nhi = min(a, b), max(a, b)
+        m |= (fr - half >= nlo) & (fr + half <= nhi)
+
+    return m
+
+
+def parse_args(argv):
+    cap, runs, notches, peaks = None, [], [], 0
+    i = 1
+
+    while i < len(argv):
+        a = argv[i]
+
+        if a == '--notch':
+            c, w = argv[i + 1].split(':')
+            notches.append((float(c), float(w)))
+            i += 2
+        elif a == '--peaks':
+            peaks = int(argv[i + 1])
+            i += 2
+        elif cap is None:
+            cap = a
+            i += 1
+        else:
+            runs.append(a)
+            i += 1
+
+    return cap, runs, notches, peaks
+
+
+def list_peaks(rate, n, F0, F1, PB, count):
+    """The strongest narrowband peaks in the passband, as notch centres."""
+    fr = np.fft.fftfreq(n, 1.0 / rate)
+    p = np.array([np.abs(F0[b]) ** 2 + np.abs(F1[b]) ** 2 for b in range(len(F0))])
+    pb = PB[0]
+    mean = p.mean(axis=0)
+    med = np.median(mean[pb])
+    idx = np.where(pb)[0]
+    order = idx[np.argsort(mean[idx])[::-1]]
+    taken = []
+
+    for k in order:
+        if any(abs(k - j) <= 3 for j in taken):
+            continue
+
+        taken.append(k)
+
+        if len(taken) == count:
+            break
+
+    print(f"{'bin Hz':>9s} {'notch centre':>12s} {'mean over median':>16s} {'blocks > +10 dB':>15s}")
+
+    for k in taken:
+        steady = np.mean(p[:, k] > 10 * np.median(p[:, pb], axis=1))
+        print(f"{fr[k]:+9.1f} {-fr[k]:+12.1f} {10 * np.log10(mean[k] / med):+15.1f}  {100 * steady:13.0f} %")
+
+
 def main():
-    cap, runs = sys.argv[1], sys.argv[2:]
+    cap, runs, notches, peaks = parse_args(sys.argv)
     h, blks = load_blocks(cap)
     n, rate = h['nfft'], h['rate']
     win = bh4(n).astype(np.float32)
+    nm = notched_mask(rate, n, notches)
     F0, F1, PB, G = [], [], [], []
+    notched_in_pb = 0
 
     for fo, flo, fhi, a0, a1 in blks:
         pb, g = regions(rate, n, fo, flo, fhi)
+        notched_in_pb = max(notched_in_pb, int(np.sum(pb & nm)))
+        pb = pb & ~nm
         F0.append(np.fft.fft(a0 * win))
         F1.append(np.fft.fft(a1 * win))
         PB.append(pb)
         G.append(g)
 
     nb = len(blks)
+
+    if peaks:
+        print(f"# {cap.split('/')[-1]}: strongest narrowband peaks in the passband")
+        list_peaks(rate, n, F0, F1, PB, peaks)
+
+        if not runs:
+            return
+
+    if notches:
+        print(f"# notched out of the score: {notched_in_pb} passband bin(s) "
+              + ", ".join(f"{c:+.0f}:{w:.0f}" for c, w in notches))
+
     ppow = np.array([np.sum(np.abs(F0[b][PB[b]]) ** 2 + np.abs(F1[b][PB[b]]) ** 2)
                      for b in range(nb)])
     sig = ppow > np.percentile(ppow, 20) * 10 ** 0.6
