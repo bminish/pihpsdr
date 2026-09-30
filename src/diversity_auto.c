@@ -361,9 +361,32 @@
 //
 // DIV_CW_FLUSH: see div_cw_age().
 //
+// DIV_CW_MIN_BINS: below this many usable bins in the region there is no
+// off-tone noise to measure against. Reached only by a very narrow filter.
+//
+// DIV_CW_ACT_DB: key detection. A block is keyed when the region's peak
+// stands this far above the quietest that peak has recently been - see
+// div_cw_solve(). Every setting from 2 to 6 dB rejects a steady carrier
+// equally (the tracker sat on one for 38.1 % of blocks with no gate and
+// 3.4 to 3.9 % across that range), and what rises with the setting is
+// only the signal strength the loop needs: a keyed signal n dB out of the
+// noise reads about n dB. 3 dB is the lowest that gets the whole benefit
+// (Finding AD-50). A constant, not a control: nothing in the useful range
+// is better than anything else in it, and above it the gate stops the
+// mode - at 14 dB the loop updates on 14 % of blocks and two captures
+// lose 4 to 6 dB.
+//
+// DIV_CW_ACT_RISE_DB: how fast that floor climbs back, in dB per second.
+// It has to recover inside a keying gap - a word space is 240 ms at 35 WPM
+// - without recovering inside a dot, 34 to 120 ms. Flat from 3 to 12 dB/s
+// and then a cliff: +0.26 dB at 12 against -0.71 at 24 (AD-50).
+//
 #define DIV_CW_BINS          1
 #define DIV_CW_CREST_THRESH  2.0
 #define DIV_CW_FLUSH         1e-200
+#define DIV_CW_MIN_BINS      6
+#define DIV_CW_ACT_DB        3.0
+#define DIV_CW_ACT_RISE_DB   12.0
 
 //
 // How far the receiver may be retuned before the accumulated statistics
@@ -502,7 +525,7 @@ double div_band_cohmin         = 0.20;
 double div_carrier_cohmin      = 0.30;
 double div_digital_cohmin      = 0.30;
 double div_rade_cohmin         = 0.0;
-double div_cw_cohmin           = 0.20;
+double div_cw_cohmin           = 0.10;
 
 //
 // Set when the requested window had to be pulled inside the Nyquist
@@ -726,6 +749,14 @@ double div_track_phase = 0.0;
 //
 static double div_carrier_hz = 0.0;
 
+//
+// CW key detection's temporal reference: the quietest the region's peak
+// has recently been. See div_cw_solve(). Reset with the statistics, so a
+// retune or a filter change starts it again.
+//
+static double cw_act_lo = 0.0;
+static int    cw_act_valid = 0;
+
 
 //
 // Swap Null for Sum, or the other way about.
@@ -817,6 +848,8 @@ static void div_reset_stats(void) {
   div_auto_holding = 1;
   div_carrier_hz = 0.0;
   div_auto_carrier_valid = 0;
+  cw_act_lo = 0.0;
+  cw_act_valid = 0;
   div_auto_occ_valid = 0;
   div_auto_occ_lo = 0.0;
   div_auto_occ_hi = 0.0;
@@ -2314,7 +2347,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   const double k_centre = 0.5 * (double)(klo + khi);
   const double sigma = 0.25 * (double)(khi - klo + 1);
   int peak = klo;
-  double peakval = -1.0, p_region = 0.0;
+  double peakval = -1.0, peak_raw = 0.0, p_region = 0.0;
   int nregion = 0;
 
   for (int k = klo; k <= khi; k++) {
@@ -2335,12 +2368,62 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
 
     if (pw > peakval) {
       peakval = pw;
+      peak_raw = p;
       peak = k;
     }
   }
 
-  if (!(peakval > 0.0)) {
+  if (!(peakval > 0.0) || nregion < DIV_CW_MIN_BINS) {
     div_auto_occ_valid = 0;
+    div_auto_holding = 1;
+    return;
+  }
+
+  //
+  // This block's noise floor per arm and per bin, off the tone.
+  //
+  const double n0 = div_cw_floor(ctx, klo, khi, peak, fftout0);
+  const double n1 = div_cw_floor(ctx, klo, khi, peak, fftout1);
+  const int floors = (n0 > 0.0 && n1 > 0.0);
+
+  //
+  // Is anything being keyed?
+  //
+  // Not the keying rate: at 10 to 35 WPM the envelope moves at 4 to 15 Hz,
+  // and one block per 43 to 171 ms samples that below Nyquist at every
+  // Resolution. What survives the block rate is that Morse stops - between
+  // letters, words and overs - and a carrier does not. So the peak's power
+  // against the quietest the peak has recently been: a minimum that falls
+  // at once and climbs back at DIV_CW_ACT_RISE_DB. The peak over bins, not
+  // a per-bin contrast - one noise bin swings 15 dB on its own, and the
+  // maximum over bins is far steadier. On the capture with a carrier two
+  // bins from the zero beat it reads 0.0 dB through the gap between overs,
+  // 31.1 dB while stations work and 42.2 dB on key-down (AD-50).
+  //
+  // Seeded from this block's own noise (both arms, as peak_raw is), not
+  // from the first peak: seeded from the peak it would read 0 dB until the
+  // other station first paused, after every reset. From the noise the first
+  // block reads the tone's own SNR, and a steady carrier still closes the
+  // gate as the floor climbs into it.
+  //
+  {
+    const double rise = pow(10.0, 0.1 * DIV_CW_ACT_RISE_DB * blocktime);
+
+    if (!cw_act_valid) {
+      cw_act_lo = floors ? n0 + n1 : peak_raw;
+      cw_act_valid = 1;
+    }
+
+    if (peak_raw < cw_act_lo) {
+      cw_act_lo = peak_raw;
+    } else {
+      cw_act_lo *= rise;
+
+      if (cw_act_lo > peak_raw) { cw_act_lo = peak_raw; }
+    }
+  }
+
+  if (!(peak_raw >= cw_act_lo * pow(10.0, 0.1 * DIV_CW_ACT_DB))) {
     div_auto_holding = 1;
     return;
   }
@@ -2451,9 +2534,6 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // Per-arm SNR, as the advantage of arm 1 - div_apply_best() reads a
   // positive value as "switch to arm 1".
   //
-  const double n0 = div_cw_floor(ctx, klo, khi, peak, fftout0);
-  const double n1 = div_cw_floor(ctx, klo, khi, peak, fftout1);
-  const int floors = (n0 > 0.0 && n1 > 0.0);
   div_arm_publish(floors, floors ? 10.0 * log10((sig_yy / n1) / (sig_xx / n0)) : 0.0);
 
   if (div_auto_mode == DIV_AUTO_BEST) {
