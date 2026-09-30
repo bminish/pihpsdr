@@ -4079,6 +4079,31 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
 // set to - which is exactly the old single-block behaviour, until the
 // operator moves a control in one mode and not another.
 //
+//
+// What a group starts from when the props file holds no diversity
+// settings at all - a fresh install. An operator with settings of their
+// own keeps them in every mode: a file from before the per-group blocks
+// seeds every group from its flat keys, and a group's own keys win over
+// both (div_group_restore() runs after this).
+//
+// CW starts on the CW reference, at 0.2 s averaging. The CW captures were
+// recorded at 0.33 to 1.05 s; swept over eleven of them the short end of
+// the slider scored +0.20 dB mean against -0.40 at 1.0 s and -0.19 at
+// 2.0 s (feature/auto-diversity, 565c6e40) - a CW result, not a general
+// one, so it is a seed for this group and not a global default. The live
+// window and threshold are the CW reference's own, as a reference change
+// would bring them in.
+//
+static void div_group_seed(int g, DIV_SETTINGS *s) {
+  if (g != DIV_GROUP_CW) { return; }
+
+  s->ref           = DIV_REF_CW;
+  s->tau           = 0.2;
+  s->centre        = s->cw_centre;
+  s->width         = s->cw_width;
+  s->coherence_min = s->cw_cohmin;
+}
+
 static void div_group_restore(int g, DIV_SETTINGS *s) {
   GetPropI1("diversity_group[%d].mode",           g, s->mode);
   GetPropI1("diversity_group[%d].ref",            g, s->ref);
@@ -4150,6 +4175,14 @@ void diversity_auto_save_state(void) {
 }
 
 void diversity_auto_restore_state(void) {
+  //
+  // Whether the file holds any diversity settings at all. GetProp leaves
+  // a variable alone when its key is absent, so a value no reference can
+  // take says the key was not there. See div_group_seed().
+  //
+  int saved_ref = -1;
+  GetPropI0("diversity_auto_ref",            saved_ref);
+  const int fresh = (saved_ref < 0);
   GetPropI0("diversity_auto_ref",            div_auto_ref);
   GetPropI0("diversity_auto_follow_filter",  div_auto_follow_filter);
   GetPropF0("diversity_auto_centre",         div_auto_centre);
@@ -4196,6 +4229,9 @@ void diversity_auto_restore_state(void) {
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_set[g] = base;
+
+    if (fresh) { div_group_seed(g, &div_group_set[g]); }
+
     div_group_restore(g, &div_group_set[g]);
     div_settings_validate(&div_group_set[g]);
   }
