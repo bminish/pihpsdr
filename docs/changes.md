@@ -103,6 +103,7 @@ next resync). **Dropped** means abandoned.
 | LC-010 | Behaviour | RADE resyncs on a detection, not on a timeout         | rade_correlator.c                         | —          | Local  |
 | LC-011 | Behaviour | Hang pinned at 10 s, slider removed                   | diversity_auto.c, diversity_menu.c, rade_correlator.c | LC-010, [LC-008] | Local |
 | LC-012 | Behaviour | Coherence gate never below its own noise floor        | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
+| LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -119,8 +120,9 @@ it, but it does not use anything LC-008 adds.
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
 settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
-LC-011 (RADE: resync, then Hang) and LC-012. LC-006 goes last because it
-needs the measurement data behind it.
+LC-011 (RADE: resync, then Hang) and LC-012. LC-013 (notches) stands
+alone and can go at any point. LC-006 goes last because it needs the
+measurement data behind it.
 
 ---
 
@@ -496,6 +498,51 @@ weight that is allowed to track shrinks on its own, and holding pays for
 the station's weight. Not measured: Null and Best, and Carrier or Digital
 on matched arms.
 
+### LC-013 — Bins in the operator's manual notches are left out of the estimate
+
+Ported from the notch parts of `d3b73b8a` and from `8117d9c7`
+(`feature/diversity-binaural`), ahead of the CW correlator, which will
+call it. It doesn't depend on CW, and on binaural it was bundled into the
+CW keying commit.
+
+**Problem.** The analysis taps the two raw antenna streams, upstream of
+WDSP; the manual notch is applied a long way downstream. A notched
+interferer was still in our spectrum at full strength, and every
+reference that works from the transform picked it as a peak and fitted
+the weight to it.
+
+**Change.**
+
+- The three notches join the analysis context. Enabling, moving or
+  resizing one restarts the statistics; a disabled notch isn't compared.
+- `div_bin_notched()` drops any bin lying entirely inside an active notch
+  from the Window accumulation and the combine over it, the Carrier peak
+  search, and all four passes of the FSK/Digital occupancy split.
+- There's no CW special case. The notch sits in the same frame as
+  `div_frame_off()` (checked against `rx_set_offset()` on `TEST`), so a
+  notch centre maps to bin frequency −centre and the sidetone cancels.
+- RADE V1 is the exception: the correlator works in the time domain, so
+  there are no bins to leave out.
+- LC-012's floor counts the bins actually used, so a notch raises it
+  correctly with no further change. Binaural's per-bin count correction
+  to the per-arm SNR isn't needed on `TEST`, whose per-arm floor is taken
+  over the same bins and resets with the notch.
+
+**Checked.**
+
+- With no notch set, fourteen `run_ref` replays (seven captures, three
+  references, two thresholds) are byte-identical to the engine before
+  it.
+- `test_modes_live`'s notch pass (every reference, signal notched out)
+  now counts, and passes: none converges on the notched channel.
+- It applies to `upstream/TEST` on its own and builds.
+
+**Not yet measured.** The mechanism was confirmed on air on the feature
+branch (an operator notched an interferer and watched the combiner stop
+following it). Its magnitude has never been measured: a capture can't
+record a notch. LT-004 makes that possible by replaying with the notch
+set. The validation scenario is still to be planned.
+
 ---
 
 ## Local tooling (never upstream)
@@ -511,6 +558,21 @@ recorded on the feature branches.
 | LT-001 | Capture recorder: `make DIVCAP=1`, Capture button, format-3 writer fix, `captures/` ignored | `src/diversity_capture.[ch]`, `Makefile`, `DIVERSITY_CAPTURE` blocks in `src/diversity_auto.c` and `src/diversity_menu.c`, `.gitignore` |
 | LT-002 | Test harness: seven unit tests, `replay_rade`, `run_ref`, `test_capture`, `score_rade`, `known_gaps.h` | `test/diversity/` |
 | LT-003 | Wideband scorer and matched-arm generator (Python) | `test/diversity/devtools/py/` |
+| LT-004 | Replay and score with manual notches: `run_ref --notch`, `score_wideband.py --notch` and `--peaks` | `test/diversity/devtools/` |
+
+The tooling commits form a stack: each later one edits files an earlier
+one created. They revert in reverse order, and only LT-001 applies to
+`upstream/TEST` on its own. That's fine, because none of them goes
+upstream.
+
+**LT-004.** A capture can't record a notch, but because the notch acts
+downstream of the tap, a replay with one set is exactly what the radio
+would have done. `run_ref --notch C:W` sets it, with the values the notch
+menu stores. `score_wideband.py --notch C:W` leaves the notched bins out
+of the passband score, as WDSP leaves them out of the audio, by the
+engine's rule. `--peaks N` lists the steadiest strong peaks in a
+capture's passband, with the notch centre that covers each, as the
+starting point for a notch scenario.
 
 **LT-003** scores `run_ref` weight series on Window, Carrier and Digital
 captures: split-guard passband SNR as the findings define it, plus pass
@@ -546,7 +608,6 @@ becomes its regression test.
 
 | Gap | Feature branch commit | What the check shows on `TEST` |
 |---|---|---|
-| Notch exclusion | `5d5dfc1d` | Window, Carrier and Digital all solve on a manually notched signal |
 | Branch noise ratio | `e6c12c05` | Window Sum does not back off an arm 20 dB noisier (SINR +16.66 dB, against +29.96 dB for Digital) |
 | Level output | `4f24f5c3` | The combined output is 4.16 dB louder than one antenna |
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
@@ -603,6 +664,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-013 (notch carve-out) and LT-004 (notch replay and
+  scoring) ported.
 - 2026-09-30: LT-001 and LT-002 ported (capture recorder, test harness),
   with `docs/diversity-measurements.md` and `docs/diversity-rade.md`.
 - 2026-09-30: LC-010 to LC-012 ported (RADE resync, Hang pinned, gate
