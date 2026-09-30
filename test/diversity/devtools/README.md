@@ -200,15 +200,13 @@ every tool here takes the file as an argument, so
 
 is the shape of every command below with a real capture in it.
 
-**Write a note.** `docs/diversity-guide.md` records that the engine does
-not watch antenna or attenuator changes, and that on pre-Orion2 boards the
-two chains are not symmetric. A capture that does not say which antenna
-was on which ADC is not reusable six months later:
-
-```
-PIHPSDR_DIVCAP_NOTE="ADC0=80m dipole ADC1=beverage NE, 20dB att both, S3 QSB" \
-PIHPSDR_DIVCAP_SECONDS=120 ./pihpsdr
-```
+**Describing a capture.** On `TEST`, captures are started from the
+Capture button with pihpsdr launched from the desktop, so the
+environment variables above keep their defaults and the note field stays
+empty. The operator's description of each capture (antennas, what was
+on frequency, anything switched) is recorded in `docs/test-findings.md`
+when the capture is ingested. `PIHPSDR_DIVCAP_NOTE` still works for
+anyone who starts pihpsdr from a shell.
 
 Volume is 768 kB/s at 48 kHz and 3.1 MB/s at 384 kHz — 46 MB and 184 MB
 for a minute.
