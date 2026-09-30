@@ -158,7 +158,7 @@ next resync). **Dropped** means abandoned.
 | LC-002 | Fix       | Treat impossible saved values as missing              | diversity_auto.c                          | —          | Local  |
 | LC-003 | Fix       | Client settings block starts from the settings in force | server_thread.c, diversity_menu.c       | —          | Local  |
 | LC-004 | Fix       | Keep a client's Min coherence change                  | diversity_auto.c                          | (LC-003)   | Local  |
-| LC-005 | Fix       | Invert button swaps Null and Sum again                | diversity_menu.c                          | —          | Local  |
+| LC-005 | Fix       | Invert button swaps Null and Sum again                | diversity_menu.c                          | —          | Upstream (`b180b79a`) |
 | LC-006 | Behaviour | Retire Coherence weighting; Window threshold 0.20     | diversity_auto.c/.h, diversity_menu.c     | —          | Local  |
 | LC-007 | Behaviour | Hold stays on until the operator releases it          | diversity_auto.c, diversity_menu.c, radio.c | —        | Local  |
 | LC-008 | Behaviour | Reference change recalls that reference's settings    | diversity_menu.c                          | —          | Local  |
@@ -174,6 +174,7 @@ next resync). **Dropped** means abandoned.
 | LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
 | LC-020 | UI        | Window row hidden while following; "Follow RX Filter" | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
+| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Local (PR prepared) |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -293,6 +294,10 @@ exists, so pressing Invert did nothing.
 between Null and Sum. That goes through `mode_changed_cb()`, so the
 button and the combo cannot behave differently. Invert still does
 nothing in Manual or Best.
+
+**Upstream.** dl1ycf made the same fix independently in `b180b79a` (the
+objective combo as `auto_btn`). Taken as upstream wrote it at the merge;
+our `mode_combo` is gone and the LC-005 commit is superseded.
 
 ---
 
@@ -769,7 +774,9 @@ resolution combos were checked and are correct.
 **Upstream.** Prepared as a one-commit PR against dl1ycf's `TEST`: branch
 `pr/diversity-menu-ref-row`, cut from `upstream/TEST` at `883243c0`,
 `src/diversity_menu.c` only, +30 −2. It builds. Opened 2026-09-30 as
-[dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150). When
+[dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150).
+Rebased onto `b180b79a` the same day, when upstream's menu layout
+changed the combo's attach line next to it; still +30 −2, mergeable. When
 it's merged, mark LC-015 *Upstream*; the local commit can then be dropped
 at the next resync.
 
@@ -953,6 +960,21 @@ it follow.
 **Depends on** LC-009 textually (the comment in
 `diversity_auto_seed_window()`, and `follow_cb()`).
 
+### LC-021 — The window spin buttons set their digits as spin buttons
+
+**Problem.** Upstream's `b180b79a` set the Window centre and width spin
+buttons to show no decimals with `gtk_scale_set_digits(GTK_SCALE(btn),
+0)`. They are `GtkSpinButton`s, not `GtkScale`s: the cast fails GTK's
+type check (a critical warning each time the menu opens) and the call
+does nothing.
+
+**Change.** `gtk_spin_button_set_digits(GTK_SPIN_BUTTON(btn), 0)`, which
+does what was meant.
+
+**Upstream.** A one-commit PR is prepared, not yet pushed or opened:
+branch `pr/diversity-spin-digits`, cut from `upstream/TEST` at
+`b180b79a`, `src/diversity_menu.c` only, +2 −2. It builds.
+
 ---
 
 ## Local tooling (never upstream)
@@ -1110,6 +1132,12 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: merged upstream `TEST` at `b180b79a` (the menu's horizontal
+  layout). Eight hunks in `diversity_menu.c`: upstream's layout and
+  labels taken, our row table, hidden window row and removed rows kept.
+  LC-005 is *Upstream* (dl1ycf made the same Invert fix). LC-021 fixes
+  the spin-button casts `b180b79a` added; its PR branch is prepared.
+  PR #150 rebased onto `b180b79a`.
 - 2026-09-30: T-010 to T-012, three CW captures (40 m and 20 m contest,
   30 m beacon) through the CW reference; `score_cw.py` fixed (segments,
   bin order) and LC-018's figures re-scored.
