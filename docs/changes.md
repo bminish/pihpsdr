@@ -175,6 +175,9 @@ next resync). **Dropped** means abandoned.
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
 | LC-020 | UI        | Window row hidden while following; "Follow RX Filter" | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
 | LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Proposed ([#151](https://github.com/dl1ycf/pihpsdr/pull/151)) |
+| LC-022 | Fix       | Arm 0 follows the ADC RX1 is set to                   | diversity_auto.c/.h, receiver.c, old_protocol.c, new_protocol.c | — | Local |
+| LC-023 | Fix       | Transmit gap and reset requests stop racing the threads | diversity_auto.c, radio.c               | —          | Local  |
+| LC-024 | Fix       | Carrier/CW readout from the zero beat; client overlay repaint | diversity_menu.c                  | [LC-017]   | Local  |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -977,6 +980,72 @@ It builds. Opened 2026-09-30 as
 [dl1ycf/pihpsdr#151](https://github.com/dl1ycf/pihpsdr/pull/151). When
 it's merged, mark LC-021 *Upstream*.
 
+### LC-022 — Arm 0 follows the ADC the operator set RX1 to
+
+Ported from `4299eb6d` (`feature/auto-diversity`); its capture-format
+part is LT-011.
+
+**Problem.** The combiner forms z = z0 + w·z1 with arm 0 at unit gain,
+and every way the loop gives up resolves to w = 0: arm 0 alone. Both
+protocols force ADC0 to DDC0 and ADC1 to DDC1 while diversity runs, so
+arm 0 was always ADC0. An operator on ADC1 with nothing on ADC0 got a
+dead arm 0 when they enabled diversity: 8.79 s of a minute at 26.4 dB
+below the live antenna on capture `112712` (Finding 56).
+
+**Change.** `div_arm_swapped()` reads `receiver[0]->adc`, which the
+forced mapping otherwise leaves inert, and `rx_add_div_iq_samples()`
+exchanges the pair on the way in, ahead of the analysis and of both the
+manual and the automatic combine. Each protocol's raw feed to RX2 swaps
+too, so RX2 still shows the other antenna. Read live; a move is in the
+analysis context and restarts the statistics.
+
+**Note.** With RX1 on ADC0 nothing changes. With RX1 on ADC1, the RX
+menu's ADC control now has an effect while diversity is on, including on
+which antenna the manual weight applies to. It decides which port the
+loop fails towards; it does not stop it failing deaf (Finding 56's
+guard is not ported).
+
+### LC-023 — The transmit gap and reset requests stop racing the threads
+
+The fault part of `67b211e3` (`feature/auto-diversity`).
+
+**Problem.** `diversity_auto_gap()` runs on the GTK thread, from
+`rxtx()`, and zeroed `fillptr`, the protocol receive thread's fill
+position, so the store could land mid-block. `reset_requested` was a
+test-and-clear flag, which loses a request raised between the worker's
+read and its clear.
+
+**Change.** Both are generation counters bumped by the GTK thread. The
+sample path restarts its block and counts the gap itself on its first
+sample after a change, exactly on the boundary; the worker compares the
+reset counter with its own copy. `rxtx()` signals the gap on both edges,
+from the top of the function, so samples that arrive between the RX→TX
+call and the stream stopping are discarded before post-TX samples join
+them.
+
+**Not taken.** The feature commit also rewrote the analysis queue as a
+lock-free ring with a semaphore. With the gap on the sample thread the
+mutex has no third writer, so that is an optimisation, not a fix.
+
+### LC-024 — Carrier and CW readouts from the zero beat; the client's stale overlay
+
+Ported from `14ab067c` (`feature/auto-diversity`), extended to the CW
+reference.
+
+**Problem.** The Carrier readout (and LC-017's CW tone) is in the shifted
+frame. In CW that frame's zero is one sidetone away from the zero beat,
+so a correctly tuned signal read about +800 Hz. And a client only
+repaints its panadapter on a spectrum packet, so switching diversity off
+at the radio could leave the last overlay on screen.
+
+**Change.** The status line takes the sidetone back out through
+`div_window_zero()`, as the panadapter's carrier line and the
+hand-placed window already do; one helper, `div_tone_detail()`, serves
+both references. The client repaints once when the status it adopts
+turns the overlay off.
+
+**Depends on** LC-017 textually (the CW status case).
+
 ---
 
 ## Local tooling (never upstream)
@@ -1001,6 +1070,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-008 | `run_ref --ref cw`, and a `tone` column (the tracker's readout) | `test/diversity/devtools/run_ref.c` |
 | LT-009 | `test_modal` checks the fresh-install CW seed (LC-019) | `test/diversity/test_modal.c` |
 | LT-010 | `test_cw` for `TEST`'s CW reference; its known gap closed | `test/diversity/` |
+| LT-011 | Captures record which ADC arm 0 came from; `run_ref` and `test_capture` follow it (LC-022) | `src/diversity_auto.c` (capture block), `test/diversity/devtools/` |
 
 **LT-005.** `rade_corr_process()` no longer takes a hang, so the replay
 tools stop passing one. `run_ref --hang` and `replay_rade --hang` stop
@@ -1134,6 +1204,10 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-022 to LC-024, the three faults from
+  `feature/auto-diversity`: arm 0 follows RX1's ADC, the transmit-gap and
+  reset races, and the Carrier/CW readout from the zero beat with the
+  client's overlay repaint. LT-011 records the arm order in captures.
 - 2026-09-30: merged upstream `TEST` at `b180b79a` (the menu's horizontal
   layout). Eight hunks in `diversity_menu.c`: upstream's layout and
   labels taken, our row table, hidden window row and removed rows kept.
