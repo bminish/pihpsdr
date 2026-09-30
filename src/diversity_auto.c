@@ -406,10 +406,13 @@ double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 // div_auto_width always hold the pair for whichever reference is
 // selected; these hold the pairs for the rest.
 //
+#define DIV_WIDTH_DEFAULT          1000.0
+#define DIV_DIGITAL_WIDTH_DEFAULT  2600.0
+
 double div_band_centre         = 0.0;
-double div_band_width          = 1000.0;
+double div_band_width          = DIV_WIDTH_DEFAULT;
 double div_carrier_centre      = 0.0;
-double div_carrier_width       = 1000.0;
+double div_carrier_width       = DIV_WIDTH_DEFAULT;
 //
 // The digital default is the whole SSB audio passband rather than a
 // narrow slice: occupancy narrows it from there, so the operator does not
@@ -417,7 +420,7 @@ double div_carrier_width       = 1000.0;
 // the follow tick cleared.
 //
 double div_digital_centre      = 0.0;
-double div_digital_width       = 2600.0;
+double div_digital_width       = DIV_DIGITAL_WIDTH_DEFAULT;
 
 //
 // So is the coherence threshold, and for a stronger reason than the
@@ -3236,6 +3239,19 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   }
 
   //
+  // Values no control can produce - zero or less, or not a number - are
+  // treated as missing and given the default, not clamped to the nearest
+  // legal value. A settings block saved before it was ever restored is all
+  // zeros, and clamping that yields 0.2 s averaging, 3 Hz bins and a 20 Hz
+  // window with Follow off: legal, and useless.
+  //
+  if (!(s->tau > 0.0))        { s->tau = 2.0; }
+
+  if (!(s->hang > 0.0))       { s->hang = 10.0; }
+
+  if (!(s->resolution > 0.0)) { s->resolution = DIV_TARGET_BIN_HZ; }
+
+  //
   // 0.2, not 0.1, to match the slider's minimum.
   //
   if (s->tau < 0.2)  { s->tau = 0.2; }
@@ -3265,11 +3281,25 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // div_bin_range() does the real limiting against the Nyquist frequency
   // at the rate in use.
   //
+  // A width below 20 Hz cannot have been set from the menu, so it is not
+  // an operator's window: that reference goes back to its default window,
+  // and if it is the live one, back to following the RX filter.
+  //
   double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width };
   double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre };
+  const double live_default = (s->ref == DIV_REF_DIGITAL_IQ) ? DIV_DIGITAL_WIDTH_DEFAULT
+                              : DIV_WIDTH_DEFAULT;
+  const double defaults[] = { live_default, DIV_WIDTH_DEFAULT, DIV_WIDTH_DEFAULT,
+                              DIV_DIGITAL_WIDTH_DEFAULT
+                            };
 
   for (int i = 0; i < 4; i++) {
-    if (*widths[i] < 20.0)    { *widths[i] = 20.0; }
+    if (!(*widths[i] >= 20.0)) {
+      *widths[i]  = defaults[i];
+      *centres[i] = 0.0;
+
+      if (i == 0) { s->follow_filter = 1; }
+    }
 
     if (*widths[i] > 40000.0) { *widths[i] = 40000.0; }
 
