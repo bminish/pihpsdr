@@ -216,7 +216,33 @@ candidate, which failed confirmation). The replay's lock state matches
 the radio's. Like T-001's weak station, it's below where combining two
 antennas could help.
 
-## Capture practice, from T-001 to T-007
+## T-008: three RADE V2 captures, kept for a future V2 correlator
+
+**Logged, not analysed.** `TEST` has no RADE V2 reference, so there is
+nothing to replay them against yet. They're here so that work on a V2
+correlation algorithm can start from them.
+
+**Captures.** All three at 7.166 MHz DIGU, 192 kHz, 32768-point blocks
+(171 ms), and every block the same settings: Window reference, RX filter
+1000–2000 Hz (followed), Sum, 0.42 s averaging. No context changes.
+
+| Capture | Length |
+|---|---|
+| `divcap-20260930-184835.divc` | 59.9 s (351 blocks) |
+| `divcap-20260930-185337.divc` | 13.3 s (78 blocks) |
+| `divcap-20260930-185725.divc` | 59.9 s (351 blocks) |
+
+Operator's description: two RADE V2 stations in QSO on a crowded 40 m
+band, on a path with a lot of multipath. The wideband (Window) tracker
+was in use, mostly with a 1 kHz RX bandwidth. Both stations decoded in
+the RADE V2 decoder, with low but positive SNRs of about 0 to 8 dB.
+
+**What they offer.** Two stations taking turns, both decodable, on a
+multipath channel in a crowded band: changeovers, fades and adjacent
+interference in one set. Scoring will need a V2 decoder in the loop, as
+`score_rade` does for V1 with librade.
+
+## Capture practice, from T-001 to T-008
 
 Captures are started from the Capture button, so the note field in the
 file stays empty. The operator's description of each capture is recorded
