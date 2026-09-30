@@ -1016,12 +1016,6 @@ static void div_get_context(struct div_context *ctx) {
 }
 
 //
-// b is the context as it stood at the last reset, not the previous
-// block - div_process_block() only writes lastctx when it resets - so the
-// three frequency comparisons below are against where the estimate was
-// actually made. See DIV_RETUNE_HZ.
-//
-//
 // The notches, compared exactly. A notch that is off is not compared at
 // all: its centre and width still hold whatever the operator last set,
 // and sliding a disabled notch about must not throw the estimate away.
@@ -1041,6 +1035,12 @@ static int div_notches_differ(const struct div_context *a, const struct div_cont
   return 0;
 }
 
+//
+// b is the context as it stood at the last reset, not the previous
+// block - div_process_block() only writes lastctx when it resets - so the
+// three frequency comparisons below are against where the estimate was
+// actually made. See DIV_RETUNE_HZ.
+//
 static int div_context_changed(const struct div_context *a, const struct div_context *b) {
   return llabs(a->frequency      - b->frequency)      > DIV_RETUNE_HZ ||
          llabs(a->ctun_frequency - b->ctun_frequency) > DIV_RETUNE_HZ ||
