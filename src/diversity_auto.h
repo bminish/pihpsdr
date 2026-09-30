@@ -211,6 +211,14 @@ extern void diversity_auto_invert(void);
 extern int div_arm_swapped(void);
 
 //
+// EVALUATION (test/noise-floor): the Window/Carrier Sum noise model, and
+// the output-level normaliser. See diversity_auto.c.
+//
+enum { DIV_SUMNOISE_TIME = 0, DIV_SUMNOISE_RATIO, DIV_SUMNOISE_COV };
+extern int    div_eval_sum_noise;
+extern int    div_auto_normalise;
+
+//
 // MVDR for a two-element array: w = R^-1 h, normalised so arm 0 carries
 // unity and expressed as the weight the combiner applies to arm 1.
 //
