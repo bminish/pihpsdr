@@ -162,8 +162,8 @@ extern double div_window_zero(int mode, int sidetone);
 
 //
 // Called when "Window follows RX filter" is unticked: if the selected
-// reference's window is still at its default (or collapsed to the 20 Hz
-// floor), place it on the current RX passband. See the .c.
+// reference's window is still at its default, place it on the current
+// RX passband. See the .c.
 //
 extern void diversity_auto_seed_window(void);
 
