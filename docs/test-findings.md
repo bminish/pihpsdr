@@ -15,8 +15,7 @@ changes. The recording started before diversity was entered. Taken with
 
 Operator's description: two RADE V1 stations in QSO. One is strong and
 heard for a few seconds; the other is very weak and below decode on
-FreeDV. Band noise, little or no analog interference. The capture's note
-field is empty; this is the only record of that.
+FreeDV. Band noise, little or no analog interference.
 
 **The replay reproduces the recorded run exactly:** 351 blocks checked,
 0 differ.
@@ -83,8 +82,6 @@ FSK/Digital with RADE V1 selected.
   gain changes the decode.
 - **Longer overs.** With 4 s of signal, the score is dominated by the
   decoder's sync time, in ~0.8 s steps.
-- **A note.** `PIHPSDR_DIVCAP_NOTE` with the antennas, the attenuators
-  and what's on frequency.
 
 ### Open, from this capture
 
@@ -207,7 +204,7 @@ and captures where they aren't, scored in the same way.
   what the switch did to a held weight.
 
 To see that, the switch needs to happen while the correlator is locked
-on a steady station, with the time written in `PIHPSDR_DIVCAP_NOTE`.
+on a steady station, and roughly when it happened needs to be said.
 
 ## T-007: a weak station neither antenna decodes
 
@@ -221,10 +218,10 @@ antennas could help.
 
 ## Capture practice, from T-001 to T-007
 
-- **Write a note** (`PIHPSDR_DIVCAP_NOTE`): which antenna is on each ADC,
-  the attenuators, what's on frequency, and the time of any switch or
-  retune. All seven captures have an empty note, and the operator's
-  description exists only here.
+Captures are started from the Capture button, so the note field in the
+file stays empty. The operator's description of each capture is recorded
+here when it's ingested. Beyond that, the measurements are what count.
+
 - **Capture signals that are marginal but decodable on at least one
   antenna.** Only there can combining change the decode. T-001's weak
   station and T-007 are below it; T-005's strong signals are above it,
