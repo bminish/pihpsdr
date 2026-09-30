@@ -271,6 +271,14 @@ typedef struct _div_status {
 extern void diversity_auto_ref_store(int ref);
 extern void diversity_auto_ref_recall(int ref);
 
+//
+// The lowest Min coherence worth setting on a reference: the coherence
+// two uncorrelated noises reach by accident over the bins and averaging
+// time in force. The engine never gates below it whatever the setting;
+// the menu uses it as the bottom of the slider. 0 for RADE V1.
+//
+extern double diversity_auto_coh_floor(int ref);
+
 extern void diversity_auto_get_settings(DIV_SETTINGS *s);
 extern void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action);
 extern void diversity_auto_get_status(DIV_STATUS *st);
