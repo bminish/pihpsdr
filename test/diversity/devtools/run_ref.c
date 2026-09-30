@@ -112,6 +112,13 @@ static void set_context(const struct divcap_block *m) {
     adc[0].attenuation = m->att0;
     adc[1].attenuation = m->att1;
   }
+
+  /*
+   * Which converter RX1 was on. The samples are recorded already in arm
+   * order, so this only restores what the radio had set; the engine does
+   * not act on it. Clear on any file older than the flag.
+   */
+  rx0.adc = (m->rec_flags & DIVCAP_FLAG_ARM_SWAP) ? 1 : 0;
 }
 
 /*
