@@ -315,6 +315,27 @@ static int test_retired_pinned(void) {
   return bad == 0;
 }
 
+/*
+ * LC-016: a client cannot bring RADE V1's retired threshold back. The wire
+ * carries only the live value, and LC-004 files a client's live value into
+ * the selected reference's slot - so this is the route a stale client
+ * would use. Both the live gate and the slot must stay at zero.
+ */
+static int test_rade_client_pinned(void) {
+  div_auto_ref = DIV_REF_RADE_V1;
+  div_auto_mode = DIV_MANUAL;
+  DIV_SETTINGS s;
+  diversity_auto_get_settings(&s);
+  s.coherence_min = 0.30;
+  s.rade_cohmin = 0.30;
+  diversity_auto_apply_settings(&s, DIV_ACTION_NONE);
+  const int ok = (div_auto_coherence_min == 0.0) && (div_rade_cohmin == 0.0);
+  printf("  client sends 30 %% on RADE V1 -> live %.2f, slot %.2f   %s\n",
+         div_auto_coherence_min, div_rade_cohmin, ok ? "OK" : "FAIL");
+  div_auto_ref = DIV_REF_BAND;
+  return ok;
+}
+
 int main(void) {
   memset(&rx0, 0, sizeof(rx0));
   memset(vfo, 0, sizeof(vfo));
@@ -346,6 +367,7 @@ int main(void) {
 #endif
   printf("\nretired controls are pinned, not ranged\n");
   ok &= test_retired_pinned();
+  ok &= test_rade_client_pinned();
   printf("\n%s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }
