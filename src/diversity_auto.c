@@ -658,8 +658,13 @@ static int div_jump = 0;
 
 //
 // Operator hold. The analysis carries on; only the application of its
-// answer is suspended. Not persisted - it is an operating state, not a
-// setting, and coming back up held would be baffling.
+// answer is suspended, so the weight in force stays exactly where it was -
+// a valid way to keep a local noise source nulled, or a peak that favours
+// one direction. Sticky: it survives closing the menu, retuning and mode
+// changes, and is released only by the Hold button or by switching
+// diversity off and on (radio_set_diversity()).
+// Not persisted - it is an operating state, not a setting, and coming back
+// up held would be baffling.
 //
 int    div_auto_hold = 0;
 double div_track_gain = 0.0;
