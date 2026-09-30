@@ -427,7 +427,7 @@ int main(int argc, char **argv) {
     double nwr, nwi;
 
     if (rade_corr_process(arm0, arm1, nfft, m.expect_bank,
-                          m.frame_off, m.tau, m.hang, &nwr, &nwi)) {
+                          m.frame_off, m.tau, &nwr, &nwi)) {
       wr = nwr;
       wi = nwi;
     }
