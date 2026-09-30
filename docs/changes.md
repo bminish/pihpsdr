@@ -52,7 +52,8 @@ reasoning.
      lock, short of a retune or other context change. While the pilot is
      absent the lock and the weight are held, and the averages age at
      the Averaging time. The resync search (LC-010) takes a new station
-     as soon as it finds one.
+     as soon as it finds one. RADE V1 has no Min coherence either: the
+     pilot gates already do that job (LC-016).
    - **Every other reference: the correlation is the arbiter.** The
      averages update every block, the coherence gate decides whether the
      result is applied, and otherwise the last weight is held. Averaging
@@ -137,6 +138,7 @@ next resync). **Dropped** means abandoned.
 | LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
 | LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
 | LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | Proposed ([#150](https://github.com/dl1ycf/pihpsdr/pull/150)) |
+| LC-016 | Behaviour | RADE V1's Min coherence retired (pinned at 0, row hidden) | diversity_auto.c, diversity_menu.c    | LC-008, [LC-004] | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -153,8 +155,11 @@ it, but it does not use anything LC-008 adds.
 - LC-014 needs LC-010 (the resync search is what replaces a lock) and
   LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 go
   upstream together.
-- Reverting LC-008 means reverting LC-012, LC-011 and LC-009 first, and
-  reverting LC-010 or LC-011 means reverting LC-014 first; they conflict
+- LC-016 uses LC-008's slider pointer and edits LC-004's slot writer, so
+  it goes after both.
+- Reverting LC-008 means reverting LC-016, LC-012, LC-011 and LC-009
+  first; reverting LC-010 or LC-011 means reverting LC-014 first; and
+  reverting LC-004 means reverting LC-016 first. They conflict
   otherwise. Every other change reverts cleanly from the tip.
 
 **First PR:** LC-015, opened 2026-09-30 as
@@ -164,7 +169,8 @@ it, but it does not use anything LC-008 adds.
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
 settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
-LC-011 + LC-014 (RADE: resync, Hang slider gone, no timeout) and LC-012. LC-013 (notches) stands
+LC-011 + LC-014 + LC-016 (RADE: resync, Hang slider gone, no timeout,
+no threshold) and LC-012. LC-013 (notches) stands
 alone and can go at any point. LC-006 goes last because it needs the
 measurement data behind it.
 
@@ -719,6 +725,51 @@ resolution combos were checked and are correct.
 it's merged, mark LC-015 *Upstream*; the local commit can then be dropped
 at the next resync.
 
+### LC-016 — RADE V1's Min coherence is retired: the pilot already gates
+
+Ported from `082dba0b` (`feature/auto-diversity`), with an extra guard
+for the client path that LC-004 opens on `TEST`.
+
+**Problem.** In RADE V1 the Min coherence slider doesn't gate a
+coherence. It gates `rade_corr_quality`, the pilot's signal fraction,
+across the slider's full 0–95 % range, and it can only do harm:
+
+- **The job is already done.** Three pilot gates stand in front of it:
+  the acquisition ladder, confirmation and probation, and the per-frame
+  freeze. On the five no-signal captures they produced no weight at all,
+  over 3,515 blocks.
+- **Quality doesn't separate a good lock from a poor one.** `234508`
+  (strong, a weight on three blocks in four) reads a median 0.217 with
+  31 % of blocks under 0.05. `202743` (re-acquires eight times a minute)
+  reads 0.193.
+- **No reachable setting was safe.** On `165826`, the marginal capture
+  where the combiner beats both antennas, moving it from 0 to 0.15 took
+  the loop from a weight on 32.6 % of blocks to 1.7 %.
+
+**Change.** Pinned at 0, its default, so nothing an operator has today
+moves. It's pinned at every route in:
+
+- `div_settings_validate()` pins it instead of ranging it;
+- `div_settings_load()` ignores the incoming value;
+- `div_cohmin_for_ref()` returns 0 for RADE V1;
+- the client path from LC-004 no longer files a value into its slot;
+- `diversity_auto_ref_store()` no longer files the live value there.
+
+The menu hides the Min coherence row while RADE V1 is selected. The field
+stays on the wire and in the props file, and the engine's comparison
+stays, so `run_ref --cohmin` can still sweep the retired path.
+
+**Checked.**
+
+- `test_props`: a stored 15 % comes back as 0, and a client sending 30 %
+  on RADE V1 leaves both the live gate and the slot at 0. The client
+  check fails without this change.
+- The unit suite passes.
+- RADE decode through the whole engine is unchanged: `190516` +72,
+  `165826` +57 synced frames.
+
+**Depends on** LC-008 (the slider pointer) and, textually, LC-004.
+
 ---
 
 ## Local tooling (never upstream)
@@ -736,6 +787,7 @@ recorded on the feature branches.
 | LT-003 | Wideband scorer and matched-arm generator (Python) | `test/diversity/devtools/py/` |
 | LT-004 | Replay and score with manual notches: `run_ref --notch`, `score_wideband.py --notch` and `--peaks` | `test/diversity/devtools/` |
 | LT-005 | Follow LC-014: no Hang passed or swept; `--hang` is an error | `test/diversity/devtools/` |
+| LT-006 | Test the RADE V1 threshold pin, props and client paths; close its known gap | `test/diversity/` |
 
 **LT-005.** `rade_corr_process()` no longer takes a hang, so the replay
 tools stop passing one. `run_ref --hang` and `replay_rade --hang` stop
@@ -798,7 +850,6 @@ becomes its regression test.
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
 | Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
-| RADE quality retired | `082dba0b` | A stored 15 % RADE quality gate is kept, not pinned to 0 |
 | CW reference | `6027208a`, `d3b73b8a` | Not built: `test_cw` needs `DIV_REF_CW` |
 
 **Stand-down is not simply a gap.** On the feature branches, the combiner
@@ -842,8 +893,6 @@ Noted while porting, not yet decided:
   has a steady interferer inside a weaker station's passband. See "What
   the capture set offers so far" under LC-013.
 
-- `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
-  already gates). Separate decision.
 - Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule. LC-012's
   capture scoring bears on it: see "Scored on recorded captures" under
   LC-012.
@@ -853,6 +902,7 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-016 (RADE V1's Min coherence retired) and LT-006.
 - 2026-09-30: LC-015 (the "Measure on" row/reference mismatch) fixed,
   and opened as the first upstream PR, dl1ycf/pihpsdr#150.
 - 2026-09-30: LC-014 (no RADE lock timeout) and LT-005. LC-011's
