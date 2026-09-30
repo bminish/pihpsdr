@@ -190,7 +190,22 @@
 // band conditions, and anything faster starts following the signal it is
 // supposed to be measuring underneath.
 //
-#define DIV_BEST_HYST_DB    1.0
+#define DIV_BEST_HYST_DB    2.0
+//
+// EVALUATION (test/noise-floor). How long the other antenna has to lead by
+// more than DIV_BEST_HYST_DB before Best changes to it, in seconds. With a
+// per-arm SNR on every block - the outside-filter floor supplies one - two
+// antennas within a decibel or so of each other otherwise change places
+// every few blocks, and each change is a step in what the operator hears.
+//
+#define DIV_BEST_DWELL      1.0
+//
+// EVALUATION (test/noise-floor). The output-level normaliser: the combined
+// output held at the level of arm 0 alone. See div_norm_refresh().
+//
+#define DIV_NORM_TAU        1.0
+#define DIV_NORM_MIN        0.01
+#define DIV_NORM_MAX        2.0
 #define DIV_FLOOR_RISE_DB   0.2     // dB per second
 
 //
@@ -799,6 +814,22 @@ static double          div_nf0 = 0.0, div_nf1 = 0.0;
 static int             div_nf_valid = 0;
 
 //
+// The noise *covariance* between the arms, from the same bins: r00 and
+// r11 the per-bin noise powers, r01 = X0 * conj(X1) their cross term, as
+// div_digital_solve() accumulates it. Taken over the quieter half of the
+// sampled bins by combined power, so that stations transmitting outside
+// the filter stay out of it, and smoothed at DIV_NF_TAU. See
+// div_wideband_sum_solve().
+//
+static double          nc_r00 = 0.0, nc_r11 = 0.0, nc_r01re = 0.0, nc_r01im = 0.0;
+static int             nc_valid = 0;
+//
+// Per-sample copies for it, unsorted: nf_scratch0/1 are sorted in place
+// for the percentile, which loses the pairing between the two arms.
+//
+static double         *nc_p0 = NULL, *nc_p1 = NULL, *nc_xr = NULL, *nc_xi = NULL, *nc_pc = NULL;
+
+//
 // Which bins were found occupied, by wrapped index, so the noise pass can
 // keep its distance from them. See DIV_OCC_GUARD.
 //
@@ -885,6 +916,10 @@ static double div_carrier_hz = 0.0;
 // has recently been. See div_cw_solve(). Reset with the statistics, so a
 // retune or a filter change starts it again.
 //
+static double best_lead = 0.0;
+static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
+static int    norm_valid = 0;
+int           div_auto_normalise = 1;
 static double cw_act_lo = 0.0;
 static int    cw_act_valid = 0;
 //
@@ -972,6 +1007,8 @@ static void div_reset_stats(void) {
   arm_floor0 = arm_floor1 = 0.0;
   div_nf0 = div_nf1 = 0.0;
   div_nf_valid = 0;
+  nc_r00 = nc_r11 = nc_r01re = nc_r01im = 0.0;
+  nc_valid = 0;
   arm_pw0 = arm_pw1 = 0.0;
   nr_f0 = nr_f1 = 0.0;
   nr_f_valid = 0;
@@ -989,6 +1026,9 @@ static void div_reset_stats(void) {
   div_auto_carrier_valid = 0;
   cw_act_lo = 0.0;
   cw_act_valid = 0;
+  best_lead = 0.0;
+  norm_valid = 0;
+  div_norm = 1.0;
   cw_nf0 = cw_nf1 = 0.0;
   cw_nf_valid = 0;
   div_auto_occ_valid = 0;
@@ -1674,10 +1714,15 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
     if (idx < 0) { idx += nfft; }
 
-    nf_scratch0[ns] = (double)fftout0[idx][0] * fftout0[idx][0]
-                      + (double)fftout0[idx][1] * fftout0[idx][1];
-    nf_scratch1[ns] = (double)fftout1[idx][0] * fftout1[idx][0]
-                      + (double)fftout1[idx][1] * fftout1[idx][1];
+    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+    nf_scratch0[ns] = i0 * i0 + q0 * q0;
+    nf_scratch1[ns] = i1 * i1 + q1 * q1;
+    nc_p0[ns] = nf_scratch0[ns];
+    nc_p1[ns] = nf_scratch1[ns];
+    nc_xr[ns] = i0 * i1 + q0 * q1;
+    nc_xi[ns] = q0 * i1 - i0 * q1;
+    nc_pc[ns] = nf_scratch0[ns] + nf_scratch1[ns];
     ns++;
   }
 
@@ -1706,14 +1751,42 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
   if (!(f0 > 0.0) || !(f1 > 0.0)) { return 0; }
 
-  if (!div_nf_valid) {
-    div_nf0 = f0;
-    div_nf1 = f1;
-    div_nf_valid = 1;
-  } else {
-    const double a = 1.0 - exp(-blocktime / DIV_NF_TAU);
-    div_nf0 += a * (f0 - div_nf0);
-    div_nf1 += a * (f1 - div_nf1);
+  const double a = div_nf_valid ? 1.0 - exp(-blocktime / DIV_NF_TAU) : 1.0;
+  div_nf0 += a * (f0 - div_nf0);
+  div_nf1 += a * (f1 - div_nf1);
+  div_nf_valid = 1;
+  //
+  // The covariance, over the bins whose combined power is at or below the
+  // median: the quieter half, which a station outside the filter would
+  // have to fill half the sampled span to reach. The pairing is kept - the
+  // cross term only means anything bin by bin - so the median is found on
+  // a sorted copy and applied to the unsorted samples.
+  //
+  {
+    memcpy(nf_scratch0, nc_pc, (size_t)ns * sizeof(double));
+    qsort(nf_scratch0, (size_t)ns, sizeof(double), div_nf_cmp);
+    const double med = nf_scratch0[ns / 2];
+    double c00 = 0.0, c11 = 0.0, cre = 0.0, cim = 0.0;
+    int nq = 0;
+
+    for (int i = 0; i < ns; i++) {
+      if (nc_pc[i] > med) { continue; }
+
+      c00 += nc_p0[i];
+      c11 += nc_p1[i];
+      cre += nc_xr[i];
+      cim += nc_xi[i];
+      nq++;
+    }
+
+    if (nq > 0 && c00 > 0.0 && c11 > 0.0) {
+      const double b = nc_valid ? a : 1.0;
+      nc_r00   += b * (c00 / nq - nc_r00);
+      nc_r11   += b * (c11 / nq - nc_r11);
+      nc_r01re += b * (cre / nq - nc_r01re);
+      nc_r01im += b * (cim / nq - nc_r01im);
+      nc_valid = 1;
+    }
   }
 
   return 1;
@@ -1925,9 +1998,150 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // was before this term existed.
 //
 static double div_wideband_sum_scale(void) {
-  if (div_nf_valid && div_nf1 > 0.0) { return div_nf0 / div_nf1; }
+  if (div_eval_sum_noise != DIV_SUMNOISE_TIME && div_nf_valid && div_nf1 > 0.0) {
+    return div_nf0 / div_nf1;
+  }
 
   return arm_nratio_valid ? arm_nratio : 1.0;
+}
+
+//
+// EVALUATION (test/noise-floor). Which noise model the Window and Carrier
+// Sum weight uses, so the operator can compare them by ear:
+//
+//   DIV_SUMNOISE_TIME   TEST's: the ratio of two temporal minima
+//   DIV_SUMNOISE_RATIO  the ratio of the two outside-filter floors
+//   DIV_SUMNOISE_COV    MVDR against the outside-filter noise covariance
+//
+// COV was built to answer why RATIO loses where it does. The noise-ratio
+// weight N0/N1 * Sxy/Sxx is the maximum-ratio answer only for uncorrelated
+// noise, and where the two antennas hear one noise source - 0.99 coherent
+// in the passband on 154822 - it gives up cancellation the old weight was
+// getting by accident. MVDR against the noise covariance is the general
+// answer. Measured, it does not work from these bins: the quiet
+// outside-filter bins show a noise coherence of about zero on every
+// capture, 154822 included, so the common noise is either not there or
+// excluded by the quieter-half selection; and selecting on combined power
+// skews the ratio towards 0 dB on a lopsided pair (122119: -4.2 dB against
+// -8.5 in the guard band). Over 39 captures it scores +0.32 dB against the
+// better antenna, RATIO +0.50, TIME +0.27. RATIO is the default; COV is
+// kept selectable so the finding can be heard.
+//
+int div_eval_sum_noise = DIV_SUMNOISE_RATIO;
+
+//
+// The Window/Carrier Sum weight under DIV_SUMNOISE_COV. Returns 0 when the
+// covariance is not available, and the caller falls back to the ratio.
+//
+static int div_wideband_sum_solve(double *wr, double *wi) {
+  if (div_eval_sum_noise != DIV_SUMNOISE_COV || !nc_valid) { return 0; }
+
+  //
+  // Solved on arm 1 scaled to arm 0's noise level, and the weight scaled
+  // back. div_mvdr2()'s diagonal loading is a fixed fraction of r00 + r11
+  // added to both, which on a pair 12 to 15 dB apart in noise - every
+  // capture in the set - is a large fraction of the quieter arm's noise
+  // and skews the solve. Equalised first, it is proportionate on both.
+  //
+  //   z1' = s z1,  s = sqrt(r00/r11):  r11' = r00,  r01' = s r01,
+  //   h1' = s h1,  and w = s w' so that w z1 = w' z1'.
+  //
+  if (!(nc_r00 > 0.0) || !(nc_r11 > 0.0)) { return 0; }
+
+  const double sc = sqrt(nc_r00 / nc_r11);
+  double w1r, w1i;
+  div_mvdr2(nc_r00, nc_r00, sc * nc_r01re, sc * nc_r01im,
+            acc_xx, 0.0, sc * acc_xy_re, -sc * acc_xy_im, &w1r, &w1i);
+  *wr = sc * w1r;
+  *wi = sc * w1i;
+  return 1;
+}
+
+//
+// EVALUATION (test/noise-floor): the output-level normaliser.
+//
+// receiver.c forms z0 + w*z1 with arm 0 at unit gain, so the combined
+// output is louder than one antenna by whatever the weight does: +3 to
+// +8 dB in Sum, and +20 dB the moment Best hands the output to arm 1 -
+// the combiner can only say "arm 1" as w at the clamp. That rise is not
+// signal. div_norm scales the output back to the level arm 0 alone would
+// have, over the operator's passband:
+//
+//     |z0 + w z1|^2 = P0 + |w|^2 P1 + 2 Re(conj(w) P01)
+//
+// with P0, P1, P01 = <X0 conj(X1)> smoothed at DIV_NORM_TAU, and w the
+// weight actually in force. The powers are what is smoothed, not the
+// correction: recomputed every time the weight is written, a Best switch
+// or a slew step is levelled in the same block rather than a second later.
+//
+// Null is excluded - making the output quieter is its purpose - and so is
+// RADE V1, which never runs the transform the powers come from.
+//
+static void div_norm_refresh(void) {
+  if (!div_auto_normalise || div_auto_mode == DIV_AUTO_NULL || !norm_valid) {
+    div_norm = 1.0;
+    return;
+  }
+
+  const double c = auto_div_cos, sn = auto_div_sin;
+  const double pout = norm_p0 + (c * c + sn * sn) * norm_p1 + 2.0 * (c * norm_xr + sn * norm_xi);
+
+  if (!(pout > 0.0) || !(norm_p0 > 0.0)) {
+    div_norm = 1.0;
+    return;
+  }
+
+  double g = sqrt(norm_p0 / pout);
+
+  if (g < DIV_NORM_MIN) { g = DIV_NORM_MIN; }
+
+  if (g > DIV_NORM_MAX) { g = DIV_NORM_MAX; }
+
+  div_norm = g;
+}
+
+//
+// The passband powers behind it, from this block's transform.
+//
+static void div_norm_update(const struct div_context *ctx) {
+  const double a = div_shift_to_bin(ctx, (double)ctx->filter_low);
+  const double b = div_shift_to_bin(ctx, (double)ctx->filter_high);
+  const double nyq = 0.5 * (double)ctx->sample_rate - binhz;
+  double flo = (a < b) ? a : b;
+  double fhi = (a < b) ? b : a;
+
+  if (flo < -nyq) { flo = -nyq; }
+
+  if (fhi >  nyq) { fhi =  nyq; }
+
+  const int klo = (int)ceil(flo / binhz);
+  const int khi = (int)floor(fhi / binhz);
+  double p0 = 0.0, p1 = 0.0, xr = 0.0, xi = 0.0;
+
+  for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+    p0 += i0 * i0 + q0 * q0;
+    p1 += i1 * i1 + q1 * q1;
+    xr += i0 * i1 + q0 * q1;
+    xi += q0 * i1 - i0 * q1;
+  }
+
+  if (!(p0 > 0.0) || !(p1 > 0.0)) { return; }
+
+  const double al = norm_valid ? 1.0 - exp(-blocktime / DIV_NORM_TAU) : 1.0;
+  norm_p0 += al * (p0 - norm_p0);
+  norm_p1 += al * (p1 - norm_p1);
+  norm_xr += al * (xr - norm_xr);
+  norm_xi += al * (xi - norm_xi);
+  norm_valid = 1;
+  div_norm_refresh();
 }
 
 //
@@ -1964,10 +2178,22 @@ static void div_apply_best(double cophase_re, double cophase_im) {
     return;
   }
 
-  if (div_auto_arm_pick == 0) {
-    if (div_auto_arm_db >  DIV_BEST_HYST_DB) { div_auto_arm_pick = 1; }
+  //
+  // Change only when the other antenna has led by more than the
+  // hysteresis for DIV_BEST_DWELL, continuously.
+  //
+  const int other_leads = (div_auto_arm_pick == 0) ? (div_auto_arm_db >  DIV_BEST_HYST_DB)
+                          : (div_auto_arm_db < -DIV_BEST_HYST_DB);
+
+  if (other_leads) {
+    best_lead += blocktime;
+
+    if (best_lead >= DIV_BEST_DWELL) {
+      div_auto_arm_pick = !div_auto_arm_pick;
+      best_lead = 0.0;
+    }
   } else {
-    if (div_auto_arm_db < -DIV_BEST_HYST_DB) { div_auto_arm_pick = 0; }
+    best_lead = 0.0;
   }
 
   if (div_auto_arm_pick == 0) {
@@ -2063,6 +2289,7 @@ static void div_apply_weight(double wr, double wi) {
   if (auto_div_gain < -27.0) { auto_div_gain = -27.0; }
 
   auto_div_phase = atan2(auto_div_sin, auto_div_cos) * (180.0 / M_PI);
+  div_norm_refresh();
 }
 
 static int div_occ_cmp(const void *a, const void *b) {
@@ -3192,6 +3419,7 @@ static void div_process_block(void) {
 
   fftwf_execute(plan0);
   fftwf_execute(plan1);
+  div_norm_update(&ctx);
 
   if (ctx.ref == DIV_REF_CARRIER) {
     //
@@ -3570,7 +3798,16 @@ static void div_process_block(void) {
   // Sum is maximum ratio combining and wants the branch noise ratio in
   // it; Null minimises power and does not. See div_wideband_sum_scale().
   //
-  if (div_auto_mode == DIV_AUTO_SUM) { sign *= div_wideband_sum_scale(); }
+  if (div_auto_mode == DIV_AUTO_SUM) {
+    double wr, wi;
+
+    if (div_wideband_sum_solve(&wr, &wi)) {
+      div_apply_weight(wr, wi);
+      return;
+    }
+
+    sign *= div_wideband_sum_scale();
+  }
 
   div_apply_weight(sign * acc_xy_re / den, sign * acc_xy_im / den);
 }
@@ -3769,6 +4006,11 @@ void diversity_auto_start(void) {
     occ_scratch = g_new0(double, DIV_OCC_MAX_SAMPLES);
     nf_scratch0 = g_new0(double, DIV_NF_SAMPLES);
     nf_scratch1 = g_new0(double, DIV_NF_SAMPLES);
+    nc_p0 = g_new0(double, DIV_NF_SAMPLES);
+    nc_p1 = g_new0(double, DIV_NF_SAMPLES);
+    nc_xr = g_new0(double, DIV_NF_SAMPLES);
+    nc_xi = g_new0(double, DIV_NF_SAMPLES);
+    nc_pc = g_new0(double, DIV_NF_SAMPLES);
     occ_mask    = g_new0(unsigned char, DIV_MAX_NFFT);
     for (int i = 0; i < DIV_QUEUE; i++) {
       qbuf0[i] = g_new0(float, 2 * DIV_MAX_NFFT);
@@ -3875,6 +4117,11 @@ void diversity_auto_stop(void) {
   // see the quit flag.
   //
   div_auto_running = 0;
+  //
+  // No engine, no level to hold: the output goes back to what the weight
+  // alone gives. See div_norm_refresh().
+  //
+  div_norm = 1.0;
   g_mutex_lock(&mbox_mutex);
   mbox_quit = 1;
   g_cond_signal(&mbox_cond);
@@ -4685,6 +4932,8 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
+  SetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
+  SetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -4734,6 +4983,14 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
+  GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
+  GetPropI0("diversity_auto_normalise",      div_auto_normalise);
+
+  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_COV) {
+    div_eval_sum_noise = DIV_SUMNOISE_RATIO;
+  }
+
+  div_auto_normalise = div_auto_normalise ? 1 : 0;
 
   //
   // Migrate a reference written under the old numbering. Absent key means

@@ -1011,6 +1011,22 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
+//
+// EVALUATION (test/noise-floor): the Sum noise model and the output-level
+// normaliser, so they can be compared by ear. Radio-side only: neither is
+// on the wire, so they are insensitive on a client.
+//
+static void sumnoise_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+  div_eval_sum_noise = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
+  diversity_auto_reset();
+}
+
+static void normalise_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+  div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+}
+
 static void follow_cb(GtkWidget *widget, gpointer data) {
   div_auto_follow_filter = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 
@@ -1380,6 +1396,30 @@ void diversity_menu(GtkWidget *parent) {
   //                            "an antenna rather than steering a null.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 5, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
+  //
+  // EVALUATION (test/noise-floor). See sumnoise_cb().
+  //
+  lbl = gtk_label_new("Sum noise");
+  gtk_widget_set_name(lbl, "boldlabel");
+  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 6, 2, 1);
+  btn = gtk_combo_box_text_new();
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Old (time minimum)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Ratio (outside filter)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Covariance (outside filter)");
+  gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_eval_sum_noise);
+  gtk_grid_attach(GTK_GRID(agrid), btn, 2, 6, 4, 1);
+  g_signal_connect(btn, "changed", G_CALLBACK(sumnoise_cb), NULL);
+
+  if (radio_is_remote) { gtk_widget_set_sensitive(btn, FALSE); }
+
+  btn = gtk_check_button_new_with_label("Level output");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), div_auto_normalise);
+  gtk_grid_attach(GTK_GRID(agrid), btn, 7, 6, 4, 1);
+  g_signal_connect(btn, "toggled", G_CALLBACK(normalise_cb), NULL);
+
+  if (radio_is_remote) { gtk_widget_set_sensitive(btn, FALSE); }
+
 #ifdef DIVERSITY_CAPTURE
   //
   // DEVELOPMENT TOOL. Where the Hang slider was. A capture survives the

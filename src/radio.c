@@ -291,6 +291,12 @@ double auto_div_phase = 0.0;
 double auto_div_cos = 1.0;
 double auto_div_sin = 1.0;
 //
+// EVALUATION (test/noise-floor): scales the combined output so it stays at
+// the level of arm 0 alone. 1.0 unless the auto-diversity engine sets it -
+// see div_norm_refresh() in diversity_auto.c.
+//
+double div_norm = 1.0;
+//
 // Audio capture and replay
 // (Equalisers are switched off during capture and replay)
 //
