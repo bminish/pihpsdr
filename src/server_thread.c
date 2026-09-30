@@ -2144,6 +2144,12 @@ static int server_command(gpointer data) {
     //
     const DIV_SETTINGS_COMMAND *command = (DIV_SETTINGS_COMMAND *)data;
     DIV_SETTINGS set;
+    //
+    // The wire carries only the live threshold, not the per-reference
+    // ones, so start from what is in force: those keep their values
+    // rather than being loaded from uninitialised stack.
+    //
+    diversity_auto_get_settings(&set);
     set.mode           = command->mode;
     set.ref            = command->ref;
     set.follow_filter  = command->follow_filter;
