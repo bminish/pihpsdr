@@ -3691,8 +3691,6 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   if (!(s->tau > 0.0))        { s->tau = 2.0; }
 
-  if (!(s->hang > 0.0))       { s->hang = 10.0; }
-
   if (!(s->resolution > 0.0)) { s->resolution = DIV_TARGET_BIN_HZ; }
 
   //
