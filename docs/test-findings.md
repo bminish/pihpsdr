@@ -264,7 +264,64 @@ strong SSB interference.
   waveform rather than to whatever is loudest, and a baseline for how
   FSK/Digital's occupancy split copes with it.
 
-## Capture practice, from T-001 to T-009
+## T-010 to T-012: three CW captures through the CW reference
+
+**Captures.** All CWL, 192 kHz, 6 Hz bins (171 ms blocks), CW reference,
+Sum, 0.22 s averaging, taken with LC-017 to LC-019 in.
+
+| | Capture | Band | What (operator) |
+|---|---|---|---|
+| T-010 | `divcap-20260930-205652.divc` | 40 m, 7.0327 MHz | rapid-fire contest QSOs; filter widened from 800 Hz to 1 kHz at block 247 |
+| T-011 | `divcap-20260930-205923.divc` | 20 m, 14.02–14.03 MHz | contest; the operator tunes throughout (68 frequency changes, 47 engine resets), the wanted signal mostly near the passband centre |
+| T-012 | `divcap-20260930-210410.divc` | 30 m, 10.1295 MHz | a beacon: steady tone, then CW, then tone; noisy band, a reasonably weak signal. To the operator's ear it benefits from diversity |
+
+The operator's impression: the correlator is doing its job.
+
+**The replay is exact.** `run_ref --ref cw` with the recorded settings
+matches the radio's recorded loop state on 350 of 350 blocks, once the
+record's one-block lag is allowed for: a block's recorded state is the
+one in force before that block was processed.
+
+**Scores** (`score_cw.py`, against the better single antenna; CW is what
+the radio ran, Window and FSK/Digital are replays of the same audio):
+
+| | Segment | Arms (dB) | CW | Window | FSK/Digital | CW acts key-down / key-up |
+|---|---|---|---|---|---|---|
+| T-010 | blocks 0–246, 800 Hz | 47.6 / 48.0 | **+2.02** | +1.80 | +1.64 | 93 % / 15 % |
+| T-010 | blocks 247–350, 1 kHz | 44.9 / 47.7 | **+1.08** | +0.47 | +0.22 | 82 % / 42 % |
+| T-011 | blocks 0–102 | 34.9 / 35.6 | **−0.43** | −1.02 | −0.57 | 91 % / 50 % |
+| T-011 | blocks 168–242 | 30.8 / 33.2 | +0.33 | **+1.34** | +0.88 | 70 % / 10 % |
+| T-012 | whole capture | 19.2 / 17.0 | +1.63 | +1.14 | **+1.96** | 55 % / 3 % |
+
+- **T-010: CW is the best of the three on both segments,** +1 to +2 dB
+  over the better antenna. Strong signals (about 45 dB tone-to-noise),
+  so this is combining gain on a good path, not rescue of a weak one.
+  The tracker sat within 50 Hz of the passband centre on 88 % of the
+  blocks it acted on.
+- **T-011: tuning doesn't upset it.** After each of the 47 resets from
+  retuning, CW had a weight again on the first or second block (median
+  0.00 s, 90th percentile 0.17 s). Only two stretches between retunes
+  are long enough to score, and they split: CW ahead on one, Window on
+  the other, where CW acted on only 70 % of key-down blocks. Across the
+  capture, the tracker was within 100 Hz of the passband centre on 69 %
+  of the blocks it acted on (median offset +53 Hz), consistent with the
+  operator tuning the wanted station to the centre and the tracker
+  following it there.
+- **T-012: the beacon gains 1.6 dB,** which fits what the operator heard.
+  CW acts on only 55 % of the blocks with signal, because key detection
+  (LC-018) treats the beacon's steady tone as a carrier: the weight is
+  held through the tone and updated through the keying. FSK/Digital,
+  which acts on 98 %, scores 0.3 dB more here. The steady tone is the
+  one case where a carrier *is* the wanted signal.
+
+**What it adds to AD-50's picture.** These are the first CW captures
+taken with the CW reference as the radio's own. On strong contest
+signals it's the best reference or level with the best; on a weak
+beacon it gains, a little less than FSK/Digital, for a reason we know.
+None of the three is marginal enough to settle the LC-012 floor or
+LC-019's 0.2 s.
+
+## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
 file stays empty. The operator's description of each capture is recorded
