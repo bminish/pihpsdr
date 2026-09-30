@@ -934,13 +934,17 @@ Noted while porting, not yet decided:
 - A RADE V2 correlator. There is no V2 reference on `TEST` yet. Three V2
   captures (two stations, 40 m, heavy multipath, both decoding at about
   0 to 8 dB) are logged as T-008 in `docs/test-findings.md` as the
-  starting set.
+  starting set. T-009 adds one on the lower sideband (spectrum inverted)
+  under strong SSB interference, the case for discriminating against an
+  unwanted signal.
 - `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
   the notches) are not in this branch's `docs/diversity-measurements.md`.
   See the note at its top.
 
 ## History
 
+- 2026-09-30: T-009, a RADE V2 capture on the lower sideband under SSB
+  interference, logged for later work (not analysed).
 - 2026-09-30: T-008, three RADE V2 captures logged for a future V2
   correlator (not analysed).
 - 2026-09-30: code review of everything on `TEST`. Fixups: LC-011 (dead
