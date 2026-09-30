@@ -58,6 +58,7 @@ static GtkWidget *coh_scale = NULL;
 static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
 static GtkWidget *status_label = NULL;
+static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
 
@@ -918,6 +919,14 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   }
 
   //
+  // RADE V1 has no threshold of its own any more - the pilot already
+  // gates - so its row goes. See div_settings_validate().
+  //
+  if (coh_label) { gtk_widget_set_visible(coh_label, div_auto_ref != DIV_REF_RADE_V1); }
+
+  if (coh_scale) { gtk_widget_set_visible(coh_scale, div_auto_ref != DIV_REF_RADE_V1); }
+
+  //
   // Restart if the analysis thread has to come up or go down - which
   // includes the case just above, where selecting a RADE reference moved
   // the objective off Off - or if the pilot correlator's own front end
@@ -1250,6 +1259,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 3, 5, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(tau_cb), NULL);
   lbl = gtk_label_new("Min coherence (%)");
+  coh_label = lbl;
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 4, 2, 1);
@@ -1345,6 +1355,15 @@ void diversity_menu(GtkWidget *parent) {
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   gtk_widget_show_all(dialog);
+
+  //
+  // No Min coherence row on RADE V1: see ref_changed_cb().
+  //
+  if (div_auto_ref == DIV_REF_RADE_V1) {
+    gtk_widget_hide(coh_label);
+    gtk_widget_hide(coh_scale);
+  }
+
   //
  gtk_widget_hide(div_auto_mode > 0 ? mcontainer : acontainer);
  gtk_window_resize(GTK_WINDOW(dialog), 1, 1);

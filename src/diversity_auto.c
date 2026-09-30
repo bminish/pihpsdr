@@ -3153,7 +3153,7 @@ static double div_cohmin_for_ref(int ref) {
 
   case DIV_REF_DIGITAL_IQ: return div_digital_cohmin;
 
-  case DIV_REF_RADE_V1:    return div_rade_cohmin;
+  case DIV_REF_RADE_V1:    return 0.0;   // retired - see div_settings_validate()
 
   default:                 return div_band_cohmin;
   }
@@ -3174,7 +3174,7 @@ static void div_cohmin_set_for_ref(int ref, double v) {
 
   case DIV_REF_DIGITAL_IQ: div_digital_cohmin = v; break;
 
-  case DIV_REF_RADE_V1:    div_rade_cohmin = v;    break;
+  case DIV_REF_RADE_V1:    break;         // retired - see div_settings_validate()
 
   default:                 div_band_cohmin = v;    break;
   }
@@ -3193,13 +3193,14 @@ void diversity_auto_ref_store(int ref) {
     div_digital_centre = div_auto_centre;
     div_digital_width  = div_auto_width;
     div_digital_cohmin = div_auto_coherence_min;
-  } else if (ref == DIV_REF_RADE_V1) {
-    //
-    // No window of its own - the correlator decides what it looks at -
-    // but it does have a threshold now.
-    //
-    div_rade_cohmin = div_auto_coherence_min;
   }
+
+  //
+  // DIV_REF_RADE_V1 has neither a window of its own - the correlator
+  // decides what it looks at - nor a threshold to file any more. Its slot
+  // is pinned at zero in div_settings_validate(); storing the live value
+  // into it here would let a value that arrived by some other route stick.
+  //
 }
 
 void diversity_auto_ref_recall(int ref) {
@@ -3294,7 +3295,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_band_cohmin        = s->band_cohmin;
   div_carrier_cohmin     = s->carrier_cohmin;
   div_digital_cohmin     = s->digital_cohmin;
-  div_rade_cohmin        = s->rade_cohmin;
+  div_rade_cohmin        = 0.0;   // retired, whatever the block says - see div_settings_validate()
   //
   // The live threshold always belongs to the selected reference. Taking
   // it from the slot rather than from s->coherence_min is what makes that
@@ -3639,13 +3640,12 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->weighting = DIV_WEIGHT_FLAT;
 
   //
-  // Each reference's own threshold, and the live one. All five share the
-  // slider's range; RADE V1's default of zero is deliberate and legal -
-  // it is the gate never having been applied in that mode before.
+  // Each reference's own threshold, and the live one. These four share
+  // the slider's range; RADE V1's is pinned below.
   //
   {
     double *c[] = { &s->coherence_min, &s->band_cohmin, &s->carrier_cohmin,
-                    &s->digital_cohmin, &s->rade_cohmin
+                    &s->digital_cohmin
                   };
 
     for (unsigned i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
@@ -3654,6 +3654,33 @@ static void div_settings_validate(DIV_SETTINGS *s) {
       if (*c[i] > 0.95)    { *c[i] = 0.95; }
     }
   }
+
+  //
+  // RADE V1's threshold is pinned, not ranged: there is no control for it
+  // any more. It gated rade_corr_quality, the pilot's signal fraction, and
+  // it can only do harm:
+  //
+  // - Three gates on the pilot already stand in front of it - the
+  //   acquisition ladder's sigmas, the confirm and probation ladder, and
+  //   RADE_USE_RATIO's per-frame freeze. Over the capture set the five
+  //   recordings with no signal in them produce no weight at all through
+  //   those, 3515 blocks of dead air, so the false-alarm job a threshold
+  //   exists for is already done.
+  // - The quantity it gates does not separate a good lock from a poor
+  //   one: 234508, a strong capture producing a weight on three blocks in
+  //   four, reads a median 0.217 with 31 % of its blocks under 0.05, and
+  //   202743, which re-acquires eight times a minute, reads 0.193.
+  // - No reachable setting was safe. On 165826, the marginal capture where
+  //   the combiner beats both antennas, every block that produced a weight
+  //   is under 0.25 and a third are under 0.05; moving the gate from 0 to
+  //   0.15 takes the loop from a weight on 32.6 % of blocks to 1.7 %.
+  //
+  // Zero is the default, so nothing an operator has today moves. The
+  // field stays on the wire and in the props file so neither changes
+  // shape, and the comparison stays in the engine so the offline harness
+  // can still sweep it. From 082dba0b on feature/auto-diversity.
+  //
+  s->rade_cohmin = 0.0;
 
   //
   // Values no control can produce - zero or less, or not a number - are
