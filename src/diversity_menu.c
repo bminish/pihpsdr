@@ -27,6 +27,7 @@
 #include "radio.h"
 #include "rade_correlator.h"
 #include "receiver.h"
+#include "rx_panadapter.h"
 #include "vfo.h"
 
 #ifdef DIVERSITY_CAPTURE
@@ -465,6 +466,25 @@ static void div_coh_range_update(void) {
   updating_from_auto = 0;
 }
 
+//
+// The tracked carrier or CW tone, for the status line, measured from the
+// zero beat - so a correctly tuned signal reads near zero in every mode.
+// That is the shifted frame's own zero everywhere but CW. There
+// rx_set_filter() folds the sidetone into the passband, so
+// div_auto_carrier - in the same frame as filter_low and filter_high - sits
+// one pitch away from the note being listened to, and the readout showed
+// about +800 Hz for a signal tuned exactly right. div_window_zero() takes
+// it back out, the same correction the panadapter's carrier line and the
+// hand-placed window use.
+//
+// One decimal, and none at all past 10 kHz: the field is ten characters
+// and "+400000 Hz" is exactly that.
+//
+static void div_tone_detail(char *detail, size_t len) {
+  const double f = div_auto_carrier - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+  snprintf(detail, len, (fabs(f) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz", f);
+}
+
 static int status_update_cb(gpointer data) {
   if (dialog == NULL) {
     status_timer = 0;
@@ -557,13 +577,7 @@ static int status_update_cb(gpointer data) {
       state = "search";
     } else {
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
-      //
-      // One decimal, and none at all past 10 kHz: the field is ten
-      // characters and "+400000 Hz" is exactly that.
-      //
-      snprintf(detail, sizeof(detail),
-               (fabs(div_auto_carrier) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz",
-               div_auto_carrier);
+      div_tone_detail(detail, sizeof(detail));
     }
 
     break;
@@ -605,9 +619,7 @@ static int status_update_cb(gpointer data) {
       // and the shaded span on the panadapter.
       //
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
-      snprintf(detail, sizeof(detail),
-               (fabs(div_auto_carrier) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz",
-               div_auto_carrier);
+      div_tone_detail(detail, sizeof(detail));
     }
 
     break;
@@ -899,7 +911,26 @@ gboolean diversity_client_set_status(gpointer data) {
   st.track_gain   = from_double(d->track_gain);
   st.track_phase  = from_double(d->track_phase);
   st.rade_quality = from_double(d->rade_quality);
+  //
+  // Whether the panadapter overlay should be on screen, before and after
+  // adopting this block: rx_panadapter.c draws it while diversity is on
+  // and the objective is not Manual.
+  //
+  const int overlay_was = (diversity_enabled && div_auto_mode != DIV_MANUAL);
   diversity_auto_apply_status(&st);
+  const int overlay_now = (diversity_enabled && div_auto_mode != DIV_MANUAL);
+
+  //
+  // The panadapter repaints its whole surface every frame, so on the radio
+  // the overlay clears itself with the next frame. A client only draws
+  // when a spectrum packet arrives and passes client_thread.c's tests, so
+  // switching diversity off at the radio could leave the last frame, green
+  // box and all, on screen until those agreed again. Repaint once here.
+  //
+  if (overlay_was && !overlay_now && receivers > 0 && receiver[0] != NULL
+      && receiver[0]->display_panadapter && receiver[0]->panadapter_surface != NULL) {
+    rx_panadapter_update(receiver[0]);
+  }
 
   g_free(data);
   return G_SOURCE_REMOVE;
