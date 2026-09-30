@@ -25,7 +25,19 @@
 //
 //     z = z0 + w * z1,     w = div_cos + j*div_sin
 //
-// with z0 taken from ADC0 (main antenna) and z1 from ADC1 (aux antenna).
+// with z0 taken from the main antenna and z1 from the aux antenna. Which
+// converter is which is the operator's: rx_add_div_iq_samples() puts the
+// ADC that RX1 is set to on arm 0, so arm 0 is ADC0 unless they have told
+// the RX menu their antenna is on the second input. Nothing in this
+// module needs to know - the streams arrive already in that order -
+// beyond noticing that a change of it invalidates the statistics, which
+// div_context_changed() does. See div_arm_swapped().
+//
+// The distinction matters because arm 0 is not symmetric with arm 1: it
+// is carried at unit gain and every path that declines to solve resolves
+// to w = 0, which is arm 0 alone. See Finding 56 in
+// docs/diversity-measurements.md.
+//
 // This module estimates a "good" w by looking at the cross spectrum of
 // the two raw streams, and writes the result back into div_cos/div_sin
 // (and, back-computed, div_gain/div_phase).
@@ -190,6 +202,13 @@ extern void   diversity_auto_set_hold(int on);
 // one step rather than slewed to.
 //
 extern void diversity_auto_invert(void);
+
+//
+// Which converter feeds arm 0: 1 when RX1 is set to ADC1 and the two
+// streams are therefore exchanged on the way in. Read by
+// rx_add_div_iq_samples() and by the protocols' raw feed to RX2.
+//
+extern int div_arm_swapped(void);
 
 //
 // MVDR for a two-element array: w = R^-1 h, normalised so arm 0 carries
