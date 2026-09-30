@@ -164,6 +164,21 @@ static int updating_from_auto = 0;
 //
 static int updating_ref = 0;
 
+//
+// The Window centre and width row. It only means something when the
+// window is placed by hand, so it is hidden while "Follow RX filter" is
+// ticked - see div_window_row_show().
+//
+static GtkWidget *win_row[4] = { NULL, NULL, NULL, NULL };
+
+static void div_window_row_show(void) {
+  for (int i = 0; i < 4; i++) {
+    if (win_row[i]) { gtk_widget_set_visible(win_row[i], !div_auto_follow_filter); }
+  }
+
+  if (dialog) { gtk_window_resize(GTK_WINDOW(dialog), 1, 1); }
+}
+
 #ifdef DIVERSITY_CAPTURE
 //
 // ===================================================================
@@ -239,6 +254,9 @@ static void cleanup(void) {
     hold_b = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
+
+    for (int i = 0; i < 4; i++) { win_row[i] = NULL; }
+
     centre_spin = NULL;
     width_spin = NULL;
     coh_scale = NULL;
@@ -982,6 +1000,7 @@ static void follow_cb(GtkWidget *widget, gpointer data) {
     }
   }
 
+  div_window_row_show();
   diversity_auto_reset();
   div_send_settings(DIV_ACTION_NONE);
 }
@@ -1213,11 +1232,12 @@ void diversity_menu(GtkWidget *parent) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_ref_to_row(div_auto_ref));
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 0, 3, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(ref_changed_cb), NULL);
-  btn = gtk_check_button_new_with_label("Window follows RX filter");
+  btn = gtk_check_button_new_with_label("Follow RX Filter");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), div_auto_follow_filter);
   gtk_grid_attach(GTK_GRID(agrid), btn, 7, 0, 3, 1);
   g_signal_connect(btn, "toggled", G_CALLBACK(follow_cb), NULL);
   lbl = gtk_label_new("Window centre");
+  win_row[0] = lbl;
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 1, 2, 1);
@@ -1237,8 +1257,10 @@ void diversity_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), div_auto_centre);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 1, 3, 1);
   g_signal_connect(btn, "value_changed", G_CALLBACK(centre_cb), NULL);
+  win_row[1] = btn;
   centre_spin = btn;
   lbl = gtk_label_new("Window width");
+  win_row[2] = lbl;
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 5, 1, 2, 1);
@@ -1246,6 +1268,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), div_auto_width);
   gtk_grid_attach(GTK_GRID(agrid), btn, 7, 1, 3, 1);
   g_signal_connect(btn, "value_changed", G_CALLBACK(width_cb), NULL);
+  win_row[3] = btn;
   width_spin = btn;
   lbl = gtk_label_new("Resolution");
   gtk_widget_set_name(lbl, "boldlabel");
@@ -1381,6 +1404,7 @@ void diversity_menu(GtkWidget *parent) {
   sub_menu = dialog;
   gtk_widget_show_all(dialog);
 
+  div_window_row_show();
   //
   // No Min coherence row on RADE V1: see ref_changed_cb().
   //
