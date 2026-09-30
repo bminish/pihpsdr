@@ -434,7 +434,8 @@ double div_digital_width       = DIV_DIGITAL_WIDTH_DEFAULT;
 //   Window, Carrier    gamma^2 over the analysis window
 //   FSK/Digital        gamma^2 over the *occupied* bins only
 //   RADE V1            rade_corr_quality, which is acc_sig/(acc_sig+r00) -
-//                      a signal fraction, not a coherence at all
+//                      a signal fraction, not a coherence at all. Retired:
+//                      pinned at 0, see div_settings_validate()
 //
 // For equal arms and uncorrelated noise a gamma^2 gate at g demands a
 // per-arm SNR of sqrt(g)/(1-sqrt(g)), and a quality gate at q demands
@@ -451,8 +452,8 @@ double div_digital_width       = DIV_DIGITAL_WIDTH_DEFAULT;
 // docs/diversity-measurements.md.
 //
 // Defaults reproduce the single 0.30 that shipped before, except on RADE
-// V1, where the gate was never applied at all and 0.0 is what "as it was"
-// means, and on Window, which is 0.20 because it moved to flat weighting.
+// V1, whose slot is pinned at 0.0 - the pilot gates already do the job -
+// and on Window, which is 0.20 because it moved to flat weighting.
 // Coherence weighting inflated the statistic, so flat needs about 0.10
 // less for the same false-alarm rate; flat at 0.20 has slightly fewer
 // false alarms than coherence at 0.30 did.
