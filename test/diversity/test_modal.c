@@ -274,6 +274,30 @@ int main(void) {
       check(names2[i], div_auto_coherence_min, 0.42);
     }
   }
+  /* ---------------------------------------------------------------- */
+  printf("\n6. a fresh install starts CW on the CW reference at 0.2 s\n");
+  /*
+   * LC-019. Nothing saved at all: the CW group comes up on the CW
+   * reference with its own window and threshold and 0.2 s averaging, and
+   * no other group moves. Section 3 is the other half - a file with
+   * settings of its own keeps them in CW too.
+   */
+  {
+    props_clear();
+    diversity_auto_restore_state();
+    diversity_auto_mode_changed(modeCWU);
+    printf("    CWU  ref %d tau %.2f width %.0f coh %.2f\n",
+           div_auto_ref, div_auto_tau, div_auto_width, div_auto_coherence_min);
+    check("CW ref", div_auto_ref, DIV_REF_CW);
+    check("CW tau", div_auto_tau, 0.2);
+    check("CW width", div_auto_width, div_cw_width);
+    check("CW threshold", div_auto_coherence_min, div_cw_cohmin);
+    /* the other groups take whatever the (absent) flat keys left in force */
+    diversity_auto_mode_changed(modeUSB);
+    printf("    USB  ref %d\n", div_auto_ref);
+
+    if (div_auto_ref == DIV_REF_CW) { fails++; }
+  }
   printf("\n%s\n", fails ? "FAIL" : "PASS");
   return fails ? 1 : 0;
 }
