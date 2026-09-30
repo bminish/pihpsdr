@@ -1574,6 +1574,139 @@ static int div_occ_cmp(const void *a, const void *b) {
 }
 
 //
+// The noise floor of the coherence gate.
+//
+// The gate compares a magnitude-squared coherence against the operator's
+// Min coherence, and that estimate has a floor of its own: over N
+// independent samples the coherence of two *uncorrelated* noises is not
+// zero but distributed as Beta(1, N-1), averaging 1/N. Set the gate below
+// that and it stops being a gate - noise-only blocks pass, and the loop
+// fits a weight to whatever the two antennas happen to agree on by
+// accident: random tracking, worth about 3 dB of added noise on a matched
+// pair. Holding where we were is always the better answer, because it is
+// the best chance of being right when the signal returns.
+//
+// So the gate never compares against less than the coherence that pure
+// noise reaches DIV_COH_FLOOR_PFA of the time,
+//
+//     floor = 1 - PFA^(1/(N-1))  ~  -ln(PFA)/N for large N,
+//
+// whatever the slider says. N depends on everything the operator can set:
+//
+// - bins: the window width (or the carrier tracker's five bins, or the
+//   occupied span on FSK/Digital) divided by the bin width. Neighbouring
+//   bins of the 4-term Blackman-Harris window are not independent - 82 %
+//   correlated one bin apart, 44 % two apart, 15 % three apart - so they
+//   are counted as n^2 / sum_jk |rho(j-k)|^2, which is about n/2.76 on a
+//   wide window;
+// - blocks: the exponential average holds (sum w)^2 / sum w^2 independent
+//   blocks, which is (2-alpha)/alpha in steady state and only one on the
+//   block after a reset, a retune or an averaging change - which is when
+//   a single-block estimate is most easily fooled.
+//
+// A wide window at a long average has a floor of a fraction of a percent,
+// so the setting is what gates there; the five-bin Carrier reference at a
+// short average has a floor of tens of percent, and the floor is what
+// gates. One fixed number could never have served both.
+//
+// 0.1 %: at twelve blocks a second, pure noise passes a gate at the floor
+// about once a minute, and never many times running.
+//
+// On FSK/Digital a region with no noise bins is accumulated with each bin
+// weighted by its own coherence, which biases the estimate upward; the
+// floor is then a lower bound, which is the safe direction.
+//
+#define DIV_COH_FLOOR_PFA 0.001
+#define DIV_COH_FLOOR_MAX 0.5
+
+static double div_coh_floor_n(double nbins, double nblocks) {
+  //
+  // Correlation of a white-noise spectrum between bins k apart under the
+  // window div_make_window() builds; zero beyond four.
+  //
+  static const double rho[] = { 1.0, 0.8160, 0.4386, 0.1500, 0.0304 };
+  const int nr = (int)(sizeof(rho) / sizeof(rho[0]));
+
+  if (!(nbins >= 1.0))   { nbins = 1.0; }
+
+  if (!(nblocks >= 1.0)) { nblocks = 1.0; }
+
+  double den = nbins;
+
+  for (int k = 1; k < nr && k < nbins; k++) {
+    den += 2.0 * (nbins - k) * rho[k] * rho[k];
+  }
+
+  double n = (nbins * nbins / den) * nblocks;
+
+  if (n < 2.0) { n = 2.0; }
+
+  double f = 1.0 - pow(DIV_COH_FLOOR_PFA, 1.0 / (n - 1.0));
+
+  if (f > DIV_COH_FLOOR_MAX) { f = DIV_COH_FLOOR_MAX; }
+
+  if (f < 0.0) { f = 0.0; }
+
+  return f;
+}
+
+//
+// The effective number of blocks in the running average, kept alongside
+// it: sum w and sum w^2 over the weights the exponential average has
+// given the blocks it holds. See div_coh_floor_n().
+//
+static double acc_w1 = 0.0, acc_w2 = 0.0;
+
+static double div_acc_blocks(void) {
+  return (acc_w2 > 0.0) ? acc_w1 * acc_w1 / acc_w2 : 1.0;
+}
+
+//
+// What the gate actually compares against, given how many bins went into
+// this block's estimate.
+//
+static double div_gate_threshold(int nbins) {
+  const double f = div_coh_floor_n((double)nbins, div_acc_blocks());
+  return (div_auto_coherence_min > f) ? div_auto_coherence_min : f;
+}
+
+//
+// The same floor from the settings alone, in steady state, for the menu:
+// the bottom of the Min coherence slider. Computed from the settings
+// rather than from the engine's own state so that a remote client, where
+// no engine runs, reaches the same answer from the same numbers.
+//
+// Returns 0 for RADE V1, which gates on the pilot, not on a coherence.
+//
+double diversity_auto_coh_floor(int ref) {
+  if (ref == DIV_REF_RADE_V1) { return 0.0; }
+
+  const double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_auto_resolution;
+
+  if (!(bhz > 0.0)) { return 0.0; }
+
+  const double bt = 1.0 / bhz;
+  const double tau = (div_auto_tau > 0.0) ? div_auto_tau : bt;
+  const double alpha = 1.0 - exp(-bt / tau);
+  const double nblk = (alpha > 0.0 && alpha < 1.0) ? (2.0 - alpha) / alpha : 1.0;
+  double width;
+
+  if (ref == DIV_REF_CARRIER) {
+    width = (2.0 * DIV_CARRIER_BINS + 1.0) * bhz;
+  } else if (ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
+    width = div_auto_occ_hi - div_auto_occ_lo;
+  } else if (div_auto_follow_filter && receivers > 0 && receiver[0] != NULL) {
+    width = (double)receiver[0]->filter_high - (double)receiver[0]->filter_low;
+  } else {
+    width = div_auto_width;
+  }
+
+  if (!(width > 0.0)) { width = div_auto_width; }
+
+  return div_coh_floor_n(floor(width / bhz) + 1.0, nblk);
+}
+
+//
 // FSK/Digital: split the search region into signal and noise by spectral
 // occupancy, then solve.
 //
@@ -1855,7 +1988,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
 
   if (div_auto_coherence > 1.0) { div_auto_coherence = 1.0; }
 
-  if (div_auto_coherence < div_auto_coherence_min) {
+  if (div_auto_coherence < div_gate_threshold(nsig)) {
     div_auto_holding = 1;
     return;
   }
@@ -2285,6 +2418,13 @@ static void div_process_block(void) {
     acc_valid = 1;
   }
 
+  //
+  // Alpha 1 on the first block after a reset makes these 1 and 1 whatever
+  // they held before. See div_coh_floor_n().
+  //
+  acc_w1 = (1.0 - alpha) * acc_w1 + alpha;
+  acc_w2 = (1.0 - alpha) * (1.0 - alpha) * acc_w2 + alpha * alpha;
+
   double cur_xx = 0.0, cur_yy = 0.0;
 
   //
@@ -2343,6 +2483,7 @@ static void div_process_block(void) {
   //
   acc_xy_re = acc_xy_im = acc_xx = acc_yy = 0.0;
   double wsum = 0.0;
+  int nacc = 0;
   //
   // This block's power against the smoothed power, over the same bins and
   // with the same weights, so the staleness test below asks about exactly
@@ -2390,6 +2531,7 @@ static void div_process_block(void) {
                       + (double)fftout1[idx][1] * fftout1[idx][1]);
     acc_p     += w * (xx + yy);
     wsum      += w;
+    nacc++;
   }
 
   //
@@ -2456,10 +2598,11 @@ static void div_process_block(void) {
 
   if (div_auto_coherence > 1.0) { div_auto_coherence = 1.0; }
 
-  if (div_auto_coherence < div_auto_coherence_min) {
+  if (div_auto_coherence < div_gate_threshold(nacc)) {
     //
-    // Nothing the two antennas agree on. Hold what we have rather than
-    // chase noise.
+    // Nothing the two antennas agree on - or no more than two noises agree
+    // by accident over this many bins and blocks. Hold what we have rather
+    // than chase noise.
     //
     div_auto_holding = 1;
     return;
