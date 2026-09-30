@@ -40,6 +40,12 @@ time.
    `Local-Tooling: LT-NNN` instead of `Local-Change:`, are never part of
    an upstream PR, and no LC commit may depend on them. Before trusting a
    change, score it with the tools (see "Local tooling" below).
+9. **Corrections to a landed change are fixup commits.** A later fix to
+   an LC's own code (a stale comment, dead code it left behind) is a
+   separate commit whose subject starts `Diversity: LC-NNN fixup -` and
+   which carries that LC's `Local-Change:` trailer. `TEST` is never
+   rewritten for them. When the LC's PR branch is cut, its fixups are
+   folded into it (see "Cutting a PR branch" below).
 
 ## Settled decisions (do not reopen without new evidence)
 
@@ -112,8 +118,26 @@ git switch -c pr/lc-001 upstream/TEST
 git cherry-pick <commit of LC-001>
 ```
 
-Before sending it, drop the `Local-Change:` trailer if the maintainer
-does not want it.
+### Cutting a PR branch
+
+- **Fold in the fixups.** Cherry-pick the LC commit and every
+  `LC-NNN fixup` commit after it, and squash them into one.
+- **Delete what is kept only for our tools.** `TEST` keeps some engine
+  code that nothing in the radio can reach, because `run_ref` still uses
+  it to compare old behaviour against new. It stays local, and is deleted
+  in the PR:
+  - LC-006: the Coherence-weighted accumulation in
+    `div_process_block()` (`coherence_weighted` and the branch it guards,
+    and the comment about the staleness test under Coherence weighting).
+    `DIV_WEIGHT_COHERENCE` stays in the enum for the wire and the props
+    file.
+  - LC-016: the RADE V1 quality comparison against
+    `div_auto_coherence_min` in `div_process_block()`. `rade_cohmin`
+    stays on the wire and in the props file.
+- **Drop the `Local-Change:` trailer** if the maintainer does not want it.
+- **Comments may cite `docs/`.** Our docs don't go upstream, and upstream
+  code already cites `docs/diversity-measurements.md`, so a reference to
+  a finding or to this register is left as it is.
 
 ## Register
 
@@ -204,7 +228,8 @@ in CW.
 **Change.** Values that no control can produce are treated as missing
 and given their default:
 
-- a non-positive or NaN averaging time, hang time or resolution;
+- a non-positive or NaN averaging time or resolution (and hang time,
+  until LC-011 pinned it and the repair was removed as dead);
 - a window narrower than 20 Hz. That reference goes back to its default
   window, and the live window also goes back to following the RX filter.
 
@@ -283,10 +308,14 @@ cannot bring it back. `DIV_WEIGHT_COHERENCE` stays in the enum, and the
 field stays in the wire protocol and the props file, so neither format
 changes.
 
-**Open item.** Only a fresh install gets the new 0.20 default. A props
-file that already holds `diversity_band_cohmin=0.30` keeps it, which is
-a slightly stricter gate than intended under Flat. Decide whether to
-migrate it, for example when the saved weighting was Coherence.
+**Not migrated.** Only a fresh install gets the new 0.20 default. A
+props file that already holds `diversity_band_cohmin=0.30` keeps it,
+which is a slightly stricter gate than intended under Flat. This is a
+test branch, so we don't migrate it; an operator can move the slider.
+
+**Kept local, deleted in the PR:** the Coherence-weighted code path,
+which only `run_ref --weighting coherence` can reach. See "Cutting a PR
+branch".
 
 ### LC-007 — Hold stays on until the operator releases it
 
@@ -342,16 +371,17 @@ widget pointers.
 saved. Unticking "Window follows RX filter" hands the window to the
 operator. If that reference has no window of its own yet, it fell back
 to its built-in default: centre 0 and 1000 Hz wide (2600 Hz for Digital
-IQ). In SSB that straddles the carrier. A bad props value could also
-leave it at the 20 Hz floor. Either way, the first manual window the
+IQ). In SSB that straddles the carrier, so the first manual window the
 operator saw had to be dragged into place before auto diversity did
 anything sensible.
 
-**Change.** If the selected reference's window is still at its default
-or at the floor, it is placed on the current RX passband, exactly where
-the follow window was (CW included). A window the operator has placed
-is left alone. Following the RX filter stays the default when nothing
-is saved.
+**Change.** If the selected reference's window is still at its default,
+it is placed on the current RX passband, exactly where the follow window
+was (CW included). A window the operator has placed is left alone,
+however narrow: 20 Hz is a width the slider offers, and anything below
+it is already put back to the default by LC-002. (It first also seeded a
+window at 20 Hz or below; a fixup removed that.) Following the RX filter
+stays the default when nothing is saved.
 
 **Depends on** LC-008 (the widget pointers).
 
@@ -460,8 +490,9 @@ the time over the bins and blocks actually in that estimate:
   n² / Σ|ρ(j−k)|² independent samples (about n / 2.76 on a wide window).
 - **Blocks.** The engine tracks (Σw)² / Σw² for the exponential average as
   it runs. That's (2−α)/α in steady state, but only one block right after
-  a reset, retune or averaging change, which is when noise is most easily
-  mistaken for signal.
+  a reset or retune, which is when noise is most easily mistaken for
+  signal. An averaging change doesn't reset; the count follows the new α
+  over the next few blocks.
 
 So the floor follows the reference, window or filter, bin width and
 averaging time. RADE V1 gates on its pilot and is unaffected. The Min
@@ -619,8 +650,9 @@ it. The scenario therefore needs either:
   Digital passbands; or
 - new captures taken for it with `make DIVCAP=1`: a heterodyne or carrier
   over a weak SSB or Digital signal, recorded in pairs with and without
-  the notch, back to back, and said so in `PIHPSDR_DIVCAP_NOTE`. The
-  notch doesn't show in the file, so the note is the only record.
+  the notch, back to back. The notch doesn't show in the file, so which
+  run had it, and where, is recorded in `docs/test-findings.md` when the
+  captures are ingested.
 
 What to measure once there is one: split-guard SNR with the notch
 applied to both the weight and the score, notched against un-notched,
@@ -757,7 +789,9 @@ moves. It's pinned at every route in:
 
 The menu hides the Min coherence row while RADE V1 is selected. The field
 stays on the wire and in the props file, and the engine's comparison
-stays, so `run_ref --cohmin` can still sweep the retired path.
+stays, so `run_ref --cohmin` can still sweep the retired path. That
+comparison is kept local and deleted in the PR (see "Cutting a PR
+branch").
 
 **Checked.**
 
@@ -894,7 +928,6 @@ Noted while porting, not yet decided:
 - The validation scenario for LC-013 (notches): no capture checked so far
   has a steady interferer inside a weaker station's passband. See "What
   the capture set offers so far" under LC-013.
-
 - Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule. LC-012's
   capture scoring bears on it: see "Scored on recorded captures" under
   LC-012.
@@ -904,6 +937,13 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: code review of everything on `TEST`. Fixups: LC-011 (dead
+  Hang repair), LC-013 (a misplaced comment), LC-016 (the threshold
+  comment), LC-012 (two comments), LC-009 (a 20 Hz window is no longer
+  seeded over). Tooling: the capture removal note, `test_cw` ignored,
+  the README's format number. Decided: fixup commits (rule 9);
+  harness-only engine paths are kept local and deleted in the PR; the
+  0.30 Window threshold is not migrated.
 - 2026-09-30: T-002 to T-007 from five more captures (band noise, 40 m
   multipath, an antenna switch). Includes T-003: `score_rade`'s streams
   aren't independent, so one sync period (~8 frames) is within its noise.
