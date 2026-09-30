@@ -11,3 +11,4 @@ devtools/replay_rade
 devtools/run_ref
 devtools/score_rade
 devtools/test_capture
+devtools/py/__pycache__/
