@@ -32,7 +32,8 @@ What differs from the feature branches:
   written for that `TEST` does not have. Their checks still run and print
   their figures, but a failure is reported as `KNOWN GAP` and not
   counted. Delete a gap's line when the feature is ported, and the check
-  counts again. `test_cw` is not built at all: `TEST` has no CW reference.
+  counts again. The CW reference's gap is closed (LC-017); `test_cw` is
+  `TEST`'s own, written for its engine.
 - **`tunable.manifest`** drops the four per-subcarrier constants.
 - **`score_rade`** puts librade's include paths first: upstream `wdsp/`
   has its own `nnet.h`, which otherwise shadows the Opus one librade
