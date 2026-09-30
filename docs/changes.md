@@ -173,6 +173,7 @@ next resync). **Dropped** means abandoned.
 | LC-017 | Behaviour | A CW / Morse reference                                | diversity_auto.c/.h, diversity_menu.c, rx_panadapter.c | LC-009, LC-012, LC-013, LC-015 | Local |
 | LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
+| LC-020 | UI        | Window row hidden while following; "Follow RX Filter" | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -209,7 +210,8 @@ LC-011 + LC-014 + LC-016 (RADE: resync, Hang slider gone, no timeout,
 no threshold) and LC-012. LC-013 (notches) stands
 alone and can go at any point. LC-017 + LC-018 + LC-019 (CW) go after
 LC-012, LC-013 and LC-015. The "Measure on" order and the CW row are the
-part most likely to interest upstream on their own. LC-006 goes last because it needs the
+part most likely to interest upstream on their own. LC-020 (menu tidy)
+can go with LC-008 + LC-009. LC-006 goes last because it needs the
 measurement data behind it.
 
 ---
@@ -382,7 +384,7 @@ widget pointers.
 ### LC-009 — Unticking Follow RX filter starts the window on the passband
 
 **Why.** We do not want to start from useless values when none are
-saved. Unticking "Window follows RX filter" hands the window to the
+saved. Unticking "Follow RX Filter" (then "Window follows RX filter") hands the window to the
 operator. If that reference has no window of its own yet, it fell back
 to its built-in default: centre 0 and 1000 Hz wide (2600 Hz for Digital
 IQ). In SSB that straddles the carrier, so the first manual window the
@@ -930,6 +932,18 @@ captures are marginal. Re-sweep as marginal CW captures come in.
 
 **Depends on** LC-017.
 
+### LC-020 — The window row is hidden while it follows the RX filter
+
+**Change.** The Window centre and Window width controls are hidden while
+the follow tick is on, where they had no effect, and shown when it is
+cleared. When shown, LC-009 has already placed the window on the
+passband. The dialog shrinks to fit. The tick is relabelled from "Window
+follows RX filter" to "Follow RX Filter", and the two comments that name
+it follow.
+
+**Depends on** LC-009 textually (the comment in
+`diversity_auto_seed_window()`, and `follow_cb()`).
+
 ---
 
 ## Local tooling (never upstream)
@@ -1083,6 +1097,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: LC-020, the window row hidden while following the RX
+  filter, and the tick relabelled "Follow RX Filter".
 - 2026-09-30: LC-017 to LC-019 (the CW reference, key detection, the
   fresh-install CW seed) and LT-007 to LT-010 (`score_cw.py` and Findings
   AD-50/AD-51, `run_ref --ref cw` and its tone column, the LC-019 check,
