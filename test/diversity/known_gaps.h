@@ -14,7 +14,6 @@
 #ifndef KNOWN_GAPS_H
 #define KNOWN_GAPS_H
 
-#define GAP_NOTCH_EXCLUSION    "5d5dfc1d: manual notches are excluded from the auto-phasing estimate"
 #define GAP_BRANCH_NOISE_RATIO "e6c12c05: the Window Sum weight carries the branch noise ratio"
 #define GAP_LEVEL_OUTPUT       "4f24f5c3: hold the combined output at the level of one antenna"
 #define GAP_STANDDOWN          "fc0b3d1e: the combiner stands down on an empty band"
