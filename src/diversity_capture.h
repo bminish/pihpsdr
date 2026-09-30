@@ -1,0 +1,277 @@
+/* Copyright (C)
+*
+*   This program is free software: you can redistribute it and/or modify
+*   it under the terms of the GNU General Public License as published by
+*   the Free Software Foundation, either version 3 of the License, or
+*   (at your option) any later version.
+*
+*   This program is distributed in the hope that it will be useful,
+*   but WITHOUT ANY WARRANTY; without even the implied warranty of
+*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*   GNU General Public License for more details.
+*
+*   You should have received a copy of the GNU General Public License
+*   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*
+*/
+
+#ifndef _DIVERSITY_CAPTURE_H_
+#define _DIVERSITY_CAPTURE_H_
+
+//
+// ===================================================================
+//  DEVELOPMENT TOOL - NOT PART OF THE DIVERSITY FEATURE.
+//
+//  Everything here is compiled only under -DDIVERSITY_CAPTURE, which
+//  the top-level Makefile adds for "make DIVCAP=1" and never otherwise.
+//  It is to be deleted, along with the guarded blocks in
+//  diversity_auto.c and diversity_menu.c, before the diversity work is
+//  submitted upstream. See test/diversity/devtools/README.md.
+// ===================================================================
+//
+// Records the two antenna streams as the auto-phasing analysis thread
+// sees them - block aligned, at the DDC rate, ahead of any combining -
+// so that a real signal can be replayed into the correlator offline as
+// many times as a parameter sweep needs.
+//
+// The tap is in div_process_block(), which is the only place where the
+// block, the context that produced it and the correlator's answer for it
+// all exist together.
+//
+
+#include <stdint.h>
+#include <stdio.h>
+
+//
+// On-disk format. Little-endian, which is every machine piHPSDR runs on;
+// the replay tool checks the magic and version and refuses anything else
+// rather than pretending to be portable.
+//
+#define DIVCAP_MAGIC        "PIHPDIVC"
+#define DIVCAP_VERSION      4u
+//
+// Version 1 had no attenuator fields: att0/att1 occupied the pad after
+// weighting and read as zero. A v1 file is still replayable - the block
+// record is the same 208 bytes - but its attenuator values are unknown
+// rather than zero, and the tools say so.
+//
+// Version 3 had no arm-swap bit: the arms were never exchanged and arm 0
+// was always ADC0, so a v3 file's clear bit 2 means what it says and such
+// a file replays unchanged. Nothing about the layout changed; the version
+// is what says the bit is written.
+//
+// Version 2 and below never wrote rec_flags: the writer assigned it a
+// literal zero, so the "context changed here" bit documented below was
+// always clear and a reader could not tell "nothing moved" from "this
+// field is not written". Nothing about the layout changed when that was
+// fixed, so a v3 file is byte-compatible with a v2 reader; the version is
+// what says the flag can be believed.
+//
+#define DIVCAP_VERSION_MIN  1u
+#define DIVCAP_REC_MAGIC    0x214B4C42u   /* "BLK!" */
+#define DIVCAP_END_MAGIC    0x21444E45u   /* "END!" */
+
+#define DIVCAP_NOTE_LEN     192
+#define DIVCAP_RADIO_LEN    48
+
+//
+// divcap_block.rec_flags
+//
+// Bit 0 says this block's analysis context differs from the previous
+// block's. The comparison is *exact*, unlike div_context_changed(), which
+// tolerates DIV_RETUNE_HZ of dial movement: the engine's question is
+// whether the estimate is still valid, and this one is whether anything
+// moved in the file, which is what someone reading a recording back needs
+// in order to find the block where an attenuator or a filter changed.
+//
+// Only files of format version 3 and above write it. In an older file
+// every block reads zero whatever the operator did, so a reader must fall
+// back to comparing the recorded fields block by block - which is what
+// had to be done on every capture taken before this was fixed.
+//
+#define DIVCAP_FLAG_CTX_CHANGED  0x1u
+//
+// Bit 1 says the engine threw its statistics away before this block -
+// div_context_changed() returned true and div_reset_stats() and
+// rade_corr_reset() ran. That is a different question from bit 0 and the
+// answer differs: div_context_changed() tolerates DIV_RETUNE_HZ, so a
+// slow dial walk sets bit 0 on every step and bit 1 on none of them.
+//
+// This is the bit a replay must follow. Without it a tool driving the
+// correlator directly cannot know where the radio started again, so a
+// recording containing a retune or an attenuator step replays as one
+// continuous run and diverges from the recorded state from that block on.
+//
+#define DIVCAP_FLAG_ENGINE_RESET 0x2u
+//
+// Bit 2 says arm 0 was ADC1 rather than ADC0 on this block, because the
+// operator had RX1 set to ADC1. Unlike the two above it is not an event,
+// it is a context field: it describes the block rather than the
+// transition into it.
+//
+// It is what makes a capture self-describing about which antenna is on
+// which arm. Without it two recordings of the same pair of antennas,
+// taken either way round, are indistinguishable - and the arms are not
+// symmetric, so that is the difference between a replay that means
+// something and one that does not.
+//
+// It lives in the flags word because the block record has no room left.
+// The layout is exactly 208 bytes with no padding anywhere in it - att0
+// and att1 took the last of it - so another int32 would make the record
+// 216 and break every reader. A bit in a word with thirty spare is the
+// cheaper lie, and the alternative, a second record type, is not worth it
+// for an instrument that is to be deleted.
+//
+// Written from format version 4. On an older file it reads zero, which is
+// correct for those: the arms were not exchanged, so arm 0 was ADC0.
+// That is the one respect in which this differs from rec_flags before v3
+// - there, zero could not be distinguished from "not written"; here the
+// only value an older writer could have meant is the one a reader gets.
+//
+// It is compared as part of the context, so a swap thrown mid-recording
+// sets bit 0 and bit 1 on that block like any other context change, and
+// divcap_replay() follows the reset.
+//
+#define DIVCAP_FLAG_ARM_SWAP     0x4u
+
+//
+// Written once at the head of the file.
+//
+struct divcap_header {
+  char     magic[8];
+  uint32_t version;
+  uint32_t sample_rate;       // DDC rate: 48000 .. 384000
+  uint32_t nfft;              // sample pairs per block
+  uint32_t block_bytes;       // float payload per block = 16 * nfft
+  uint64_t t_start;           // unix seconds
+  uint32_t flags;             // reserved, 0
+  uint32_t pad;
+  char     radio[DIVCAP_RADIO_LEN];
+  char     note[DIVCAP_NOTE_LEN];
+};
+
+//
+// One per analysis block. Everything the correlator was given, plus what
+// it produced, so a replay can be checked against the live run before it
+// is trusted to answer anything.
+//
+struct divcap_block {
+  uint32_t rec_magic;
+  uint32_t seq;
+  uint32_t dropped;           // analysis blocks lost immediately before this one
+  uint32_t rec_flags;         // DIVCAP_FLAG_* - see above
+
+  //
+  // Fixed-width mirror of struct div_context. The context is what decides
+  // where the analysis window sits and which pilot bank is searched, so a
+  // capture without it cannot be replayed faithfully - and vfo_t's own
+  // field widths are not something to depend on in a file format.
+  //
+  int64_t  frequency;
+  int64_t  ctun_frequency;
+  int64_t  offset;
+  int32_t  sidetone;
+  int32_t  ctx_sample_rate;
+  int32_t  mode;
+  int32_t  filter_low;
+  int32_t  filter_high;
+  int32_t  ref;
+  int32_t  follow;
+  int32_t  weighting;
+  //
+  // The two step attenuators. div_context_changed() compares them, so a
+  // change of either resets the statistics, and a capture that cannot
+  // show them cannot be replayed through that reset - which is exactly
+  // what happened on the capture where the operator stepped ADC1 twice
+  // while recording. They sit in what was pad0 plus the padding the
+  // compiler was already inserting before the double below, so the block
+  // record is the same 208 bytes it always was and only the version
+  // distinguishes them from a v1 file's zeros.
+  //
+  int32_t  att0;
+  int32_t  att1;
+  double   centre;
+  double   width;
+
+  //
+  // What rade_corr_process() was actually handed. Recorded rather than
+  // recomputed because div_frame_off() and div_rade_side_expected() are
+  // static in diversity_auto.c, and because a replay that re-derived them
+  // would be testing that derivation rather than the correlator.
+  //
+  int32_t  expect_bank;
+  int32_t  auto_mode;      // DIV_AUTO_NULL / DIV_AUTO_SUM, the objective
+  double   frame_off;
+  double   tau;
+  double   hang;
+
+  //
+  // The loop's state *entering* this block, i.e. everything the previous
+  // block left behind.
+  //
+  // Recorded at the tap rather than after processing because
+  // div_process_block() has half a dozen exit points and threading a
+  // result out of all of them would leave marks all over a file that has
+  // to go back to exactly what it was. A (state, input) pair is also the
+  // natural thing to check a deterministic state machine against: the
+  // replay compares its own state entering block N with this, so like is
+  // compared with like and the whole timeline still has to agree.
+  //
+  int32_t  live_locked;
+  int32_t  live_confirming;
+  int32_t  live_mirrored;
+  int32_t  live_holding;
+  double   live_quality;
+  double   live_freq_off;
+  double   live_snr;
+  double   live_coherence;
+  double   live_track_gain;    // dB,  the loop's answer before slewing
+  double   live_track_phase;   // deg,  "
+  double   live_cos;           // the weight actually applied to the samples
+  double   live_sin;
+  //
+  // followed by nfft float pairs for arm 0, then nfft float pairs for arm 1
+  //
+};
+
+//
+// Written when the file is closed. A capture whose trailer is missing was
+// truncated; one whose skipped count is non-zero perturbed the very thing
+// it was recording and should be thrown away.
+//
+struct divcap_trailer {
+  uint32_t end_magic;
+  uint32_t blocks;
+  uint32_t skipped;
+  uint32_t pad;
+  double   duration;
+};
+
+//
+// Read once per block by the analysis thread, with no lock, exactly as
+// div_auto_running is read by the sample path. Written by the GTK thread
+// and by the writer thread when the block budget runs out, hence the
+// volatile.
+//
+extern volatile int div_capture_active;
+
+//
+// Arm/disarm. Safe to call from the GTK thread; both are idempotent.
+// Returns 1 if a file was opened.
+//
+extern int  diversity_capture_start(int sample_rate, int nfft);
+extern void diversity_capture_stop(void);
+
+//
+// Hand one analysis block to the writer thread. Copies and returns; all
+// file I/O happens on the writer thread.
+//
+extern void diversity_capture_block(const float *arm0, const float *arm1,
+                                    const struct divcap_block *meta);
+
+//
+// "rec 12.3s 9.4M" / "rec (7 lost)" / "" when idle. For the menu.
+//
+extern void diversity_capture_status(char *buf, size_t len);
+
+#endif
