@@ -10,7 +10,7 @@
  * deterministically.
  *
  * Replay is at the block level, calling rade_corr_process() directly with
- * the bank, frame offset, averaging time and hang the live run used. That
+ * the bank, frame offset and averaging time the live run used. That
  * is why the capture is taken at block granularity: there is no queue, no
  * worker thread and no g_usleep() pacing to get wrong, and no way for the
  * harness to drop a block and quietly re-acquire the way feeding samples
@@ -103,8 +103,8 @@ static void usage(const char *me) {
   fprintf(stderr,
           "usage: %s FILE.divc [--verify] [--from N] [--set name=v]... \n"
           "       [--sweep name=lo:hi:step]... [--csv OUT] [--weights OUT]\n"
-          "       [--tau S] [--hang S] [--noise RMS] [--seed N] [-v]\n\n"
-          "--tau/--hang override the operator settings the capture recorded.\n"
+          "       [--tau S] [--noise RMS] [--seed N] [-v]\n\n"
+          "--tau overrides the averaging time the capture recorded.\n"
           "--noise adds independent AWGN of that rms to each arm, per component,\n"
           "which is the one part of the noise a two-branch array cannot null.\n"
           "--weights writes the correlator's weight for every block.\n"
@@ -141,8 +141,11 @@ int main(int argc, char **argv) {
       wpath = argv[++i];
     } else if (!strcmp(argv[i], "--tau") && i + 1 < argc) {
       opts.tau = atof(argv[++i]);
-    } else if (!strcmp(argv[i], "--hang") && i + 1 < argc) {
-      opts.hang = atof(argv[++i]);
+    } else if (!strcmp(argv[i], "--hang")) {
+      /* LC-014: a RADE lock has no timeout any more, so there is nothing to sweep */
+      fprintf(stderr, "%s: --hang is gone - a RADE lock is held until a new one "
+              "replaces it (LC-014 in docs/changes.md)\n", argv[0]);
+      return 2;
     } else if (!strcmp(argv[i], "--noise") && i + 1 < argc) {
       opts.noise = atof(argv[++i]);
     } else if (!strcmp(argv[i], "--seed") && i + 1 < argc) {

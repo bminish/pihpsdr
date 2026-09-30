@@ -139,7 +139,7 @@ static int rr_choose_nfft(int sample_rate, double target_hz) {
 
 int main(int argc, char **argv) {
   const char *path = NULL, *outp = NULL, *refname = "rade";
-  double noise = 0.0, tau = 0.0, hang = 0.0, cohmin = -1.0;
+  double noise = 0.0, tau = 0.0, cohmin = -1.0;
   double centre = 0.0, width = 0.0;
   double resolution = 0.0;
   int    follow = -1;
@@ -169,7 +169,12 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--centre") && i + 1 < argc) { centre  = atof(argv[++i]); follow = 0; }
     else if (!strcmp(argv[i], "--width")  && i + 1 < argc) { width   = atof(argv[++i]); follow = 0; }
     else if (!strcmp(argv[i], "--follow") && i + 1 < argc) { follow  = atoi(argv[++i]); }
-    else if (!strcmp(argv[i], "--hang")  && i + 1 < argc) { hang    = atof(argv[++i]); }
+    else if (!strcmp(argv[i], "--hang")) {
+      /* LC-014: a RADE lock has no timeout any more, so there is nothing to sweep */
+      fprintf(stderr, "%s: --hang is gone - a RADE lock is held until a new one "
+              "replaces it (LC-014 in docs/changes.md)\n", argv[0]);
+      return 2;
+    }
     /*
      * A manual notch, CENTRE:WIDTH in Hz, up to three. The values are the
      * ones the radio's notch menu stores in multi_notch_center/_width, so
@@ -245,7 +250,7 @@ int main(int argc, char **argv) {
               "       [--mode null|sum|best] [--weighting flat|coherence]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
               "       [--noise RMS] [--seed N] [--resolution HZ] [--notch C:W]...\n"
-              "       [--set name=value]... [--tau S] [--hang S] [--pace US] [-v]\n",
+              "       [--set name=value]... [--tau S] [--pace US] [-v]\n",
               argv[0]);
       return 2;
     } else { path = argv[i]; }
@@ -311,7 +316,6 @@ int main(int argc, char **argv) {
   div_auto_centre = (width > 0.0) ? centre : m.centre;
   div_auto_width  = (width > 0.0) ? width  : m.width;
   div_auto_tau  = (tau  > 0.0) ? tau  : m.tau;
-  div_auto_hang = (hang > 0.0) ? hang : m.hang;
 
   /*
    * The Resolution control, which nothing here used to set.

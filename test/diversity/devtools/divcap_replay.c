@@ -2,8 +2,8 @@
  * DEVELOPMENT TOOL. Not part of piHPSDR - see README.md.
  *
  * The replay itself: read a .divc block by block and hand each one to
- * rade_corr_process() with the bank, frame offset, averaging time and
- * hang the live run used.
+ * rade_corr_process() with the bank, frame offset and averaging time the
+ * live run used.
  *
  * Reproducing the live run exactly is the whole requirement here. Two
  * things reset the correlator on air and both have to be reproduced in
@@ -251,9 +251,8 @@ int divcap_replay(FILE *f, const struct divcap_header *h, long data_start,
 
     double wr = 0.0, wi = 0.0;
     const double tau  = (o->tau  > 0.0) ? o->tau  : m.tau;
-    const double hang = (o->hang > 0.0) ? o->hang : m.hang;
     const int ok = rade_corr_process(arm0, arm1, nfft, m.expect_bank,
-                                     m.frame_off, tau, hang, &wr, &wi);
+                                     m.frame_off, tau, &wr, &wi);
     const double t = (double)r->blocks * (double)nfft / (double)h->sample_rate;
 
     if (o->weights != NULL) {
