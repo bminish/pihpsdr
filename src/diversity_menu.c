@@ -785,6 +785,22 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 
 static void follow_cb(GtkWidget *widget, gpointer data) {
   div_auto_follow_filter = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+
+  //
+  // Handing the window to the operator: start it on the passband it was
+  // following, unless they have already placed one of their own.
+  //
+  if (!div_auto_follow_filter) {
+    diversity_auto_seed_window();
+
+    if (centre_spin) {
+      updating_from_auto = 1;
+      gtk_spin_button_set_value(GTK_SPIN_BUTTON(centre_spin), div_auto_centre);
+      gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), div_auto_width);
+      updating_from_auto = 0;
+    }
+  }
+
   diversity_auto_reset();
   div_send_settings(DIV_ACTION_NONE);
 }
