@@ -768,12 +768,6 @@ static void res_changed_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
-static void weight_changed_cb(GtkWidget *widget, gpointer data) {
-  div_auto_weighting = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  diversity_auto_reset();
-  div_send_settings(DIV_ACTION_NONE);
-}
-
 // cppcheck-suppress constParameterCallback
 static void reset_cb(GtkWidget *widget, gpointer data) {
   //
@@ -977,21 +971,6 @@ void diversity_menu(GtkWidget *parent) {
   //                            "the status line.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 2, 4, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(res_changed_cb), NULL);
-  lbl = gtk_label_new("Weighting");
-  gtk_widget_set_name(lbl, "boldlabel");
-  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-  //gtk_grid_attach(GTK_GRID(agrid), lbl, 6, 2, 1, 1);
-  btn = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Weighting: Flat");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Weighting: Coherence");
-  gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_auto_weighting);
-  //gtk_widget_set_tooltip_text(weight_combo,
-  //                            "Coherence weights each frequency bin by how well the two "
-  //                            "antennas agree in it, so a wide window can be used on "
-  //                            "speech without the noise-only parts of it diluting the "
-  //                            "answer. Flat is the older behaviour.");
-  gtk_grid_attach(GTK_GRID(agrid), btn, 7, 2, 4, 1);
-  g_signal_connect(btn, "changed", G_CALLBACK(weight_changed_cb), NULL);
   lbl = gtk_label_new("Averaging (s)");
   //gtk_widget_set_tooltip_text(tau_label,
   //                            "Time constant for the gain/phase estimate. "
