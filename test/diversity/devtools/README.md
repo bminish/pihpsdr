@@ -37,9 +37,10 @@ What differs from the feature branches:
 - **`score_rade`** puts librade's include paths first: upstream `wdsp/`
   has its own `nnet.h`, which otherwise shadows the Opus one librade
   needs.
-- **The recorder writes format 3** (`rec_flags`). The hooks upstream kept
-  in `src/diversity_auto.c` were an older writer that always wrote zero
-  there, so the context-change and engine-reset bits were never set.
+- **The recorder writes format 4** (`DIVCAP_VERSION`). The hooks
+  upstream kept in `src/diversity_auto.c` were an older writer that
+  always wrote zero into `rec_flags` (format 3), so the context-change
+  and engine-reset bits were never set.
 
 Checked on `TEST` at the port:
 
