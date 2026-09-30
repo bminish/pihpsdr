@@ -116,6 +116,24 @@ untouched.
 
 LC-012 was assessed this way; the results are in `docs/changes.md`.
 
+### Scoring CW captures
+
+`py/score_cw.py` scores `run_ref` weight series on CW captures with
+Finding AD-50's yardstick: tone-to-noise of the key-down-averaged
+spectrum, the key-down blocks chosen from arm0 + arm1 so every stream is
+scored on the same blocks, each weight applied one block late. There is
+no CW decoder, so this is tone-to-noise and not copy.
+
+```
+test/diversity/devtools/run_ref captures/X.divc --ref band --mode sum --follow 1 --out band.csv
+cd test/diversity/devtools/py && python3 score_cw.py ../../../../captures/X.divc band.csv
+```
+
+The tone is the strongest passband bin over the capture unless `--tone
+HZ` names it; `--key-db` sets the key-down test (default 10 dB). Of the
+thirteen CW captures, `002049` and `001054` carry too little keying to
+score (AD-50) and are left out of means.
+
 ### Manual notches
 
 A capture cannot record a notch: WDSP applies it downstream of the tap,
