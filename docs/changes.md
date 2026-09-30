@@ -174,7 +174,7 @@ next resync). **Dropped** means abandoned.
 | LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
 | LC-020 | UI        | Window row hidden while following; "Follow RX Filter" | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
-| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Local (PR prepared) |
+| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Proposed ([#151](https://github.com/dl1ycf/pihpsdr/pull/151)) |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -971,9 +971,11 @@ does nothing.
 **Change.** `gtk_spin_button_set_digits(GTK_SPIN_BUTTON(btn), 0)`, which
 does what was meant.
 
-**Upstream.** A one-commit PR is prepared, not yet pushed or opened:
-branch `pr/diversity-spin-digits`, cut from `upstream/TEST` at
-`b180b79a`, `src/diversity_menu.c` only, +2 −2. It builds.
+**Upstream.** A one-commit PR: branch `pr/diversity-spin-digits`, cut
+from `upstream/TEST` at `b180b79a`, `src/diversity_menu.c` only, +2 −2.
+It builds. Opened 2026-09-30 as
+[dl1ycf/pihpsdr#151](https://github.com/dl1ycf/pihpsdr/pull/151). When
+it's merged, mark LC-021 *Upstream*.
 
 ---
 
@@ -1136,7 +1138,7 @@ Noted while porting, not yet decided:
   layout). Eight hunks in `diversity_menu.c`: upstream's layout and
   labels taken, our row table, hidden window row and removed rows kept.
   LC-005 is *Upstream* (dl1ycf made the same Invert fix). LC-021 fixes
-  the spin-button casts `b180b79a` added; its PR branch is prepared.
+  the spin-button casts `b180b79a` added, proposed as dl1ycf/pihpsdr#151.
   PR #150 rebased onto `b180b79a`.
 - 2026-09-30: T-010 to T-012, three CW captures (40 m and 20 m contest,
   30 m beacon) through the CW reference; `score_cw.py` fixed (segments,
