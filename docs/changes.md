@@ -904,6 +904,9 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-09-30: T-002 to T-007 from five more captures (band noise, 40 m
+  multipath, an antenna switch). Includes T-003: `score_rade`'s streams
+  aren't independent, so one sync period (~8 frames) is within its noise.
 - 2026-09-30: T-001, the first RADE capture on `TEST` (two stations on
   20 m), recorded in `docs/test-findings.md`: no regression against the
   feature branch, and the weak station is beyond any fixed combination.
