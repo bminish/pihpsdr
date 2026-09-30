@@ -1,0 +1,13 @@
+# Built by make in this directory and in devtools/ (LT-002, docs/changes.md).
+test_modes_live
+bench_cpu
+test_window
+test_rade
+test_digital
+test_props
+test_modal
+devtools/build/
+devtools/replay_rade
+devtools/run_ref
+devtools/score_rade
+devtools/test_capture
