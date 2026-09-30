@@ -322,11 +322,46 @@ static void div_arm_status_set(void) {
   gtk_label_set_text(GTK_LABEL(arm_label), text);
 }
 
+//
+// Keep the bottom of the Min coherence slider on the gate's noise floor.
+//
+// The floor moves with the reference, the window (or the RX filter it
+// follows), the occupied span on FSK/Digital, the bin width and the
+// averaging time - see diversity_auto_coh_floor(). Following it here, on
+// the status tick, catches every one of those however it changed,
+// including from outside the menu.
+//
+// The setting itself is not touched. The slider shows the larger of the
+// setting and the floor, which is what the gate compares against, and
+// when the floor comes down again the operator's own value reappears.
+// coh_cb() is blocked while the slider is moved, so the floor is not
+// taken for an operator setting and filed as one.
+//
+static void coh_cb(GtkWidget *widget, gpointer data);
+
+static void div_coh_range_update(void) {
+  if (coh_scale == NULL) { return; }
+
+  const double lo = 100.0 * diversity_auto_coh_floor(div_auto_ref);
+  GtkAdjustment *adj = gtk_range_get_adjustment(GTK_RANGE(coh_scale));
+  const double want = fmax(100.0 * div_auto_coherence_min, lo);
+
+  if (fabs(gtk_adjustment_get_lower(adj) - lo) < 0.05
+      && fabs(gtk_range_get_value(GTK_RANGE(coh_scale)) - want) < 0.05) { return; }
+
+  g_signal_handlers_block_by_func(coh_scale, coh_cb, NULL);
+  gtk_range_set_range(GTK_RANGE(coh_scale), lo, 95.0);
+  gtk_range_set_value(GTK_RANGE(coh_scale), want);
+  g_signal_handlers_unblock_by_func(coh_scale, coh_cb, NULL);
+}
+
 static int status_update_cb(gpointer data) {
   if (dialog == NULL) {
     status_timer = 0;
     return G_SOURCE_REMOVE;
   }
+
+  div_coh_range_update();
 
   //
   // Whether the loop is running is not something this dialog is told
@@ -1054,7 +1089,12 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 4, 2, 1);
-  btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 5.0);
+  //
+  // Half-percent steps: the noise floor at the bottom of the travel is a
+  // fraction of a percent on a wide window. See div_coh_range_update().
+  //
+  btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 95.0, 0.5);
+  gtk_scale_set_digits(GTK_SCALE(btn), 1);
   gtk_range_set_value(GTK_RANGE(btn), 100.0 * div_auto_coherence_min);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 4, 6, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(coh_cb), NULL);
