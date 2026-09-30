@@ -282,9 +282,9 @@ static const double rade_acq_sigma[RADE_ACQ_CHECKS] = { 7.5, 6.75, RADE_LOCK_SIG
 // signal that is really gone - end of over, or the operator retuning -
 // should force a re-acquisition.
 //
-// How long "really gone" is depends on what the operator is listening to,
-// so it is the Hang control in the Diversity menu rather than a constant
-// here, and it arrives as the hang argument to rade_corr_process().
+// How long "really gone" is arrives as the hang argument to
+// rade_corr_process(). It was once an operator control; it is now fixed
+// at DIV_HANG_DEFAULT in diversity_auto.c, where the reason is recorded.
 //
 // It replaced a fixed ten seconds counted off the *slow* ratio below,
 // which was too slow twice over. That average has a six-second time
