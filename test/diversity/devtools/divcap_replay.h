@@ -39,7 +39,6 @@ extern FILE *divcap_open(const char *path, struct divcap_header *h, long *data_s
 //
 struct divcap_opts {
   double tau;          // > 0 overrides the recorded averaging time
-  double hang;         // > 0 overrides the recorded hang time
   double noise;        // > 0 adds AWGN of this rms to each arm, per component
   unsigned seed;       // for the noise
   int    verify;       // check the replayed state against the recording

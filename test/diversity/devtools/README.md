@@ -52,6 +52,14 @@ Checked on `TEST` at the port:
 | `test_props` | stored Coherence weighting → Flat (LC-006), stored Hang 1.0 s → 10 s (LC-011) |
 | `test_rade` | the resync checks pass: drop at 2.82 s, not the timeout; a 31 dB, 5.1 s fade keeps its lock (LC-010) |
 
+**There is no Hang to sweep.** Since LC-014 a RADE lock has no timeout:
+it is held through any fade and replaced only when the resync search
+finds a new one. `run_ref --hang` and `replay_rade --hang` now stop with
+an error that says so. `run_ref` is also not byte-deterministic: its
+worker thread can shift a read by a block, so repeat a replay before
+reading anything into a single difference (on `165826`, one run in
+three at a 600 s timer scored +39 against +57).
+
 The quick commands, from the repository root:
 
 ```
@@ -304,7 +312,7 @@ Metrics per point: blocks, seconds, acquisitions, locked fraction, time to
 first lock, mean pilot SNR, mean quality, weight jitter.
 
 Replay is at the block level, calling `rade_corr_process()` directly with
-the bank, frame offset, averaging time and hang the live run used. There
+the bank, frame offset and averaging time the live run used. There
 is no queue, no worker thread and no `g_usleep()` pacing — which is why
 the capture is taken at block granularity rather than per sample.
 
