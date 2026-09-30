@@ -93,15 +93,27 @@ next resync). **Dropped** means abandoned.
 | LC-007 | Behaviour | Hold stays on until the operator releases it          | diversity_auto.c, diversity_menu.c, radio.c | —        | Local  |
 | LC-008 | Behaviour | Reference change recalls that reference's settings    | diversity_menu.c                          | —          | Local  |
 | LC-009 | Behaviour | Unticking Follow RX filter starts on the passband     | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
+| LC-010 | Behaviour | RADE resyncs on a detection, not on a timeout         | rade_correlator.c                         | —          | Local  |
+| LC-011 | Behaviour | Hang pinned at 10 s, slider removed                   | diversity_auto.c, diversity_menu.c, rade_correlator.c | LC-010, [LC-008] | Local |
+| LC-012 | Behaviour | Coherence gate never below its own noise floor        | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
-makes full sense with it. LC-009 does not build without LC-008, because
-it updates the window widgets that LC-008 keeps pointers to.
+makes full sense with it. "[LC-008]" means a purely textual dependency:
+the change touches lines next to LC-008's, so it does not apply without
+it, but it does not use anything LC-008 adds.
+
+- LC-009 and LC-012 do not build without LC-008, because they use the
+  widget pointers LC-008 keeps.
+- LC-011 must never be taken without LC-010. On its own it would fix
+  every RADE changeover at a 10 s search blackout.
+- Reverting LC-008 means reverting LC-012, LC-011 and LC-009 first; it
+  conflicts otherwise. Every other change reverts cleanly from the tip.
 
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
-settings), then LC-005, then LC-008 + LC-009, then LC-007. LC-006 goes
-last because it needs the measurement data behind it.
+settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
+LC-011 (RADE: resync, then Hang) and LC-012. LC-006 goes last because it
+needs the measurement data behind it.
 
 ---
 
@@ -284,6 +296,145 @@ is saved.
 
 **Depends on** LC-008 (the widget pointers).
 
+### LC-010 — RADE resyncs on a detection, not on a timeout
+
+Ported from `567edf07` on `feature/auto-diversity` (`src/rade_correlator.c`
+only; it applied without changes).
+
+**Problem.** The correlator only searched for a pilot when it was not
+tracking, and tracking was cleared only when Hang expired. So Hang did
+more than hold the weight: it switched the search off. At a changeover
+between two stations the correlator spent the whole of Hang correlating
+the old station's timing, and looked nowhere else. That cost about 10 s
+of Hang + 2.9 s of search + 0.8 s of confirmation, or **13.7 s**, before
+the new station's weight was in force (Finding 44, from six 80 m
+captures).
+
+**Change.** While the lock is frozen, the correlator runs the full
+acquisition ladder once per modem frame, as a cold search does.
+
+- A candidate at a **different timing alignment** (modulo one modem frame,
+  more than 4 of 960 samples away) is a new station. The old lock is
+  dropped through `rade_corr_reset()` and the candidate is taken.
+- The **same alignment** is the same station coming out of a fade, which
+  keeps its lock and its averages.
+- Timing decides, not frequency, because the frequency loop's lock
+  points are 8.33 Hz apart and two stations can differ by an amount it
+  cannot see.
+- While frozen, the pilot averages **decay at the Averaging time** instead
+  of being held outright, so a new station does not inherit most of an
+  average built on one that stopped seconds ago. The decay stops 30 dB
+  down.
+
+**Holding is preserved.** The applied weight is only ever written from a
+confirmed lock. It stays in force through the freeze, the search and a
+new candidate's confirmation, and when nothing new turns up it stays
+where it was.
+
+**Validated** (on the feature branch, Findings 44 and 45):
+
+| Test | Result |
+|---|---|
+| `test_rade` two-station changeover | 3.50 s, against 13.5 s |
+| Same, at a 2 s and a 10 s Hang | 2.82 s and 2.90 s: Hang no longer matters |
+| Same station, noise floor 31 dB higher for 5.1 s | Lock held; weight back to within 0.033 |
+| Six 80 m on-air captures, scored on decode | +53, −29, four unchanged: not measurable |
+
+The on-air set could not show a difference, because in every capture
+one antenna alone decoded 97.9–100 % of frames. A capture with a marginal
+signal on both antennas is still needed. The `test_rade` harness is not
+on this branch yet.
+
+### LC-011 — Hang is pinned at 10 s and loses its slider
+
+Ported from the Hang part of `01df2313` only; that commit's other five
+changes are not taken.
+
+**Why.** Hang only existed for RADE V1, the one reference with a lock to
+give up. The other references already work on the threshold and
+Averaging alone: the averages update every block, the gate decides
+whether to apply the result, and the last weight is held otherwise.
+With LC-010, RADE works the same way. The pilot check decides when to
+hold, Averaging decides how fast old data is forgotten, and a new station
+is taken on detection. All Hang has left to decide is how long to keep
+believing in a station that stopped when nothing has replaced it, and
+the weight is held throughout either way.
+
+Evidence that the setting does not matter (Findings 33, 35 and 41 on the
+feature branch):
+
+- 1 to 10 s moves lock uptime from 38 % to 94 %, but synced frames by
+  only +10, +11, +10, +10 (inside the scatter).
+- Through the shipping engine it changes nothing on 11 of 13 RADE
+  captures. The two that move do so non-monotonically. The one data
+  point against 10 s specifically (`202743`: +16 frames up to 5.2 s,
+  −9 at 10 s) is within the ~15–20 frame scatter.
+
+**Change.** `DIV_HANG_DEFAULT` is 10 s, `div_settings_validate()` pins the
+value instead of range-checking it, and the slider and its callback are
+removed. The field stays on the wire and in the props file.
+
+**Order.** Must not be taken without LC-010. It also goes after LC-008,
+because the slider it removes sits directly under a line LC-008 adds.
+
+### LC-012 — The coherence gate never goes below its own noise floor
+
+**Why.** Random tracking is not useful. The gate compares Min coherence
+against a coherence *estimate*, and over N independent samples two
+unrelated noises reach a coherence of about 1/N by chance. Below that, a
+threshold passes noise-only blocks and the loop fits a weight to an
+accident. When there is nothing real to correlate on, the right answer
+is to hold where we were, because that is the best chance of being right
+when the signal returns.
+
+**Change.** Each block, the gate compares against the larger of the
+operator's setting and the coherence that pure noise reaches 0.1 % of
+the time over the bins and blocks actually in that estimate:
+
+- **Bins.** The window, the carrier tracker's five bins, or the occupied
+  span on FSK/Digital. Neighbouring 4-term Blackman-Harris bins are
+  82 / 44 / 15 % correlated at 1 / 2 / 3 bins apart, so n bins count as
+  n² / Σ|ρ(j−k)|² independent samples (about n / 2.76 on a wide window).
+- **Blocks.** The engine tracks (Σw)² / Σw² for the exponential average as
+  it runs. That's (2−α)/α in steady state, but only one block right after
+  a reset, retune or averaging change, which is when noise is most easily
+  mistaken for signal.
+
+So the floor follows the reference, window or filter, bin width and
+averaging time. RADE V1 gates on its pilot and is unaffected. The Min
+coherence slider now steps in half percent, and its bottom follows the
+floor on the menu's status tick. The operator's own setting is never
+overwritten: when the floor falls again, their value reappears.
+
+**Validated** by Monte Carlo (`docs/tools/coh_floor_mc.py`): two
+independent noises through the same window and average, share of blocks
+passing the gate:
+
+| Case | Floor | At the floor | At the old default |
+|---|---|---|---|
+| Carrier, 5 bins, 0.2 s | 50.0 % (capped) | 0.11 % | 1.92 % (0.30) |
+| Carrier, 5 bins, 2 s | 6.5 % | 0.27 % | 0.77 % (0.30) |
+| Digital, 200 Hz occupied, 0.2 s | 20.2 % | 0.03 % | 0.01 % (0.30) |
+| Window, 2.4 kHz, 0.2 s | 1.9 % | 0.05 % | 0.00 % (0.20) |
+
+- The 0.77 % at the Carrier default with 2 s averaging comes almost
+  entirely from the first blocks after a reset. Only a floor that counts
+  the blocks actually held can catch that.
+- The floor from `01df2313`, which assumed every bin independent and
+  steady state, lets noise through 4–8 % of the time at the same target.
+  It was also enforced only from the menu, so it did nothing while the
+  menu was closed or when a client changed settings.
+
+**Trade-off.** On the Carrier reference at short averaging, a weak
+carrier now needs a coherence of up to 0.5 before the loop acts on it.
+Longer averaging lowers the floor. That's the intended exchange: the
+loop waits for evidence instead of tracking noise.
+
+**Not yet measured on recorded captures.** The Monte Carlo covers noise
+only. Its effect on weak real signals (how often a genuine signal is now
+held) should be checked with `run_ref` on the capture set, once the
+harness is on this branch.
+
 ---
 
 ## Not carried
@@ -298,13 +449,24 @@ is saved.
 ## Pending: to be ported from `feature/auto-diversity`
 
 Features and documentation will be brought in from
-`feature/auto-diversity` one at a time. Each one gets the next `LC`
+`feature/auto-diversity` one at a time.
+
+Noted while porting LC-010 to LC-012, not yet decided:
+
+- `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
+  already gates). Separate decision.
+- The `test/diversity` harness (`test_rade`, `run_ref`, `replay_rade`),
+  which the validation of LC-010, LC-011 and LC-012 relies on.
+- `docs/diversity-measurements.md` Findings 33, 35, 41, 44 and 45, and
+  the Hang and resync sections of `docs/diversity-rade.md`. Each one gets the next `LC`
 number, a commit (or a short run of commits) that follows the rules
 above, and an entry in the register and in the Fixes or Behaviour
 section, in the same push.
 
 ## History
 
+- 2026-09-30: LC-010 to LC-012 ported (RADE resync, Hang pinned, gate
+  noise floor).
 - 2026-09-30: register created. Upstream `TEST` at `883243c0`. The eight
   local commits made on 2026-09-28 were re-cut into LC-001 … LC-009, and
   the 6 Hz default was dropped. The pre-split branch is kept as
