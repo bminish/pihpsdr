@@ -346,6 +346,26 @@
 #define DIV_OCC_GUARD       4
 
 //
+// CW / Morse. See div_cw_solve().
+//
+// DIV_CW_BINS: the tone is accumulated over the peak and this many bins
+// either side. One: seven bins beat three by +0.07 dB, CI [-0.02, +0.16],
+// once the crest test was measured on its own span (Finding AD-50).
+//
+// DIV_CW_CREST_THRESH: the tone's power per bin over the region's mean
+// power per bin, below which the block is a keyclick or an impulse
+// raising the whole region, not a tone standing out of it. 2.0 is
+// +3.0 dB. It fires on 0.6 % to 37 % of blocks across the CW captures,
+// and taking it out moves the score by +0.01 dB (AD-50): kept because it
+// costs nothing and a click is not a tone.
+//
+// DIV_CW_FLUSH: see div_cw_age().
+//
+#define DIV_CW_BINS          1
+#define DIV_CW_CREST_THRESH  2.0
+#define DIV_CW_FLUSH         1e-200
+
+//
 // How far the receiver may be retuned before the accumulated statistics
 // are thrown away.
 //
@@ -412,6 +432,21 @@ double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 //
 #define DIV_WIDTH_DEFAULT          1000.0
 #define DIV_DIGITAL_WIDTH_DEFAULT  2600.0
+#define DIV_CW_WIDTH_DEFAULT        600.0
+
+//
+// A reference's built-in window width, for the places that need to know
+// whether a window is still at it.
+//
+static double div_width_default(int ref) {
+  switch (ref) {
+  case DIV_REF_DIGITAL_IQ: return DIV_DIGITAL_WIDTH_DEFAULT;
+
+  case DIV_REF_CW:         return DIV_CW_WIDTH_DEFAULT;
+
+  default:                 return DIV_WIDTH_DEFAULT;
+  }
+}
 
 double div_band_centre         = 0.0;
 double div_band_width          = DIV_WIDTH_DEFAULT;
@@ -425,6 +460,11 @@ double div_carrier_width       = DIV_WIDTH_DEFAULT;
 //
 double div_digital_centre      = 0.0;
 double div_digital_width       = DIV_DIGITAL_WIDTH_DEFAULT;
+//
+// CW's hand-placed window, when Follow is off: a CW filter's width.
+//
+double div_cw_centre           = 0.0;
+double div_cw_width            = DIV_CW_WIDTH_DEFAULT;
 
 //
 // So is the coherence threshold, and for a stronger reason than the
@@ -462,6 +502,7 @@ double div_band_cohmin         = 0.20;
 double div_carrier_cohmin      = 0.30;
 double div_digital_cohmin      = 0.30;
 double div_rade_cohmin         = 0.0;
+double div_cw_cohmin           = 0.20;
 
 //
 // Set when the requested window had to be pulled inside the Nyquist
@@ -1139,10 +1180,11 @@ static int div_bin_range(const struct div_context *ctx, int *klo, int *khi) {
     //
     flo = div_carrier_hz - DIV_CARRIER_BINS * binhz;
     fhi = div_carrier_hz + DIV_CARRIER_BINS * binhz;
-  } else if (ctx->ref == DIV_REF_DIGITAL_IQ) {
+  } else if (ctx->ref == DIV_REF_DIGITAL_IQ || ctx->ref == DIV_REF_CW) {
     //
     // The *search region*, not the bins finally accumulated. Occupancy
-    // narrows it after the transform - see div_digital_solve().
+    // narrows it after the transform - see div_digital_solve() - and on
+    // CW the tone does - see div_cw_solve().
     //
     // Nothing computed from the spectrum may appear here: this runs
     // before the transform, and making the bin range depend on something
@@ -1787,6 +1829,11 @@ double diversity_auto_coh_floor(int ref) {
   const double nblk = (alpha > 0.0 && alpha < 1.0) ? (2.0 - alpha) / alpha : 1.0;
   double width;
 
+  //
+  // CW accumulates exactly the tone bins, wherever the tone is.
+  //
+  if (ref == DIV_REF_CW) { return div_coh_floor_n(2.0 * DIV_CW_BINS + 1.0, nblk); }
+
   if (ref == DIV_REF_CARRIER) {
     width = (2.0 * DIV_CARRIER_BINS + 1.0) * bhz;
   } else if (ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
@@ -2167,6 +2214,260 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
               &wr, &wi);
     div_apply_weight(wr, wi);
   }
+}
+
+//
+// CW / Morse: the keyed tone in the passband.
+//
+// The search region is the RX filter (or a hand-placed window), as for
+// FSK/Digital. Each block the strongest tone in it is found, and the
+// cross spectrum is accumulated over that tone and DIV_CW_BINS bins
+// either side - nothing else in the region, so the rest of a filter wide
+// enough to hold other stations does not dilute the estimate.
+//
+// The peak search is weighted by a Gaussian centred on the region. In CW
+// that is not an arbitrary prior: rx_set_filter() folds the sidetone into
+// the filter edges, so the centre of the passband is the note the operator
+// zero-beat, and a signal near the edge is by construction not the one
+// being tuned. Over eleven CW captures it put the tracker on the wanted
+// tone on 82.6 % of key-down blocks against 80.5 % for a plain argmax
+// (Finding AD-50).
+//
+// The averages age every block, whether or not the block is accepted.
+// Every bin in the region is scaled by (1 - alpha) each block, and only
+// an accepted block adds alpha of its own tone bins back. So the average
+// forgets at the operator's Averaging time however seldom a block is
+// accepted - between letters, between overs, through keyclicks - and
+// the first accepted block after a long gap dominates, rather than being
+// averaged into data from a transmission that ended seconds ago. This is
+// also why CW runs before the window accumulation in
+// div_process_block() rather than after it: after it, every key-up block
+// was averaged into the tone bins as noise, and every accepted block was
+// counted twice.
+//
+// The Sum weight carries the branch noise ratio, from the off-tone bins
+// of the same block. The antenna pairs in the capture set run 8 to 12 dB
+// apart in noise and leaving the term out costs about 1 dB. Null is not
+// scaled: minimum output power is what Null means.
+//
+static void div_cw_age(int klo, int khi, double d) {
+  for (int k = klo; k <= khi; k++) {
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    bin_xy_re[idx] *= d;
+    bin_xy_im[idx] *= d;
+    bin_xx[idx]    *= d;
+    bin_yy[idx]    *= d;
+
+    //
+    // A bin the tone has not visited for minutes would otherwise decay
+    // into denormals, which are slow; by then it holds nothing.
+    //
+    if (bin_xx[idx] < DIV_CW_FLUSH && bin_yy[idx] < DIV_CW_FLUSH) {
+      bin_xy_re[idx] = bin_xy_im[idx] = bin_xx[idx] = bin_yy[idx] = 0.0;
+    }
+  }
+
+  acc_w1 *= d;
+  acc_w2 *= d * d;
+}
+
+//
+// The 10th percentile of one arm's power over the off-tone bins of the
+// region: this block's noise floor, per bin. Strided into occ_scratch as
+// the occupancy split is, so the sort stays bounded however wide the
+// region. Returns 0 when there are too few bins to say.
+//
+static double div_cw_floor(const struct div_context *ctx, int klo, int khi,
+                           int peak, const fftwf_complex *fft) {
+  const int n = khi - klo + 1;
+  const int stride = (n > DIV_OCC_MAX_SAMPLES) ? (n / DIV_OCC_MAX_SAMPLES + 1) : 1;
+  int ns = 0;
+
+  for (int k = klo; k <= khi && ns < DIV_OCC_MAX_SAMPLES; k += stride) {
+    if (abs(k - peak) < DIV_OCC_GUARD || div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    occ_scratch[ns++] = (double)fft[idx][0] * fft[idx][0]
+                        + (double)fft[idx][1] * fft[idx][1];
+  }
+
+  if (ns < 2) { return 0.0; }
+
+  qsort(occ_scratch, ns, sizeof(double), div_occ_cmp);
+  return occ_scratch[ns / 10];
+}
+
+static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
+  double alpha = 1.0 - exp(-blocktime / div_auto_tau);
+
+  if (acc_valid) { div_cw_age(klo, khi, 1.0 - alpha); }
+
+  //
+  // The peak, weighted towards the centre of the region.
+  //
+  const double k_centre = 0.5 * (double)(klo + khi);
+  const double sigma = 0.25 * (double)(khi - klo + 1);
+  int peak = klo;
+  double peakval = -1.0, p_region = 0.0;
+  int nregion = 0;
+
+  for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double p = (double)fftout0[idx][0] * fftout0[idx][0]
+                     + (double)fftout0[idx][1] * fftout0[idx][1]
+                     + (double)fftout1[idx][0] * fftout1[idx][0]
+                     + (double)fftout1[idx][1] * fftout1[idx][1];
+    const double dk = (double)k - k_centre;
+    const double pw = p * exp(-dk * dk / (2.0 * sigma * sigma));
+    p_region += p;
+    nregion++;
+
+    if (pw > peakval) {
+      peakval = pw;
+      peak = k;
+    }
+  }
+
+  if (!(peakval > 0.0)) {
+    div_auto_occ_valid = 0;
+    div_auto_holding = 1;
+    return;
+  }
+
+  //
+  // The tone: the peak and DIV_CW_BINS either side, inside the region and
+  // clear of the operator's notches.
+  //
+  double p_tone = 0.0;
+  int ntone = 0;
+
+  for (int k = peak - DIV_CW_BINS; k <= peak + DIV_CW_BINS; k++) {
+    if (k < klo || k > khi || div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    p_tone += (double)fftout0[idx][0] * fftout0[idx][0]
+              + (double)fftout0[idx][1] * fftout0[idx][1]
+              + (double)fftout1[idx][0] * fftout1[idx][0]
+              + (double)fftout1[idx][1] * fftout1[idx][1];
+    ntone++;
+  }
+
+  //
+  // Keyclicks and impulses raise the whole region at once, so the tone
+  // stops standing out of it. See DIV_CW_CREST_THRESH.
+  //
+  const double crest = p_tone * (double)nregion / ((double)ntone * p_region);
+
+  if (!(crest >= DIV_CW_CREST_THRESH)) {
+    div_auto_holding = 1;
+    return;
+  }
+
+  //
+  // The readout, and the span the panadapter shades: the tone's frequency
+  // smoothed at the Averaging time, as the carrier tracker does.
+  //
+  const double hz = -(double)peak * binhz - div_frame_off(ctx);
+
+  if (!div_auto_carrier_valid) {
+    div_carrier_hz = hz;
+    div_auto_carrier_valid = 1;
+  } else {
+    div_carrier_hz += alpha * (hz - div_carrier_hz);
+  }
+
+  div_auto_carrier = div_carrier_hz;
+  {
+    const double a = div_carrier_hz - ((double)DIV_CW_BINS + 0.5) * binhz;
+    const double b = div_carrier_hz + ((double)DIV_CW_BINS + 0.5) * binhz;
+    div_auto_occ_lo = (a < b) ? a : b;
+    div_auto_occ_hi = (a < b) ? b : a;
+    div_auto_occ_valid = 1;
+  }
+
+  //
+  // Accept the block: alpha of its tone bins goes into averages that have
+  // already been aged above. The first block after a reset is taken whole.
+  //
+  if (!acc_valid) {
+    alpha = 1.0;
+    acc_valid = 1;
+    acc_w1 = acc_w2 = 0.0;
+  }
+
+  acc_w1 += alpha;
+  acc_w2 += alpha * alpha;
+  double sig_xy_re = 0.0, sig_xy_im = 0.0, sig_xx = 0.0, sig_yy = 0.0;
+
+  for (int k = peak - DIV_CW_BINS; k <= peak + DIV_CW_BINS; k++) {
+    if (k < klo || k > khi || div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+    bin_xy_re[idx] += alpha * (i0 * i1 + q0 * q1);
+    bin_xy_im[idx] += alpha * (q0 * i1 - i0 * q1);
+    bin_xx[idx]    += alpha * (i0 * i0 + q0 * q0);
+    bin_yy[idx]    += alpha * (i1 * i1 + q1 * q1);
+    sig_xy_re += bin_xy_re[idx];
+    sig_xy_im += bin_xy_im[idx];
+    sig_xx    += bin_xx[idx];
+    sig_yy    += bin_yy[idx];
+  }
+
+  if (!(sig_xx > 0.0) || !(sig_yy > 0.0)) {
+    div_auto_holding = 1;
+    return;
+  }
+
+  div_auto_coherence = (sig_xy_re * sig_xy_re + sig_xy_im * sig_xy_im) / (sig_xx * sig_yy);
+
+  if (div_auto_coherence > 1.0) { div_auto_coherence = 1.0; }
+
+  if (div_auto_coherence < div_gate_threshold(ntone)) {
+    div_auto_holding = 1;
+    return;
+  }
+
+  div_auto_holding = 0;
+  //
+  // Per-arm SNR, as the advantage of arm 1 - div_apply_best() reads a
+  // positive value as "switch to arm 1".
+  //
+  const double n0 = div_cw_floor(ctx, klo, khi, peak, fftout0);
+  const double n1 = div_cw_floor(ctx, klo, khi, peak, fftout1);
+  const int floors = (n0 > 0.0 && n1 > 0.0);
+  div_arm_publish(floors, floors ? 10.0 * log10((sig_yy / n1) / (sig_xx / n0)) : 0.0);
+
+  if (div_auto_mode == DIV_AUTO_BEST) {
+    div_apply_best(sig_xy_re / sig_xx, sig_xy_im / sig_xx);
+    return;
+  }
+
+  if (div_auto_mode == DIV_AUTO_NULL) {
+    div_apply_weight(-sig_xy_re / sig_yy, -sig_xy_im / sig_yy);
+    return;
+  }
+
+  const double nratio = floors ? n0 / n1 : 1.0;
+  div_apply_weight(nratio * sig_xy_re / sig_xx, nratio * sig_xy_im / sig_xx);
 }
 
 //
@@ -2576,6 +2877,16 @@ static void div_process_block(void) {
       div_auto_holding = 1;
       return;
     }
+  }
+
+  //
+  // CW takes it from here, before the window accumulation below: it
+  // accumulates the tone bins only, on the blocks it accepts, and ages the
+  // rest. See div_cw_solve().
+  //
+  if (ctx.ref == DIV_REF_CW) {
+    div_cw_solve(&ctx, klo, khi);
+    return;
   }
 
   //
@@ -3157,6 +3468,8 @@ static double div_cohmin_for_ref(int ref) {
 
   case DIV_REF_RADE_V1:    return 0.0;   // retired - see div_settings_validate()
 
+  case DIV_REF_CW:         return div_cw_cohmin;
+
   default:                 return div_band_cohmin;
   }
 }
@@ -3178,6 +3491,8 @@ static void div_cohmin_set_for_ref(int ref, double v) {
 
   case DIV_REF_RADE_V1:    break;         // retired - see div_settings_validate()
 
+  case DIV_REF_CW:         div_cw_cohmin = v;      break;
+
   default:                 div_band_cohmin = v;    break;
   }
 }
@@ -3195,6 +3510,10 @@ void diversity_auto_ref_store(int ref) {
     div_digital_centre = div_auto_centre;
     div_digital_width  = div_auto_width;
     div_digital_cohmin = div_auto_coherence_min;
+  } else if (ref == DIV_REF_CW) {
+    div_cw_centre = div_auto_centre;
+    div_cw_width  = div_auto_width;
+    div_cw_cohmin = div_auto_coherence_min;
   }
 
   //
@@ -3215,6 +3534,9 @@ void diversity_auto_ref_recall(int ref) {
   } else if (ref == DIV_REF_DIGITAL_IQ) {
     div_auto_centre = div_digital_centre;
     div_auto_width  = div_digital_width;
+  } else if (ref == DIV_REF_CW) {
+    div_auto_centre = div_cw_centre;
+    div_auto_width  = div_cw_width;
   }
 
   div_auto_coherence_min = div_cohmin_for_ref(ref);
@@ -3236,9 +3558,7 @@ void diversity_auto_ref_recall(int ref) {
 void diversity_auto_seed_window(void) {
   if (div_auto_ref == DIV_REF_RADE_V1) { return; }
 
-  const double def_width = (div_auto_ref == DIV_REF_DIGITAL_IQ) ? DIV_DIGITAL_WIDTH_DEFAULT
-                           : DIV_WIDTH_DEFAULT;
-  if (div_auto_centre != 0.0 || div_auto_width != def_width) { return; }
+  if (div_auto_centre != 0.0 || div_auto_width != div_width_default(div_auto_ref)) { return; }
 
   const double lo = (double)receiver[0]->filter_low;
   const double hi = (double)receiver[0]->filter_high;
@@ -3272,6 +3592,9 @@ void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->carrier_width  = div_carrier_width;
   s->digital_centre = div_digital_centre;
   s->digital_width  = div_digital_width;
+  s->cw_cohmin      = div_cw_cohmin;
+  s->cw_centre      = div_cw_centre;
+  s->cw_width       = div_cw_width;
 }
 
 //
@@ -3295,6 +3618,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_band_cohmin        = s->band_cohmin;
   div_carrier_cohmin     = s->carrier_cohmin;
   div_digital_cohmin     = s->digital_cohmin;
+  div_cw_cohmin          = s->cw_cohmin;
   div_rade_cohmin        = 0.0;   // retired, whatever the block says - see div_settings_validate()
   //
   // The live threshold always belongs to the selected reference. Taking
@@ -3322,6 +3646,8 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_carrier_width      = s->carrier_width;
   div_digital_centre     = s->digital_centre;
   div_digital_width      = s->digital_width;
+  div_cw_centre          = s->cw_centre;
+  div_cw_width           = s->cw_width;
 }
 
 //
@@ -3626,7 +3952,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
     s->mode = DIV_MANUAL;
   }
 
-  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_DIGITAL_IQ) {
+  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_CW) {
     s->ref = DIV_REF_BAND;
   }
 
@@ -3640,12 +3966,12 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->weighting = DIV_WEIGHT_FLAT;
 
   //
-  // Each reference's own threshold, and the live one. These four share
-  // the slider's range; RADE V1's is pinned below.
+  // Each reference's own threshold, and the live one. These share the
+  // slider's range; RADE V1's is pinned below.
   //
   {
     double *c[] = { &s->coherence_min, &s->band_cohmin, &s->carrier_cohmin,
-                    &s->digital_cohmin
+                    &s->digital_cohmin, &s->cw_cohmin
                   };
 
     for (unsigned i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
@@ -3727,15 +4053,17 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // an operator's window: that reference goes back to its default window,
   // and if it is the live one, back to following the RX filter.
   //
-  double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width };
-  double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre };
-  const double live_default = (s->ref == DIV_REF_DIGITAL_IQ) ? DIV_DIGITAL_WIDTH_DEFAULT
-                              : DIV_WIDTH_DEFAULT;
-  const double defaults[] = { live_default, DIV_WIDTH_DEFAULT, DIV_WIDTH_DEFAULT,
-                              DIV_DIGITAL_WIDTH_DEFAULT
+  double *widths[]  = { &s->width, &s->band_width, &s->carrier_width, &s->digital_width,
+                        &s->cw_width
+                      };
+  double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre,
+                        &s->cw_centre
+                      };
+  const double defaults[] = { div_width_default(s->ref), DIV_WIDTH_DEFAULT, DIV_WIDTH_DEFAULT,
+                              DIV_DIGITAL_WIDTH_DEFAULT, DIV_CW_WIDTH_DEFAULT
                             };
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 5; i++) {
     if (!(*widths[i] >= 20.0)) {
       *widths[i]  = defaults[i];
       *centres[i] = 0.0;
@@ -3779,6 +4107,9 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
   SetPropF1("diversity_group[%d].carrier_width",  g, s->carrier_width);
   SetPropF1("diversity_group[%d].digital_centre", g, s->digital_centre);
   SetPropF1("diversity_group[%d].digital_width",  g, s->digital_width);
+  SetPropF1("diversity_group[%d].cw_cohmin",      g, s->cw_cohmin);
+  SetPropF1("diversity_group[%d].cw_centre",      g, s->cw_centre);
+  SetPropF1("diversity_group[%d].cw_width",       g, s->cw_width);
 }
 
 //
@@ -3809,6 +4140,9 @@ static void div_group_restore(int g, DIV_SETTINGS *s) {
   GetPropF1("diversity_group[%d].carrier_width",  g, s->carrier_width);
   GetPropF1("diversity_group[%d].digital_centre", g, s->digital_centre);
   GetPropF1("diversity_group[%d].digital_width",  g, s->digital_width);
+  GetPropF1("diversity_group[%d].cw_cohmin",      g, s->cw_cohmin);
+  GetPropF1("diversity_group[%d].cw_centre",      g, s->cw_centre);
+  GetPropF1("diversity_group[%d].cw_width",       g, s->cw_width);
 }
 
 void diversity_auto_save_state(void) {
@@ -3847,6 +4181,9 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_carrier_width",       div_carrier_width);
   SetPropF0("diversity_digital_centre",      div_digital_centre);
   SetPropF0("diversity_digital_width",       div_digital_width);
+  SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
+  SetPropF0("diversity_cw_centre",           div_cw_centre);
+  SetPropF0("diversity_cw_width",            div_cw_width);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -3880,6 +4217,14 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_carrier_width",       div_carrier_width);
   GetPropF0("diversity_digital_centre",      div_digital_centre);
   GetPropF0("diversity_digital_width",       div_digital_width);
+  //
+  // Not seeded from diversity_auto_coherence_min as the three above are:
+  // a file written before CW existed was never run on it, so it gets
+  // CW's own default.
+  //
+  GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
+  GetPropF0("diversity_cw_centre",           div_cw_centre);
+  GetPropF0("diversity_cw_width",            div_cw_width);
 
   //
   // Migrate a reference written under the old numbering. Absent key means
