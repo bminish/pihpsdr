@@ -29,6 +29,14 @@
 #include "receiver.h"
 #include "vfo.h"
 
+#ifdef DIVERSITY_CAPTURE
+  //
+  // DEVELOPMENT TOOL - remove with the rest of the capture instrument.
+  // See test/diversity/devtools/README.md.
+  //
+  #include "diversity_capture.h"
+#endif
+
 //
 // These texts contain useful information that must go to the manual,
 // but as they stand they pop up a window that is too large and
@@ -131,6 +139,61 @@ static void div_send_settings(int action) {
   }
 }
 
+#ifdef DIVERSITY_CAPTURE
+//
+// ===================================================================
+//  DEVELOPMENT TOOL - NOT PART OF THE DIVERSITY FEATURE.
+//  Compiled only under "make DIVCAP=1", never sent upstream. Delete
+//  this block, the one in cleanup(), the one in status_update_cb() and
+//  the one beside the Invert button to remove it.
+//  See test/diversity/devtools/README.md.
+// ===================================================================
+//
+// Records the analysis blocks to a file so a real signal can be replayed
+// through the engine offline. Where the file goes, how long it runs and
+// what note is stored with it come from the environment
+// (PIHPSDR_DIVCAP_DIR / _SECONDS / _NOTE) rather than from properties,
+// so nothing about it survives in an operator's config.
+//
+static GtkWidget *divcap_b = NULL;
+
+//
+// Declared here rather than in diversity_auto.h: nfft is private to
+// diversity_auto.c, so the arming call has to live there, but the header
+// is a permanent file and this is not.
+//
+extern int diversity_auto_capture_start(void);
+
+static void divcap_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    //
+    // Switch diversity on first if it is off, so the capture starts cold
+    // and records acquisition and settling - arming the recorder and then
+    // reaching for the Diversity tick means every capture starts already
+    // converged.
+    //
+    const int started_here = !diversity_enabled;
+
+    if (started_here) { radio_set_diversity(1); }
+
+    if (!diversity_auto_capture_start()) {
+      //
+      // No analysis thread running - the objective is Manual, so there is
+      // nothing to record - or the file would not open. Come back out, and
+      // leave the radio as it was found.
+      //
+      if (started_here) { radio_set_diversity(0); }
+
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+    }
+  } else {
+    diversity_capture_stop();
+  }
+}
+#endif
+
 static void cleanup(void) {
   if (status_timer != 0) {
     g_source_remove(status_timer);
@@ -154,6 +217,14 @@ static void cleanup(void) {
     coh_scale = NULL;
     active_menu  = NO_MENU;
     radio_save_state();
+#ifdef DIVERSITY_CAPTURE
+    //
+    // DEVELOPMENT TOOL. The capture carries on - closing the menu is not a
+    // reason to stop recording, and it stops itself at its budget. Only the
+    // widget goes.
+    //
+    divcap_b = NULL;
+#endif
   }
 }
 
@@ -404,6 +475,26 @@ static int status_update_cb(gpointer data) {
   // them underneath would make the control useless.
   //
 
+#ifdef DIVERSITY_CAPTURE
+
+  //
+  // DEVELOPMENT TOOL. The block count goes on the button rather than into
+  // the status line, which is held to exactly DIV_STATUS_CHARS.
+  //
+  if (divcap_b != NULL) {
+    char cap[48];
+    diversity_capture_status(cap, sizeof(cap));
+    gtk_button_set_label(GTK_BUTTON(divcap_b), (cap[0] != '\0') ? cap : "Capture");
+
+    if (!div_capture_active && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(divcap_b))) {
+      //
+      // It reached its block budget and closed itself. Follow it out.
+      //
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), FALSE);
+    }
+  }
+
+#endif
   div_arm_status_set();
 
   //
@@ -1150,6 +1241,27 @@ void diversity_menu(GtkWidget *parent) {
   //                            "an antenna rather than steering a null.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 5, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
+#ifdef DIVERSITY_CAPTURE
+  //
+  // DEVELOPMENT TOOL. Where the Hang slider was. A capture survives the
+  // menu being closed, so the button is set before its handler is
+  // connected and does not read as the operator pressing it. It cannot
+  // work from a remote client: the file is written by the analysis
+  // thread, on the radio.
+  //
+  divcap_b = gtk_toggle_button_new_with_label("Capture");
+  gtk_widget_set_tooltip_text(divcap_b,
+                              "Development tool. Record the two antenna streams as "
+                              "the analysis thread sees them, for replaying offline. "
+                              "Stops by itself at PIHPSDR_DIVCAP_SECONDS (default 60). "
+                              "The label counts blocks written.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), div_capture_active != 0);
+  g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
+  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 5, 3, 1);
+
+  if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
+
+#endif
   //
   // The status line spans both columns and is held to exactly
   // DIV_STATUS_CHARS characters, so it fits inside the width the controls
