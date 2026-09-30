@@ -3274,6 +3274,32 @@ void diversity_auto_mode_changed(int mode) {
 }
 
 //
+// How long a RADE lock is held after the pilot stops being detectable,
+// before the correlator gives up on it and searches from cold.
+//
+// It no longer has a control, and it no longer decides a changeover: the
+// correlator searches while the lock is frozen and moves to a new station
+// as soon as it finds one, so the hang only says how long to go on
+// believing in a station that has stopped when nothing has replaced it.
+// Throughout, and after it, the weight in force is held; it is only ever
+// written from a confirmed lock.
+//
+// Swept from 1 to 10 s on the recorded RADE captures that can be scored
+// on decode, it moves lock uptime from 38 % to 94 % but synced frames by
+// +10, +11, +10, +10 - inside the scatter of the measurement - and does
+// nothing on eleven of thirteen captures through the shipping engine. The
+// correlator's uptime describes the health of the pilot lock and is very
+// nearly uncoupled from what the modem does with the audio, so this was a
+// number an operator could tune that did not predict the result.
+//
+// The long end is the value kept: it re-acquires least often, and with
+// the resync search in place that costs nothing at a changeover.
+//
+// div_auto_hang's initialiser is the same 10.0.
+//
+#define DIV_HANG_DEFAULT 10.0
+
+//
 // Clamp everything in a settings block to what the controls can express.
 //
 // A props file can be hand-edited or written by a future version, and an
@@ -3338,13 +3364,13 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   if (s->tau > 30.0) { s->tau = 30.0; }
 
   //
-  // Both ends match the slider. Zero is deliberately not allowed: the
-  // hang has to outlast the gate that feeds it, which averages over
-  // about a second, or a single noisy frame would end a lock.
+  // Pinned, not ranged. There is no control for it any more and it is not
+  // a setting an operator can improve on - see DIV_HANG_DEFAULT - so a
+  // value left in a props file by an older build, or sent by an older
+  // client, is replaced rather than merely clamped. The field stays on
+  // the wire and in the file so that neither has to change shape.
   //
-  if (s->hang < 1.0)  { s->hang = 1.0; }
-
-  if (s->hang > 30.0) { s->hang = 30.0; }
+  s->hang = DIV_HANG_DEFAULT;
 
   if (s->resolution < 3.0)  { s->resolution = 3.0; }
 

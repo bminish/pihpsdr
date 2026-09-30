@@ -441,7 +441,8 @@ static int status_update_cb(gpointer data) {
       //
       // "fade": locked, but the pilot is not currently strong enough to
       // measure from, so the weight is frozen at its last good value.
-      // That is a fade, not a loss - the lock is kept for the Hang time.
+      // That is a fade, not a loss - the lock is kept for DIV_HANG_DEFAULT,
+      // and meanwhile the correlator searches for a new station.
       //
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "fade" : "LOCK");
       snprintf(detail, sizeof(detail), "%s %3.0f%%",
@@ -601,8 +602,6 @@ static void div_populate_from_settings(void) {
   if (width_spin)   { gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), div_auto_width); }
 
   if (tau_scale)    { gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(div_auto_tau)); }
-
-  if (hang_scale)   { gtk_range_set_value(GTK_RANGE(hang_scale), div_auto_hang); }
 
   if (coh_scale)    { gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min); }
 
@@ -820,12 +819,6 @@ static void width_cb(GtkWidget *widget, gpointer data) {
   div_auto_width = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
   div_window_store(div_auto_ref);
   diversity_auto_reset();
-  div_send_settings(DIV_ACTION_NONE);
-}
-
-static void hang_cb(GtkWidget *widget, gpointer data) {
-  (void)data;
-  div_auto_hang = gtk_range_get_value(GTK_RANGE(widget));
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1115,22 +1108,6 @@ void diversity_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 4, 5, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(coh_cb), NULL);
   coh_scale = btn;
-  lbl = gtk_label_new("Hang (s)");
-  //gtk_widget_set_tooltip_text(hang_label,
-  //                            "How long a RADE lock is held after the pilot stops "
-  //                            "being detectable, before the correlator gives up and "
-  //                            "searches again. Long rides out a fade on one station. "
-  //                            "Short is what a frequency several stations take turns "
-  //                            "on wants: each has its own best gain and phase, and "
-  //                            "until the lock is dropped the previous station's is "
-  //                            "still being applied.");
-  gtk_widget_set_name(lbl, "boldlabel");
-  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 5, 2, 1);
-  btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 1.0, 30.0, 0.5);
-  gtk_range_set_value(GTK_RANGE(btn), div_auto_hang);
-  gtk_grid_attach(GTK_GRID(agrid), btn, 2, 5, 5, 1);
-  g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(hang_cb), NULL);
   //
   // "Status" info at the bottom
   //
