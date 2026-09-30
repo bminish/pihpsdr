@@ -149,6 +149,7 @@ int main(int argc, char **argv) {
   int mode = -1;
   const char *sets[16];
   int nset = 0;
+  int nnotch = 0;
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-v")) { verbose = 1; }
@@ -169,6 +170,28 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--width")  && i + 1 < argc) { width   = atof(argv[++i]); follow = 0; }
     else if (!strcmp(argv[i], "--follow") && i + 1 < argc) { follow  = atoi(argv[++i]); }
     else if (!strcmp(argv[i], "--hang")  && i + 1 < argc) { hang    = atof(argv[++i]); }
+    /*
+     * A manual notch, CENTRE:WIDTH in Hz, up to three. The values are the
+     * ones the radio's notch menu stores in multi_notch_center/_width, so
+     * a notch set on air is reproduced exactly. The notch acts downstream
+     * of the capture tap, so the recorded samples are what they would have
+     * been without it, and a replay with it set is what the radio would
+     * have done. The engine maps a centre C to bin frequency -C; see
+     * div_bin_notched().
+     */
+    else if (!strcmp(argv[i], "--notch") && i + 1 < argc) {
+      double c = 0.0, w = 0.0;
+
+      if (nnotch >= 3 || sscanf(argv[++i], "%lf:%lf", &c, &w) != 2 || !(w > 0.0)) {
+        fprintf(stderr, "%s: --notch wants CENTRE:WIDTH in Hz, at most three\n", argv[0]);
+        return 2;
+      }
+
+      rx0.multi_notch_enable[nnotch] = 1;
+      rx0.multi_notch_center[nnotch] = c;
+      rx0.multi_notch_width[nnotch]  = w;
+      nnotch++;
+    }
     else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
     /*
      * Bin width in Hz, i.e. the Resolution control. Defaults to whatever
@@ -221,7 +244,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
               "       [--mode null|sum|best] [--weighting flat|coherence]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
-              "       [--noise RMS] [--seed N] [--resolution HZ]\n"
+              "       [--noise RMS] [--seed N] [--resolution HZ] [--notch C:W]...\n"
               "       [--set name=value]... [--tau S] [--hang S] [--pace US] [-v]\n",
               argv[0]);
       return 2;
