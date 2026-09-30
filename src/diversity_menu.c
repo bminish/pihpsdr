@@ -1004,8 +1004,9 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
 
   //
   // div_window_recall() moves this slider when the reference changes, and
-  // the slider's 5 % step would quantise the recalled value on the way
-  // back in.
+  // div_coh_range_update() moves it on the status tick; neither is the
+  // operator setting a value, and the slider's half-percent step would
+  // quantise the value on the way back in.
   //
   if (updating_from_auto) { return; }
 
