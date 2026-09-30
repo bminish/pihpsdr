@@ -20,7 +20,6 @@
 #define GAP_CARRIER_FOLLOW     "41f8700c: the carrier search can follow the filter too"
 #define GAP_CW_REFERENCE       "6027208a, d3b73b8a: the CW / Morse reference"
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
-#define GAP_RADE_QUALITY_RETIRED "082dba0b: RADE V1's Min quality is retired and pinned at 0"
 
 #include <stdio.h>
 
