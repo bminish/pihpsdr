@@ -542,8 +542,8 @@ static int status_update_cb(gpointer data) {
       //
       // "fade": locked, but the pilot is not currently strong enough to
       // measure from, so the weight is frozen at its last good value.
-      // That is a fade, not a loss - the lock is kept for DIV_HANG_DEFAULT,
-      // and meanwhile the correlator searches for a new station.
+      // That is a fade, not a loss - the lock is kept until a new one
+      // replaces it, and meanwhile the correlator searches for one.
       //
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "fade" : "LOCK");
       snprintf(detail, sizeof(detail), "%s %3.0f%%",

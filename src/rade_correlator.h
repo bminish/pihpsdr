@@ -117,11 +117,9 @@ extern void rade_corr_reset(void);
 // tau is the operator's averaging time in seconds, which sets how fast the
 // channel and covariance estimates follow the path.
 //
-// hang is the operator's hang time in seconds: how long a lock survives
-// after the pilot stops being detectable before the correlator gives up
-// and searches again. Short suits a frequency several stations are taking
-// turns on, where each one wants its own weight; long rides out a fade on
-// a single station.
+// There is no hang: a lock whose pilot has stopped being detectable is
+// held, weight and all, until a new lock replaces it. See RADE_RESYNC_DA
+// in rade_correlator.c.
 //
 // Returns 1 when a new weight is available in *wr/*wi, in which case it
 // is expressed in the same sense as div_cos/div_sin, i.e. ready to be
@@ -130,6 +128,6 @@ extern void rade_corr_reset(void);
 //
 extern int rade_corr_process(const float *arm0, const float *arm1, int n,
                              int expect_bank, double frame_off, double tau,
-                             double hang, double *wr, double *wi);
+                             double *wr, double *wi);
 
 #endif
