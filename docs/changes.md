@@ -35,6 +35,11 @@ time.
 7. **This file is local.** `docs/changes.md` is never part of an
    upstream PR. It is updated in the same push as the change it
    describes.
+8. **Tooling is not a change.** The capture recorder, the test harness
+   and the findings docs are local tooling. They carry
+   `Local-Tooling: LT-NNN` instead of `Local-Change:`, are never part of
+   an upstream PR, and no LC commit may depend on them. Before trusting a
+   change, score it with the tools (see "Local tooling" below).
 
 ## Commands
 
@@ -45,6 +50,8 @@ git fetch upstream
 git log --reverse --no-merges upstream/TEST..TEST \
     --format='%(trailers:key=Local-Change,valueonly,separator=) %h %s'
 ```
+
+The same with `key=Local-Tooling` lists the tooling commits.
 
 See which local changes upstream has already taken, in any form (a `-`
 means upstream has an equivalent patch):
@@ -437,6 +444,68 @@ harness is on this branch.
 
 ---
 
+## Local tooling (never upstream)
+
+The means to score a change against the recorded captures before keeping
+it. Usage is in `test/diversity/devtools/README.md`, whose first section
+covers this branch. The findings the tools produced so far are in
+`docs/diversity-measurements.md` and `docs/diversity-rade.md`, as
+recorded on the feature branches.
+
+| ID | Summary | Where |
+|---|---|---|
+| LT-001 | Capture recorder: `make DIVCAP=1`, Capture button, format-3 writer fix, `captures/` ignored | `src/diversity_capture.[ch]`, `Makefile`, `DIVERSITY_CAPTURE` blocks in `src/diversity_auto.c` and `src/diversity_menu.c`, `.gitignore` |
+| LT-002 | Test harness: seven unit tests, `replay_rade`, `run_ref`, `test_capture`, `score_rade`, `known_gaps.h` | `test/diversity/` |
+
+**LT-001** brings the recorder the feature branches used. Upstream `TEST`
+kept the recorder's hooks in `diversity_auto.c` but not the recorder, the
+Makefile switch or the button. Those hooks were also an older writer that
+always wrote `rec_flags` as zero, so a capture taken on upstream's code
+never marked a context change or an engine reset, and its replay diverged
+at the first attenuator step. The round-trip test differed on 60 of 160
+blocks before the fix and on none after.
+
+**LT-002** is the harness from `feature/diversity-binaural`, taken from
+before `8ea8c8f3` and adapted to `TEST`'s engine in the tools only. It
+reproduces Finding 45 exactly on `190516`: the replay gives 4
+acquisitions, 0.714 locked, −11.37 dB and 0.101, and the decode score
+gives arm 0 332 frames at 97.9 % and arm 1 223 frames at 99.1 %. It also
+independently confirms LC-006 (a stored Coherence weighting comes back
+as Flat), LC-010 (the resync drops at 2.82 s; a 31 dB, 5.1 s fade keeps
+its lock) and LC-011 (a stored Hang of 1 s comes back as 10 s).
+
+### Known gaps
+
+Features the harness was written for that `TEST` does not have, from
+`test/diversity/known_gaps.h`. Each check still runs and prints its
+figures; a failure is reported but not counted. When one is ported, it
+gets an LC number and its line in `known_gaps.h` is deleted, so the check
+becomes its regression test.
+
+| Gap | Feature branch commit | What the check shows on `TEST` |
+|---|---|---|
+| Notch exclusion | `5d5dfc1d` | Window, Carrier and Digital all solve on a manually notched signal |
+| Branch noise ratio | `e6c12c05` | Window Sum does not back off an arm 20 dB noisier (SINR +16.66 dB, against +29.96 dB for Digital) |
+| Level output | `4f24f5c3` | The combined output is 4.16 dB louder than one antenna |
+| Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
+| Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
+| Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
+| RADE quality retired | `082dba0b` | A stored 15 % RADE quality gate is kept, not pinned to 0 |
+| CW reference | `6027208a`, `d3b73b8a` | Not built: `test_cw` needs `DIV_REF_CW` |
+
+**Stand-down is not simply a gap.** On the feature branches, the combiner
+slews the weight to zero on an empty band and puts it back when the band
+fills. That's the opposite of the rule on `TEST`: when there is nothing
+new to correlate on, hold where we were. The feature branch measured the
+cost of holding as 12.18 dB of extra noise between overs on `122843` and
+3.5 dB over two thirds of a minute on `235906`, where the held weight had
+been fitted with one arm 15 dB hotter. Its tuning also assumed a gate
+that "passes about one no-signal block in twenty", which is the floor
+LC-012 replaced. Before deciding, re-score both captures on `TEST` with
+`run_ref`.
+
+---
+
 ## Not carried
 
 - **6 Hz default bins.** An earlier local commit changed the
@@ -455,16 +524,20 @@ Noted while porting LC-010 to LC-012, not yet decided:
 
 - `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
   already gates). Separate decision.
-- The `test/diversity` harness (`test_rade`, `run_ref`, `replay_rade`),
-  which the validation of LC-010, LC-011 and LC-012 relies on.
-- `docs/diversity-measurements.md` Findings 33, 35, 41, 44 and 45, and
-  the Hang and resync sections of `docs/diversity-rade.md`. Each one gets the next `LC`
+- LC-012's effect on weak real signals is not yet scored. The Monte
+  Carlo covers noise only. Run `run_ref` on the Carrier captures at short
+  averaging, before and after.
+- `feature/auto-diversity`'s Findings 50 and 51 (the CW reference, and
+  the notches) are not in this branch's `docs/diversity-measurements.md`.
+  See the note at its top. Each one gets the next `LC`
 number, a commit (or a short run of commits) that follows the rules
 above, and an entry in the register and in the Fixes or Behaviour
 section, in the same push.
 
 ## History
 
+- 2026-09-30: LT-001 and LT-002 ported (capture recorder, test harness),
+  with `docs/diversity-measurements.md` and `docs/diversity-rade.md`.
 - 2026-09-30: LC-010 to LC-012 ported (RADE resync, Hang pinned, gate
   noise floor).
 - 2026-09-30: register created. Upstream `TEST` at `883243c0`. The eight
