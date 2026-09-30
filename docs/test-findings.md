@@ -242,7 +242,29 @@ multipath channel in a crowded band: changeovers, fades and adjacent
 interference in one set. Scoring will need a V2 decoder in the loop, as
 `score_rade` does for V1 with librade.
 
-## Capture practice, from T-001 to T-008
+## T-009: RADE V2 on the lower sideband, under strong SSB interference
+
+**Logged, not analysed.** As with T-008, `TEST` has no V2 reference yet.
+
+**Capture.** `divcap-20260930-192558.divc`: 7.190 MHz, recorded mode DIGL,
+192 kHz, 16384-point blocks (12 Hz bins, 85 ms), 60.0 s. Every block the
+same settings: FSK/Digital reference, RX filter −2000 to −1000 Hz, Sum,
+0.42 s averaging. No context changes.
+
+Operator's description: two RADE V2 stations in QSO, at times hammered by
+strong SSB interference.
+
+- **The signal is inverted.** RADE V2 is only valid on the upper
+  sideband, so received on the lower sideband its spectrum is mirrored.
+  A V2 correlator has to un-mirror it (or search both banks, as V1's
+  does) before this capture can be used.
+- **Otherwise a good test of discrimination.** A wanted digital signal
+  with a strong, intermittent unwanted SSB signal in or beside the
+  passband. That's the case for a tracker that locks to the wanted
+  waveform rather than to whatever is loudest, and a baseline for how
+  FSK/Digital's occupancy split copes with it.
+
+## Capture practice, from T-001 to T-009
 
 Captures are started from the Capture button, so the note field in the
 file stays empty. The operator's description of each capture is recorded
