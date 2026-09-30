@@ -756,6 +756,12 @@ static double div_carrier_hz = 0.0;
 //
 static double cw_act_lo = 0.0;
 static int    cw_act_valid = 0;
+//
+// The CW noise floors per arm, smoothed at the Averaging time. See
+// div_cw_solve().
+//
+static double cw_nf0 = 0.0, cw_nf1 = 0.0;
+static int    cw_nf_valid = 0;
 
 
 //
@@ -850,6 +856,8 @@ static void div_reset_stats(void) {
   div_auto_carrier_valid = 0;
   cw_act_lo = 0.0;
   cw_act_valid = 0;
+  cw_nf0 = cw_nf1 = 0.0;
+  cw_nf_valid = 0;
   div_auto_occ_valid = 0;
   div_auto_occ_lo = 0.0;
   div_auto_occ_hi = 0.0;
@@ -2279,7 +2287,7 @@ static void div_digital_solve(const struct div_context *ctx, int klo, int khi) {
 // counted twice.
 //
 // The Sum weight carries the branch noise ratio, from the off-tone bins
-// of the same block. The antenna pairs in the capture set run 8 to 12 dB
+// smoothed at the Averaging time. The antenna pairs in the capture set run 8 to 12 dB
 // apart in noise and leaving the term out costs about 1 dB. Null is not
 // scaled: minimum output power is what Null means.
 //
@@ -2308,10 +2316,16 @@ static void div_cw_age(int klo, int khi, double d) {
 }
 
 //
-// The 10th percentile of one arm's power over the off-tone bins of the
-// region: this block's noise floor, per bin. Strided into occ_scratch as
-// the occupancy split is, so the sort stays bounded however wide the
-// region. Returns 0 when there are too few bins to say.
+// One arm's noise floor over the off-tone bins of the region, per bin:
+// the mean of the quieter half. Other stations in a wide filter sit in the
+// upper half, so it is not raised by them, and averaging a couple of dozen
+// bins is far steadier than a low percentile - the 10th percentile of the
+// forty-odd bins a CW filter leaves is the fourth smallest, which moved by
+// 10 dB from block to block and put that into the noise ratio. The scale
+// is not the noise power's, and needs not be: only ratios of these are
+// used. Strided into occ_scratch as the occupancy split is, so the sort
+// stays bounded however wide the region. Returns 0 when there are too few
+// bins to say.
 //
 static double div_cw_floor(const struct div_context *ctx, int klo, int khi,
                            int peak, const fftwf_complex *fft) {
@@ -2333,7 +2347,11 @@ static double div_cw_floor(const struct div_context *ctx, int klo, int khi,
   if (ns < 2) { return 0.0; }
 
   qsort(occ_scratch, ns, sizeof(double), div_occ_cmp);
-  return occ_scratch[ns / 10];
+  double sum = 0.0;
+
+  for (int i = 0; i < ns / 2; i++) { sum += occ_scratch[i]; }
+
+  return sum / (double)(ns / 2);
 }
 
 static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
@@ -2380,11 +2398,26 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   }
 
   //
-  // This block's noise floor per arm and per bin, off the tone.
+  // This block's noise floor per arm and per bin, off the tone, and the
+  // same smoothed at the Averaging time for the noise ratio and the per-arm
+  // SNR: one block's floor still moves by a dB or so, and used raw it went
+  // straight into the Sum weight's gain. Every block updates it, keyed or
+  // not - the noise is there either way.
   //
   const double n0 = div_cw_floor(ctx, klo, khi, peak, fftout0);
   const double n1 = div_cw_floor(ctx, klo, khi, peak, fftout1);
   const int floors = (n0 > 0.0 && n1 > 0.0);
+
+  if (floors) {
+    if (!cw_nf_valid) {
+      cw_nf0 = n0;
+      cw_nf1 = n1;
+      cw_nf_valid = 1;
+    } else {
+      cw_nf0 += alpha * (n0 - cw_nf0);
+      cw_nf1 += alpha * (n1 - cw_nf1);
+    }
+  }
 
   //
   // Is anything being keyed?
@@ -2534,7 +2567,8 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // Per-arm SNR, as the advantage of arm 1 - div_apply_best() reads a
   // positive value as "switch to arm 1".
   //
-  div_arm_publish(floors, floors ? 10.0 * log10((sig_yy / n1) / (sig_xx / n0)) : 0.0);
+  div_arm_publish(cw_nf_valid,
+                  cw_nf_valid ? 10.0 * log10((sig_yy / cw_nf1) / (sig_xx / cw_nf0)) : 0.0);
 
   if (div_auto_mode == DIV_AUTO_BEST) {
     div_apply_best(sig_xy_re / sig_xx, sig_xy_im / sig_xx);
@@ -2546,7 +2580,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
     return;
   }
 
-  const double nratio = floors ? n0 / n1 : 1.0;
+  const double nratio = cw_nf_valid ? cw_nf0 / cw_nf1 : 1.0;
   div_apply_weight(nratio * sig_xy_re / sig_xx, nratio * sig_xy_im / sig_xx);
 }
 
