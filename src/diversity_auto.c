@@ -2681,6 +2681,14 @@ static void div_process_block(void) {
 
     if (divcap_reset) { m.rec_flags |= DIVCAP_FLAG_ENGINE_RESET; }
 
+    //
+    // Which converter arm 0 came from: RX1's ADC, so ADC2 sets the bit. It
+    // only describes the recording (the engine does not act on it), and
+    // lives in the flags word because the block record is full: see
+    // DIVCAP_FLAG_ARM_SWAP.
+    //
+    if (receiver[0] != NULL && receiver[0]->adc == 1) { m.rec_flags |= DIVCAP_FLAG_ARM_SWAP; }
+
     divcap_prevctx    = ctx;
     divcap_haveprev   = 1;
     m.frequency       = (gint64)ctx.frequency;

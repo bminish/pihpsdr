@@ -128,9 +128,9 @@
 // - there, zero could not be distinguished from "not written"; here the
 // only value an older writer could have meant is the one a reader gets.
 //
-// It is compared as part of the context, so a swap thrown mid-recording
-// sets bit 0 and bit 1 on that block like any other context change, and
-// divcap_replay() follows the reset.
+// It only describes the recording: the engine does not act on a move of
+// RX1's ADC, so a swap thrown mid-recording is not a context change and
+// marks neither bit 0 nor bit 1.
 //
 #define DIVCAP_FLAG_ARM_SWAP     0x4u
 
