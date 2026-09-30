@@ -645,10 +645,20 @@ static int             q_pending_drop = 0;   // dropped since the last enqueue
 static int             q_gap[DIV_QUEUE];     // gap ahead of each queued slot
 
 //
-// Set by diversity_auto_reset() on the GTK thread, consumed by the worker
-// between blocks. See the note there.
+// Requests from the GTK thread, as generation counters: the requester
+// bumps one, and the thread that acts on it compares it with a private
+// copy of its own. A test-and-clear flag loses a request raised between
+// the read and the clear; a counter cannot.
 //
-static int             reset_requested = 0;
+// reset_gen: diversity_auto_reset(), acted on by the worker between
+// blocks. See the note there.
+//
+// gap_gen: diversity_auto_gap(), acted on by the sample path on its next
+// sample, so that fillptr and q_pending_drop are written by that thread
+// alone. See the note there.
+//
+static gint            reset_gen = 0;
+static gint            gap_gen = 0;
 
 static GMutex          mbox_mutex;
 static GCond           mbox_cond;
@@ -950,7 +960,7 @@ void diversity_auto_reset(void) {
   // the worker between blocks instead.
   //
   div_reset_stats();
-  reset_requested = 1;
+  g_atomic_int_inc(&reset_gen);
 }
 
 //
@@ -3286,6 +3296,7 @@ static void div_process_block(void) {
 
 static gpointer div_worker_thread(gpointer data) {
   (void) data;
+  int reset_seen = g_atomic_int_get(&reset_gen);
   t_print("%s: diversity auto-phasing analysis thread running\n", __func__);
 
   for (;;) {
@@ -3306,8 +3317,10 @@ static gpointer div_worker_thread(gpointer data) {
     q_gap[q_tail] = 0;
     g_mutex_unlock(&mbox_mutex);
 
-    if (reset_requested) {
-      reset_requested = 0;
+    const int reset_now = g_atomic_int_get(&reset_gen);
+
+    if (reset_now != reset_seen) {
+      reset_seen = reset_now;
       rade_corr_reset();
     }
 
@@ -3346,6 +3359,21 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
   // Called once per sample pair from rx_add_div_iq_samples(), on the
   // protocol receive thread. Nothing but stores happens here.
   //
+  // A transmit gap signalled since the last sample: the partly filled
+  // block holds samples from before it, so start the block again here, on
+  // the boundary, and mark the next block as following a gap.
+  //
+  static int gap_seen = 0;
+  const int gap_now = g_atomic_int_get(&gap_gen);
+
+  if (gap_now != gap_seen) {
+    gap_seen = gap_now;
+    fillptr = 0;
+    g_mutex_lock(&mbox_mutex);
+    q_pending_drop++;
+    g_mutex_unlock(&mbox_mutex);
+  }
+
   fill0[2 * fillptr    ] = (float)i0;
   fill0[2 * fillptr + 1] = (float)q0;
   fill1[2 * fillptr    ] = (float)i1;
@@ -3380,7 +3408,7 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
 }
 
 //
-// Called from rxtx() when the radio is about to transmit.
+// Called from rxtx() on both edges of a transmission.
 //
 // Both protocols stop feeding rx_add_div_iq_samples() for the whole over:
 // new_protocol only sets RXACTION_DIV when !xmit - duplex included, see
@@ -3402,12 +3430,14 @@ void diversity_auto_sample(double i0, double q0, double i1, double q1) {
 // produces a better fit. That is deliberate: they may not be ideal for
 // the returning signal, but they are a great deal better than nothing.
 //
-// Racing the sample path is harmless, so this needs no lock of its own
-// for fillptr. Storing zero can only move the fill position backwards
-// within the buffer, never outside it, so the worst case is one mangled
-// block - and that is the very block being flagged as following a gap,
-// whose correlator state the worker discards before processing it.
-// q_pending_drop is taken under the mutex, as it is on the sample path.
+// This runs on the GTK thread and only bumps gap_gen. It used to zero
+// fillptr and bump q_pending_drop itself, racing the protocol thread that
+// owns them: the store could land in the middle of a block being
+// written. Now the sample path does both on its first sample after the
+// signal, which is exactly on the boundary. Both edges are signalled
+// because samples can still arrive between the RX->TX call and the stream
+// stopping; the TX->RX signal discards that remnant before post-TX
+// samples are added to it.
 //
 void diversity_auto_gap(void) {
   //
@@ -3418,10 +3448,7 @@ void diversity_auto_gap(void) {
   //
   if (!div_auto_running || radio_is_remote) { return; }
 
-  fillptr = 0;
-  g_mutex_lock(&mbox_mutex);
-  q_pending_drop++;
-  g_mutex_unlock(&mbox_mutex);
+  g_atomic_int_inc(&gap_gen);
 }
 
 void diversity_auto_start(void) {
@@ -3490,7 +3517,6 @@ void diversity_auto_start(void) {
   q_head = q_tail = q_count = 0;
   q_pending_drop = 0;
   memset(q_gap, 0, sizeof(q_gap));
-  reset_requested = 0;
   mbox_quit = 0;
   fill0 = qbuf0[0];
   fill1 = qbuf1[0];
