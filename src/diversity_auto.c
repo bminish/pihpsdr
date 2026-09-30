@@ -2666,6 +2666,7 @@ static int divcap_ctx_differs(const struct div_context *a,
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
          a->att1           != b->att1           ||
+         a->swap           != b->swap           ||
          a->centre         != b->centre         ||
          a->width          != b->width;
 }
@@ -2725,6 +2726,13 @@ static void div_process_block(void) {
     }
 
     if (divcap_reset) { m.rec_flags |= DIVCAP_FLAG_ENGINE_RESET; }
+
+    //
+    // Which converter arm 0 came from. A context field living in the
+    // flags word, because the block record is full: see
+    // DIVCAP_FLAG_ARM_SWAP.
+    //
+    if (ctx.swap) { m.rec_flags |= DIVCAP_FLAG_ARM_SWAP; }
 
     divcap_prevctx    = ctx;
     divcap_haveprev   = 1;
