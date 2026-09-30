@@ -543,6 +543,36 @@ following it). Its magnitude has never been measured: a capture can't
 record a notch. LT-004 makes that possible by replaying with the notch
 set. The validation scenario is still to be planned.
 
+**What the capture set offers so far** (`score_wideband.py --peaks`, four
+captures checked):
+
+- `000412` (13.72 MHz AM) has the only truly steady carrier: 100 % of
+  blocks, +42 dB over the passband median. But it's the wanted signal's
+  own carrier. It served as the plumbing check: a 30 Hz notch over it
+  removes 9 passband bins from the score and changes the Carrier
+  reference's answer.
+- `143433` (20 m CW) has narrow peaks near the zero beat, but they're
+  present in only 36–40 % of blocks. A 40 Hz notch over the strongest
+  moved the Window weight by less than 0.001.
+- `235906` and `122843` (17 m USB) have no steady narrow peak: the
+  strongest are present in 4–16 % of blocks.
+
+The case LC-013 is for is a **steady interferer that isn't the wanted
+signal, inside the passband of a weaker station**. None of these shows
+it. The scenario therefore needs either:
+
+- a `--peaks` scan of the whole capture set for steady peaks in SSB or
+  Digital passbands; or
+- new captures taken for it with `make DIVCAP=1`: a heterodyne or carrier
+  over a weak SSB or Digital signal, recorded in pairs with and without
+  the notch, back to back, and said so in `PIHPSDR_DIVCAP_NOTE`. The
+  notch doesn't show in the file, so the note is the only record.
+
+What to measure once there is one: split-guard SNR with the notch
+applied to both the weight and the score, notched against un-notched,
+per reference (Window, Carrier, Digital). Also how often the loop acts,
+and whether the weight stops following the interferer.
+
 ---
 
 ## Local tooling (never upstream)
@@ -652,6 +682,10 @@ above, and an entry in the register and in the Fixes or Behaviour
 section, in the same push.
 
 Noted while porting, not yet decided:
+
+- The validation scenario for LC-013 (notches): no capture checked so far
+  has a steady interferer inside a weaker station's passband. See "What
+  the capture set offers so far" under LC-013.
 
 - `082dba0b`, which retires the RADE V1 Min quality slider (the pilot
   already gates). Separate decision.
