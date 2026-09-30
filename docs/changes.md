@@ -136,7 +136,7 @@ next resync). **Dropped** means abandoned.
 | LC-012 | Behaviour | Coherence gate never below its own noise floor        | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 | LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
 | LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
-| LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | PR prepared |
+| LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | Proposed ([#150](https://github.com/dl1ycf/pihpsdr/pull/150)) |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -157,8 +157,9 @@ it, but it does not use anything LC-008 adds.
   reverting LC-010 or LC-011 means reverting LC-014 first; they conflict
   otherwise. Every other change reverts cleanly from the tip.
 
-**First PR:** LC-015 (see its entry), prepared on
-`pr/diversity-menu-ref-row` against dl1ycf's `TEST`, awaiting review.
+**First PR:** LC-015, opened 2026-09-30 as
+[dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150) from
+`pr/diversity-menu-ref-row`.
 
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
 restored, and restored sanely), then LC-003 + LC-004 (client/server
@@ -713,8 +714,10 @@ resolution combos were checked and are correct.
 
 **Upstream.** Prepared as a one-commit PR against dl1ycf's `TEST`: branch
 `pr/diversity-menu-ref-row`, cut from `upstream/TEST` at `883243c0`,
-`src/diversity_menu.c` only, +30 −2. It builds. Not pushed; awaiting
-review.
+`src/diversity_menu.c` only, +30 −2. It builds. Opened 2026-09-30 as
+[dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150). When
+it's merged, mark LC-015 *Upstream*; the local commit can then be dropped
+at the next resync.
 
 ---
 
@@ -851,7 +854,7 @@ Noted while porting, not yet decided:
 ## History
 
 - 2026-09-30: LC-015 (the "Measure on" row/reference mismatch) fixed,
-  and prepared as the first upstream PR.
+  and opened as the first upstream PR, dl1ycf/pihpsdr#150.
 - 2026-09-30: LC-014 (no RADE lock timeout) and LT-005. LC-011's
   description corrected, and "Settled decisions" added.
 - 2026-09-30: LC-013 (notch carve-out) and LT-004 (notch replay and
