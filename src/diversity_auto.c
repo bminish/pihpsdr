@@ -705,6 +705,13 @@ struct div_context {
   int       att0;
   int       att1;
   //
+  // Which converter feeds arm 0. Not used by anything here - the protocols
+  // already put RX1's ADC on DDC0 - but moving it means the accumulated
+  // statistics describe a different pair of antennas, which is exactly
+  // what this struct exists to notice. See div_arm_swapped().
+  //
+  int       swap;
+  //
   // The operator's manual notches, mirrored here for the same reason the
   // filter edges are: they say which part of the passband is wanted, the
   // analysis has to honour that, and a change of one has to reset the
@@ -1067,6 +1074,37 @@ static int div_rade_side_expected(const struct div_context *ctx) {
 }
 
 //
+// Which converter feeds arm 0 - the stream the combiner carries at unit
+// gain, and the one every fallback resolves to.
+//
+// The combiner forms z = z0 + w*z1 with arm 0 pinned at unity, so arm 0
+// is not symmetric with arm 1: it is in the output whatever the loop
+// does, and every way the loop has of giving up - Best's initial pick, a
+// decorrelated Null solve, a degenerate MVDR solve - resolves to w = 0,
+// which is arm 0 alone. That is the right fallback only if arm 0 is the
+// antenna the operator would otherwise be listening to. Measured on
+// capture `112712`, where it was not: 8.79 s of a minute at 26.4 dB below
+// the only live antenna. See Finding 56 in docs/diversity-measurements.md.
+//
+// The protocols make it so: while diversity runs, DDC0 carries the ADC
+// that RX1 is set to and DDC1 the other one, so arm 0 is
+// receiver[0]->adc and nothing here exchanges anything. This says
+// whether that is ADC2, for the menu readout, the capture and the
+// context.
+//
+// Read live rather than latched, so that moving the RX menu's ADC while
+// diversity runs is seen there and then. The change reaches the analysis
+// through div_get_context() like any other, which throws the statistics
+// away and starts again on what is now a different pair of antennas.
+//
+// rx_restore_state() clamps adc to 0 on a single-converter radio, so this
+// needs no n_adc test of its own.
+//
+int div_arm_swapped(void) {
+  return (receivers > 0 && receiver[0] != NULL && receiver[0]->adc == 1);
+}
+
+//
 // Snapshot everything the bin mask depends on.
 //
 static void div_get_context(struct div_context *ctx) {
@@ -1086,6 +1124,7 @@ static void div_get_context(struct div_context *ctx) {
   ctx->weighting      = div_auto_weighting;
   ctx->att0           = adc[0].attenuation;
   ctx->att1           = adc[1].attenuation;
+  ctx->swap           = div_arm_swapped();
 
   //
   // Taken from receiver 0 for the same reason everything else here is:
@@ -1140,6 +1179,7 @@ static int div_context_changed(const struct div_context *a, const struct div_con
          a->weighting      != b->weighting      ||
          a->att0           != b->att0           ||
          a->att1           != b->att1           ||
+         a->swap           != b->swap           ||
          div_notches_differ(a, b);
 }
 
