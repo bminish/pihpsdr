@@ -49,6 +49,9 @@ static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *arm_label = NULL;
+static GtkWidget *hold_b = NULL;
+
+static void hold_cb(GtkWidget *widget, gpointer data);
 
 //
 // The Averaging slider is geometric, not linear.
@@ -137,11 +140,12 @@ static void cleanup(void) {
     GtkWidget *tmp = dialog;
     dialog = NULL;
     //
-    // Hold is an operating state with no indicator outside this dialog,
-    // so leaving it set with the dialog shut would silently stop the loop
-    // applying anything with nothing on screen to explain it.
+    // Hold is deliberately left as it is. A held weight is a valid way to
+    // keep a local noise source nulled, or to keep a peak that favours one
+    // direction, so it stays in force until the operator releases it or
+    // diversity is switched off and on again (see radio_set_diversity()).
     //
-    diversity_auto_set_hold(0);
+    hold_b = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     active_menu  = NO_MENU;
@@ -362,6 +366,16 @@ static int status_update_cb(gpointer data) {
   //
 
   div_arm_status_set();
+
+  //
+  // Hold can be released from outside this dialog - switching diversity
+  // off, or a remote client - so keep the button in step with it.
+  //
+  if (hold_b && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(hold_b)) != div_auto_hold) {
+    g_signal_handlers_block_by_func(hold_b, G_CALLBACK(hold_cb), NULL);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(hold_b), div_auto_hold);
+    g_signal_handlers_unblock_by_func(hold_b, G_CALLBACK(hold_cb), NULL);
+  }
 
   if (!div_auto_running) {
     div_status_set("Auto off", "", "", auto_div_gain, auto_div_phase);
@@ -1046,6 +1060,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 3, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(reset_cb), NULL);
   btn = gtk_toggle_button_new_with_label("Hold");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), div_auto_hold);
   //gtk_widget_set_tooltip_text(hold_b,
   //                            "Stop applying the loop's answer without stopping the "
   //                            "loop. The gain and phase controls become yours while "
@@ -1054,6 +1069,7 @@ void diversity_menu(GtkWidget *parent) {
   //                            "value meanwhile, so the two can be compared.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 4, 3, 1);
   g_signal_connect(btn, "toggled", G_CALLBACK(hold_cb), NULL);
+  hold_b = btn;
   btn = gtk_button_new_with_label("Invert");
   //gtk_widget_set_tooltip_text(invert_b,
   //                            "Swap Null and Sum. The two answers are 180 degrees "

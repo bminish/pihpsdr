@@ -2307,9 +2307,23 @@ void radio_set_diversity_phase(double value) {
 }
 
 void radio_set_diversity(int state) {
+  //
+  // Switching diversity off or on is one of the two things that release
+  // Hold; the other is the operator's own Hold button. Only on a real
+  // change of state: a client's manual gain and phase arrive by this same
+  // path with the state unchanged. On a client this only clears the local
+  // copy so the button follows at once - the radio does the real release
+  // when the command arrives.
+  //
+  const int toggled = (state != diversity_enabled);
+
   if (radio_is_remote) {
+    if (toggled) { div_auto_hold = 0; }
+
     send_diversity(cl_sock_tcp, state, man_div_gain, man_div_phase);
   } else {
+    if (toggled) { diversity_auto_set_hold(0); }
+
     //
     // If we have only one receiver, then changing diversity
     // changes the number of HPSR receivers so we restart the
