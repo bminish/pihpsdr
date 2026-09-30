@@ -145,8 +145,9 @@ static void div_send_settings(int action) {
 // ===================================================================
 //  DEVELOPMENT TOOL - NOT PART OF THE DIVERSITY FEATURE.
 //  Compiled only under "make DIVCAP=1", never sent upstream. Delete
-//  this block, the one in cleanup(), the one in status_update_cb() and
-//  the one beside the Invert button to remove it.
+//  this block, the #include near the top, the one in cleanup(), the one
+//  in status_update_cb() and the one beside the Invert button to remove
+//  it.
 //  See test/diversity/devtools/README.md.
 // ===================================================================
 //
