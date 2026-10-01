@@ -297,6 +297,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-030 | Behaviour | Level output: the combined output at one antenna's level | diversity_auto.c/.h, diversity_menu.c, radio.c/.h, receiver.c | — | Local |
 | LC-031 | Fix       | A RADE correlator that cannot start no longer changes the reference | diversity_auto.c | — | Local |
 | LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
+| LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | `test/quickselect` |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1410,6 +1411,39 @@ in behaviour. Needs LC-009, which adds the function. The menu half is
 written up for dl1ycf in
 [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md#e2-seeding-the-window-when-follow-rx-filter-is-unticked-lc-032).
 
+### LC-033 — The noise floor selects its percentile band instead of sorting
+
+**Why.** `div_noise_floor_update()` (LC-025) ran `qsort` over up to 1024
+bin powers per arm per block, only to average order statistics 8 % to
+12 %. The sorts were most of the floor's cost. This is step 5 of
+`docs/noise-floor-refactor.md`.
+
+**Change.** Two selections (Hoare's FIND with a median-of-three pivot)
+fence the band, and only the band (about 40 values) is
+insertion-sorted. It is then summed smallest first, as before, so the
+result is the same bit for bit. `div_nf_cmp` goes.
+
+**Measured.**
+- **Same answer.** Bit-identical on 32 292 synthetic cases (`bench_nf`,
+  LT-016: nine data shapes from plain noise to presorted, n = 128 to
+  1024). On all 127 captures, replayed in Sum and in Best, the
+  `run_ref` output is identical (254 replays). RADE V1 never runs the
+  floor and needs `--pace 20000` to replay repeatably under load (see
+  "Local tooling").
+- **Cost in place** (a `run_ref` with the call timed on its thread, 61
+  captures that run the floor, i7-12700K):
+  - At replay pacing on the `powersave` governor (a worker that wakes,
+    works and sleeps, as in the radio): median 554 → 121 µs per block
+    (4.6×). That is about 0.65 % → 0.14 % of a core at 11.7 blocks per
+    second.
+  - With the core kept busy: about 100 → 20 µs.
+  - Every reference and rate falls between 4.4× and 4.8×.
+- **Microbenchmark** (`bench_nf`, per arm): 49 → 9 µs at 1024 values
+  (5.4×), 40 → 7 µs at 850. Up to 11× only on presorted input.
+
+Not measured on a Raspberry Pi. The plan's "factor of 5-10" holds at the
+low end on real data.
+
 ---
 
 ## Local tooling (never upstream)
@@ -1439,6 +1473,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-013 | LC-025's checks: `test_digital`'s Window case counted, `test_rates` (48 / 192 / 1536 kHz, span limit, fallback, reset storm) | `test/diversity/` |
 | LT-014 | `test_rates`' CW cases, with LC-029; the 1536 kHz / 100 Hz limitation reported | `test/diversity/test_rates.c`, `known_gaps.h` |
 | LT-015 | LC-030's checks: Level output counted; `run_ref`'s `norm` column; `score_level.py` | `test/diversity/` |
+| LT-016 | `bench_nf`: LC-033's selection against `qsort`, bit for bit and timed, on the engine's own functions | `test/diversity/` |
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot
@@ -1454,7 +1489,11 @@ with an error pointing at LC-014 instead of silently doing nothing.
 Worth knowing when reading any replay: `run_ref` is not
 byte-deterministic. Its worker thread can shift a read by a block, and on
 `165826` one run in three at a 600 s timer scored +39 against +57. Repeat
-a replay before trusting a single difference.
+a replay before trusting a single difference. Measured 2026-10-02:
+RADE V1 replays at the default 12 ms pace differ run to run when twelve
+run in parallel (37 of 37 RADE replays). At `--pace 20000` and four at a
+time they were byte-identical between runs and between builds. The other
+references were byte-identical even at twelve in parallel.
 
 The tooling commits form a stack: each later one edits files an earlier
 one created. They revert in reverse order, and only LT-001 applies to
@@ -1600,8 +1639,7 @@ Noted while porting, not yet decided:
 - **The branch noise floor measured across frequency** (`8a393217`):
   landed 2026-10-01 as LC-025, with LC-027 to LC-030; the evaluation is
   in `docs/test-noisefloor.md` and tag `noise-floor-eval-20261001`.
-  Still open (`docs/noise-floor-refactor.md`): quickselect in place of
-  the two sorts; Best's CW SNR from the floor; `DIV_CW_MIN_BINS`;
+  Still open (`docs/noise-floor-refactor.md`): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`;
   captures at 48 and 1536 kHz; and the attenuator calibration
   (`docs/feature-att-calibration.md`).
 - CW, from porting LC-017 to LC-019:
@@ -1625,6 +1663,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: LC-033 (the noise floor selects instead of sorting) and
+  LT-016 (`bench_nf`), on `test/quickselect`.
 - 2026-10-01: diversity takes `profiles.c`'s mode grouping (E5).
 - 2026-10-01: LC-031 (E1, engine only, silent) and LC-032 (E2); LC-032's
   menu half is written up for dl1ycf in `menu-notes-dl1ycf.md`.
