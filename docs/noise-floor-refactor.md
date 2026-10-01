@@ -20,7 +20,7 @@ choice.
 | 2. Span ±20 kHz | `f6974d50` | 45 Window/Carrier captures: 192 kHz (37) guard +0.02 dB, in-band −0.01 dB on average, at most ±0.35 on one; 48 kHz (8) bit-identical. CW: +2.08 → +2.07 (T-018), +1.99 → +2.07 (T-017) |
 | 3. Ratio always, engine | `0fd386a3` | Bit-identical to step 2 with the selector at its default |
 | 4. Selector removed | `6b2cdf2c` | Bit-identical to step 3; Capture back beside Invert; `run_ref --sumnoise` is an error |
-| 5. Quickselect | | |
+| 5. Quickselect | LC-033 on `test/quickselect` | Bit-identical: 32 292 synthetic cases, and 254 replays (127 captures × Sum, Best). 4.6× cheaper in place (median 554 → 121 µs per block, 61 captures); see the measurements below |
 | 6. CW on the outside floor | | Sum ratio done (steps 3-4); Best's SNR and `DIV_CW_MIN_BINS` to do |
 | 7. Sample-rate tests | `dd7e716f`, `5b22b0ee` | `test_rates` in `make run`: the ratio within 0.5 dB at 48 / 192 / 1536 kHz through 40 carriers (+9.81 / +10.04 / +10.04 for +10), the Sum weight at the maximum-ratio optimum at each; the span limit holds at 1536 kHz (+10.07 dB; +0.16 without it); the fallback at 48 kHz; resets from another thread never seen half done (fails on the code before step 1). CW at 1536 kHz with a 100 Hz filter never acts: accepted as a limitation (see `docs/test-noisefloor.md`), kept as a reported check `GAP_CW_NARROW_1536`. Every check was made to fail once against the code it guards |
 
@@ -33,7 +33,8 @@ block, inside `div_process_block()`:
   filter and 1 kHz either side, taking up to 1024 per arm
   (`DIV_NF_SAMPLES`);
 - sorts each arm's sample (`qsort`, 2 × 1024 doubles), averages the 8th to
-  12th percentile, and smooths at `DIV_NF_TAU` (2 s).
+  12th percentile, and smooths at `DIV_NF_TAU` (2 s). Since LC-033 it
+  selects the band rather than sorting: see "Make it cheaper" below.
 
 Measured on the branch at 192 kHz: about +0.2 ms per block, 0.2 % of one
 core, mostly the two sorts (`docs/test-noisefloor.md`). Since `a5145aa6`
@@ -107,6 +108,80 @@ factor of 5-10 at 1024 samples. Worth doing for the Raspberry Pi, where
 the 0.2 ms is several times larger; not needed for correctness. The
 result must be bit-identical to the sorted version (same elements
 averaged); `run_ref` replays confirm it.
+
+**Measured (2026-10-02, LC-033 on `test/quickselect`, i7-12700K).**
+
+The method:
+- Two selections fence the band. The band (about 40 values) is
+  insertion-sorted and summed smallest first, so the sum is the sorted
+  version's exactly.
+- `bench_nf` (LT-016) times the engine's own functions, cut from the
+  source at build time, against `qsort`.
+- For the cost in place, `run_ref` was built from instrumented copies of
+  both engines, timing the floor call on the worker's thread clock.
+
+**Identity** (exact equality, compared with `memcmp`):
+
+| Check | Cases | Differ |
+|---|---|---|
+| `bench_nf`: noise, 41 % occupied band, 8-level ties, half zeros, all equal, ascending, descending, organ pipe, sloping spectrum; n = 128-1024, 4 draws each | 32 292 | 0 |
+| `run_ref`, all 127 captures, recorded reference, Sum and Best | 254 | 0 |
+
+The RADE replays, which never run the floor, first showed differences.
+Those differences were run-to-run nondeterminism under a 12-way parallel
+load: two runs of the same old build differed too. Repeated at
+`--pace 20000`, all 37 matched.
+
+**Cost per block, both arms, in place** (median over the captures that
+run the floor; digital and RADE V1 don't):
+
+| Reference | Rate | Captures | qsort µs | select µs | Ratio |
+|---|---|---|---|---|---|
+| Window | 192 kHz | 32 | 593 | 124 | 4.8× |
+| Window | 48 kHz | 7 | 545 | 122 | 4.5× |
+| Carrier | 192 kHz | 5 | 482 | 109 | 4.4× |
+| Carrier | 48 kHz | 1 | 480 | 102 | 4.7× |
+| CW | 192 kHz | 16 | 526 | 112 | 4.7× |
+| **All** | | **61** | **554** | **121** | **4.6×** |
+
+Those are at replay pacing on the `powersave` governor: the worker
+wakes, works and sleeps, as it does in the radio. The absolute figures
+depend heavily on that. On one capture, pinned to a performance core:
+
+| Feed pace | qsort µs | select µs | Ratio |
+|---|---|---|---|
+| 12 ms per block (default) | 562 | 123 | 4.6× |
+| 1 ms per block | 218 | 69 | 3.1× |
+| flat out (the core never idles) | 100 | 21 | 4.9× |
+
+**Microbenchmark** (`bench_nf`, per arm, best of 5 × 20 000 calls; the
+same at `-O2` and `-O3`):
+
+| Data | n | qsort µs | select µs | Ratio |
+|---|---|---|---|---|
+| noise | 1024 | 49.2 | 9.2 | 5.4× |
+| noise | 850 | 40.0 | 7.2 | 5.5× |
+| busy band (41 % occupied) | 1024 | 48.6 | 8.5 | 5.7× |
+| heavy ties | 1024 | 34.4 | 8.4 | 4.1× |
+| sloping spectrum | 1024 | 44.9 | 6.9 | 6.5× |
+| ascending / descending | 1024 | 10.3 / 13.7 | 1.0 / 1.2 | 9.8× / 11.4× |
+
+**What that says about the claim:**
+- *"Roughly a factor of 5-10"*: 4.4-5.7× on real and realistic data.
+  The top of the range is reached only on presorted input, which a
+  spectrum never is.
+- *"Bit-identical"*: yes, everywhere.
+- *"The sorts are the floor's whole cost"*: most of it. With the sorts
+  gone, about a fifth remains (the gather loop across the spectrum, two
+  selections, the band sort).
+- *"About +0.2 ms per block, 0.2 % of a core"* (from `bench_cpu`'s
+  whole-process figure): the floor alone measures 0.1 to 0.55 ms per
+  block depending on the clock state. Now it is 0.02 to 0.12 ms, about
+  0.14 % of a core at worst at 11.7 blocks per second.
+- *"Several times larger on the Pi"*: not measured. No Pi was available.
+  The ratio should hold or improve there: `qsort` calls through a
+  function pointer for every comparison, which an in-order core handles
+  worst.
 
 ## The steps, as commits
 
@@ -343,6 +418,10 @@ would break them if cut carelessly:
 
 ## How it landed (2026-10-01)
 
+(Step 5, quickselect, came later as LC-033 on `test/quickselect`, on
+2026-10-02. See "Make it cheaper" above.)
+
+
 Cut on `port/noise-floor` from `TEST` as planned above, with one change
 to the plan: **C and D are one change, LC-028.** C (the 2 dB, 1 s rule)
 was measured on its own on the 45 Window/Carrier captures before landing,
@@ -381,7 +460,7 @@ Checked before it landed:
   `div_auto_normalise` while the Level output gap is open; LT-015, the
   next commit, closes the gap. The radio builds at every commit.
 
-Still open, as above: quickselect (step 5), CW's Best SNR and
+Still open, as above: CW's Best SNR and
 `DIV_CW_MIN_BINS` (step 6, the latter now an accepted limitation at
 1536 kHz), captures at 48 and 1536 kHz, and the attenuator calibration
 (`docs/feature-att-calibration.md`).
