@@ -57,6 +57,7 @@ static GtkWidget *coh_scale = NULL;
 static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
 static GtkWidget *status_label = NULL;
+static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
 
@@ -825,7 +826,12 @@ static void store_ref_values(int ref) {
     div_digital_cohmin = div_auto_coherence_min;
     break;
   case DIV_REF_RADE_V1:
-    div_rade_cohmin = div_auto_coherence_min;
+    //
+    // No window of its own - the correlator decides what it looks at -
+    // and no threshold to file any more: its slot is pinned at zero in
+    // div_settings_validate(), and storing the live value into it here
+    // would let a value that arrived by some other route stick.
+    //
     break;
   }
 }
@@ -882,7 +888,7 @@ static void restore_ref_values(int ref) {
     div_auto_coherence_min = div_digital_cohmin;
     break;
   case DIV_REF_RADE_V1:
-    div_auto_coherence_min = div_rade_cohmin;
+    div_auto_coherence_min = 0.0;   // retired - see div_settings_validate()
     break;
   }
 
@@ -915,6 +921,14 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   if (div_auto_ref == DIV_REF_RADE_V1) {
     gtk_combo_box_set_active(GTK_COMBO_BOX(auto_btn), DIV_AUTO_SUM);
   }
+
+  //
+  // RADE V1 has no threshold of its own any more - the pilot already
+  // gates - so its row goes. See div_settings_validate().
+  //
+  if (coh_label) { gtk_widget_set_visible(coh_label, div_auto_ref != DIV_REF_RADE_V1); }
+
+  if (coh_scale) { gtk_widget_set_visible(coh_scale, div_auto_ref != DIV_REF_RADE_V1); }
 
   //
   // Restart if the analysis thread has to come up or go down - which
@@ -1224,6 +1238,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 3, 6, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(tau_cb), NULL);
   lbl = gtk_label_new("Min coher. (%)");
+  coh_label = lbl;
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 4, 2, 1);
@@ -1319,6 +1334,15 @@ void diversity_menu(GtkWidget *parent) {
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   gtk_widget_show_all(dialog);
+
+  //
+  // No Min coherence row on RADE V1: see ref_changed_cb().
+  //
+  if (div_auto_ref == DIV_REF_RADE_V1) {
+    gtk_widget_hide(coh_label);
+    gtk_widget_hide(coh_scale);
+  }
+
   //
   gtk_widget_set_sensitive(win_centre_btn, NOT(div_auto_follow_filter));
   gtk_widget_set_sensitive(win_width_btn, NOT(div_auto_follow_filter));
