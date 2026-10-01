@@ -442,6 +442,26 @@ one fix that covers both faults; requiring more bins only covers the
 narrow filter. It is the across-frequency floor's clearest win so far,
 and it only exists on this branch.
 
+**A minimum width for CW's own noise region instead** (scratch builds; the
+tone search stays inside the filter, only the off-tone floor is widened
+to at least 300 or 600 Hz about the filter centre):
+
+| | CW as shipped | min 300 Hz | min 600 Hz | own floor, ≥ 8 bins | outside-filter floor |
+|---|---|---|---|---|---|
+| T-018 | +1.23 | +1.55 | +1.69 | +1.79 | **+2.08** |
+| T-018, the two 50 Hz segments | +0.60 / +0.04 | +0.69 / +2.71 | +1.29 / +2.81 | +2.30 / +2.81 | **+2.27 / +2.87** |
+| T-018, 600 Hz fade | −0.53 | −0.53 | −0.59 | −0.53 | **+2.00** |
+| T-017 | +1.39 | +1.38 | +1.38 | +1.38 | **+1.99** |
+
+It helps only the narrowest filters, and not fully. The fade, the wide
+segments and the pileup (a 1000 Hz filter, already wider than the
+minimum) are unchanged. Bins near the tone carry the station's own keying
+sidebands and clicks, which scale with each antenna's signal, so a floor
+taken there measures the signal ratio as much as the noise ratio; it
+needs to be taken well away from the tone, which the outside-filter floor
+is (the central 80 % of the DDC span less the filter and 1 kHz either
+side, about 150 kHz at 192 kHz).
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
