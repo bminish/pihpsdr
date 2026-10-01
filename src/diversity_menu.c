@@ -746,6 +746,17 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 
 static void follow_cb(GtkWidget *widget, gpointer data) {
   div_auto_follow_filter = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+
+  //
+  // Handing the window to the operator: start it on the passband it was
+  // following, unless they have already placed one of their own.
+  //
+  if (!div_auto_follow_filter) {
+    diversity_auto_seed_window();
+    store_ref_values(div_auto_ref);
+    div_ref_widgets_show();
+  }
+
   gtk_widget_set_sensitive(win_centre_btn, NOT(div_auto_follow_filter));
   gtk_widget_set_sensitive(win_width_btn, NOT(div_auto_follow_filter));
   diversity_auto_reset();
