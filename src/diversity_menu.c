@@ -1185,7 +1185,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_ref_to_row(div_auto_ref));
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 0, 4, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(ref_changed_cb), NULL);
-  btn = gtk_check_button_new_with_label("Window follows RX filter");
+  btn = gtk_check_button_new_with_label("Follow RX Filter");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), div_auto_follow_filter);
   gtk_grid_attach(GTK_GRID(agrid), btn, 7, 0, 3, 1);
   g_signal_connect(btn, "toggled", G_CALLBACK(follow_cb), NULL);
