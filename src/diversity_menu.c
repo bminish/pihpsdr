@@ -102,12 +102,12 @@ static double div_tau_to_pos(double tau) {
 //
 // The order the operator sees is not the order of the DIV_REF_* values.
 // Those are what land in the props file and go over the wire to a client,
-// so they are fixed and new ones go on the end; the list is ordered by
-// how often a reference is reached for, which puts the two general
-// purpose references first and the two that need a particular signal to
-// be present after them. The table below is the only place the two
-// orders meet - everything else works in DIV_REF_* - so adding a
-// reference means adding one line here.
+// so they are fixed and new ones go on the end. The list puts the general
+// purpose Window first, then the references for particular signals in
+// the order an operator tends to meet them: CW, FSK/Digital, a carrier
+// (AM/SAM), RADE V1. The table at div_ref_rows[] is the only place the
+// two orders meet - everything else works in DIV_REF_* - so adding a
+// reference means adding one line there.
 //
 
 static double gain_coarse, gain_fine;
@@ -557,6 +557,24 @@ static int status_update_cb(gpointer data) {
 
     break;
 
+  case DIV_REF_CW:
+    snprintf(tag, sizeof(tag), "CW %.0fHz%s", div_auto_binhz, clamp);
+
+    if (!div_auto_carrier_valid) {
+      state = div_auto_hold ? "HOLD" : "search";
+    } else {
+      //
+      // The tone being tracked: the same readout as the carrier tracker,
+      // and the shaded span on the panadapter.
+      //
+      state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
+      snprintf(detail, sizeof(detail),
+               (fabs(div_auto_carrier) < 10000.0) ? "%+.1f Hz" : "%+.0f Hz",
+               div_auto_carrier);
+    }
+
+    break;
+
   case DIV_REF_DIGITAL_IQ:
     snprintf(tag, sizeof(tag), "Dig %.0fHz%s", div_auto_binhz, clamp);
 
@@ -599,18 +617,22 @@ static int status_update_cb(gpointer data) {
 // not the order of the DIV_REF_* enum. Every conversion between a combo
 // row and a reference goes through these two.
 //
-static const int div_ref_rows[] = {
-  DIV_REF_BAND,
-  DIV_REF_DIGITAL_IQ,
-  DIV_REF_CARRIER,
-  DIV_REF_RADE_V1
+static const struct {
+  int ref;
+  const char *label;
+} div_ref_rows[] = {
+  { DIV_REF_BAND,       "Window (wideband)"            },
+  { DIV_REF_CW,         "CW / Morse (keyed tone)"      },
+  { DIV_REF_DIGITAL_IQ, "FSK/Digital (occupancy MVDR)" },
+  { DIV_REF_CARRIER,    "Carrier (AM/SAM)"             },
+  { DIV_REF_RADE_V1,    "RADE V1 pilot (MVDR)"         }
 };
 
 #define DIV_REF_NROWS ((int)(sizeof(div_ref_rows) / sizeof(div_ref_rows[0])))
 
 static int div_ref_to_row(int ref) {
   for (int i = 0; i < DIV_REF_NROWS; i++) {
-    if (div_ref_rows[i] == ref) { return i; }
+    if (div_ref_rows[i].ref == ref) { return i; }
   }
 
   return 0;
@@ -619,7 +641,7 @@ static int div_ref_to_row(int ref) {
 static int div_row_to_ref(int row) {
   if (row < 0 || row >= DIV_REF_NROWS) { return DIV_REF_BAND; }
 
-  return div_ref_rows[row];
+  return div_ref_rows[row].ref;
 }
 
 static void mode_changed_cb(GtkWidget *widget, gpointer data) {
@@ -798,6 +820,11 @@ static void store_ref_values(int ref) {
     div_digital_width  = div_auto_width;
     div_digital_cohmin = div_auto_coherence_min;
     break;
+  case DIV_REF_CW:
+    div_cw_centre = div_auto_centre;
+    div_cw_width  = div_auto_width;
+    div_cw_cohmin = div_auto_coherence_min;
+    break;
   case DIV_REF_RADE_V1:
     //
     // No window of its own - the correlator decides what it looks at -
@@ -859,6 +886,11 @@ static void restore_ref_values(int ref) {
     div_auto_centre = div_digital_centre;
     div_auto_width  = div_digital_width;
     div_auto_coherence_min = div_digital_cohmin;
+    break;
+  case DIV_REF_CW:
+    div_auto_centre = div_cw_centre;
+    div_auto_width  = div_cw_width;
+    div_auto_coherence_min = div_cw_cohmin;
     break;
   case DIV_REF_RADE_V1:
     div_auto_coherence_min = 0.0;   // retired - see div_settings_validate()
@@ -1145,10 +1177,11 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 0, 2, 1);
   btn = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Window (wideband)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "FSK/Digital (occupancy MVDR)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Carrier (AM/SAM)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "RADE V1 pilot (MVDR)");
+
+  for (int i = 0; i < DIV_REF_NROWS; i++) {
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), div_ref_rows[i].label);
+  }
+
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_ref_to_row(div_auto_ref));
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 0, 4, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(ref_changed_cb), NULL);
