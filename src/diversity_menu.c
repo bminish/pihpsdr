@@ -1406,7 +1406,6 @@ void diversity_menu(GtkWidget *parent) {
   btn = gtk_combo_box_text_new();
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Old (time minimum)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Ratio (outside filter)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Covariance (outside filter)");
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_eval_sum_noise);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 6, 4, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(sumnoise_cb), NULL);

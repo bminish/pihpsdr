@@ -183,30 +183,36 @@
 // track a minimum over time instead.
 //
 // The hysteresis matters most where it matters least: two antennas within
-// a decibel of each other are the case where the choice does not matter
-// and the case where an ungated comparison would chatter between them.
+// a decibel or two of each other are the case where the choice does not
+// matter and the case where an ungated comparison would chatter between
+// them. 2 dB, with DIV_BEST_DWELL behind it, on test/noise-floor (TEST has
+// 1 dB and no dwell): with the outside-filter floor a per-arm SNR exists
+// on every block, and at 1 dB two near-equal antennas changed places every
+// few blocks - on 154822, arm 1 on 56 % of them.
 //
 // The floor rise is slow deliberately. It only has to outrun a change of
 // band conditions, and anything faster starts following the signal it is
 // supposed to be measuring underneath.
 //
 #define DIV_BEST_HYST_DB    2.0
+#define DIV_FLOOR_RISE_DB   0.2     // dB per second
+
 //
 // EVALUATION (test/noise-floor). How long the other antenna has to lead by
-// more than DIV_BEST_HYST_DB before Best changes to it, in seconds. With a
-// per-arm SNR on every block - the outside-filter floor supplies one - two
-// antennas within a decibel or so of each other otherwise change places
-// every few blocks, and each change is a step in what the operator hears.
+// more than DIV_BEST_HYST_DB, continuously, before Best changes to it, in
+// seconds. See div_apply_best().
 //
 #define DIV_BEST_DWELL      1.0
 //
-// EVALUATION (test/noise-floor). The output-level normaliser: the combined
-// output held at the level of arm 0 alone. See div_norm_refresh().
+// EVALUATION (test/noise-floor). The output-level normaliser: how fast the
+// passband powers behind it are smoothed, in seconds, and how far it may
+// scale the output - down 40 dB, which covers Best's +20 dB with room, and
+// up 6 dB, so nothing downstream ever sees a large gain from here. See
+// div_norm_refresh().
 //
 #define DIV_NORM_TAU        1.0
 #define DIV_NORM_MIN        0.01
 #define DIV_NORM_MAX        2.0
-#define DIV_FLOOR_RISE_DB   0.2     // dB per second
 
 //
 // The floor is tracked on power smoothed over this, not over the
@@ -231,8 +237,11 @@
 #define DIV_NRATIO_WIN      5.0
 
 //
-// How far the window power must stand above the tracked floor, on both
-// arms, before that floor is taken to be noise.
+// How far the window power must stand above its noise floor, on both
+// arms, before a per-arm SNR is published - with the outside-filter floor
+// that is simply "there is a signal to compare". With the temporal floor,
+// the fallback, it is also what tells a noise floor from a minimum that
+// was signal:
 //
 // Without this the tracker answers confidently and wrongly. Its minimum
 // is only a noise floor if the capture contained a moment with no signal
@@ -297,7 +306,8 @@
 // Both used to come from a minimum over *time*: the quietest the window
 // has recently been on each arm - see div_arm_floor_update() and
 // div_arm_nratio_update(), which are still here as the fallback where
-// this cannot be measured.
+// this cannot be measured, and on this branch as the "Old" Sum noise
+// model - see div_eval_sum_noise.
 //
 // A temporal minimum has one premise: that the band goes quiet often
 // enough for the quietest recent moment to be noise. DIV_ARM_MIN_DB is
@@ -323,11 +333,13 @@
 // a fade cannot be mistaken for silence; a carrier that never stops is
 // not a difficulty either, because nothing is being waited for.
 //
-// Measured against the whole capture set - 26 files, 48 and 192 kHz, four
-// transform sizes, signals from FT8 to DRM to bare band noise - the
-// median error is inside 0.3 dB on twenty of them and 1.3 dB on all but
-// two, against 1.4 to 10.6 dB for the temporal minimum, which also
-// produces no answer at all on six. The two apparent outliers are the
+// Measured on feature/auto-diversity against the whole capture set - 26
+// files, 48 and 192 kHz, four transform sizes, signals from FT8 to DRM to
+// bare band noise - the median error is inside 0.3 dB on twenty of them
+// and 1.3 dB on all but two, against 1.4 to 10.6 dB for the temporal
+// minimum, which also produces no answer at all on six. Rechecked on this
+// branch against the guard band beside the passband on seven captures,
+// including the worst-scoring ones: within 0.5 dB on all of them. The two apparent outliers are the
 // estimate being right: on `122632` it follows the operator's ADC1
 // attenuator one for one from 0 to 16 dB while arm 0's floor holds to
 // 0.7 dB, and on `002710` it finds the two undocumented attenuator steps
@@ -814,22 +826,6 @@ static double          div_nf0 = 0.0, div_nf1 = 0.0;
 static int             div_nf_valid = 0;
 
 //
-// The noise *covariance* between the arms, from the same bins: r00 and
-// r11 the per-bin noise powers, r01 = X0 * conj(X1) their cross term, as
-// div_digital_solve() accumulates it. Taken over the quieter half of the
-// sampled bins by combined power, so that stations transmitting outside
-// the filter stay out of it, and smoothed at DIV_NF_TAU. See
-// div_wideband_sum_solve().
-//
-static double          nc_r00 = 0.0, nc_r11 = 0.0, nc_r01re = 0.0, nc_r01im = 0.0;
-static int             nc_valid = 0;
-//
-// Per-sample copies for it, unsorted: nf_scratch0/1 are sorted in place
-// for the percentile, which loses the pairing between the two arms.
-//
-static double         *nc_p0 = NULL, *nc_p1 = NULL, *nc_xr = NULL, *nc_xi = NULL, *nc_pc = NULL;
-
-//
 // Which bins were found occupied, by wrapped index, so the noise pass can
 // keep its distance from them. See DIV_OCC_GUARD.
 //
@@ -912,14 +908,21 @@ double div_track_phase = 0.0;
 static double div_carrier_hz = 0.0;
 
 //
-// CW key detection's temporal reference: the quietest the region's peak
-// has recently been. See div_cw_solve(). Reset with the statistics, so a
-// retune or a filter change starts it again.
+// EVALUATION (test/noise-floor). How long the antenna Best is not on has
+// been ahead of it - see DIV_BEST_DWELL - and the smoothed passband powers
+// behind the output-level normaliser, whose tick is div_auto_normalise
+// (on by default here). See div_norm_refresh().
 //
 static double best_lead = 0.0;
 static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
 static int    norm_valid = 0;
 int           div_auto_normalise = 1;
+
+//
+// CW key detection's temporal reference: the quietest the region's peak
+// has recently been. See div_cw_solve(). Reset with the statistics, so a
+// retune or a filter change starts it again.
+//
 static double cw_act_lo = 0.0;
 static int    cw_act_valid = 0;
 //
@@ -1007,8 +1010,6 @@ static void div_reset_stats(void) {
   arm_floor0 = arm_floor1 = 0.0;
   div_nf0 = div_nf1 = 0.0;
   div_nf_valid = 0;
-  nc_r00 = nc_r11 = nc_r01re = nc_r01im = 0.0;
-  nc_valid = 0;
   arm_pw0 = arm_pw1 = 0.0;
   nr_f0 = nr_f1 = 0.0;
   nr_f_valid = 0;
@@ -1612,29 +1613,6 @@ void div_mvdr2(double r00, double r11, double r01re, double r01im,
 }
 
 //
-// ------------------------------------------------------------------
-// Which antenna is better
-// ------------------------------------------------------------------
-//
-// Every reference can say something about the two arms separately, and
-// what it needs to say it is the same in each case: the signal power on
-// each arm, and the noise power on each arm. The advantage of arm 1 is
-// then (S1/N1)/(S0/N0), and where the reference measures the channel
-// ratio rather than the two signal powers - which all of them do - that
-// is |h1/h0|^2 * (N0/N1).
-//
-// The RADE V1 and FSK/Digital references already have both halves: their
-// MVDR covariance is a measurement of N0 and N1 taken off the signal. The
-// wideband Window and Carrier references have no such thing, so they get
-// a noise floor tracked over time instead - see div_arm_floor_update().
-//
-// This is worth publishing whatever objective is running. Nothing an
-// operator can otherwise see separates an antenna that reads 12 dB down
-// because it is deaf from one that reads 12 dB down because it is quiet,
-// and the two want opposite weights - which is exactly the case the 60 m
-// captures turned up. See Finding 13 in docs/diversity-measurements.md.
-//
-//
 // Sort order for the noise-floor percentile. Same shape as div_occ_cmp(),
 // which sorts the FSK/Digital region for its median.
 //
@@ -1714,15 +1692,10 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
     if (idx < 0) { idx += nfft; }
 
-    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
-    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
-    nf_scratch0[ns] = i0 * i0 + q0 * q0;
-    nf_scratch1[ns] = i1 * i1 + q1 * q1;
-    nc_p0[ns] = nf_scratch0[ns];
-    nc_p1[ns] = nf_scratch1[ns];
-    nc_xr[ns] = i0 * i1 + q0 * q1;
-    nc_xi[ns] = q0 * i1 - i0 * q1;
-    nc_pc[ns] = nf_scratch0[ns] + nf_scratch1[ns];
+    nf_scratch0[ns] = (double)fftout0[idx][0] * fftout0[idx][0]
+                      + (double)fftout0[idx][1] * fftout0[idx][1];
+    nf_scratch1[ns] = (double)fftout1[idx][0] * fftout1[idx][0]
+                      + (double)fftout1[idx][1] * fftout1[idx][1];
     ns++;
   }
 
@@ -1751,47 +1724,44 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
   if (!(f0 > 0.0) || !(f1 > 0.0)) { return 0; }
 
-  const double a = div_nf_valid ? 1.0 - exp(-blocktime / DIV_NF_TAU) : 1.0;
-  div_nf0 += a * (f0 - div_nf0);
-  div_nf1 += a * (f1 - div_nf1);
-  div_nf_valid = 1;
-  //
-  // The covariance, over the bins whose combined power is at or below the
-  // median: the quieter half, which a station outside the filter would
-  // have to fill half the sampled span to reach. The pairing is kept - the
-  // cross term only means anything bin by bin - so the median is found on
-  // a sorted copy and applied to the unsorted samples.
-  //
-  {
-    memcpy(nf_scratch0, nc_pc, (size_t)ns * sizeof(double));
-    qsort(nf_scratch0, (size_t)ns, sizeof(double), div_nf_cmp);
-    const double med = nf_scratch0[ns / 2];
-    double c00 = 0.0, c11 = 0.0, cre = 0.0, cim = 0.0;
-    int nq = 0;
-
-    for (int i = 0; i < ns; i++) {
-      if (nc_pc[i] > med) { continue; }
-
-      c00 += nc_p0[i];
-      c11 += nc_p1[i];
-      cre += nc_xr[i];
-      cim += nc_xi[i];
-      nq++;
-    }
-
-    if (nq > 0 && c00 > 0.0 && c11 > 0.0) {
-      const double b = nc_valid ? a : 1.0;
-      nc_r00   += b * (c00 / nq - nc_r00);
-      nc_r11   += b * (c11 / nq - nc_r11);
-      nc_r01re += b * (cre / nq - nc_r01re);
-      nc_r01im += b * (cim / nq - nc_r01im);
-      nc_valid = 1;
-    }
+  if (!div_nf_valid) {
+    div_nf0 = f0;
+    div_nf1 = f1;
+    div_nf_valid = 1;
+  } else {
+    const double a = 1.0 - exp(-blocktime / DIV_NF_TAU);
+    div_nf0 += a * (f0 - div_nf0);
+    div_nf1 += a * (f1 - div_nf1);
   }
 
   return 1;
 }
 
+//
+// ------------------------------------------------------------------
+// Which antenna is better
+// ------------------------------------------------------------------
+//
+// Every reference can say something about the two arms separately, and
+// what it needs to say it is the same in each case: the signal power on
+// each arm, and the noise power on each arm. The advantage of arm 1 is
+// then (S1/N1)/(S0/N0), and where the reference measures the channel
+// ratio rather than the two signal powers - which all of them do - that
+// is |h1/h0|^2 * (N0/N1).
+//
+// The RADE V1 and FSK/Digital references already have both halves: their
+// MVDR covariance is a measurement of N0 and N1 taken off the signal. The
+// wideband Window and Carrier references have no such thing, so they take
+// one from the bins outside the operator's filter - see
+// div_noise_floor_update() - and fall back to a floor tracked over time
+// where too little lies outside it (div_arm_floor_update()).
+//
+// This is worth publishing whatever objective is running. Nothing an
+// operator can otherwise see separates an antenna that reads 12 dB down
+// because it is deaf from one that reads 12 dB down because it is quiet,
+// and the two want opposite weights - which is exactly the case the 60 m
+// captures turned up. See Finding 13 in docs/diversity-measurements.md.
+//
 static void div_arm_publish(int valid, double db) {
   div_auto_arm_valid = valid;
 
@@ -1986,8 +1956,9 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // replaced and what it cost.
 //
 // The temporal minimum is the fallback, for the one case the spectral
-// floor cannot serve: a hand-placed window so wide that fewer than
-// DIV_NF_MIN_BINS are left outside it. It is latched, because it is a
+// floor cannot serve - a hand-placed window so wide that fewer than
+// DIV_NF_MIN_BINS are left outside it - and what the "Old" Sum noise
+// model selects on this branch (div_eval_sum_noise). It is latched, because it is a
 // property of the two receive chains rather than of the path and because
 // switching formula every time its clearance test toggled - which on a
 // continuous carrier is constantly, 4 to 32 % of blocks by Finding 16 -
@@ -2006,64 +1977,32 @@ static double div_wideband_sum_scale(void) {
 }
 
 //
-// EVALUATION (test/noise-floor). Which noise model the Window and Carrier
+// EVALUATION (test/noise-floor). Which noise ratio the Window and Carrier
 // Sum weight uses, so the operator can compare them by ear:
 //
 //   DIV_SUMNOISE_TIME   TEST's: the ratio of two temporal minima
 //   DIV_SUMNOISE_RATIO  the ratio of the two outside-filter floors
-//   DIV_SUMNOISE_COV    MVDR against the outside-filter noise covariance
 //
-// COV was built to answer why RATIO loses where it does. The noise-ratio
-// weight N0/N1 * Sxy/Sxx is the maximum-ratio answer only for uncorrelated
-// noise, and where the two antennas hear one noise source - 0.99 coherent
-// in the passband on 154822 - it gives up cancellation the old weight was
-// getting by accident. MVDR against the noise covariance is the general
-// answer. Measured, it does not work from these bins: the quiet
-// outside-filter bins show a noise coherence of about zero on every
-// capture, 154822 included, so the common noise is either not there or
-// excluded by the quieter-half selection; and selecting on combined power
-// skews the ratio towards 0 dB on a lopsided pair (122119: -4.2 dB against
-// -8.5 in the guard band). Over 39 captures it scores +0.32 dB against the
-// better antenna, RATIO +0.50, TIME +0.27. RATIO is the default; COV is
-// kept selectable so the finding can be heard.
+// RATIO is the default: over 39 Window/Carrier captures it scores +0.50 dB
+// against the better antenna, TIME +0.27. It loses where both antennas
+// hear one noise source - 154822, 0.99 coherent in the passband - because
+// N0/N1 * Sxy/Sxx is the maximum-ratio answer only for uncorrelated noise,
+// and TIME's misestimate happened to give a weight nearer one that
+// cancels some of the common noise. A covariance solve from the same
+// outside-filter bins was tried and dropped: those bins show no
+// correlation between the antennas even where the passband is 0.99
+// correlated, so it could not see the noise it was meant to cancel.
 //
 int div_eval_sum_noise = DIV_SUMNOISE_RATIO;
-
-//
-// The Window/Carrier Sum weight under DIV_SUMNOISE_COV. Returns 0 when the
-// covariance is not available, and the caller falls back to the ratio.
-//
-static int div_wideband_sum_solve(double *wr, double *wi) {
-  if (div_eval_sum_noise != DIV_SUMNOISE_COV || !nc_valid) { return 0; }
-
-  //
-  // Solved on arm 1 scaled to arm 0's noise level, and the weight scaled
-  // back. div_mvdr2()'s diagonal loading is a fixed fraction of r00 + r11
-  // added to both, which on a pair 12 to 15 dB apart in noise - every
-  // capture in the set - is a large fraction of the quieter arm's noise
-  // and skews the solve. Equalised first, it is proportionate on both.
-  //
-  //   z1' = s z1,  s = sqrt(r00/r11):  r11' = r00,  r01' = s r01,
-  //   h1' = s h1,  and w = s w' so that w z1 = w' z1'.
-  //
-  if (!(nc_r00 > 0.0) || !(nc_r11 > 0.0)) { return 0; }
-
-  const double sc = sqrt(nc_r00 / nc_r11);
-  double w1r, w1i;
-  div_mvdr2(nc_r00, nc_r00, sc * nc_r01re, sc * nc_r01im,
-            acc_xx, 0.0, sc * acc_xy_re, -sc * acc_xy_im, &w1r, &w1i);
-  *wr = sc * w1r;
-  *wi = sc * w1i;
-  return 1;
-}
 
 //
 // EVALUATION (test/noise-floor): the output-level normaliser.
 //
 // receiver.c forms z0 + w*z1 with arm 0 at unit gain, so the combined
-// output is louder than one antenna by whatever the weight does: +3 to
-// +8 dB in Sum, and +20 dB the moment Best hands the output to arm 1 -
-// the combiner can only say "arm 1" as w at the clamp. That rise is not
+// output is louder than one antenna by whatever the weight does - over 39
+// captures a median +2.1 dB in Sum, +7.4 at the ninetieth percentile -
+// and +20 dB the moment Best hands the output to arm 1, because the
+// combiner can only say "arm 1" as w at the clamp. That rise is not
 // signal. div_norm scales the output back to the level arm 0 alone would
 // have, over the operator's passband:
 //
@@ -3798,16 +3737,7 @@ static void div_process_block(void) {
   // Sum is maximum ratio combining and wants the branch noise ratio in
   // it; Null minimises power and does not. See div_wideband_sum_scale().
   //
-  if (div_auto_mode == DIV_AUTO_SUM) {
-    double wr, wi;
-
-    if (div_wideband_sum_solve(&wr, &wi)) {
-      div_apply_weight(wr, wi);
-      return;
-    }
-
-    sign *= div_wideband_sum_scale();
-  }
+  if (div_auto_mode == DIV_AUTO_SUM) { sign *= div_wideband_sum_scale(); }
 
   div_apply_weight(sign * acc_xy_re / den, sign * acc_xy_im / den);
 }
@@ -4006,11 +3936,6 @@ void diversity_auto_start(void) {
     occ_scratch = g_new0(double, DIV_OCC_MAX_SAMPLES);
     nf_scratch0 = g_new0(double, DIV_NF_SAMPLES);
     nf_scratch1 = g_new0(double, DIV_NF_SAMPLES);
-    nc_p0 = g_new0(double, DIV_NF_SAMPLES);
-    nc_p1 = g_new0(double, DIV_NF_SAMPLES);
-    nc_xr = g_new0(double, DIV_NF_SAMPLES);
-    nc_xi = g_new0(double, DIV_NF_SAMPLES);
-    nc_pc = g_new0(double, DIV_NF_SAMPLES);
     occ_mask    = g_new0(unsigned char, DIV_MAX_NFFT);
     for (int i = 0; i < DIV_QUEUE; i++) {
       qbuf0[i] = g_new0(float, 2 * DIV_MAX_NFFT);
@@ -4986,7 +4911,7 @@ void diversity_auto_restore_state(void) {
   GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
-  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_COV) {
+  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_RATIO) {
     div_eval_sum_noise = DIV_SUMNOISE_RATIO;
   }
 
