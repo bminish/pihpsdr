@@ -347,15 +347,15 @@
 // than read off as a single one. A lone percentile is one sample of a
 // noisy distribution and its scatter goes straight into the weight; two
 // percentiles either side is about forty sorted values at
-// DIV_NF_SAMPLES, the array is already sorted so they cost nothing, and
+// DIV_NF_SAMPLES, a selection fences them almost for free, and
 // the ratio's block-to-block scatter drops from about 0.7 dB to 0.3.
 // Still a percentile, so it needs no distribution assumption - which a
 // trimmed mean scaled back to the true mean would.
 //
 #define DIV_NF_BAND         2
 //
-// Bins sampled per arm per block. Two qsorts of this length is the whole
-// cost, and at 1024 the percentile's own scatter is a few tenths of a
+// Bins sampled per arm per block. Two selections over this length are
+// the whole cost, and at 1024 the percentile's own scatter is a few tenths of a
 // decibel before DIV_NF_TAU smooths it. Same striding idea as
 // DIV_OCC_MAX_SAMPLES: a wider span is sampled, not sorted in full.
 //
@@ -1581,13 +1581,76 @@ void div_mvdr2(double r00, double r11, double r01re, double r01im,
 }
 
 //
-// Sort order for the noise-floor percentile. Same shape as div_occ_cmp(),
-// which sorts the FSK/Digital region for its median.
+// Partial selection (Hoare's FIND, as Wirth gives it): afterwards a[k]
+// holds the value it would hold were a[lo..hi] sorted, nothing before it
+// in that range is larger and nothing after it smaller. Linear on
+// average, against qsort's n log n with a call per comparison.
 //
-static int div_nf_cmp(const void *a, const void *b) {
-  const double x = *(const double *)a;
-  const double y = *(const double *)b;
-  return (x > y) - (x < y);
+static void div_nf_select(double *a, int lo, int hi, int k) {
+  while (lo < hi) {
+    //
+    // Median of three, so a block that arrives already ordered - a
+    // spectrum sloping across the span - does not go quadratic.
+    //
+    const int mid = lo + (hi - lo) / 2;
+    double x = a[lo], y = a[mid], z = a[hi], t;
+
+    if (x > y) { t = x; x = y; y = t; }
+
+    if (y > z) { y = z; }
+
+    const double p = (x > y) ? x : y;
+    int i = lo, j = hi;
+
+    while (i <= j) {
+      while (a[i] < p) { i++; }
+
+      while (a[j] > p) { j--; }
+
+      if (i <= j) {
+        t = a[i];
+        a[i] = a[j];
+        a[j] = t;
+        i++;
+        j--;
+      }
+    }
+
+    if (k <= j) { hi = j; }
+    else if (k >= i) { lo = i; }
+    else { return; }
+  }
+}
+
+//
+// The mean of order statistics ilo..ihi of a[0..n-1], which is all the
+// floor needs of a sort. Two selections fence the band, which holds the
+// right values in no particular order; sorting just those (about forty)
+// and adding them smallest first gives the same sum, bit for bit, as
+// adding them from a fully sorted array.
+//
+static double div_nf_band_mean(double *a, int n, int ilo, int ihi) {
+  div_nf_select(a, 0, n - 1, ilo);
+
+  if (ihi > ilo) { div_nf_select(a, ilo + 1, n - 1, ihi); }
+
+  for (int i = ilo + 1; i <= ihi; i++) {
+    const double v = a[i];
+    int j = i - 1;
+
+    while (j >= ilo && a[j] > v) {
+      a[j + 1] = a[j];
+      j--;
+    }
+
+    a[j + 1] = v;
+  }
+
+  double sum = 0.0;
+
+  for (int i = ilo; i <= ihi; i++) { sum += a[i]; }
+
+  return sum / (double)(ihi - ilo + 1);
 }
 
 //
@@ -1672,8 +1735,6 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
   if (ns < DIV_NF_MIN_BINS) { return 0; }
 
-  qsort(nf_scratch0, (size_t)ns, sizeof(double), div_nf_cmp);
-  qsort(nf_scratch1, (size_t)ns, sizeof(double), div_nf_cmp);
   int ilo = (ns * (DIV_NF_PCT - DIV_NF_BAND)) / 100;
   int ihi = (ns * (DIV_NF_PCT + DIV_NF_BAND)) / 100;
 
@@ -1683,15 +1744,8 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 
   if (ihi < ilo) { ihi = ilo; }
 
-  double f0 = 0.0, f1 = 0.0;
-
-  for (int i = ilo; i <= ihi; i++) {
-    f0 += nf_scratch0[i];
-    f1 += nf_scratch1[i];
-  }
-
-  f0 /= (double)(ihi - ilo + 1);
-  f1 /= (double)(ihi - ilo + 1);
+  const double f0 = div_nf_band_mean(nf_scratch0, ns, ilo, ihi);
+  const double f1 = div_nf_band_mean(nf_scratch1, ns, ilo, ihi);
 
   if (!(f0 > 0.0) || !(f1 > 0.0)) { return 0; }
 
