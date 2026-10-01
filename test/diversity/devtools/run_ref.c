@@ -39,6 +39,7 @@
 #include "vfo.h"
 #include "adc.h"
 #include "diversity_auto.h"
+#include "../ref_slots.h"
 #include "rade_correlator.h"
 #include "rade_tuning.h"
 #include "diversity_capture.h"
@@ -309,7 +310,7 @@ int main(int argc, char **argv) {
    * explicitly - otherwise a replay gates on whatever the compiled
    * default happened to be rather than on this reference's own value.
    */
-  diversity_auto_ref_recall(ref);
+  tool_ref_recall(ref);
 
   /*
    * ...and then override it, if asked. Set after the recall because that

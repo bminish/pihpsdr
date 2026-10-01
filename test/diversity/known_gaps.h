@@ -20,6 +20,15 @@
 #define GAP_CARRIER_FOLLOW     "41f8700c: the carrier search can follow the filter too"
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
 
+/*
+ * Not a feature still to port: upstream took this one out. f5a0ce9c
+ * dropped the scheme-1 migration of diversity_auto_ref (and stopped
+ * writing diversity_auto_ref_scheme), so a props file from before the
+ * RADE passband reference was retired loads its old numbers as they are.
+ * Tracked here rather than restored; see docs/changes.md.
+ */
+#define GAP_REF_SCHEME         "f5a0ce9c: upstream dropped the scheme-1 reference migration"
+
 #include <stdio.h>
 
 /*
