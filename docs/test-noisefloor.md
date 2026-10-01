@@ -103,6 +103,17 @@ for unrelated noise, and gives that cancellation up.
   on `151241`. Removed 2026-10-01 (`4635df1b`); the code is in
   `6da9b6b3` if a revisit wants it back.
 
+### CW: the floor's clearest win so far
+
+The CW reference took its Sum noise ratio from the bins beside the tone
+inside its own region. On two 20 m captures (T-017 pileup, T-018 filter
+sweep with keyclicks, `docs/test-findings.md`) that floor failed at a
+50 Hz filter (one or two keyclick-filled edge bins; the weight ran to
++20 dB) and in a 15 dB fade on one arm. Taken from outside the filter
+instead (`a5145aa6`, with Ratio selected): +1.23 → +2.08 dB on the sweep
+and +1.39 → +1.99 on the pileup against the better antenna, level with
+Window. Two captures; worth confirming on more, especially weak ones.
+
 ### Best: clearly better
 
 `TEST` −0.73 → branch −0.37, better on 23 captures, worse on 10. The plain
@@ -202,6 +213,7 @@ would make it usable. Not built.
 | `fb61d6f7` | Menu: Level output on the top row, greyed when inactive; Sum noise beside Invert |
 | `4635df1b` | Gap covariance removed (reverts `6da9b6b3`) |
 | `5792117c` | The Sum noise selector marked `PORT-TO-TEST: remove` |
+| `a5145aa6` | CW's Sum noise ratio from the outside-filter floor (T-017, T-018) |
 
 Hashes as of the rebase onto the new `TEST` on 2026-10-01; they change
 whenever the branch is rebased again. The pre-rebase branch is kept as

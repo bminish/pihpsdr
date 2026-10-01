@@ -17,11 +17,17 @@ Build it as usual (`make DIVCAP=1` keeps the Capture button).
    block from the bins outside the RX filter, instead of from the quietest
    moment in the recent past. It is accurate: within about 0.5 dB of the
    true ratio on every capture checked.
-2. **A choice of Sum noise model** for the Window and Carrier references
+2. **A choice of Sum noise model** for the Window, Carrier and CW references
    (menu, "Sum noise"):
    - *Old (time minimum)*: what `TEST` does.
    - *Ratio (outside filter)*, the default: the noisier antenna is backed
      off by the measured noise ratio.
+
+   It applies to the CW reference too (since `a5145aa6`): with Ratio, CW's
+   Sum weight takes the noise ratio from outside the filter; with Old it
+   uses the bins beside the tone, as `TEST` does. That is the one to listen
+   to with a narrow filter, a station with keyclicks, or a fading antenna
+   (T-017, T-018 in `docs/test-findings.md`).
 
    A third option, *Gap covariance*, tried to cancel noise both antennas
    share. It measured as no better than Ratio and has been removed; see
