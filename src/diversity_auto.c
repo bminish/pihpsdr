@@ -327,8 +327,9 @@
 //
 // The estimate here has no such premise, because it never waits for a
 // gap. The noise floor is what the *quietest bins of this block* sit at,
-// and there are thousands of them in the DDC passband every block,
-// outside the operator's filter where no wanted signal can be. A fade
+// and there are thousands of them within DIV_NF_HALF_SPAN_HZ of the dial
+// every block, outside the operator's filter where no wanted signal can
+// be. A fade
 // takes the signal down and leaves those bins exactly where they were, so
 // a fade cannot be mistaken for silence; a carrier that never stops is
 // not a difficulty either, because nothing is being waited for.
@@ -373,7 +374,8 @@
 //
 // Below this many candidate bins there is not enough spectrum outside the
 // filter to say anything, and the temporal floor is used instead. Reached
-// only by a hand-placed window far wider than the passband it sits in.
+// by a hand-placed window far wider than the passband it sits in, or a
+// wide (FM) filter at the lowest sample rate.
 //
 #define DIV_NF_MIN_BINS     128
 //
@@ -388,6 +390,19 @@
 // in the roll-off is a measurement of the roll-off.
 //
 #define DIV_NF_SPAN         0.80
+//
+// ...and no further than this either side of the dial, whatever the
+// sample rate. The two antennas' noise ratio is not the same across a
+// wide span - on the 40 m captures the 41 m broadcast part already read
+// 1.5-2 dB different from the amateur part inside +/-77 kHz - and at
+// 1536 kHz the span above would be +/-614 kHz, across band edges and
+// broadcast bands. Measured on nine captures, the estimate moves by
+// 0.5 dB at most between +/-10 and +/-77 kHz; only the block-to-block
+// scatter grows, which DIV_NF_TAU takes out (docs/noise-floor-refactor.md).
+// 20 kHz is the whole usable span at 48 kHz, so every rate from there up
+// measures the same neighbourhood.
+//
+#define DIV_NF_HALF_SPAN_HZ 20000.0
 //
 // Smoothing, seconds. Long enough to take the scatter out of a
 // percentile, short enough that the step attenuators - which reset the
@@ -1666,7 +1681,10 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
     elo -= skirt;
     ehi += skirt;
   }
-  const int span = (int)(0.5 * DIV_NF_SPAN * (double)nfft);
+  int span = (int)(0.5 * DIV_NF_SPAN * (double)nfft);
+  const int span_max = (int)(DIV_NF_HALF_SPAN_HZ / binhz);
+
+  if (span > span_max) { span = span_max; }
 
   if (span < 1) { return 0; }
 
