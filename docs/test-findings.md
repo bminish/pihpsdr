@@ -385,6 +385,63 @@ the quietest 20 % of blocks in the passband.
   within 0.4 dB of its un-notched figure. The notch's exact width and
   on/off times are inferred, not known.
 
+## T-017 and T-018: 20 m CW, a pileup and a filter sweep with keyclicks
+
+Two captures, 2026-10-01 16:39-16:42, taken on `test/noise-floor`: 20 m
+CWL, CW reference, Sum, 0.22 s, Sum noise set to Ratio.
+
+- **T-017** (`163953`): a pileup of many stations, retuned 19 times
+  (14.020125 to 14.020016 MHz); 1000 Hz filter.
+- **T-018** (`164121`): one station with significant keyclicks, filter
+  stepped 100, 50, 26, 50, 100 ... 1000 Hz and back down to 50 Hz.
+
+**The Sum noise model does nothing on the CW reference.** CW takes its
+noise ratio from its own off-tone bins (`div_cw_floor()`, LC-017), and the
+outside-filter floor is updated only after the CW branch has returned.
+Old, Ratio and Gap replays are bit-identical, and the replay reproduces
+the radio's weight exactly (0.000 on 489 and 364 moving blocks).
+
+**Yardstick.** `score_cw.py` needs off-tone bins inside the passband, so
+it cannot score T-018 below about 400 Hz. Added here (scratch script): the
+same tone-to-noise of the key-down spectrum, with the noise from bins
+300-900 Hz from the tone. Those pass through the same weight and sit
+clear of most of the click energy, which reads +10 to +20 dB over that
+noise at 50-200 Hz from the tone during key-down. dB against the better
+antenna, segment-length weighted:
+
+| | CW as shipped (the radio) | Window, Old | Window, Ratio | Window, Gap | FSK/Digital |
+|---|---|---|---|---|---|
+| T-017 pileup | +1.39 | **+2.30** | +2.29 | +1.97 | +1.80 |
+| T-018 sweep | +1.23 | +1.94 | **+2.05** | +1.93 | +1.22 |
+
+**CW trails Window by about 0.8 dB here, and the cause is its noise
+floor.** On T-018 the losses are concentrated:
+
+- **50 Hz filter:** +0.60 and +0.04 dB, against +2.16 and +2.85 for
+  Window. Rounded out to bins, the region is 6 bins, just enough for
+  `DIV_CW_MIN_BINS`, so CW acts; but its off-tone floor (bins 4 or more
+  from the tone) then rests on one or two edge bins full of keyclick
+  sideband. The per-arm SNR reads +10 to +15 dB with the arms level, and
+  the Sum weight runs to +17 to +20 dB. At 26 Hz CW holds as designed,
+  but on the bad weight it inherited.
+- **600 Hz, arm 0 in a 15 dB fade:** −0.53 against +1.85.
+
+**Experiment (scratch build, not committed): CW's noise ratio from the
+outside-filter floor** that Ratio already measures for Window:
+
+| | CW as shipped | CW, outside-filter floor | CW, own floor needing ≥ 8 bins | Window, Ratio |
+|---|---|---|---|---|
+| T-017 | +1.39 | **+1.99** | +1.38 | +2.29 |
+| T-018 | +1.23 | **+2.08** | +1.79 | +2.05 |
+| T-018, the two 50 Hz segments | +0.60 / +0.04 | **+2.27 / +2.87** | +2.30 / +2.81 | +2.16 / +2.85 |
+| T-018, 600 Hz fade | −0.53 | **+2.00** | −0.53 | +1.85 |
+
+`score_cw.py`, where it can score, agrees: T-017's main segment +0.55 →
++0.98; T-018's wide segments within ±0.25. The outside-filter floor is the
+one fix that covers both faults; requiring more bins only covers the
+narrow filter. It is the across-frequency floor's clearest win so far,
+and it only exists on this branch.
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
