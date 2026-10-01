@@ -183,15 +183,26 @@
 // track a minimum over time instead.
 //
 // The hysteresis matters most where it matters least: two antennas within
-// a decibel of each other are the case where the choice does not matter
-// and the case where an ungated comparison would chatter between them.
+// a decibel or two of each other are the case where the choice does not
+// matter and the case where an ungated comparison would chatter between
+// them. 2 dB, with DIV_BEST_DWELL behind it: where a per-arm SNR exists on
+// every block - as the outside-filter floor gives it (LC-029) - two
+// near-equal antennas at 1 dB changed places every few blocks; on 154822
+// arm 1 on 56 % of them, for -17.97 dB against the better antenna.
 //
 // The floor rise is slow deliberately. It only has to outrun a change of
 // band conditions, and anything faster starts following the signal it is
 // supposed to be measuring underneath.
 //
-#define DIV_BEST_HYST_DB    1.0
+#define DIV_BEST_HYST_DB    2.0
 #define DIV_FLOOR_RISE_DB   0.2     // dB per second
+
+//
+// How long the other antenna has to lead by more than DIV_BEST_HYST_DB,
+// continuously, before Best changes to it, in seconds. See
+// div_apply_best().
+//
+#define DIV_BEST_DWELL      1.0
 
 //
 // The floor is tracked on power smoothed over this, not over the
@@ -216,8 +227,11 @@
 #define DIV_NRATIO_WIN      5.0
 
 //
-// How far the window power must stand above the tracked floor, on both
-// arms, before that floor is taken to be noise.
+// How far the window power must stand above its noise floor, on both
+// arms, before a per-arm SNR is published - with the outside-filter floor
+// that is simply "there is a signal to compare". With the temporal floor,
+// the fallback, it is also what tells a noise floor from a minimum that
+// was signal:
 //
 // Without this the tracker answers confidently and wrongly. Its minimum
 // is only a noise floor if the capture contained a moment with no signal
@@ -889,6 +903,12 @@ double div_track_phase = 0.0;
 static double div_carrier_hz = 0.0;
 
 //
+// How long the antenna Best is not on has been ahead of it. See
+// DIV_BEST_DWELL.
+//
+static double best_lead = 0.0;
+
+//
 // CW key detection's temporal reference: the quietest the region's peak
 // has recently been. See div_cw_solve(). Reset with the statistics, so a
 // retune or a filter change starts it again.
@@ -991,6 +1011,7 @@ static void div_reset_stats(void) {
   arm_fast0 = arm_fast1 = 0.0;
   div_auto_arm_valid = 0;
   div_auto_arm_db = 0.0;
+  best_lead = 0.0;
   div_auto_coherence = 0.0;
   div_auto_holding = 1;
   div_carrier_hz = 0.0;
@@ -1708,8 +1729,10 @@ int diversity_auto_noise_floor(double *n0, double *n1) {
 //
 // The RADE V1 and FSK/Digital references already have both halves: their
 // MVDR covariance is a measurement of N0 and N1 taken off the signal. The
-// wideband Window and Carrier references have no such thing, so they get
-// a noise floor tracked over time instead - see div_arm_floor_update().
+// wideband Window and Carrier references have no such thing, so they take
+// one from the bins outside the operator's filter - see
+// div_noise_floor_update() - and fall back to a floor tracked over time
+// where too little lies outside it (div_arm_floor_update()).
 //
 // This is worth publishing whatever objective is running. Nothing an
 // operator can otherwise see separates an antenna that reads 12 dB down
@@ -1750,28 +1773,44 @@ static void div_arm_floor_update(double p0, double p1) {
 }
 
 //
-// The advantage of arm 1, in dB, from the tracked floors. Fails while
-// the floor has not been established, and while either arm is sitting on
-// its own floor - there is no signal to compare then, and the ratio of
-// two noises is not an answer to the question.
+// The advantage of arm 1, in dB. Fails while there is no noise reference,
+// and while either arm is sitting on its own floor - there is no signal
+// to compare then, and the ratio of two noises is not an answer to the
+// question.
 //
-static int div_arm_from_floor(double p0, double p1, double *db) {
-  if (!arm_floor_valid || arm_floor0 <= 0.0 || arm_floor1 <= 0.0) { return 0; }
+// nbins is how many bins p0 and p1 were summed over, because the spectral
+// floor is per bin and the window powers are not. The temporal floor is
+// the fallback and is already in window units, so it needs no scaling -
+// which is also why it cannot be mixed with the other: the two are the
+// same quantity in different units and only nbins relates them.
+//
+static int div_arm_from_floor(double p0, double p1, int nbins, double *db) {
+  double n0, n1;
 
-  const double s0 = p0 - arm_floor0;
-  const double s1 = p1 - arm_floor1;
+  if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0 && nbins > 0) {
+    n0 = (double)nbins * div_nf0;
+    n1 = (double)nbins * div_nf1;
+  } else if (arm_floor_valid && arm_floor0 > 0.0 && arm_floor1 > 0.0) {
+    n0 = arm_floor0;
+    n1 = arm_floor1;
+  } else {
+    return 0;
+  }
+
+  const double s0 = p0 - n0;
+  const double s1 = p1 - n1;
 
   if (!(s0 > 0.0) || !(s1 > 0.0)) { return 0; }
 
   //
-  // Both arms have to stand clear of their own floor, or the floor is not
-  // yet known to be noise. See DIV_ARM_MIN_DB.
+  // Both arms have to stand clear of their own floor, or there is no
+  // signal to compare. See DIV_ARM_MIN_DB.
   //
   const double need = pow(10.0, 0.1 * DIV_ARM_MIN_DB) - 1.0;
 
-  if (s0 < need * arm_floor0 || s1 < need * arm_floor1) { return 0; }
+  if (s0 < need * n0 || s1 < need * n1) { return 0; }
 
-  *db = 10.0 * log10((s1 / arm_floor1) / (s0 / arm_floor0));
+  *db = 10.0 * log10((s1 / n1) / (s0 / n0));
   return 1;
 }
 
@@ -1957,10 +1996,22 @@ static void div_apply_best(double cophase_re, double cophase_im) {
     return;
   }
 
-  if (div_auto_arm_pick == 0) {
-    if (div_auto_arm_db >  DIV_BEST_HYST_DB) { div_auto_arm_pick = 1; }
+  //
+  // Change only when the other antenna has led by more than the
+  // hysteresis for DIV_BEST_DWELL, continuously.
+  //
+  const int other_leads = (div_auto_arm_pick == 0) ? (div_auto_arm_db >  DIV_BEST_HYST_DB)
+                          : (div_auto_arm_db < -DIV_BEST_HYST_DB);
+
+  if (other_leads) {
+    best_lead += blocktime;
+
+    if (best_lead >= DIV_BEST_DWELL) {
+      div_auto_arm_pick = !div_auto_arm_pick;
+      best_lead = 0.0;
+    }
   } else {
-    if (div_auto_arm_db < -DIV_BEST_HYST_DB) { div_auto_arm_pick = 0; }
+    best_lead = 0.0;
   }
 
   if (div_auto_arm_pick == 0) {
@@ -3347,6 +3398,13 @@ static void div_process_block(void) {
   acc_w2 = (1.0 - alpha) * (1.0 - alpha) * acc_w2 + alpha * alpha;
 
   double cur_xx = 0.0, cur_yy = 0.0;
+  //
+  // Bins actually accumulated: the window less whatever the operator has
+  // notched out of it. div_arm_from_floor() scales the per-bin noise floor
+  // by this to compare it with the window powers, so it has to be the
+  // count summed and not the width of the window.
+  //
+  int used_bins = 0;
 
   //
   // Per-bin running spectra. Keeping these per bin rather than as four
@@ -3377,6 +3435,7 @@ static void div_process_block(void) {
     //
     cur_xx += i0 * i0 + q0 * q0;
     cur_yy += i1 * i1 + q1 * q1;
+    used_bins++;
   }
 
   //
@@ -3502,7 +3561,7 @@ static void div_process_block(void) {
     // before it has been written.
     //
     double db = 0.0;
-    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, &db);
+    const int ok = div_arm_from_floor(arm_pw0, arm_pw1, used_bins, &db);
     div_arm_publish(ok, db);
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
