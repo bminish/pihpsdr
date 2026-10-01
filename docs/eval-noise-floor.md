@@ -22,9 +22,11 @@ Build it as usual (`make DIVCAP=1` keeps the Capture button).
    - *Old (time minimum)*: what `TEST` does.
    - *Ratio (outside filter)*, the default: the noisier antenna is backed
      off by the measured noise ratio.
-   - *Gap covariance (in band)*: a prototype that tries to cancel noise
-     both antennas share, measured in signal-free blocks. Measured as no
-     better than Ratio; there for the record. See `docs/test-noisefloor.md`.
+
+   A third option, *Gap covariance*, tried to cancel noise both antennas
+   share. It measured as no better than Ratio and has been removed; see
+   `docs/test-noisefloor.md`. The selector itself is an evaluation
+   control and goes when this moves to `TEST`.
 3. **Calmer Best.** It changes antenna only when the other one has been
    more than 2 dB better (was 1 dB) for a full second.
 4. **Level output** (menu tick, on by default). The combined output is

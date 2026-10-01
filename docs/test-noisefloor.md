@@ -40,11 +40,11 @@ of two fades (the feature branch measured +10.5 dB where the truth was
 | Piece | What it does | Lines (approx.) | State |
 |---|---|---|---|
 | Across-frequency floor | Each antenna's noise from the bins outside the RX filter, every block: mean of the 8th–12th percentile of up to 1024 bins, smoothed over 2 s. Time minimum kept as fallback | 95 | Keep |
-| Sum noise model (eval control) | Old (time minimum) / Ratio (outside-filter floor, default) / Gap covariance | 35 (menu, props) | Evaluation only |
+| Sum noise model (eval control) | Old (time minimum) / Ratio (outside-filter floor, default) | 35 (menu, props) | Evaluation only; marked `PORT-TO-TEST: remove` |
 | Calmer Best | Changes antenna only after the other has been > 2 dB better (was 1) for 1 s | 12 | Keep |
 | Level output (eval tick) | Combined output held at arm 0's passband level, recomputed whenever the weight is written; not in Null or RADE V1 | 60 + 2 multiplies per sample | Keep |
 | Covariance (outside filter) | MVDR against the noise covariance from the outside-filter bins | — | Removed: dead end |
-| Gap covariance (in band) | In-band noise covariance from flat (signal-free) blocks, Sum solved against the signal covariance | 120 | On the branch, negative result |
+| Gap covariance (in band) | In-band noise covariance from flat (signal-free) blocks, Sum solved against the signal covariance | — | Removed: negative result |
 
 ## What was measured
 
@@ -100,7 +100,8 @@ for unrelated noise, and gives that cancellation up.
   steered to noise (`154822` −7.92); with a 6 dB margin it is level with
   Ratio: −0.15 guard, −0.05 in-band, better on 8–9, worse on 13. It
   recovers part of `122632` in-band (−3.26 against −8.21) and loses 7.45
-  on `151241`. Kept on the branch for the record.
+  on `151241`. Removed 2026-10-01 (`4635df1b`); the code is in
+  `6da9b6b3` if a revisit wants it back.
 
 ### Best: clearly better
 
@@ -132,8 +133,8 @@ readability during a transmission, not the background level.
 `bench_cpu`, Window at 192 kHz, per 85 ms analysis block: `TEST` 0.55 ms,
 the branch without the dropped Covariance 0.72–0.77 ms - about +0.2 ms,
 0.2 % of one core, mostly two sorts of 1024 values. Carrier similar;
-FSK/Digital, CW and RADE V1 unchanged. Gap covariance costs a further
-sort per block, only while selected. About 180 lines of `src/` for the
+FSK/Digital, CW and RADE V1 unchanged. (Gap covariance, now removed,
+cost a further sort per block while selected.) About 180 lines of `src/` for the
 pieces worth keeping, excluding the evaluation controls.
 
 ## Upstream's panadapter floor as a cross-check
@@ -180,16 +181,28 @@ would make it usable. Not built.
    need the per-arm SNR on every block that the new floor supplies, or a
    check that the dwell rule is harmless with the old one.
 5. **The panadapter readout** (above), if an on-air cross-check is wanted.
-6. **Drop the evaluation controls and Gap covariance** before anything
-   moves to `TEST`.
+6. **Drop the evaluation controls** before anything moves to `TEST`.
+   Gap covariance is already gone. The Sum noise selector is marked
+   `PORT-TO-TEST: remove` at every place it lives (`git grep
+   PORT-TO-TEST`): Ratio becomes the only model, with the time minimum
+   as its fallback. Level output, the calmer Best and the floor are
+   kept.
 
 ## Commits on `test/noise-floor`
 
 | Commit | What |
 |---|---|
-| `ca8a04d7` | The across-frequency floor, ported from `8a393217` |
-| `d19b7657` | Sum noise model control, Best dwell, Level output |
-| `4d2571c0` | Tooling: `run_ref --sumnoise`, a `norm` column, `score_level.py` |
-| `7a69044f` | `docs/eval-noise-floor.md` |
-| `603fd5c0` | Covariance removed; comments checked against the code |
-| `630a306b` | Gap covariance prototype (negative result) |
+| `05015522` | The across-frequency floor, ported from `8a393217` |
+| `16c18851` | Sum noise model control, Best dwell, Level output |
+| `85200203` | Tooling: `run_ref --sumnoise`, a `norm` column, `score_level.py` |
+| `4a3d8536` | `docs/eval-noise-floor.md` |
+| `92808b17` | Covariance removed; comments checked against the code |
+| `6da9b6b3` | Gap covariance prototype (negative result) |
+| `abaaeef4` | This document |
+| `fb61d6f7` | Menu: Level output on the top row, greyed when inactive; Sum noise beside Invert |
+| `4635df1b` | Gap covariance removed (reverts `6da9b6b3`) |
+| `5792117c` | The Sum noise selector marked `PORT-TO-TEST: remove` |
+
+Hashes as of the rebase onto the new `TEST` on 2026-10-01; they change
+whenever the branch is rebased again. The pre-rebase branch is kept as
+`history/backup/test-noise-floor-pre-rebase-20261001`.
