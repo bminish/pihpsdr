@@ -2821,7 +2821,6 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_auto_width         = s->width;
   div_auto_tau           = s->tau;
   div_auto_hang          = s->hang;
-  div_auto_coherence_min = s->coherence_min;
   div_auto_resolution    = s->resolution;
   div_band_cohmin        = s->band_cohmin;
   div_carrier_cohmin     = s->carrier_cohmin;
@@ -2835,9 +2834,20 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   // radio starting up in RADE V1 would gate on whatever the *previous*
   // reference was set to, which for a file written before this existed is
   // 0.30 against a mode that had no gate at all.
-  // DL1YCF: THIS MUST BE CORRECTED
   //
-  div_auto_coherence_min = s->coherence_min;
+  // The slot is taken from the block itself, so this needs nothing the
+  // menu keeps.
+  //
+  switch (s->ref) {
+  case DIV_REF_CARRIER:    div_auto_coherence_min = s->carrier_cohmin; break;
+
+  case DIV_REF_DIGITAL_IQ: div_auto_coherence_min = s->digital_cohmin; break;
+
+  case DIV_REF_RADE_V1:    div_auto_coherence_min = s->rade_cohmin;    break;
+
+  default:                 div_auto_coherence_min = s->band_cohmin;    break;
+  }
+
   div_band_centre        = s->band_centre;
   div_band_width         = s->band_width;
   div_carrier_centre     = s->carrier_centre;
