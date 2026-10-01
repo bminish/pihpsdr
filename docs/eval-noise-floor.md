@@ -19,9 +19,6 @@ Build it as usual (`make DIVCAP=1` keeps the Capture button).
    - *Old (time minimum)*: what `TEST` does.
    - *Ratio (outside filter)*, the default: the noisier antenna is backed
      off by the measured noise ratio.
-   - *Covariance (outside filter)*: an attempt to cancel noise common to
-     both antennas. It does not work from these bins (below); it is there
-     so you can hear that.
 3. **Calmer Best.** It changes antenna only when the other one has been
    more than 2 dB better (was 1 dB) for a full second.
 4. **Level output** (menu tick, on by default). The combined output is
@@ -41,7 +38,6 @@ Score against the better antenna alone (`score_wideband.py`):
 |---|---|---|
 | Sum, Old | +0.27 dB | 25 |
 | Sum, Ratio | **+0.50 dB** | 29 |
-| Sum, Covariance | +0.32 dB | 27 |
 | Best, `TEST` | −0.73 dB | 18 |
 | Best, branch | −0.37 dB | 22 |
 
@@ -62,10 +58,14 @@ Where it is known to be worse:
   happened to help.
 - **Best**: `185337` −3.62 dB, `143952` −2.76, `000209` −2.34 against
   `TEST`.
-- **Covariance** cannot see the common noise: the quiet bins outside the
-  filter show no correlation between the antennas even where the band
-  beside the passband is 0.64–0.99 correlated, and picking the quieter bins
-  skews the noise ratio on a lopsided pair.
+
+Tried and dropped: a *covariance* solve, meant to cancel noise common to
+both antennas, from the same outside-filter bins. It scored +0.32 dB
+against Ratio's +0.50. Those bins show no correlation between the antennas
+even where the band beside the passband is 0.64–0.99 correlated, so it
+could not see the noise it was meant to cancel, and picking the quieter
+bins skewed the noise ratio on a lopsided pair. Cancelling common noise
+would need it measured beside the signal, not far from it.
 
 ## What to listen for, mode by mode
 
