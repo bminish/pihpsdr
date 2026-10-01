@@ -4154,24 +4154,27 @@ void diversity_auto_restart(void) {
 // narrow: 20 Hz is a width the slider offers, and anything below it has
 // already been put back to the default by div_settings_validate().
 //
-// The menu files the result under the reference and shows it.
+// The window is returned, not written: div_auto_centre and div_auto_width
+// are the menu's settings, so the menu stores the result (returns 1), files
+// it under the reference and shows it. Returns 0 to leave the window alone.
 //
 // The follow window is filter_low..filter_high and a hand-placed one is
 // div_window_zero() + centre +/- width/2, so this reproduces it exactly,
 // CW included.
 //
-void diversity_auto_seed_window(void) {
-  if (div_auto_ref == DIV_REF_RADE_V1) { return; }
+int diversity_auto_seed_window(double *centre, double *width) {
+  if (div_auto_ref == DIV_REF_RADE_V1) { return 0; }
 
-  if (div_auto_centre != 0.0 || div_auto_width != div_width_default(div_auto_ref)) { return; }
+  if (div_auto_centre != 0.0 || div_auto_width != div_width_default(div_auto_ref)) { return 0; }
 
   const double lo = (double)receiver[0]->filter_low;
   const double hi = (double)receiver[0]->filter_high;
 
-  if (hi - lo < 20.0) { return; }
+  if (hi - lo < 20.0) { return 0; }
 
-  div_auto_centre = 0.5 * (lo + hi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
-  div_auto_width  = hi - lo;
+  *centre = 0.5 * (lo + hi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+  *width  = hi - lo;
+  return 1;
 }
 
 void diversity_auto_get_settings(DIV_SETTINGS *s) {

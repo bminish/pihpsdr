@@ -1029,7 +1029,13 @@ static void follow_cb(GtkWidget *widget, gpointer data) {
   // following, unless they have already placed one of their own.
   //
   if (!div_auto_follow_filter) {
-    diversity_auto_seed_window();
+    double centre, width;
+
+    if (diversity_auto_seed_window(&centre, &width)) {
+      div_auto_centre = centre;
+      div_auto_width  = width;
+    }
+
     store_ref_values(div_auto_ref);
     div_ref_widgets_show();
   }

@@ -188,10 +188,11 @@ extern double div_window_zero(int mode, int sidetone);
 
 //
 // Called when "Follow RX Filter" is unticked: if the selected
-// reference's window is still at its default, place it on the current
-// RX passband. See the .c.
+// reference's window is still at its default, return 1 with the current
+// RX passband as a window in *centre / *width, for the menu to store.
+// Returns 0 to leave the window as it is. See the .c.
 //
-extern void diversity_auto_seed_window(void);
+extern int diversity_auto_seed_window(double *centre, double *width);
 
 //
 // Operator hold: the analysis keeps running and keeps updating
