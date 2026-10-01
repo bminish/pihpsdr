@@ -32,6 +32,7 @@
 #include "vfo.h"
 #include "adc.h"
 #include "diversity_auto.h"
+#include "ref_slots.h"
 #include "radio.h"
 
 // ---- stubs for the piHPSDR globals the engine touches, as test_modes_live
@@ -132,7 +133,7 @@ int main(void) {
   div_auto_mode = DIV_AUTO_SUM;
   div_auto_follow_filter = 1;
   div_auto_tau = 0.5;
-  diversity_auto_ref_recall(DIV_REF_CW);
+  tool_ref_recall(DIV_REF_CW);
   diversity_auto_start();
   srand(42);
   //
