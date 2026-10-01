@@ -214,7 +214,7 @@ extern int div_arm_swapped(void);
 // EVALUATION (test/noise-floor): the Window/Carrier Sum noise model, and
 // the output-level normaliser. See diversity_auto.c.
 //
-enum { DIV_SUMNOISE_TIME = 0, DIV_SUMNOISE_RATIO };
+enum { DIV_SUMNOISE_TIME = 0, DIV_SUMNOISE_RATIO, DIV_SUMNOISE_GAP };
 extern int    div_eval_sum_noise;
 extern int    div_auto_normalise;
 
