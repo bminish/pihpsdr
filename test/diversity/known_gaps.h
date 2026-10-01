@@ -19,6 +19,13 @@
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
 
 /*
+ * Not from a feature branch: found by test_rates. At 1536 kHz the bins are
+ * 23.4 Hz, a 100 Hz CW filter is under DIV_CW_MIN_BINS, and the CW
+ * reference holds for good. Step 6 of docs/noise-floor-refactor.md.
+ */
+#define GAP_CW_NARROW_1536     "noise-floor step 6: CW acts at 23.4 Hz bins with a 100 Hz filter"
+
+/*
  * Not a feature still to port: upstream took this one out. f5a0ce9c
  * dropped the scheme-1 migration of diversity_auto_ref (and stopped
  * writing diversity_auto_ref_scheme), so a props file from before the
