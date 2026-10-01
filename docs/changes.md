@@ -119,6 +119,10 @@ In practice:
 - Where an engine function computes a value for the menu (a seeded
   window, say), it returns the value and the menu stores it.
 - Engine-to-menu calls (`g_idle_add` of menu functions) are not added.
+- What each engine change needs from the menu is written up for dl1ycf
+  in [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md). We still make the
+  menu half in our own LC, so `TEST` works, but we keep it minimal so
+  his rewrite can redo it.
 
 ### Review against these rules (2026-10-01, `TEST` at `4f79c0be`)
 
@@ -138,8 +142,8 @@ In practice:
 
 | # | Where | What it writes | Origin | Proposed handling |
 |---|---|---|---|---|
-| E1 | `diversity_auto_start()`, RADE start failure | `div_auto_ref` → `DIGITAL_IQ` | upstream (our original code) | Don't substitute. Keep the reference, run without the correlator (hold, no weight) and report "RADE unavailable" in the status. It can't fire today: every DDC rate is a multiple of 8 kHz. So this is a small, safe fix on our side. |
-| E2 | `diversity_auto_seed_window()` | `div_auto_centre`, `div_auto_width` | LC-009 | Make it pure: `int diversity_auto_seed_window(double *centre, double *width)` returns 1 and fills the values, and the menu stores them. This needs a two-line change in `follow_cb` (dl1ycf's side). |
+| E1 | `diversity_auto_start()`, RADE start failure | `div_auto_ref` → `DIGITAL_IQ` | upstream (our original code) | **Done: LC-031.** Don't substitute. Keep the reference, run without the correlator (hold, no weight) and report "RADE unavailable" in the status. It can't fire today: every DDC rate is a multiple of 8 kHz. So this is a small, safe fix on our side. |
+| E2 | `diversity_auto_seed_window()` | `div_auto_centre`, `div_auto_width` | LC-009 | **Done: LC-032.** Make it pure: `int diversity_auto_seed_window(double *centre, double *width)` returns 1 and fills the values, and the menu stores them. This needs a two-line change in `follow_cb` (dl1ycf's side). |
 | E3 | `div_settings_load()` | the live `div_auto_coherence_min`, from the reference's slot | LC-026 | The root problem is duplicated state: a live copy *and* per-reference slots for the window and threshold. The menu stores and recalls them by copying (LC-008). Proposal: the engine reads the selected reference's slot directly, and the live copies go away. That's a joint change, to discuss with dl1ycf. Until then, LC-026 stays as the bridge. |
 | E4 | `diversity_auto_set_hold()` | `div_auto_hold` | upstream; LC-007 | The menu and `radio_set_diversity()` call it, so the engine never decides on its own. Cleaner: the caller writes `div_auto_hold`, and the engine gets `diversity_auto_hold_changed()` for the weight handover (`div_jump`). Low priority. |
 | E5 | `diversity_auto_mode_changed()` + `div_group_*` | every setting, on a mode-group change | upstream (ours originally); LC-019 seed | Rule 4. Move the per-group blocks into `RXTXprofile[].rx` and save and restore them in `profiles.c`. Then the engine only reacts (restart and reset) when told the settings changed. This is the big one. See the notes below. |
@@ -283,6 +287,8 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-028 | Behaviour | Best: per-arm SNR from the floor, 2 dB / 1 s switch   | diversity_auto.c                          | LC-025     | Local  |
 | LC-029 | Behaviour | CW's Sum noise ratio from the floor outside the filter | diversity_auto.c                         | LC-025     | Local  |
 | LC-030 | Behaviour | Level output: the combined output at one antenna's level | diversity_auto.c/.h, diversity_menu.c, radio.c/.h, receiver.c | — | Local |
+| LC-031 | Fix       | RADE V1 that cannot start says so instead of becoming FSK/Digital | diversity_auto.c/.h, diversity_menu.c | — | Local |
+| LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1362,6 +1368,39 @@ captures (`score_level.py`): Sum +2.07 → −0.08 dB over one antenna, Best
 steps over 3 dB 1175 → 774. `test_window`: a Sum that raised the level
 +4.2 dB comes out at 0.00, Null untouched.
 
+### LC-031 — RADE V1 that cannot start says so, rather than becoming FSK/Digital
+
+**Why.** If the pilot correlator could not start at the DDC rate,
+`diversity_auto_start()` set `div_auto_ref` to `DIV_REF_DIGITAL_IQ`. The
+engine was changing a menu setting (E1 under "Who owns what"): the menu
+showed RADE V1 while the loop ran FSK/Digital, and the next props save
+stored the substitute.
+
+**Change.** The reference is left as set. The engine raises
+`div_auto_rade_unavailable`, logs it, and holds: `rade_corr_process()`
+produces no weight when the correlator isn't running. The flag is
+recomputed on every start. The menu's RADE V1 status reads "n/a rate".
+It is not on the wire, so a client never sees it (client/server is
+deferred).
+
+**Reach.** Not reachable at present: every rate piHPSDR offers is a
+multiple of 8 kHz. No change in behaviour on any capture. The menu half
+is written up for dl1ycf in
+[menu-notes-dl1ycf.md](menu-notes-dl1ycf.md#e1-rade-v1-that-cannot-start-lc-031).
+
+### LC-032 — The seeded window is returned to the menu, not written by the engine
+
+**Why.** LC-009's `diversity_auto_seed_window()` wrote `div_auto_centre`
+and `div_auto_width`, which are menu settings (E2 under "Who owns
+what").
+
+**Change.** The function now returns 1, with the window in `*centre` and
+`*width`, or 0 to leave the window alone. `follow_cb()` stores the
+result. The same values land in the same globals, so there is no change
+in behaviour. Needs LC-009, which adds the function. The menu half is
+written up for dl1ycf in
+[menu-notes-dl1ycf.md](menu-notes-dl1ycf.md#e2-seeding-the-window-when-follow-rx-filter-is-unticked-lc-032).
+
 ---
 
 ## Local tooling (never upstream)
@@ -1577,6 +1616,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-01: LC-031 (E1) and LC-032 (E2); the menu halves are
+  written up for dl1ycf in `menu-notes-dl1ycf.md`.
 - 2026-10-01: dl1ycf's division of work recorded ("Who owns what: menu
   and engine"), with the engine reviewed against it: E1 to E8.
 - 2026-10-01: **the noise-floor work landed** as LC-025, LC-027 to LC-030
