@@ -309,13 +309,8 @@ int main(int argc, char **argv) {
      * third figure below is. See Finding 47.
      */
     const double us = out_sinr_db(hr, -hi, 1.0, n0 * n0, n1 * n1);
-    const int ok_digital = (dg < -20.0) && (ds > us + 3.0);
-    const int ok_window  = (bg < -20.0) && (fabs(ds - bs) < 1.0);
-#ifdef GAP_BRANCH_NOISE_RATIO
-    const int ok = ok_digital;
-#else
-    const int ok = ok_digital && ok_window;
-#endif
+    const int ok = (dg < -20.0) && (bg < -20.0)
+                   && (fabs(ds - bs) < 1.0) && (ds > us + 3.0);
     printf("2. arm 1 noisier by %.0f dB, both back it off (optimum %+.0f dB, clamped at -27)\n",
            20.0 * log10(n1 / n0), want_g + 40.0 * log10(n0 / n1));
     printf("   digital %+6.2f dB -> SINR %+6.2f dB\n", dg, ds);
@@ -324,11 +319,6 @@ int main(int argc, char **argv) {
            ok ? "OK" : "FAIL");
 
     if (!ok) { fails++; }
-
-#ifdef GAP_BRANCH_NOISE_RATIO
-    printf("   window: %s\n\n", ok_window ? "gap closed? passed with GAP_BRANCH_NOISE_RATIO defined"
-           : "KNOWN GAP, not counted: " GAP_BRANCH_NOISE_RATIO);
-#endif
   }
   /* ---------------------------------------------------------------- */
   /* 3. correlated interferer in the empty part of the region          */
