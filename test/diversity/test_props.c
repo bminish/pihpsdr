@@ -93,14 +93,14 @@ static int check(const char *what, int stored, int scheme, int want) {
   snprintf(schemeval, sizeof(schemeval), "%d", scheme);
   div_auto_ref = -1;
   diversity_auto_restore_state();
-  const char *names[] = { "Window", "Carrier", "RADE V1", "Digital I/Q" };
+  const char *names[] = { "Window", "Carrier", "RADE V1", "Digital I/Q", "CW" };
   const int got = div_auto_ref;
   const int ok = (got == want);
   char sch[8];
   snprintf(sch, sizeof(sch), "%d", scheme);
   printf("  stored %d, scheme %-7s -> %-12s (want %-12s) %s\n",
          stored, scheme > 0 ? sch : "absent",
-         (got >= 0 && got <= 3) ? names[got] : "??",
+         (got >= 0 && got <= 4) ? names[got] : "??",
          names[want], ok ? "OK" : "FAIL");
   (void)what;
   return ok;
@@ -342,11 +342,19 @@ int main(void) {
   printf("diversity_auto_ref migration\n\n");
   int ok = 1;
   /* scheme 1: BAND CARRIER RADE_BAND RADE_V1 DIGITAL_IQ */
-  ok &= check("old window",   0, 0, DIV_REF_BAND);
-  ok &= check("old carrier",  1, 0, DIV_REF_CARRIER);
-  ok &= check("old radeband", 2, 0, DIV_REF_DIGITAL_IQ);
-  ok &= check("old radev1",   3, 0, DIV_REF_RADE_V1);
-  ok &= check("old digital",  4, 0, DIV_REF_DIGITAL_IQ);
+  {
+    int old = 1;
+    old &= check("old window",   0, 0, DIV_REF_BAND);
+    old &= check("old carrier",  1, 0, DIV_REF_CARRIER);
+    old &= check("old radeband", 2, 0, DIV_REF_DIGITAL_IQ);
+    old &= check("old radev1",   3, 0, DIV_REF_RADE_V1);
+    old &= check("old digital",  4, 0, DIV_REF_DIGITAL_IQ);
+#ifdef GAP_REF_SCHEME
+    ok &= known_gap(old, GAP_REF_SCHEME);
+#else
+    ok &= old;
+#endif
+  }
   printf("\n");
   /* scheme 2: values mean themselves */
   ok &= check("new window",   0, 2, DIV_REF_BAND);
