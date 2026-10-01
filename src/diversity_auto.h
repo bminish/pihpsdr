@@ -211,15 +211,9 @@ extern void diversity_auto_invert(void);
 extern int div_arm_swapped(void);
 
 //
-// PORT-TO-TEST: remove the Sum noise model selector (the enum and
-// div_eval_sum_noise) when this goes to TEST: Ratio becomes the only
-// model, with the time minimum as its fallback. The normaliser stays.
+// EVALUATION (test/noise-floor): the output-level normaliser. See
+// diversity_auto.c.
 //
-// EVALUATION (test/noise-floor): the Window/Carrier Sum noise model, and
-// the output-level normaliser. See diversity_auto.c.
-//
-enum { DIV_SUMNOISE_TIME = 0, DIV_SUMNOISE_RATIO };
-extern int    div_eval_sum_noise;
 extern int    div_auto_normalise;
 
 //

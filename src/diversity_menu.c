@@ -1006,19 +1006,9 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 }
 
 //
-// EVALUATION (test/noise-floor): the Sum noise model and the output-level
-// normaliser, so they can be compared by ear. Radio-side only: neither is
-// on the wire, so they are insensitive on a client.
+// EVALUATION (test/noise-floor): the output-level normaliser. Radio-side
+// only: it is not on the wire, so it is insensitive on a client.
 //
-// PORT-TO-TEST: remove sumnoise_cb() and the Sum noise row when this goes
-// to TEST. normalise_cb() stays.
-//
-static void sumnoise_cb(GtkWidget *widget, gpointer data) {
-  (void)data;
-  div_eval_sum_noise = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  diversity_auto_reset();
-}
-
 static void normalise_cb(GtkWidget *widget, gpointer data) {
   (void)data;
   div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
@@ -1384,26 +1374,9 @@ void diversity_menu(GtkWidget *parent) {
   //                            "an antenna rather than steering a null.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 5, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
-  //
-  // EVALUATION (test/noise-floor). See sumnoise_cb().
-  // PORT-TO-TEST: remove this row (label and combo) when this goes to TEST.
-  //
-  lbl = gtk_label_new("Sum noise");
-  gtk_widget_set_name(lbl, "boldlabel");
-  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 5, 2, 1);
-  btn = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Old (time minimum)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Ratio (outside filter)");
-  gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_eval_sum_noise);
-  gtk_grid_attach(GTK_GRID(agrid), btn, 2, 5, 4, 1);
-  g_signal_connect(btn, "changed", G_CALLBACK(sumnoise_cb), NULL);
-
-  if (radio_is_remote) { gtk_widget_set_sensitive(btn, FALSE); }
-
 #ifdef DIVERSITY_CAPTURE
   //
-  // DEVELOPMENT TOOL. Under Sum noise. A capture survives the
+  // DEVELOPMENT TOOL. Beside Invert. A capture survives the
   // menu being closed, so the button is set before its handler is
   // connected and does not read as the operator pressing it. It cannot
   // work from a remote client: the file is written by the analysis
@@ -1417,7 +1390,7 @@ void diversity_menu(GtkWidget *parent) {
                               "The label counts blocks written.");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), div_capture_active != 0);
   g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
-  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 6, 4, 1);
+  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 5, 4, 1);
 
   if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
 

@@ -306,8 +306,7 @@
 // Both used to come from a minimum over *time*: the quietest the window
 // has recently been on each arm - see div_arm_floor_update() and
 // div_arm_nratio_update(), which are still here as the fallback where
-// this cannot be measured, and on this branch as the "Old" Sum noise
-// model - see div_eval_sum_noise.
+// this cannot be measured.
 //
 // A temporal minimum has one premise: that the band goes quiet often
 // enough for the quietest recent moment to be noise. DIV_ARM_MIN_DB is
@@ -1981,8 +1980,7 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 //
 // The temporal minimum is the fallback, for the one case the spectral
 // floor cannot serve - a hand-placed window so wide that fewer than
-// DIV_NF_MIN_BINS are left outside it - and what the "Old" Sum noise
-// model selects on this branch (div_eval_sum_noise). It is latched, because it is a
+// DIV_NF_MIN_BINS are left outside it. It is latched, because it is a
 // property of the two receive chains rather than of the path and because
 // switching formula every time its clearance test toggled - which on a
 // continuous carrier is constantly, 4 to 32 % of blocks by Finding 16 -
@@ -1992,6 +1990,16 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // Until either has been measured once the behaviour is exactly what it
 // was before this term existed.
 //
+// Measured on test/noise-floor, when the noise model was still a menu
+// choice: over 39 Window/Carrier captures the outside-filter ratio scores
+// +0.50 dB against the better antenna, the temporal minimum +0.27. It
+// loses where both antennas hear one noise source - 154822, 0.99
+// coherent in the passband - because N0/N1 * Sxy/Sxx is the maximum-ratio
+// answer only for uncorrelated noise, and the temporal minimum's
+// misestimate happened to give a weight nearer one that cancels some of
+// the common noise. Two covariance solves meant to cancel such noise were
+// tried and dropped (docs/test-noisefloor.md).
+//
 static double div_wideband_sum_scale(void) {
   if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
     return div_nf0 / div_nf1;
@@ -1999,29 +2007,6 @@ static double div_wideband_sum_scale(void) {
 
   return arm_nratio_valid ? arm_nratio : 1.0;
 }
-
-//
-// PORT-TO-TEST: remove this selector when this goes to TEST. Keep RATIO's
-// behaviour (the outside-filter floors, the time minimum as fallback)
-// as the only one, and drop the props key with it.
-//
-// EVALUATION (test/noise-floor). Which noise ratio the Window and Carrier
-// Sum weight uses, so the operator can compare them by ear:
-//
-//   DIV_SUMNOISE_TIME   TEST's: the ratio of two temporal minima
-//   DIV_SUMNOISE_RATIO  the ratio of the two outside-filter floors
-//
-// RATIO is the default: over 39 Window/Carrier captures it scores +0.50 dB
-// against the better antenna, TIME +0.27. It loses where both antennas
-// hear one noise source - 154822, 0.99 coherent in the passband - because
-// N0/N1 * Sxy/Sxx is the maximum-ratio answer only for uncorrelated noise,
-// and TIME's misestimate happened to give a weight nearer one that
-// cancels some of the common noise. A covariance solve from the same
-// outside-filter bins was tried and dropped: those bins show no
-// correlation between the antennas even where the passband is 0.99
-// correlated, so it could not see the noise it was meant to cancel.
-//
-int div_eval_sum_noise = DIV_SUMNOISE_RATIO;
 
 //
 // EVALUATION (test/noise-floor): the output-level normaliser.
@@ -4790,7 +4775,6 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
-  SetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);   // PORT-TO-TEST: remove
   SetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
@@ -4841,12 +4825,7 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
-  GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);   // PORT-TO-TEST: remove, with the check below
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
-
-  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_RATIO) {
-    div_eval_sum_noise = DIV_SUMNOISE_RATIO;
-  }
 
   div_auto_normalise = div_auto_normalise ? 1 : 0;
 

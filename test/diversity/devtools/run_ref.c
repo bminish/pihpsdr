@@ -207,9 +207,11 @@ int main(int argc, char **argv) {
       nnotch++;
     }
     else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
-    else if (!strcmp(argv[i], "--sumnoise") && i + 1 < argc) {
-      /* test/noise-floor evaluation: time | ratio. PORT-TO-TEST: remove with the selector. */
-      div_eval_sum_noise = !strcmp(argv[++i], "time") ? DIV_SUMNOISE_TIME : DIV_SUMNOISE_RATIO;
+    else if (!strcmp(argv[i], "--sumnoise")) {
+      fprintf(stderr, "%s: --sumnoise is gone - Sum always takes the noise ratio from "
+              "outside the filter, falling back to the temporal minimum "
+              "(docs/noise-floor-refactor.md)\n", argv[0]);
+      return 1;
     }
     /*
      * Bin width in Hz, i.e. the Resolution control. Defaults to whatever
