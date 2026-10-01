@@ -3547,7 +3547,7 @@ void diversity_auto_restart(void) {
 }
 
 //
-// Unticking "Window follows RX filter" hands the window to the operator.
+// Unticking "Follow RX Filter" hands the window to the operator.
 // If the selected reference has no window of the operator's own yet -
 // still at its built-in default - start it on the passband that was being
 // followed a moment ago, rather than on a default that can straddle the
