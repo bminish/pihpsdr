@@ -21,7 +21,7 @@ choice.
 | 4. Selector removed | `6b2cdf2c` | Bit-identical to step 3; Capture back beside Invert; `run_ref --sumnoise` is an error |
 | 5. Quickselect | | |
 | 6. CW on the outside floor | | Sum ratio done (steps 3-4); Best's SNR and `DIV_CW_MIN_BINS` to do |
-| 7. Sample-rate tests | | |
+| 7. Sample-rate tests | `dd7e716f`, `5b22b0ee` | `test_rates` in `make run`: the ratio within 0.5 dB at 48 / 192 / 1536 kHz through 40 carriers (+9.81 / +10.04 / +10.04 for +10), the Sum weight at the maximum-ratio optimum at each; the span limit holds at 1536 kHz (+10.07 dB; +0.16 without it); the fallback at 48 kHz; resets from another thread never seen half done (fails on the code before step 1). CW at 1536 kHz with a 100 Hz filter never acts: known gap `GAP_CW_NARROW_1536`, for step 6. Every check was made to fail once against the code it guards |
 
 ## What the floor costs, and what it touches
 
@@ -277,8 +277,8 @@ with its `Local-Change:` trailer and its register entry in
 | # | ID | Kind | Commit |
 |---|---|---|---|
 | 1 | LC-027 | Fix | A: resets on the worker |
-| 2 | LC-025 | Behaviour | B: the across-frequency floor, and the Window/Carrier Sum noise ratio from it (the ID the register already reserved for it) |
-| 3 | LT-012 + | Tooling | `test_digital` counts the Window case; `GAP_BRANCH_NOISE_RATIO` deleted |
+| 2 | LC-025 | Behaviour | B: the across-frequency floor, and the Window/Carrier Sum noise ratio from it (the ID the register already reserved for it), with its read-only accessor `diversity_auto_noise_floor()` |
+| 3 | LT-012 + | Tooling | `test_digital` counts the Window case; `GAP_BRANCH_NOISE_RATIO` deleted; `test_rates` (its CW cases arrive with LC-030) |
 | 4 | LC-028 | Behaviour | C: calmer Best |
 | 5 | LC-029 | Behaviour | D: Best's per-arm SNR from the floor |
 | 6 | LC-030 | Behaviour | E: CW's Sum noise ratio from the floor |
@@ -331,9 +331,7 @@ would break them if cut carelessly:
 
 ### Before cutting: the open steps
 
-- **Step 7 (sample-rate tests)** should come first: the harness cases for
-  48 / 192 / 1536 kHz, the fallback and the reset stress test. They are
-  what makes B safe to hand over, and they come across as tooling.
+- **Step 7 (sample-rate tests)**: done, `test_rates`.
 - **Steps 5 and 6** (quickselect; CW's Best SNR and `DIV_CW_MIN_BINS`)
   are separate behaviours. Either finish them on this branch and cut them
   as further LCs, or leave them for `TEST` later; nothing above depends
