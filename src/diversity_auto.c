@@ -2794,6 +2794,39 @@ void diversity_auto_restart(void) {
   }
 }
 
+//
+// Unticking "Window follows RX filter" hands the window to the operator.
+// If the selected reference has no window of the operator's own yet -
+// still at its built-in default, or collapsed to the 20 Hz floor - start
+// it on the passband that was being followed a moment ago, rather than on
+// a default that can straddle the carrier or be too narrow to hold
+// anything. A window the operator has placed is left alone.
+//
+// The menu files the result under the reference and shows it.
+//
+// The follow window is filter_low..filter_high and a hand-placed one is
+// div_window_zero() + centre +/- width/2, so this reproduces it exactly,
+// CW included.
+//
+void diversity_auto_seed_window(void) {
+  if (div_auto_ref == DIV_REF_RADE_V1) { return; }
+
+  const double def_width = (div_auto_ref == DIV_REF_DIGITAL_IQ) ? DIV_DIGITAL_WIDTH_DEFAULT
+                           : DIV_WIDTH_DEFAULT;
+  const int unset = (div_auto_width <= 20.0) ||
+                    (div_auto_centre == 0.0 && div_auto_width == def_width);
+
+  if (!unset) { return; }
+
+  const double lo = (double)receiver[0]->filter_low;
+  const double hi = (double)receiver[0]->filter_high;
+
+  if (hi - lo < 20.0) { return; }
+
+  div_auto_centre = 0.5 * (lo + hi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+  div_auto_width  = hi - lo;
+}
+
 void diversity_auto_get_settings(DIV_SETTINGS *s) {
   s->mode           = div_auto_mode;
   s->ref            = div_auto_ref;

@@ -161,6 +161,13 @@ extern int  div_rade_side_get(void);
 extern double div_window_zero(int mode, int sidetone);
 
 //
+// Called when "Window follows RX filter" is unticked: if the selected
+// reference's window is still at its default (or collapsed to the 20 Hz
+// floor), place it on the current RX passband. See the .c.
+//
+extern void diversity_auto_seed_window(void);
+
+//
 // Operator hold: the analysis keeps running and keeps updating
 // div_track_gain/div_track_phase, but stops writing the weight, so the
 // manual gain and phase controls have it. Releasing applies the tracked
