@@ -188,6 +188,11 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-022 | Fix       | Arm 0 follows the ADC RX1 is set to                   | diversity_auto.c/.h, receiver.c, old_protocol.c, new_protocol.c | — | Local |
 | LC-023 | Fix       | Transmit gap and reset requests stop racing the threads | diversity_auto.c, radio.c               | —          | Local  |
 | LC-024 | Fix       | Carrier/CW readout from the zero beat; client overlay repaint | diversity_menu.c                  | [LC-017]   | Local  |
+| LC-025 | Behaviour | Each arm's noise floor measured across frequency; Window/Carrier Sum noise ratio from it | diversity_auto.c/.h | — | Local |
+| LC-027 | Fix       | An operator reset clears the statistics on the worker | diversity_auto.c                          | —          | Local  |
+| LC-028 | Behaviour | Best: per-arm SNR from the floor, 2 dB / 1 s switch   | diversity_auto.c                          | LC-025     | Local  |
+| LC-029 | Behaviour | CW's Sum noise ratio from the floor outside the filter | diversity_auto.c                         | LC-025     | Local  |
+| LC-030 | Behaviour | Level output: the combined output at one antenna's level | diversity_auto.c/.h, diversity_menu.c, radio.c/.h, receiver.c | — | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -208,6 +213,14 @@ it, but it does not use anything LC-008 adds.
   goes after both.
 - LC-017 adds CW to LC-026's switch and to the menu's
   `store_ref_values()` / `restore_ref_values()`.
+- LC-028 and LC-029 build on LC-025's floor. LC-028 is two pieces that
+  are one change because neither is safe alone: Best's SNR from the floor
+  without the 2 dB / 1 s rule collapses (−17.97 dB on `154822`), and the
+  rule on the temporal floor is a coin toss (see LC-028).
+- LC-025, LC-027 to LC-030 were checked on 2026-10-01: LC-027, LC-025
+  and LC-030 apply to bare `TEST` alone, LC-028 and LC-029 onto `TEST` +
+  LC-025, and each reverts from the tip (LC-025 after LC-029 and LC-028)
+  and builds.
 - Reverting from the tip: a change goes with its fixups and everything
   that depends on it, newest first. Checked 2026-09-30: only LC-001,
   LC-003, LC-005, LC-007, LC-014 and LC-019 revert cleanly on their own.
@@ -229,7 +242,10 @@ alone and can go at any point. LC-017 + LC-018 + LC-019 (CW) go after
 LC-012, LC-013 and LC-015. The "Measure on" order and the CW row are the
 part most likely to interest upstream on their own. LC-020 (menu tidy)
 can go with LC-008 + LC-009. LC-006 goes last because it needs the
-measurement data behind it.
+measurement data behind it. LC-027 is a fix that stands alone; LC-030
+(Level output) stands alone and is the most likely of the noise-floor
+group to interest upstream on its own; LC-025, LC-028 and LC-029 go
+together, after LC-012.
 
 ---
 
@@ -1127,6 +1143,135 @@ turns the overlay off.
 
 **Depends on** LC-017 textually (the CW status case).
 
+### LC-027 — An operator reset clears the statistics on the worker
+
+**Problem.** `diversity_auto_reset()` runs on the GTK thread (menu
+callbacks, `rxtx()`) and called `div_reset_stats()` directly. That zeroes
+more than the transform accumulators the worker only adds to: the
+smoothed noise floors, the noise ratio and the key-detection minimum,
+with their valid flags, which the worker reads and writes in place.
+Zeroed under a worker half way through an update, a floor could be
+rebuilt from zero and marked valid, and a wildly wrong noise ratio
+smoothed into the Sum weight over seconds.
+
+**Change.** It only bumps `reset_gen`; the worker calls
+`div_reset_stats()` with `rade_corr_reset()` before its next block, as
+LC-023 arranged for the correlator. With diversity stopped nothing is
+lost: `diversity_auto_start()` resets everything itself.
+
+**Checked.** Replays with recorded resets are bit-identical.
+`test_rates` (LT-013) fires resets from another thread every 0.7 ms and
+finds the floor valid after all 47 blocks; with the old code, after none.
+
+### LC-025 — Each arm's noise floor, measured across frequency
+
+**Why.** Maximum-ratio combining wants N0/N1. The Window and Carrier
+references took it from a minimum over time, which needs the band to go
+quiet: on a signal with no gaps it publishes nothing (the old "branch
+noise ratio" known gap), and on a fading carrier a ratio of two fades is
+published as a ratio of noises (Finding 47: +10.5 dB where the truth was
+−0.35).
+
+**Change.** `div_noise_floor_update()` takes each arm's floor every block
+from the bins outside the RX filter (and outside a hand-placed window
+wider than it, plus 1 kHz of skirt), no further than 20 kHz either side
+of the dial, within the central 80 % of the DDC span: the 8th-12th
+percentile of up to 1024 bins, smoothed over 2 s. The Window/Carrier Sum
+weight takes N0/N1 from it; the temporal minimum stays as the fallback
+where too few bins remain. `diversity_auto_noise_floor()` reads it for
+the harness and, later, the attenuator calibration
+(`docs/feature-att-calibration.md`).
+
+**Measured** (`docs/test-noisefloor.md`):
+
+- The estimate: within about 0.5 dB of the guard-band truth on every
+  capture checked; `test_rates` reads +10 dB as +9.81 / +10.04 / +10.04
+  at 48 / 192 / 1536 kHz through 40 strong carriers.
+- Sum over 39 Window/Carrier captures: +0.50 dB against the better
+  antenna (+0.27 with the temporal minimum), ahead on 29. Weaker where
+  both antennas hear one noise source (`154822`, 0.99 coherent): the
+  ratio weight is optimal only for uncorrelated noise.
+- On a crowded 40 m band (T-013 to T-016) the models are within 0.5 dB
+  on three captures; on the lopsided pair (T-013) it beats the temporal
+  minimum by 1.3 dB.
+- The ±20 kHz limit is neutral on 45 captures (192 kHz +0.02 dB, 48 kHz
+  identical) and keeps 1536 kHz from sampling ±614 kHz.
+
+**Limitation.** Not a covariance: common noise both antennas hear is not
+cancelled. Two attempts to do that were measured and dropped.
+
+### LC-028 — Best: each arm's SNR from the floor, and a 2 dB, 1 s switch
+
+**Change.** `div_arm_from_floor()` takes the noise from LC-025's floor,
+scaled by the bins actually summed (notches allowed for), the temporal
+floor as fallback. Best changes antenna only when the other leads by
+more than 2 dB (`DIV_BEST_HYST_DB`, was 1) continuously for 1 s
+(`DIV_BEST_DWELL`).
+
+**One change, not two.** The floor gives a readout on nearly every
+block, and with 1 dB hysteresis two near-equal antennas changed places
+every few blocks (−17.97 dB on `154822`, arm 1 on 56 % of blocks). The
+dwell on `TEST`'s temporal floor, measured on its own on 45 captures,
+was a coin toss: better on 17, worse on 17, −4.53 dB worst on the guard
+score and −17.9 dB on one in-band.
+
+**Measured** together, against LC-025 alone, on the 45 Window/Carrier
+captures: guard score +0.58 dB, better on 29, worse on 12 (worst −3.62,
+best +4.26); in-band level on average (−0.10 dB), better on 20, worse on
+18, worst −10.13. Best is still the mode most likely to pick the worse
+antenna.
+
+**Depends on** LC-025.
+
+### LC-029 — The CW reference's Sum noise ratio from the floor outside the filter
+
+**Problem.** CW took its Sum noise ratio from the off-tone bins of its
+own region. Those carry the station's keying sidebands and clicks (+10
+to +20 dB over the real noise 50-200 Hz from the tone on T-018), which
+scale with each antenna's signal, so the floor read the signal ratio as
+much as the noise ratio. It failed at a 50 Hz filter (the arms read
+10-15 dB apart when level; the weight ran to +20 dB) and in a 15 dB fade
+on one arm.
+
+**Change.** LC-025's floor is updated before `div_cw_solve()`, and the
+Sum weight takes N0/N1 from it, the off-tone floor as fallback. Key
+detection keeps the off-tone floor: it compares the peak with its own
+recent minimum, not one antenna with the other, and seeded from a low
+percentile elsewhere it would let a carrier through after every reset.
+Best's CW SNR is unchanged.
+
+**Measured** against the better antenna (noise taken 300-900 Hz from
+the tone): T-018 +1.23 → +2.08 dB, T-017 +1.39 → +1.99; `score_cw.py`
+agrees where it can score. A minimum CW region width, tried instead, only
+helped the narrowest filters (T-018).
+
+**Limitation.** At 1536 kHz (23.4 Hz bins) a CW filter of about 100 Hz
+or less is under `DIV_CW_MIN_BINS` and CW holds. Accepted: narrow the span
+or widen the filter. See "Limitations" in `docs/test-noisefloor.md`.
+
+**Depends on** LC-025.
+
+### LC-030 — Level output: the combined output held at one antenna's level
+
+**Why.** `receiver.c` forms z0 + w·z1 with arm 0 at unit gain, so the
+output is louder than one antenna by whatever the weight does: a median
++2.1 dB in Sum, and +20 dB the moment Best hands over to arm 1. That rise
+is not signal, and an AGC hears it as the band getting louder.
+
+**Change.** `div_norm` scales the output back to arm 0's level over the
+passband, from the passband powers and cross-power smoothed at 1 s and
+the weight in force, recomputed whenever the weight is written, clamped
+to −40..+6 dB. Not in Null or on RADE V1; 1.0 whenever the engine is
+stopped. "Level output" on the menu's top row turns it on and off
+(default on, saved), greyed whenever it is not acting: diversity off,
+Manual, Null, RADE V1, or a remote client.
+
+**Measured.** One multiplier, so SNR is unchanged. Median over 39
+captures (`score_level.py`): Sum +2.07 → −0.08 dB over one antenna, Best
++8.85 → 0.00 (ninetieth percentile +22.1 → 0.00); Best's block-to-block
+steps over 3 dB 1175 → 774. `test_window`: a Sum that raised the level
++4.2 dB comes out at 0.00, Null untouched.
+
 ---
 
 ## Local tooling (never upstream)
@@ -1153,6 +1298,9 @@ Findings from captures taken on `TEST` itself are in
 | LT-010 | `test_cw` for `TEST`'s CW reference; its known gap closed | `test/diversity/` |
 | LT-011 | Captures record which ADC arm 0 came from; `run_ref` and `test_capture` follow it (LC-022) | `src/diversity_auto.c` (capture block), `test/diversity/devtools/` |
 | LT-012 | Follow `f5a0ce9c`: the tools carry a copy of the menu's slot store/recall; the dropped migration is a known gap | `test/diversity/ref_slots.h`, `test_modal.c`, `test_cw.c`, `test_props.c`, `known_gaps.h`, `devtools/run_ref.c` |
+| LT-013 | LC-025's checks: `test_digital`'s Window case counted, `test_rates` (48 / 192 / 1536 kHz, span limit, fallback, reset storm) | `test/diversity/` |
+| LT-014 | `test_rates`' CW cases, with LC-029; the 1536 kHz / 100 Hz limitation reported | `test/diversity/test_rates.c`, `known_gaps.h` |
+| LT-015 | LC-030's checks: Level output counted; `run_ref`'s `norm` column; `score_level.py` | `test/diversity/` |
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot
@@ -1218,11 +1366,10 @@ becomes its regression test.
 
 | Gap | Feature branch commit | What the check shows on `TEST` |
 |---|---|---|
-| Branch noise ratio | `e6c12c05` | Window Sum does not back off an arm 20 dB noisier (SINR +16.66 dB, against +29.96 dB for Digital) |
-| Level output | `4f24f5c3` | The combined output is 4.16 dB louder than one antenna |
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
 | Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
+| CW at 1536 kHz, 100 Hz filter | none: an accepted limitation (LC-029) | CW holds; 23.4 Hz bins leave too few for the region |
 | Reference scheme migration | upstream `f5a0ce9c` removed it | A scheme-1 props file loads its old reference numbers as they are (2 → RADE V1, 3 → FSK/Digital, 4 → CW). Taken from upstream and tracked, not restored |
 
 **Stand-down is not simply a gap.** On the feature branches, the combiner
@@ -1310,52 +1457,13 @@ Noted while porting, not yet decided:
   starting set. T-009 adds one on the lower sideband (spectrum inverted)
   under strong SSB interference, the case for discriminating against an
   unwanted signal.
-- **The branch noise floor measured across frequency** (`8a393217`).
-  Ported and measured, **parked** on `wip/lc-025-noise-floor`; not on
-  `TEST`.
-  - *Why we want it.* Two things in the Window and Carrier references
-    need each antenna's noise level: the noise-ratio term in the Sum
-    weight (maximum-ratio combining scales arm 1 by N0/N1, so a noisier
-    antenna is backed off) and the per-arm SNR that Best chooses on.
-    `TEST` takes both from the quietest level seen over a recent stretch
-    of *time*. That needs the band to go quiet: on a signal with no gaps
-    it publishes nothing (the known gap, where Window Sum does not back
-    off an antenna 20 dB noisier), and on a fading carrier the minima land
-    in the fades, so a ratio of two fades is published as a ratio of two
-    noises (Finding 47 on the feature branch: +10.5 dB where the truth was
-    −0.35).
-  - *What it does.* Each block, each antenna's floor is taken from the
-    bins *outside* the RX filter, within the central 80 % of the DDC
-    passband: the mean of the 8th to 12th percentile of up to 1024 bins,
-    smoothed over 2 s. It feeds the Sum noise ratio
-    (`div_wideband_sum_scale()`) and the per-arm SNR
-    (`div_arm_from_floor()`, scaled by the bins actually summed, notches
-    allowed for). The time-based floor stays as the fallback. It is the
-    same principle as upstream's new panadapter noise floor (`b77d4237`,
-    a percentile across frequency), which cannot be used instead: that is
-    one value for RX1's *combined* output, taken from display pixels.
-  - *What it measured.* The estimate is right: within about 0.5 dB of
-    the guard-band truth on every capture checked, where `TEST`'s is
-    often far off. `test_digital`'s 20 dB case goes from +16.66 to
-    +29.97 dB SINR. But over 39 Window/Carrier captures, old engine
-    against new (`score_wideband.py`): **Sum** mean +0.23 dB, better on
-    23, worse on 11, down to −4.45 (`154822`), −2.84 (`122632`), −1.67
-    (`235906`); **Best** mean −0.02 dB, better on 24, worse on 10, and
-    **−17.97 dB on `154822`**.
-  - *Why some lose.* Not the estimate. The noise-ratio term is optimal
-    only for uncorrelated noise, and on `154822` the antennas' noise is
-    0.99 coherent (a common source): the old, "wrong" weight was partly
-    cancelling it, the correct ratio does not. Most losers have noise
-    coherence 0.64–0.99, but so do some winners, so correlation is not
-    the whole account. Best's collapse on `154822` comes with the readout
-    now available on every block while the arms are 0.4 dB apart: it
-    switches to arm 1 on 56 % of blocks, at the +20 dB selection weight.
-    Why that scores −13.7 dB is not yet understood.
-  - *Options.* Use it for Sum only; or solve Sum as MVDR with the noise
-    *covariance* from the same outside-filter bins, which reduces to the
-    noise-ratio weight for uncorrelated noise and cancels common noise
-    when it is correlated (`div_mvdr2()` exists); and look into Best's
-    switching before it gets an always-available readout.
+- **The branch noise floor measured across frequency** (`8a393217`):
+  landed 2026-10-01 as LC-025, with LC-027 to LC-030; the evaluation is
+  in `docs/test-noisefloor.md` and tag `noise-floor-eval-20261001`.
+  Still open (`docs/noise-floor-refactor.md`): quickselect in place of
+  the two sorts; Best's CW SNR from the floor; `DIV_CW_MIN_BINS`;
+  captures at 48 and 1536 kHz; and the attenuator calibration
+  (`docs/feature-att-calibration.md`).
 - CW, from porting LC-017 to LC-019:
   - **The LC-012 floor binds on CW.** Three tone bins at CW's averaging
     put it at its 0.5 cap, so it, not the 0.10 setting, is the gate.
@@ -1376,6 +1484,16 @@ Noted while porting, not yet decided:
     tuning carriers that are themselves the wanted signal.
 
 ## History
+
+- 2026-10-01: **the noise-floor work landed** as LC-025, LC-027 to LC-030
+  and LT-013 to LT-015, cut on `port/noise-floor` from the net difference
+  of `test/noise-floor` (tag `noise-floor-eval-20261001`), not replayed.
+  Calmer Best and Best's SNR from the floor merged into LC-028 after the
+  former, measured alone, proved a coin toss. Same behaviour as the tag
+  (bit-identical replays); each change checked to apply alone and revert
+  from the tip. T-013 to T-018 added to `docs/test-findings.md`;
+  `docs/test-noisefloor.md`, `docs/noise-floor-refactor.md` and
+  `docs/feature-att-calibration.md` come with it.
 
 - 2026-10-01: **rebased onto upstream `f5a0ce9c`** ("continued work on
   auto diversity (unfinished)"), on `TEST-rebase-20261001`; the old
