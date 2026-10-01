@@ -1993,8 +1993,7 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // was before this term existed.
 //
 static double div_wideband_sum_scale(void) {
-  // PORT-TO-TEST: remove the div_eval_sum_noise test; keep the rest.
-  if (div_eval_sum_noise != DIV_SUMNOISE_TIME && div_nf_valid && div_nf1 > 0.0) {
+  if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
     return div_nf0 / div_nf1;
   }
 
@@ -3096,9 +3095,9 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   }
 
   //
-  // The noise ratio for Sum: from the bins outside the filter, when the
-  // Ratio model is selected and the floor is valid, else from the
-  // off-tone bins of the region (cw_nf0/cw_nf1, what TEST does).
+  // The noise ratio for Sum: from the bins outside the filter when that
+  // floor is valid, else from the off-tone bins of the region
+  // (cw_nf0/cw_nf1, what TEST does).
   //
   // The off-tone floor fails twice on T-017/T-018 (docs/test-findings.md).
   // At a 50 Hz filter the region is 6 bins, and the bins 4 or more from
@@ -3109,12 +3108,9 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   // on the filter sweep, +1.39 -> +1.99 on the pileup, against the better
   // antenna. Best still reads the per-arm SNR from the off-tone floor.
   //
-  // PORT-TO-TEST: remove the div_eval_sum_noise test; keep the outside
-  // floor with cw_nf as its fallback.
-  //
   double nratio = cw_nf_valid ? cw_nf0 / cw_nf1 : 1.0;
 
-  if (div_eval_sum_noise != DIV_SUMNOISE_TIME && div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
+  if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
     nratio = div_nf0 / div_nf1;
   }
 
