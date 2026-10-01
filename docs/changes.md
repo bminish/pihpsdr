@@ -105,18 +105,26 @@ means upstream has an equivalent patch):
 git cherry -v upstream/TEST TEST
 ```
 
-Re-synchronise with upstream:
+Re-synchronise with upstream by **rebasing**, so the series stays a
+line of small commits on top of `upstream/TEST` that can be cherry-picked
+one at a time (merging was the rule until 2026-10-01; see History):
 
 ```sh
 git fetch upstream
-git switch TEST
-git merge upstream/TEST          # resolve, build, test
-git push origin TEST
+git branch history/backup/TEST-pre-rebase-<date> TEST
+git switch -c TEST-rebase-<date> TEST
+git rebase -i upstream/TEST      # drop what upstream took, resolve, reword
+# every source commit compiles; make -C test/diversity run passes
+git switch TEST && git reset --hard TEST-rebase-<date>
+git push --force-with-lease origin TEST     # only with the owner's OK
 ```
 
-Merging keeps `origin/TEST` fast-forward only, with no force pushes. The
-`LC` commits stay intact inside the merged history. If upstream has taken
-a change, mark it *Upstream* in the register below.
+A rebase rewrites `origin/TEST`, so it is force-pushed, and only after
+the owner has looked at the result. The backup branch keeps the old
+series. If upstream has taken a change, drop its commit in the rebase
+and mark it *Upstream* in the register below. If upstream reshapes the
+code a change sits in, the change is re-expressed on upstream's shape
+(its LC number stays), not used to undo upstream's.
 
 Build a PR branch for one change (or one group) when the time comes:
 
@@ -150,18 +158,20 @@ git cherry-pick <commit of LC-001>
 
 Status: **Local** means carried here only. **Proposed** means a PR is
 open. **Upstream** means taken upstream (the commit can be dropped at the
-next resync). **Dropped** means abandoned.
+next resync). **Deferred** means taken out of the series for now, kept on
+the backup branch, to come back later. **Dropped** means abandoned.
 
 | ID     | Kind      | Summary                                               | Files                                     | Depends on | Status |
 |--------|-----------|-------------------------------------------------------|-------------------------------------------|------------|--------|
 | LC-001 | Fix       | Restore the saved auto-diversity settings at start-up | radio.c                                   | —          | Local  |
 | LC-002 | Fix       | Treat impossible saved values as missing              | diversity_auto.c                          | —          | Local  |
-| LC-003 | Fix       | Client settings block starts from the settings in force | server_thread.c, diversity_menu.c       | —          | Local  |
-| LC-004 | Fix       | Keep a client's Min coherence change                  | diversity_auto.c                          | (LC-003)   | Local  |
+| LC-026 | Fix       | Live Min coherence from the selected reference's slot | diversity_auto.c                          | —          | Local  |
+| LC-003 | Fix       | Client settings block starts from the settings in force | server_thread.c, diversity_menu.c       | —          | Deferred (client) |
+| LC-004 | Fix       | Keep a client's Min coherence change                  | diversity_auto.c                          | (LC-003)   | Deferred (client) |
 | LC-005 | Fix       | Invert button swaps Null and Sum again                | diversity_menu.c                          | —          | Upstream (`b180b79a`) |
 | LC-006 | Behaviour | Retire Coherence weighting; Window threshold 0.20     | diversity_auto.c/.h, diversity_menu.c     | —          | Local  |
 | LC-007 | Behaviour | Hold stays on until the operator releases it          | diversity_auto.c, diversity_menu.c, radio.c | —        | Local  |
-| LC-008 | Behaviour | Reference change recalls that reference's settings    | diversity_menu.c                          | —          | Local  |
+| LC-008 | Behaviour | Reference change shows that reference's settings      | diversity_menu.c                          | —          | Local  |
 | LC-009 | Behaviour | Unticking Follow RX filter starts on the passband     | diversity_auto.c/.h, diversity_menu.c     | LC-008     | Local  |
 | LC-010 | Behaviour | RADE resyncs on a detection, not on a timeout         | rade_correlator.c                         | —          | Local  |
 | LC-011 | Behaviour | Hang slider removed (value unused since LC-014)       | diversity_auto.c, diversity_menu.c, rade_correlator.c | LC-010, [LC-008] | Local |
@@ -169,12 +179,12 @@ next resync). **Dropped** means abandoned.
 | LC-013 | Fix       | Bins in the operator's manual notches left out of the estimate | diversity_auto.c                 | —          | Local  |
 | LC-014 | Behaviour | No RADE lock timeout: a new lock replaces an old one  | rade_correlator.c/.h, diversity_auto.c/.h, diversity_menu.c | LC-010, LC-011 | Local |
 | LC-015 | Fix       | "Measure on" menu runs the reference it shows         | diversity_menu.c                          | [LC-008]   | Proposed ([#150](https://github.com/dl1ycf/pihpsdr/pull/150)) |
-| LC-016 | Behaviour | RADE V1's Min coherence retired (pinned at 0, row hidden) | diversity_auto.c, diversity_menu.c    | LC-008, [LC-004] | Local |
+| LC-016 | Behaviour | RADE V1's Min coherence retired (pinned at 0, row hidden) | diversity_auto.c, diversity_menu.c    | LC-008, LC-026 | Local |
 | LC-017 | Behaviour | A CW / Morse reference                                | diversity_auto.c/.h, diversity_menu.c, rx_panadapter.c | LC-009, LC-012, LC-013, LC-015 | Local |
 | LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
-| LC-020 | UI        | Window row hidden while following; "Follow RX Filter" | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
-| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Proposed ([#151](https://github.com/dl1ycf/pihpsdr/pull/151)) |
+| LC-020 | UI        | The follow tick reads "Follow RX Filter"              | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
+| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Upstream (`f5a0ce9c`, differently); #151 to close |
 | LC-022 | Fix       | Arm 0 follows the ADC RX1 is set to                   | diversity_auto.c/.h, receiver.c, old_protocol.c, new_protocol.c | — | Local |
 | LC-023 | Fix       | Transmit gap and reset requests stop racing the threads | diversity_auto.c, radio.c               | —          | Local  |
 | LC-024 | Fix       | Carrier/CW readout from the zero beat; client overlay repaint | diversity_menu.c                  | [LC-017]   | Local  |
@@ -194,22 +204,25 @@ it, but it does not use anything LC-008 adds.
 - LC-014 needs LC-010 (the resync search is what replaces a lock) and
   LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 go
   upstream together.
-- LC-016 uses LC-008's slider pointer and edits LC-004's slot writer, so
-  it goes after both.
+- LC-016 uses LC-008's slider pointer and edits LC-026's switch, so it
+  goes after both.
+- LC-017 adds CW to LC-026's switch and to the menu's
+  `store_ref_values()` / `restore_ref_values()`.
 - Reverting from the tip: a change goes with its fixups and everything
   that depends on it, newest first. Checked 2026-09-30: only LC-001,
   LC-003, LC-005, LC-007, LC-014 and LC-019 revert cleanly on their own.
   The fixups and the CW changes edit lines of most of the others. This
   matters less than it did, because PR branches are cut fresh from
   `upstream/TEST` with the fixups folded in (see "Cutting a PR branch").
+  Not re-checked since the 2026-10-01 rebase.
 
 **First PR:** LC-015, opened 2026-09-30 as
 [dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150) from
 `pr/diversity-menu-ref-row`.
 
 Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
-restored, and restored sanely), then LC-003 + LC-004 (client/server
-settings), then LC-005, then LC-008 + LC-009, then LC-007, then LC-010 +
+restored, and restored sanely) with LC-026 (which answers upstream's
+"THIS MUST BE CORRECTED"), then LC-008 + LC-009, then LC-007, then LC-010 +
 LC-011 + LC-014 + LC-016 (RADE: resync, Hang slider gone, no timeout,
 no threshold) and LC-012. LC-013 (notches) stands
 alone and can go at any point. LC-017 + LC-018 + LC-019 (CW) go after
@@ -257,7 +270,37 @@ The default window widths become named constants (`DIV_WIDTH_DEFAULT`,
 `DIV_DIGITAL_WIDTH_DEFAULT`), so the initialisers and the repair agree.
 This also repairs props files already written with an all-zero block.
 
+### LC-026 — The live Min coherence comes from the selected reference's slot
+
+**Problem.** Upstream's `f5a0ce9c` moved the per-reference store and
+recall out of the engine and into the menu (`store_ref_values()`,
+`restore_ref_values()`), which took `div_cohmin_for_ref()` with it. In
+`div_settings_load()` the live threshold fell back to the block's live
+value, marked `// DL1YCF: THIS MUST BE CORRECTED`. That value need not
+belong to the reference the block selects (a props file written before
+the per-reference slots, or under another reference), so the new
+reference gated on the old one's threshold. The comment above the line
+already says why the slot has to win on every path into here: a mode
+group's block and a properties restore (LC-001), not only the menu.
+
+**Change.** A switch on `s->ref` takes the threshold from the block's
+own slot. The block carries every slot, so this needs nothing from the
+menu and does not bring back the engine function upstream removed.
+LC-016 makes RADE V1's case 0, and LC-017 adds CW's.
+
+**Upstream.** This is the answer to his comment, and a natural small PR.
+
+**Note.** This replaces what LC-004 did on this line. LC-004's extra
+rule (on an unchanged reference, file a client's live value into the
+slot first) is a client fix and is deferred with it.
+
 ### LC-003 — Start a client's settings block from the settings in force
+
+**Deferred (client), 2026-10-01.** Taken out of the series at the
+rebase onto `f5a0ce9c`, kept on `history/backup/TEST-pre-rebase-20261001`.
+Upstream put the radio's `CMD_DIV_SETTINGS` handler under `#if 0`, so
+the server half now edits dead code. We are not working on client/server
+for now; see "Client/server: tracked, not fixed".
 
 **Problem.** The `CMD_DIV_SETTINGS` wire format carries the live
 coherence threshold but not the four per-reference ones. Both receive
@@ -274,6 +317,9 @@ first, and overwrite only the fields the wire carries. The wire format
 does not change.
 
 ### LC-004 — Keep a client's Min coherence change instead of dropping it
+
+**Deferred (client), 2026-10-01.** As LC-003. Its slot-wins rule is
+carried by LC-026; only the client exception described below is out.
 
 **Problem.** `div_settings_load()` always takes the live threshold from
 the selected reference's slot, because after a reference change the
@@ -369,25 +415,31 @@ so a forgotten Hold stops the loop with nothing on screen to explain it.
 If upstream resists, an indicator outside the dialog would answer that
 objection.
 
-### LC-008 — A reference change brings in that reference's own settings
+### LC-008 — A reference change shows that reference's own settings
 
-**Problem.** Each reference (Window, Carrier, Digital IQ, RADE V1) keeps
-its own window and its own Min coherence threshold. But upstream left
-`div_window_recall()` under `#if 0`, and commented out its call in
-`ref_changed_cb()`. After a reference change, the new reference gated on
-the previous reference's threshold and inherited its window, and the
-next centre or width move then filed that window under the new
-reference.
+**Problem.** Each reference (Window, Carrier, FSK/Digital, CW, RADE V1)
+keeps its own window and its own Min coherence threshold. Before
+`f5a0ce9c`, upstream left the recall under `#if 0`, so the new reference
+ran on the previous one's threshold and window. `f5a0ce9c` now recalls
+them in `ref_changed_cb()` through `restore_ref_values()`, whose comment
+says the widgets have to follow with their handlers blocked. They did
+not: the centre, width and Min coherence controls kept showing the
+previous reference's values, and the next move of any of them filed
+those under the new reference.
 
-**Change.** `div_window_recall()` is enabled again, the centre, width
-and Min coherence widgets it updates are kept in statics, and
-`ref_changed_cb()` calls it.
+**Change.** `restore_ref_values()` ends by calling
+`div_ref_widgets_show()`, which sets the two spin buttons and the slider
+with `centre_cb()`, `width_cb()` and `coh_cb()` blocked
+(`g_signal_handlers_block_by_func`, as his comment asks). The slider is
+kept in a static (`coh_scale`), and the three pointers are cleared when
+the dialog closes. `coh_cb()`'s stale comment about `div_window_recall()`
+is corrected.
 
-**Kept as one commit, on purpose.** This re-enables code that upstream
-disabled. If there turns out to be a reason for that, reverting this one
-commit (`git revert <LC-008>`) restores upstream's behaviour exactly.
-LC-009 must be reverted with it or first, because it uses the same
-widget pointers.
+**Reshaped 2026-10-01.** This used to re-enable `div_window_recall()`
+and guard the callbacks with an `updating_from_auto` flag. Upstream
+removed both, so the change is now only the widget half, on upstream's
+functions. LC-009 and LC-012 use `div_ref_widgets_show()` and the same
+blocking.
 
 ### LC-009 — Unticking Follow RX filter starts the window on the passband
 
@@ -408,6 +460,11 @@ window at 20 Hz or below; a fixup removed that.) Following the RX filter
 stays the default when nothing is saved.
 
 **Depends on** LC-008 (the widget pointers).
+
+**Since 2026-10-01.** `diversity_auto_seed_window()` only computes the
+window; the menu's `follow_cb()` files it with `store_ref_values()` and
+shows it with `div_ref_widgets_show()` (LC-008). The engine-side store it
+used went with `f5a0ce9c`.
 
 ### LC-010 — RADE resyncs on a detection, not on a timeout
 
@@ -607,6 +664,11 @@ weight that is allowed to track shrinks on its own, and holding pays for
 the station's weight. Not measured: Null and Best, and Carrier or Digital
 on matched arms.
 
+**Since 2026-10-01.** `div_coh_range_update()` moves the slider with
+`coh_cb()` blocked rather than under the `updating_from_auto` flag, which
+upstream removed. Behaviour is unchanged: the floor is never filed as
+the operator's setting.
+
 ### LC-013 — Bins in the operator's manual notches are left out of the estimate
 
 Ported from the notch parts of `d3b73b8a` and from `8117d9c7`
@@ -783,10 +845,16 @@ changed the combo's attach line next to it; still +30 −2, mergeable. When
 it's merged, mark LC-015 *Upstream*; the local commit can then be dropped
 at the next resync.
 
+**After `f5a0ce9c` (2026-10-01).** #150 conflicts again and needs
+rebasing. The bug now does more harm upstream: `ref_changed_cb()` also
+recalls the slot of the row number, and its RADE V1 test is against the
+row, so choosing "Carrier" (row 2 = `DIV_REF_RADE_V1`) forces Sum and
+starts the RADE correlator. On `TEST` the line is
+`div_auto_ref = div_row_to_ref(...)` ahead of `restore_ref_values()`.
+
 ### LC-016 — RADE V1's Min coherence is retired: the pilot already gates
 
-Ported from `082dba0b` (`feature/auto-diversity`), with an extra guard
-for the client path that LC-004 opens on `TEST`.
+Ported from `082dba0b` (`feature/auto-diversity`).
 
 **Problem.** In RADE V1 the Min coherence slider doesn't gate a
 coherence. It gates `rade_corr_quality`, the pilot's signal fraction,
@@ -808,10 +876,13 @@ across the slider's full 0–95 % range, and it can only do harm:
 moves. It's pinned at every route in:
 
 - `div_settings_validate()` pins it instead of ranging it;
-- `div_settings_load()` ignores the incoming value;
-- `div_cohmin_for_ref()` returns 0 for RADE V1;
-- the client path from LC-004 no longer files a value into its slot;
-- `diversity_auto_ref_store()` no longer files the live value there.
+- `div_settings_load()` ignores the incoming value, and LC-026's switch
+  gives 0 as the live threshold on RADE V1;
+- the menu's `store_ref_values()` no longer files the live value into
+  its slot, and `restore_ref_values()` brings in 0.
+
+(Before the 2026-10-01 rebase these were `div_cohmin_for_ref()`,
+`diversity_auto_ref_store()` and LC-004's client path.)
 
 The menu hides the Min coherence row while RADE V1 is selected. The field
 stays on the wire and in the props file, and the engine's comparison
@@ -828,7 +899,7 @@ branch").
 - RADE decode through the whole engine is unchanged: `190516` +72,
   `165826` +57 synced frames.
 
-**Depends on** LC-008 (the slider pointer) and, textually, LC-004.
+**Depends on** LC-008 (the slider pointer) and LC-026 (the switch).
 
 ### LC-017 — A CW / Morse reference
 
@@ -866,8 +937,9 @@ one bin either side, and nothing else in the region.
   rejected 0 of 4123 blocks (AD-50). Key detection is LC-018.
 
 **Settings.** Own window (600 Hz default) and threshold slots, in
-`DIV_SETTINGS`, the per-group and flat props, store/recall, validation
-and the slider floor. A props file from before CW gives it CW's own
+`DIV_SETTINGS`, the per-group and flat props, the menu's
+`store_ref_values()` / `restore_ref_values()`, LC-026's switch,
+validation and the slider floor. A props file from before CW gives it CW's own
 threshold, not the live one. `DIV_REF_CW` is appended to the enum, so no
 saved reference moves. The wire is unchanged: like the other
 references' slots, CW's are not on it.
@@ -951,17 +1023,18 @@ captures are marginal. Re-sweep as marginal CW captures come in.
 
 **Depends on** LC-017.
 
-### LC-020 — The window row is hidden while it follows the RX filter
+### LC-020 — The follow tick reads "Follow RX Filter"
 
-**Change.** The Window centre and Window width controls are hidden while
-the follow tick is on, where they had no effect, and shown when it is
-cleared. When shown, LC-009 has already placed the window on the
-passband. The dialog shrinks to fit. The tick is relabelled from "Window
-follows RX filter" to "Follow RX Filter", and the two comments that name
-it follow.
+**Change.** The tick is relabelled from "Window follows RX filter" to
+"Follow RX Filter", and the two comments that name it follow.
+
+**Reshaped 2026-10-01.** This used to hide the Window centre and width
+while the tick is on, and shrink the dialog. `f5a0ce9c` greys them out
+instead, which does the same job, so we took upstream's and only the
+label is left.
 
 **Depends on** LC-009 textually (the comment in
-`diversity_auto_seed_window()`, and `follow_cb()`).
+`diversity_auto_seed_window()`).
 
 ### LC-021 — The window spin buttons set their digits as spin buttons
 
@@ -979,6 +1052,10 @@ from `upstream/TEST` at `b180b79a`, `src/diversity_menu.c` only, +2 −2.
 It builds. Opened 2026-09-30 as
 [dl1ycf/pihpsdr#151](https://github.com/dl1ycf/pihpsdr/pull/151). When
 it's merged, mark LC-021 *Upstream*.
+
+**Upstream, 2026-10-01.** `f5a0ce9c` deleted the two bad calls (a spin
+button with a step of 10 shows no decimals anyway). Our commit was
+dropped at the rebase. #151 now conflicts and can be closed.
 
 ### LC-022 — Arm 0 follows the ADC the operator set RX1 to
 
@@ -1071,6 +1148,15 @@ Findings from captures taken on `TEST` itself are in
 | LT-009 | `test_modal` checks the fresh-install CW seed (LC-019) | `test/diversity/test_modal.c` |
 | LT-010 | `test_cw` for `TEST`'s CW reference; its known gap closed | `test/diversity/` |
 | LT-011 | Captures record which ADC arm 0 came from; `run_ref` and `test_capture` follow it (LC-022) | `src/diversity_auto.c` (capture block), `test/diversity/devtools/` |
+| LT-012 | Follow `f5a0ce9c`: the tools carry a copy of the menu's slot store/recall; the dropped migration is a known gap | `test/diversity/ref_slots.h`, `test_modal.c`, `test_cw.c`, `test_props.c`, `known_gaps.h`, `devtools/run_ref.c` |
+
+**LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
+`diversity_auto_ref_recall()` into the menu, which the tools cannot
+link. `test/diversity/ref_slots.h` is a copy of the data half of
+`store_ref_values()` / `restore_ref_values()` (`tool_ref_store()`,
+`tool_ref_recall()`), to be kept in step with the menu. Between LT-002
+and LT-012 in the series, `test_modal`, `test_cw` and `run_ref` do not
+link; the radio builds at every commit.
 
 **LT-005.** `rade_corr_process()` no longer takes a hang, so the replay
 tools stop passing one. `run_ref --hang` and `replay_rade --hang` stop
@@ -1133,6 +1219,7 @@ becomes its regression test.
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
 | Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
+| Reference scheme migration | upstream `f5a0ce9c` removed it | A scheme-1 props file loads its old reference numbers as they are (2 → RADE V1, 3 → FSK/Digital, 4 → CW). Taken from upstream and tracked, not restored |
 
 **Stand-down is not simply a gap.** On the feature branches, the combiner
 slews the weight to zero on an empty band and puts it back when the band
@@ -1151,6 +1238,42 @@ below its default. Stand-down itself is not on `TEST`, so it has not
 been scored here.
 
 ---
+
+## Client/server: tracked, not fixed
+
+Decided 2026-10-01: at this stage we do not work on the client/server
+model. Faults in it are recorded here and fixed later; where upstream
+changes it, we take upstream.
+
+- **The radio ignores a client's auto-diversity settings.** `f5a0ce9c`
+  put the radio-side `CMD_DIV_SETTINGS` case in `server_command()` under
+  `#if 0`, with a comment that the server only sends such data on
+  connect. But the client's menu still sends it (`div_send_settings()`
+  when `radio_is_remote`), and the radio now logs "forgotten case" and
+  drops it. Radio-to-client is handled in `client_thread.c` and is not
+  affected. Worth telling dl1ycf.
+- **The client fills its settings block from the wire only.**
+  `diversity_client_set_settings()` leaves the per-reference slots
+  uninitialised, so a reference change on the client recalls garbage.
+  That was LC-003's client half (deferred).
+- **A client's Min coherence move would be dropped** if the handler came
+  back: the wire carries only the live value, and LC-026 takes the slot.
+  That was LC-004 (deferred).
+- `diversity_menu_refresh()` and `div_populate_from_settings()` are gone
+  upstream; nothing updates an open menu from a settings block.
+
+## Flagged for a later patch
+
+- **A mode change with the Diversity menu open no longer refreshes it.**
+  `f5a0ce9c` removed `g_idle_add(diversity_menu_settings_changed, ...)`
+  from `diversity_auto_mode_changed()` and the function itself. The
+  engine swaps in the new mode group's settings, but the open menu keeps
+  showing the old group's controls, and a moved control then writes the
+  displayed (old) value. Rare, since the mode seldom changes with the
+  menu open. Taken from upstream for now (decided 2026-10-01).
+- Upstream leftovers from `f5a0ce9c`, harmless: `diversity_auto.h` still
+  declares `diversity_auto_ref_store()` / `_recall()` and mentions
+  `DIV_REF_SCHEME`, neither of which exists any more.
 
 ## Not carried
 
@@ -1249,6 +1372,23 @@ Noted while porting, not yet decided:
     tuning carriers that are themselves the wanted signal.
 
 ## History
+
+- 2026-10-01: **rebased onto upstream `f5a0ce9c`** ("continued work on
+  auto diversity (unfinished)"), on `TEST-rebase-20261001`; the old
+  series is `history/backup/TEST-pre-rebase-20261001`. The resync rule
+  changes from merge to rebase. Upstream moved the per-reference slot
+  store/recall into the menu and left `// DL1YCF: THIS MUST BE CORRECTED`
+  in `div_settings_load()`; LC-026 answers it. Re-expressed on upstream's
+  shape: LC-008 (now the widget refresh his comment asks for), LC-009,
+  LC-012 (signal blocking instead of the removed flag), LC-016 and LC-017
+  (in the menu's functions). LC-020 reduced to the label (upstream greys
+  the window row). Dropped: LC-005 and LC-021 (upstream). Deferred:
+  LC-003, LC-004 (client; see "Client/server: tracked, not fixed"). Taken
+  from upstream and flagged: no menu refresh on a mode change, and no
+  scheme-1 migration. LT-012 follows in the tools. Every source commit
+  compiles; the unit suite passes; `test_capture` differs on 0 of 160
+  blocks; `make DIVCAP=1` builds. PR #150 needs rebasing; #151 can be
+  closed.
 
 - 2026-09-30: `8a393217` (branch noise floor across frequency) ported,
   measured on 39 captures, and parked on `wip/lc-025-noise-floor`: the
