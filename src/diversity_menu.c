@@ -574,7 +574,14 @@ static int status_update_cb(gpointer data) {
   case DIV_REF_RADE_V1:
     snprintf(tag, sizeof(tag), "RADE V1");
 
-    if (rade_corr_locked) {
+    if (div_auto_rade_unavailable) {
+      //
+      // The correlator could not start at this sample rate, so the loop
+      // holds. Said here rather than by switching reference.
+      //
+      state = "n/a";
+      snprintf(detail, sizeof(detail), "rate");
+    } else if (rade_corr_locked) {
       //
       // The pilot percentage is the share of the energy in the pilot span
       // that the pilot itself accounts for, so it reads low under strong

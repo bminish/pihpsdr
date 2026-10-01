@@ -164,6 +164,13 @@ extern int    div_auto_occ_valid;
 //
 extern int    div_auto_running;
 
+//
+// 1 when RADE V1 is selected but its correlator could not start at the
+// sample rate in use; the loop holds. Engine status - the reference is
+// never changed behind the operator's back.
+//
+extern int    div_auto_rade_unavailable;
+
 
 //
 // +1 if the RADE modem was found above the tuned carrier, -1 below.

@@ -704,6 +704,13 @@ int    div_auto_occ_valid      = 0;
 int    div_auto_running        = 0;
 
 //
+// 1 when RADE V1 is selected but its correlator could not be started at
+// the sample rate in use. Engine status, read by the menu: the selected
+// reference is left as the operator set it. See diversity_auto_start().
+//
+int    div_auto_rade_unavailable = 0;
+
+//
 // FFT state, owned by the analysis thread once it is started
 //
 static int             nfft = 0;
@@ -4033,19 +4040,19 @@ void diversity_auto_start(void) {
   div_get_context(&lastctx);
   t_print("%s: nfft=%d bin=%0.2f Hz block=%0.1f ms rate=%d\n", __func__,
           nfft, binhz, 1000.0 * blocktime, receiver[0]->sample_rate);
-  if (div_auto_ref == DIV_REF_RADE_V1) {
-    if (!rade_corr_start(receiver[0]->sample_rate)) {
-      //
-      // The correlator needs a DDC rate that is a whole multiple of the
-      // 8 kHz modem rate. Every rate piHPSDR offers satisfies that, but
-      // fall back to FSK/Digital rather than silently doing nothing if
-      // that ever stops being true - it places itself on the operator's
-      // passband and finds the modem's occupied bins there, which is the
-      // job the retired RADE passband reference used to do.
-      //
-      t_print("%s: falling back to DIV_REF_DIGITAL_IQ\n", __func__);
-      div_auto_ref = DIV_REF_DIGITAL_IQ;
-    }
+  //
+  // The correlator needs a DDC rate that is a whole multiple of the
+  // 8 kHz modem rate. Every rate piHPSDR offers satisfies that, but if
+  // that ever stops being true the reference the operator chose is kept
+  // and the failure is reported, not papered over: div_auto_ref is the
+  // menu's, and the engine does not change it. With the correlator not
+  // running, rade_corr_process() produces nothing and the loop holds.
+  //
+  div_auto_rade_unavailable = 0;
+
+  if (div_auto_ref == DIV_REF_RADE_V1 && !rade_corr_start(receiver[0]->sample_rate)) {
+    t_print("%s: RADE V1 unavailable at %d Hz, holding\n", __func__, receiver[0]->sample_rate);
+    div_auto_rade_unavailable = 1;
   }
 
   worker = g_thread_new("div_auto", div_worker_thread, NULL);
