@@ -165,7 +165,7 @@ extern int  div_rade_side_get(void);
 extern double div_window_zero(int mode, int sidetone);
 
 //
-// Called when "Window follows RX filter" is unticked: if the selected
+// Called when "Follow RX Filter" is unticked: if the selected
 // reference's window is still at its default, place it on the current
 // RX passband. See the .c.
 //
