@@ -144,7 +144,7 @@ readability during a transmission, not the background level.
 
 `bench_cpu`, Window at 192 kHz, per 85 ms analysis block: `TEST` 0.55 ms,
 the branch without the dropped Covariance 0.72–0.77 ms - about +0.2 ms,
-0.2 % of one core, mostly two sorts of 1024 values. Carrier similar;
+0.2 % of one core, mostly two sorts of 1024 values. (Since LC-033 the sorts are selections: the floor itself measured 554 → 121 µs per block in place. See `docs/noise-floor-refactor.md`, "Make it cheaper".) Carrier similar;
 FSK/Digital, CW and RADE V1 unchanged. (Gap covariance, now removed,
 cost a further sort per block while selected.) About 180 lines of `src/` for the
 pieces worth keeping, excluding the evaluation controls.
