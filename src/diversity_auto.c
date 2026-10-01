@@ -931,6 +931,14 @@ static int    cw_act_valid = 0;
 static double cw_nf0 = 0.0, cw_nf1 = 0.0;
 static int    cw_nf_valid = 0;
 
+//
+// The output-level normaliser: the smoothed passband powers behind it,
+// and the operator's tick (on by default). See div_norm_refresh().
+//
+static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
+static int    norm_valid = 0;
+int           div_auto_normalise = 1;
+
 
 //
 // Swap Null for Sum, or the other way about.
@@ -1027,6 +1035,8 @@ static void div_reset_stats(void) {
   div_auto_carrier_valid = 0;
   cw_act_lo = 0.0;
   cw_act_valid = 0;
+  norm_valid = 0;
+  div_norm = 1.0;
   cw_nf0 = cw_nf1 = 0.0;
   cw_nf_valid = 0;
   div_auto_occ_valid = 0;
@@ -2008,6 +2018,104 @@ static double div_wideband_sum_scale(void) {
 }
 
 //
+// How fast the passband powers behind the normaliser are smoothed, in
+// seconds, and how far it may scale the output - down 40 dB, which covers
+// Best's +20 dB with room, and up 6 dB, so nothing downstream ever sees a
+// large gain from here.
+//
+#define DIV_NORM_TAU        1.0
+#define DIV_NORM_MIN        0.01
+#define DIV_NORM_MAX        2.0
+
+//
+// The output-level normaliser.
+//
+// receiver.c forms z0 + w*z1 with arm 0 at unit gain, so the combined
+// output is louder than one antenna by whatever the weight does - over 39
+// captures a median +2.1 dB in Sum, +7.4 at the ninetieth percentile -
+// and +20 dB the moment Best hands the output to arm 1, because the
+// combiner can only say "arm 1" as w at the clamp. That rise is not
+// signal. div_norm scales the output back to the level arm 0 alone would
+// have, over the operator's passband:
+//
+//     |z0 + w z1|^2 = P0 + |w|^2 P1 + 2 Re(conj(w) P01)
+//
+// with P0, P1, P01 = <X0 conj(X1)> smoothed at DIV_NORM_TAU, and w the
+// weight actually in force. The powers are what is smoothed, not the
+// correction: recomputed every time the weight is written, a Best switch
+// or a slew step is levelled in the same block rather than a second later.
+//
+// Null is excluded - making the output quieter is its purpose - and so is
+// RADE V1, which never runs the transform the powers come from.
+//
+static void div_norm_refresh(void) {
+  if (!div_auto_normalise || div_auto_mode == DIV_AUTO_NULL || !norm_valid) {
+    div_norm = 1.0;
+    return;
+  }
+
+  const double c = auto_div_cos, sn = auto_div_sin;
+  const double pout = norm_p0 + (c * c + sn * sn) * norm_p1 + 2.0 * (c * norm_xr + sn * norm_xi);
+
+  if (!(pout > 0.0) || !(norm_p0 > 0.0)) {
+    div_norm = 1.0;
+    return;
+  }
+
+  double g = sqrt(norm_p0 / pout);
+
+  if (g < DIV_NORM_MIN) { g = DIV_NORM_MIN; }
+
+  if (g > DIV_NORM_MAX) { g = DIV_NORM_MAX; }
+
+  div_norm = g;
+}
+
+//
+// The passband powers behind it, from this block's transform.
+//
+static void div_norm_update(const struct div_context *ctx) {
+  const double a = div_shift_to_bin(ctx, (double)ctx->filter_low);
+  const double b = div_shift_to_bin(ctx, (double)ctx->filter_high);
+  const double nyq = 0.5 * (double)ctx->sample_rate - binhz;
+  double flo = (a < b) ? a : b;
+  double fhi = (a < b) ? b : a;
+
+  if (flo < -nyq) { flo = -nyq; }
+
+  if (fhi >  nyq) { fhi =  nyq; }
+
+  const int klo = (int)ceil(flo / binhz);
+  const int khi = (int)floor(fhi / binhz);
+  double p0 = 0.0, p1 = 0.0, xr = 0.0, xi = 0.0;
+
+  for (int k = klo; k <= khi; k++) {
+    if (div_bin_notched(ctx, k)) { continue; }
+
+    int idx = k % nfft;
+
+    if (idx < 0) { idx += nfft; }
+
+    const double i0 = fftout0[idx][0], q0 = fftout0[idx][1];
+    const double i1 = fftout1[idx][0], q1 = fftout1[idx][1];
+    p0 += i0 * i0 + q0 * q0;
+    p1 += i1 * i1 + q1 * q1;
+    xr += i0 * i1 + q0 * q1;
+    xi += q0 * i1 - i0 * q1;
+  }
+
+  if (!(p0 > 0.0) || !(p1 > 0.0)) { return; }
+
+  const double al = norm_valid ? 1.0 - exp(-blocktime / DIV_NORM_TAU) : 1.0;
+  norm_p0 += al * (p0 - norm_p0);
+  norm_p1 += al * (p1 - norm_p1);
+  norm_xr += al * (xr - norm_xr);
+  norm_xi += al * (xi - norm_xi);
+  norm_valid = 1;
+  div_norm_refresh();
+}
+
+//
 // Write a new weight, rate limited. Called from the analysis thread.
 //
 static void div_apply_weight(double wr, double wi);
@@ -2152,6 +2260,7 @@ static void div_apply_weight(double wr, double wi) {
   if (auto_div_gain < -27.0) { auto_div_gain = -27.0; }
 
   auto_div_phase = atan2(auto_div_sin, auto_div_cos) * (180.0 / M_PI);
+  div_norm_refresh();
 }
 
 static int div_occ_cmp(const void *a, const void *b) {
@@ -3300,6 +3409,7 @@ static void div_process_block(void) {
 
   fftwf_execute(plan0);
   fftwf_execute(plan1);
+  div_norm_update(&ctx);
 
   if (ctx.ref == DIV_REF_CARRIER) {
     //
@@ -3990,6 +4100,11 @@ void diversity_auto_stop(void) {
   // see the quit flag.
   //
   div_auto_running = 0;
+  //
+  // No engine, no level to hold: the output goes back to what the weight
+  // alone gives. See div_norm_refresh().
+  //
+  div_norm = 1.0;
   g_mutex_lock(&mbox_mutex);
   mbox_quit = 1;
   g_cond_signal(&mbox_cond);
@@ -4679,6 +4794,7 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
+  SetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -4728,6 +4844,9 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
+  GetPropI0("diversity_auto_normalise",      div_auto_normalise);
+
+  div_auto_normalise = div_auto_normalise ? 1 : 0;
 
   //
   // Validate what came out of the file, then use it to seed every group

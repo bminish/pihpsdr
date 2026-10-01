@@ -77,6 +77,9 @@ extern double div_auto_hang;            // unused: kept for the wire and props f
 extern double div_auto_coherence_min;   // hold below this coherence
 extern int    div_auto_weighting;       // always DIV_WEIGHT_FLAT (see .c)
 extern double div_auto_resolution;      // requested bin width, Hz
+extern int    div_auto_normalise;       // "Level output": hold the combined
+                                        // output at arm 0's level (see
+                                        // div_norm_refresh())
 
 //
 // The window controls are modal: the Window, Carrier, FSK/Digital and CW
