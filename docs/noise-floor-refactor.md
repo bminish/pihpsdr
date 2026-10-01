@@ -21,7 +21,7 @@ choice.
 | 4. Selector removed | `6b2cdf2c` | Bit-identical to step 3; Capture back beside Invert; `run_ref --sumnoise` is an error |
 | 5. Quickselect | | |
 | 6. CW on the outside floor | | Sum ratio done (steps 3-4); Best's SNR and `DIV_CW_MIN_BINS` to do |
-| 7. Sample-rate tests | `dd7e716f`, `5b22b0ee` | `test_rates` in `make run`: the ratio within 0.5 dB at 48 / 192 / 1536 kHz through 40 carriers (+9.81 / +10.04 / +10.04 for +10), the Sum weight at the maximum-ratio optimum at each; the span limit holds at 1536 kHz (+10.07 dB; +0.16 without it); the fallback at 48 kHz; resets from another thread never seen half done (fails on the code before step 1). CW at 1536 kHz with a 100 Hz filter never acts: known gap `GAP_CW_NARROW_1536`, for step 6. Every check was made to fail once against the code it guards |
+| 7. Sample-rate tests | `dd7e716f`, `5b22b0ee` | `test_rates` in `make run`: the ratio within 0.5 dB at 48 / 192 / 1536 kHz through 40 carriers (+9.81 / +10.04 / +10.04 for +10), the Sum weight at the maximum-ratio optimum at each; the span limit holds at 1536 kHz (+10.07 dB; +0.16 without it); the fallback at 48 kHz; resets from another thread never seen half done (fails on the code before step 1). CW at 1536 kHz with a 100 Hz filter never acts: accepted as a limitation (see `docs/test-noisefloor.md`), kept as a reported check `GAP_CW_NARROW_1536`. Every check was made to fail once against the code it guards |
 
 ## What the floor costs, and what it touches
 

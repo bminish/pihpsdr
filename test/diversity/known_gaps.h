@@ -19,11 +19,14 @@
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
 
 /*
- * Not from a feature branch: found by test_rates. At 1536 kHz the bins are
- * 23.4 Hz, a 100 Hz CW filter is under DIV_CW_MIN_BINS, and the CW
- * reference holds for good. Step 6 of docs/noise-floor-refactor.md.
+ * Not a gap to close: an accepted limitation, found by test_rates. At
+ * 1536 kHz the bins are 23.4 Hz, a 100 Hz CW filter is under
+ * DIV_CW_MIN_BINS, and the CW reference holds for good. A 100 Hz filter
+ * on a 1.5 MHz span is not a sensible CW setting; the operator narrows the
+ * span or widens the filter. Kept as a check so a change that alters it
+ * is noticed. See "Limitations" in docs/test-noisefloor.md.
  */
-#define GAP_CW_NARROW_1536     "noise-floor step 6: CW acts at 23.4 Hz bins with a 100 Hz filter"
+#define GAP_CW_NARROW_1536     "limitation: CW does not act at 23.4 Hz bins (1536 kHz) with a 100 Hz filter"
 
 /*
  * Not a feature still to port: upstream took this one out. f5a0ce9c

@@ -148,6 +148,22 @@ FSK/Digital, CW and RADE V1 unchanged. (Gap covariance, now removed,
 cost a further sort per block while selected.) About 180 lines of `src/` for the
 pieces worth keeping, excluding the evaluation controls.
 
+## Limitations
+
+- **CW at 1536 kHz with a filter of about 100 Hz or less does not track.**
+  At 1536 kHz the transform is capped at 65536 points (`DIV_MAX_NFFT`),
+  so bins are 23.4 Hz whatever Resolution says, and a 100 Hz filter is
+  fewer bins than the CW reference needs (`DIV_CW_MIN_BINS`, 6): it holds
+  the weight it has, for as long as the filter stays that narrow. Accepted
+  (2026-10-01): a 100 Hz filter on a 1.5 MHz span is not a sensible CW
+  setting, and narrowing the span (384 kHz or less gives 5.9 Hz bins or
+  finer) or widening the filter (400 Hz tracks at 1536 kHz) cures it.
+  Worth a line in the operator documentation. `test_rates` keeps the case
+  as a reported check (`GAP_CW_NARROW_1536`) so a change to it is seen.
+- **Resolution is not honoured from 384 kHz up** for the same reason:
+  3 Hz is out of reach at 384 kHz, and at 1536 kHz every setting gives
+  23.4 Hz. The status line shows the bin width achieved.
+
 ## Upstream's panadapter floor as a cross-check
 
 Same principle (a percentile across frequency), different job:

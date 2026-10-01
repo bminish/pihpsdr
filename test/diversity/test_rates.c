@@ -14,8 +14,8 @@
  *   3. where too few bins are left outside the analysis window the floor
  *      says so, and the loop still produces a weight (the temporal
  *      minimum takes over);
- *   4. the CW reference at 1536 kHz, where bins are 23.4 Hz, with a
- *      100 Hz filter;
+ *   4. the CW reference at 192 and 1536 kHz; at 1536 kHz, where bins are
+ *      23.4 Hz, a 100 Hz filter is an accepted limitation (it holds);
  *   5. operator resets arriving from another thread while blocks run
  *      are performed by the worker between blocks: no other thread ever
  *      sees the floor reset or half rebuilt.
