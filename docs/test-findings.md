@@ -321,6 +321,70 @@ beacon it gains, a little less than FSK/Digital, for a reason we know.
 None of the three is marginal enough to settle the LC-012 floor or
 LC-019's 0.2 s.
 
+## T-013 to T-016: crowded 40 m LSB, the three Sum noise models
+
+Four captures, 2026-10-01 16:22-16:28, taken on `test/noise-floor`: 40 m
+LSB (7.121-7.141 MHz), Window reference following the RX filter, Sum.
+A crowded band with overlapping signals; in each, the wanted station is
+correctly tuned and is analog voice. T-016 (`162729`) had a notch in use
+for periods.
+
+| T | Capture | Averaging | What the radio ran (from its recorded weight) |
+|---|---|---|---|
+| T-013 | `162255` | 0.55 s | Weight frozen for the first third (Hold, or not applying); then **Old** |
+| T-014 | `162444` | 0.27-0.55 s, moved | Ratio |
+| T-015 | `162615` | 0.27-0.60 s, moved | Ratio |
+| T-016 | `162729` | 0.60 s | Ratio; a notch from about 15 s on |
+
+The capture records neither the Sum noise model nor the notch. The model
+was found by replaying each one and comparing it with the weight the radio
+applied, on the blocks where that weight moved: Ratio matches to 0.01-0.20
+(relative error) where it ran, Old to 0.03 on T-013's last third. The
+notch was found the same way: a steady heterodyne at 1676 Hz audio
+(+18 dB over the passband median, in 68 % of blocks); with a notch at
+-1676:100 the replay tracks the radio at 0.17 where it was 0.83 without
+one. The 45 engine resets at 9.5-14.7 s are the notch being placed and
+dragged (LC-013 restarts the statistics on every notch change).
+
+**Scores** (`run_ref` with each model, recorded averaging taken from the
+first block; dB against the better antenna; deterministic, three runs
+identical). Guard = `score_wideband.py`; in-band = speech blocks against
+the quietest 20 % of blocks in the passband.
+
+| | Old guard / in-band | Ratio | Gap covariance | Radio as recorded |
+|---|---|---|---|---|
+| T-013 | −2.58 / −0.01 | −1.30 / **+0.40** | **−1.07** / +0.26 | −4.05 / −1.01 |
+| T-014 | **−0.27** / **+0.93** | −0.41 / +0.70 | −0.41 / +0.89 | −0.40 / +0.34 |
+| T-015 | **+1.74** / −0.31 | +1.41 / −0.15 | +0.83 / **+0.04** | +1.41 / −0.12 |
+| T-016, no notch | +0.65 / +0.25 | +0.76 / +0.39 | **+1.16** / **+0.86** | +0.42 / +0.02 |
+| T-016, notch -1676:100 | +1.00 | +0.71 | **+1.25** | |
+| Mean (no notch) | −0.12 / +0.22 | +0.12 / +0.34 | +0.13 / +0.51 | |
+
+- **The three are within about 0.5 dB on three of the four.** As on the
+  39-capture set, the two scores disagree on which is ahead (T-015).
+- **T-013 is where the noise measurement matters.** The arms are
+  lopsided: arm 1's noise is 9.5 dB (quiet passband) to 12.7 dB (guard)
+  below arm 0's. Ratio, from the bins outside the filter, sees that and
+  weights arm 1 up (|w| +2.5 dB); Old's time minimum, on a band that is
+  never quiet, does not (|w| −9.7 dB) and loses 1.3 dB on the guard
+  score. That is the case the across-frequency floor was ported for.
+- **Gap covariance is slightly ahead on the mean** here (+0.17 dB in-band
+  over Ratio), all of it from T-016. Four captures; on the 39-capture set
+  it was level with Ratio or worse. Not enough to bring it back; worth
+  re-checking if more crowded-band captures come in.
+- **The guard band is not noise here.** Passband over guard is only +1 to
+  +11 dB on either antenna, because the band beside the passband holds
+  other stations, 0.43-0.61 coherent between the antennas on T-014 and
+  T-015. On this band the guard score measures adjacent-channel rejection
+  as much as noise.
+- **T-016 is the first on-air case for LC-013**: a steady interferer
+  inside the wanted station's passband. With the notch, the loop acts on
+  13.8 % of noise-only blocks instead of 49.7 %, and the noise-only
+  coherence (95th percentile) falls from 0.67 to 0.35: between overs the
+  loop had been fitting the weight to the heterodyne. Every model scores
+  within 0.4 dB of its un-notched figure. The notch's exact width and
+  on/off times are inferred, not known.
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
