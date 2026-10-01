@@ -2944,7 +2944,26 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
     return;
   }
 
-  const double nratio = cw_nf_valid ? cw_nf0 / cw_nf1 : 1.0;
+  //
+  // The noise ratio for Sum: from the bins outside the filter when that
+  // floor is valid, else from the off-tone bins of the region
+  // (cw_nf0/cw_nf1, as before LC-029).
+  //
+  // The off-tone floor fails twice on T-017/T-018 (docs/test-findings.md).
+  // At a 50 Hz filter the region is 6 bins, and the bins 4 or more from
+  // the tone are one or two at its edge, full of keyclick sideband: it
+  // read one arm 10-15 dB better with the arms level and drove the weight
+  // to +20 dB. And in a 15 dB fade on one arm it was 2.4 dB worse than
+  // Window. The outside-filter floor is clear of both: +1.23 -> +2.08 dB
+  // on the filter sweep, +1.39 -> +1.99 on the pileup, against the better
+  // antenna. Best still reads the per-arm SNR from the off-tone floor.
+  //
+  double nratio = cw_nf_valid ? cw_nf0 / cw_nf1 : 1.0;
+
+  if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0) {
+    nratio = div_nf0 / div_nf1;
+  }
+
   div_apply_weight(nratio * sig_xy_re / sig_xx, nratio * sig_xy_im / sig_xx);
 }
 
@@ -3371,6 +3390,12 @@ static void div_process_block(void) {
   // rest. See div_cw_solve().
   //
   if (ctx.ref == DIV_REF_CW) {
+    //
+    // The floor from outside the filter, for the Sum noise ratio in
+    // div_cw_solve(). CW returns before the update below, so it is taken
+    // here; klo/khi are the CW region, which is the filter.
+    //
+    div_noise_floor_update(&ctx, klo, khi);
     div_cw_solve(&ctx, klo, khi);
     return;
   }
