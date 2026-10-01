@@ -390,7 +390,7 @@ int main(int argc, char **argv) {
   if (out == NULL) { perror(outp); return 1; }
 
   fprintf(out, "block,t,locked,confirming,quality,snr,freq_off,ok,wr,wi,"
-          "arm_valid,arm_db,arm_pick,tone\n");
+          "arm_valid,arm_db,arm_pick,tone,norm\n");
   divcap_noise_seed(seed);
   diversity_auto_start();
   fseek(f, data_start, SEEK_SET);
@@ -446,12 +446,12 @@ int main(int argc, char **argv) {
 
     if (div_auto_carrier_valid) { snprintf(tone, sizeof(tone), "%.1f", div_auto_carrier); }
 
-    fprintf(out, "%ld,%.4f,%d,%d,%.6g,%.4f,%.4f,%d,%.9g,%.9g,%d,%.3f,%d,%s\n",
+    fprintf(out, "%ld,%.4f,%d,%d,%.6g,%.4f,%.4f,%d,%.9g,%.9g,%d,%.3f,%d,%s,%.6g\n",
             nb, (double)nb * nfft / h.sample_rate,
             rade_corr_locked, rade_corr_confirming, div_auto_coherence,
             rade_corr_snr, rade_corr_freq_off, !div_auto_holding,
             auto_div_cos, auto_div_sin,
-            div_auto_arm_valid, div_auto_arm_db, div_auto_arm_pick, tone);
+            div_auto_arm_valid, div_auto_arm_db, div_auto_arm_pick, tone, div_norm);
     nb++;
   }
 
