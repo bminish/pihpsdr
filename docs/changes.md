@@ -100,10 +100,12 @@ workable are coding rules for every change from now on:
    separate variable, so "what the operator said" and "what the algorithm
    is doing" stay distinct. The model is upstream's `man_div_gain` (the
    operator's) versus `auto_div_gain` (the loop's).
-3. **No silent substitution.** If the engine can't do what the operator
-   asked, it says so in its status. It doesn't quietly change the
-   setting. dl1ycf's example: a failed `rade_corr_start()` must not set
-   `div_auto_ref` to `DIV_REF_DIGITAL_IQ`.
+3. **No substitution.** If the engine can't do what the operator asked,
+   it doesn't change the setting to something it can do. dl1ycf's
+   example: a failed `rade_corr_start()` must not set `div_auto_ref` to
+   `DIV_REF_DIGITAL_IQ`. The failure must have no blast radius. It may
+   be silent if it can't happen in practice: no status flags or UI for
+   impossible cases (decided 2026-10-01).
 4. **Mode-dependent settings go into the per-mode settings** handled by
    `profiles.c` (`RXTXprofile[]`; dl1ycf's mail calls it
    `mode_settings[]` / `profile.c`). This replaces calling
@@ -119,6 +121,10 @@ In practice:
 - Where an engine function computes a value for the menu (a seeded
   window, say), it returns the value and the menu stores it.
 - Engine-to-menu calls (`g_idle_add` of menu functions) are not added.
+- What each engine change needs from the menu is written up for dl1ycf
+  in [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md). We still make the
+  menu half in our own LC, so `TEST` works, but we keep it minimal so
+  his rewrite can redo it.
 
 ### Review against these rules (2026-10-01, `TEST` at `4f79c0be`)
 
@@ -138,8 +144,8 @@ In practice:
 
 | # | Where | What it writes | Origin | Proposed handling |
 |---|---|---|---|---|
-| E1 | `diversity_auto_start()`, RADE start failure | `div_auto_ref` → `DIGITAL_IQ` | upstream (our original code) | Don't substitute. Keep the reference, run without the correlator (hold, no weight) and report "RADE unavailable" in the status. It can't fire today: every DDC rate is a multiple of 8 kHz. So this is a small, safe fix on our side. |
-| E2 | `diversity_auto_seed_window()` | `div_auto_centre`, `div_auto_width` | LC-009 | Make it pure: `int diversity_auto_seed_window(double *centre, double *width)` returns 1 and fills the values, and the menu stores them. This needs a two-line change in `follow_cb` (dl1ycf's side). |
+| E1 | `diversity_auto_start()`, RADE start failure | `div_auto_ref` → `DIGITAL_IQ` | upstream (our original code) | **Done: LC-031.** Don't substitute: keep the reference and hold, with no weight. The failure is silent apart from `rade_corr_start()`'s own log line. It can't fire today (every DDC rate is a multiple of 8 kHz), so a status flag isn't worth having (decided 2026-10-01); what matters is that it has no blast radius. |
+| E2 | `diversity_auto_seed_window()` | `div_auto_centre`, `div_auto_width` | LC-009 | **Done: LC-032.** Make it pure: `int diversity_auto_seed_window(double *centre, double *width)` returns 1 and fills the values, and the menu stores them. This needs a two-line change in `follow_cb` (dl1ycf's side). |
 | E3 | `div_settings_load()` | the live `div_auto_coherence_min`, from the reference's slot | LC-026 | The root problem is duplicated state: a live copy *and* per-reference slots for the window and threshold. The menu stores and recalls them by copying (LC-008). Proposal: the engine reads the selected reference's slot directly, and the live copies go away. That's a joint change, to discuss with dl1ycf. Until then, LC-026 stays as the bridge. |
 | E4 | `diversity_auto_set_hold()` | `div_auto_hold` | upstream; LC-007 | The menu and `radio_set_diversity()` call it, so the engine never decides on its own. Cleaner: the caller writes `div_auto_hold`, and the engine gets `diversity_auto_hold_changed()` for the weight handover (`div_jump`). Low priority. |
 | E5 | `diversity_auto_mode_changed()` + `div_group_*` | every setting, on a mode-group change | upstream (ours originally); LC-019 seed | Rule 4. Move the per-group blocks into `RXTXprofile[].rx` and save and restore them in `profiles.c`. Then the engine only reacts (restart and reset) when told the settings changed. This is the big one. See the notes below. |
@@ -148,13 +154,19 @@ In practice:
 | E8 | `diversity_auto_restore_state()` / `div_settings_validate()` | every setting, validated and pinned | LC-002, LC-006, LC-011, LC-016, LC-019 | **Allowed** (rule 1: start-up from the props file). The pinning in `div_settings_load()` (RADE cohmin 0, the live threshold) also runs on every mode change. That goes away with E5. |
 
 **Notes on E5 (mode settings into `profiles.c`):**
-- **Grouping differs.** `profiles_copy_rxtxprofile()` keeps
-  LSB/USB/**DSB** together. Our `div_group_of_mode()` puts DSB with AM
-  and SAM, because a symmetric passband makes a window and a carrier
-  search mean the same thing. FM, AM and SAM aren't copied in
-  `profiles.c` at all. Either diversity takes the profile grouping (DSB
-  then follows SSB) or `profiles.c` grows a diversity-specific copy.
-  This is dl1ycf's call.
+- **Grouping: diversity takes `profiles.c`'s (decided 2026-10-01).**
+  `profiles_copy_rxtxprofile()` keeps LSB/USB/DSB, CWL/CWU and DIGL/DIGU
+  together, and every other mode on its own. Two things change from our
+  `div_group_of_mode()`:
+  - DSB moves from the AM group to the SSB group.
+  - AM, SAM, FMN and SPEC each get their own settings instead of
+    sharing.
+
+  Migration from the old per-group keys:
+  - LSB, USB and DSB are seeded from the old SSB group;
+  - AM and SAM from the old AM group;
+  - FMN from the FM group;
+  - every other mode from the "other" group.
 - **The block** (`DIV_SETTINGS`, about 24 fields) would become a
   `struct _rxprofile` member. The props keys change from
   `diversity_group[%d].*` to `modeset.%d.*`. A one-time migration from
@@ -283,6 +295,8 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-028 | Behaviour | Best: per-arm SNR from the floor, 2 dB / 1 s switch   | diversity_auto.c                          | LC-025     | Local  |
 | LC-029 | Behaviour | CW's Sum noise ratio from the floor outside the filter | diversity_auto.c                         | LC-025     | Local  |
 | LC-030 | Behaviour | Level output: the combined output at one antenna's level | diversity_auto.c/.h, diversity_menu.c, radio.c/.h, receiver.c | — | Local |
+| LC-031 | Fix       | A RADE correlator that cannot start no longer changes the reference | diversity_auto.c | — | Local |
+| LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1362,6 +1376,40 @@ captures (`score_level.py`): Sum +2.07 → −0.08 dB over one antenna, Best
 steps over 3 dB 1175 → 774. `test_window`: a Sum that raised the level
 +4.2 dB comes out at 0.00, Null untouched.
 
+### LC-031 — A RADE V1 correlator that cannot start no longer changes the reference
+
+**Why.** If the pilot correlator could not start at the DDC rate,
+`diversity_auto_start()` set `div_auto_ref` to `DIV_REF_DIGITAL_IQ`. The
+engine was changing a menu setting (E1 under "Who owns what"): the menu
+showed RADE V1 while the loop ran FSK/Digital, and the next props save
+stored the substitute.
+
+**Change.** The substitution is gone. The reference is left as set and
+the loop holds. When the correlator isn't running, `rade_corr_process()`
+returns no weight, `rade_corr_stop()` returns at once, and
+`rade_corr_reset()` only clears plain variables, so the failure has no
+blast radius. The menu reads "search". The only trace is
+`rade_corr_start()`'s own log line.
+
+**Reach.** It cannot happen today: every rate piHPSDR offers is a
+multiple of 8 kHz. So, deliberately, there is no status flag and no menu
+change (decided 2026-10-01). The first cut, with a
+`div_auto_rade_unavailable` flag and an "n/a" status, is kept on
+`history/backup/TEST-lc031-flag-20261001`.
+
+### LC-032 — The seeded window is returned to the menu, not written by the engine
+
+**Why.** LC-009's `diversity_auto_seed_window()` wrote `div_auto_centre`
+and `div_auto_width`, which are menu settings (E2 under "Who owns
+what").
+
+**Change.** The function now returns 1, with the window in `*centre` and
+`*width`, or 0 to leave the window alone. `follow_cb()` stores the
+result. The same values land in the same globals, so there is no change
+in behaviour. Needs LC-009, which adds the function. The menu half is
+written up for dl1ycf in
+[menu-notes-dl1ycf.md](menu-notes-dl1ycf.md#e2-seeding-the-window-when-follow-rx-filter-is-unticked-lc-032).
+
 ---
 
 ## Local tooling (never upstream)
@@ -1577,6 +1625,9 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-01: diversity takes `profiles.c`'s mode grouping (E5).
+- 2026-10-01: LC-031 (E1, engine only, silent) and LC-032 (E2); LC-032's
+  menu half is written up for dl1ycf in `menu-notes-dl1ycf.md`.
 - 2026-10-01: dl1ycf's division of work recorded ("Who owns what: menu
   and engine"), with the engine reviewed against it: E1 to E8.
 - 2026-10-01: **the noise-floor work landed** as LC-025, LC-027 to LC-030
