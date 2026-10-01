@@ -3,8 +3,8 @@
  *
  * The floor is each arm's 8th-12th percentile of the bins outside the RX
  * filter, no further than DIV_NF_HALF_SPAN_HZ from the dial. The Sum
- * weight takes the branch noise ratio from it on the Window and Carrier
- * references (and on CW, from LC-030). These checks are what make it safe to hand over:
+ * weight takes the branch noise ratio from it on the Window, Carrier and
+ * CW references. These checks are what make it safe to hand over:
  *
  *   1. the measured noise ratio is right at 48, 192 and 1536 kHz, with
  *      strong carriers scattered across the span, and the Sum weight
@@ -14,7 +14,9 @@
  *   3. where too few bins are left outside the analysis window the floor
  *      says so, and the loop still produces a weight (the temporal
  *      minimum takes over);
- *   4. operator resets arriving from another thread while blocks run
+ *   4. the CW reference at 192 and 1536 kHz; at 1536 kHz, where bins are
+ *      23.4 Hz, a 100 Hz filter is an accepted limitation (it holds);
+ *   5. operator resets arriving from another thread while blocks run
  *      are performed by the worker between blocks: no other thread ever
  *      sees the floor reset or half rebuilt.
  *
@@ -305,6 +307,70 @@ static void check_fallback(void) {
   diversity_auto_stop();
 }
 
+/*
+ * CW: a keyed tone in time-domain samples, as test_cw does it. At
+ * 1536 kHz bins are 23.4 Hz, so a 100 Hz filter is about four of them.
+ */
+static int check_cw(int rate, int lo, int hi_, int gap) {
+  const double note = 700.0;
+  setup(rate, modeCWU, lo, hi_, DIV_REF_CW);
+  div_auto_tau = 0.5;
+  diversity_auto_start();
+  srand(14);
+  const int block = (int)lround(rate / div_auto_binhz);
+  const double f_tone = -(note - cw_keyer_sidetone_frequency);
+  double ph = 0.0;
+  int acted = 0;
+  const int nblocks = (int)ceil(6.0 * div_auto_binhz);
+
+  for (int b = 0; b < nblocks; b++) {
+    const int keyed = (b % 9) < 5;
+
+    for (int n = 0; n < block; n++) {
+      ph += 2.0 * M_PI * f_tone / rate;
+      const double s = keyed ? 0.5 * cos(ph) : 0.0, t = keyed ? 0.5 * sin(ph) : 0.0;
+      double a, c, d, e;
+      cgauss(&a, &c);
+      cgauss(&d, &e);
+      diversity_auto_sample(s + 0.002 * a, t + 0.002 * c,
+                            hr * s - hi * t + 0.002 * d, hr * t + hi * s + 0.002 * e);
+    }
+
+    g_usleep(4000);
+
+    if (!div_auto_holding) { acted++; }
+  }
+
+  g_usleep(300000);
+  const double g = div_track_gain, p = div_track_phase;
+  const double wg = 20.0 * log10(hypot(hr, hi)), wp = -atan2(hi, hr) * 180.0 / M_PI;
+  double dp = p - wp;
+
+  while (dp > 180.0)  { dp -= 360.0; }
+
+  while (dp < -180.0) { dp += 360.0; }
+
+  const int near = fabs(g - wg) < 1.0 && fabs(dp) < 10.0;
+  printf("%7d Hz CW, %d Hz filter (%.1f Hz bins): acted on %d of %d blocks, "
+         "weight %+.2f dB %+.1f deg (channel %+.2f dB %+.1f deg)\n",
+         rate, hi_ - lo, div_auto_binhz, acted, nblocks, g, p, wg, wp);
+  diversity_auto_stop();
+  const int ok = acted > 0 && near;
+  char what[120];
+  snprintf(what, sizeof(what), "CW at %.1f Hz bins, %d Hz filter: takes the keyed signal's channel",
+           div_auto_binhz, hi_ - lo);
+
+  if (gap) {
+#ifdef GAP_CW_NARROW_1536
+    known_gap(ok, GAP_CW_NARROW_1536);
+    return ok;
+#endif
+  }
+
+  expect(ok, what);
+  return ok;
+}
+
 /* ------------------------------------------------------------------ */
 
 static volatile int stress_run = 0;
@@ -375,6 +441,10 @@ int main(int argc, char **argv) {
   check_span();
   printf("\n");
   check_fallback();
+  printf("\n");
+  check_cw(192000, 650, 750, 0);
+  check_cw(1536000, 500, 900, 0);
+  check_cw(1536000, 650, 750, 1);
   printf("\n");
   check_reset_race();
   printf("\n%s\n", fails ? "FAIL" : "PASS");
