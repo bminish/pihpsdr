@@ -45,6 +45,7 @@ static GtkWidget *phase_coarse_scale = NULL;
 static GtkWidget *auto_btn = NULL;
 static GtkWidget *win_width_btn = NULL;
 static GtkWidget *win_centre_btn = NULL;
+static GtkWidget *coh_scale = NULL;
 static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
 static GtkWidget *status_label = NULL;
@@ -148,6 +149,9 @@ static void cleanup(void) {
     hold_b = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
+    win_centre_btn = NULL;
+    win_width_btn = NULL;
+    coh_scale = NULL;
     active_menu  = NO_MENU;
     radio_save_state();
   }
@@ -671,6 +675,35 @@ static void store_ref_values(int ref) {
   }
 }
 
+static void centre_cb(GtkWidget *widget, gpointer data);
+static void width_cb(GtkWidget *widget, gpointer data);
+static void coh_cb(GtkWidget *widget, gpointer data);
+
+//
+// Show the window and threshold now in force. The handlers are blocked,
+// so that this is not taken for the operator moving the controls and
+// filed straight back.
+//
+static void div_ref_widgets_show(void) {
+  if (win_centre_btn) {
+    g_signal_handlers_block_by_func(win_centre_btn, centre_cb, NULL);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(win_centre_btn), div_auto_centre);
+    g_signal_handlers_unblock_by_func(win_centre_btn, centre_cb, NULL);
+  }
+
+  if (win_width_btn) {
+    g_signal_handlers_block_by_func(win_width_btn, width_cb, NULL);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(win_width_btn), div_auto_width);
+    g_signal_handlers_unblock_by_func(win_width_btn, width_cb, NULL);
+  }
+
+  if (coh_scale) {
+    g_signal_handlers_block_by_func(coh_scale, coh_cb, NULL);
+    gtk_range_set_value(GTK_RANGE(coh_scale), 100.0 * div_auto_coherence_min);
+    g_signal_handlers_unblock_by_func(coh_scale, coh_cb, NULL);
+  }
+}
+
 static void restore_ref_values(int ref) {
   //
   // In addition to just restoring the values,
@@ -697,6 +730,13 @@ static void restore_ref_values(int ref) {
     div_auto_coherence_min = div_rade_cohmin;
     break;
   }
+
+  //
+  // Without this the controls kept showing the previous reference's
+  // window and threshold, and the next move of one of them filed those
+  // under the new reference.
+  //
+  div_ref_widgets_show();
 }
 
 static void ref_changed_cb(GtkWidget *widget, gpointer data) {
@@ -782,9 +822,9 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
   (void)data;
 
   //
-  // div_window_recall() moves this slider when the reference changes, and
-  // the slider's 5 % step would quantise the recalled value on the way
-  // back in.
+  // restore_ref_values() moves this slider when the reference changes,
+  // with this handler blocked: the slider's 5 % step would quantise the
+  // recalled value on the way back in.
   //
   div_auto_coherence_min = 0.01 * gtk_range_get_value(GTK_RANGE(widget));
   store_ref_values(div_auto_ref);
@@ -1031,6 +1071,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_range_set_value(GTK_RANGE(btn), 100.0 * div_auto_coherence_min);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 4, 6, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(coh_cb), NULL);
+  coh_scale = btn;
   lbl = gtk_label_new("Hang (s)");
   //gtk_widget_set_tooltip_text(hang_label,
   //                            "How long a RADE lock is held after the pilot stops "
