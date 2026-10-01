@@ -184,7 +184,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-018 | Behaviour | CW tells keying from a steady carrier                 | diversity_auto.c                          | LC-017     | Local  |
 | LC-019 | Behaviour | Fresh install: CW modes start on CW at 0.2 s          | diversity_auto.c                          | LC-017     | Local  |
 | LC-020 | UI        | The follow tick reads "Follow RX Filter"              | diversity_menu.c (+ two comments)         | [LC-009]   | Local  |
-| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Upstream (`f5a0ce9c`, differently); #151 to close |
+| LC-021 | Fix       | Window spin buttons set digits as spin buttons        | diversity_menu.c                          | —          | Upstream (`f5a0ce9c`, differently); #151 closed |
 | LC-022 | Fix       | Arm 0 follows the ADC RX1 is set to                   | diversity_auto.c/.h, receiver.c, old_protocol.c, new_protocol.c | — | Local |
 | LC-023 | Fix       | Transmit gap and reset requests stop racing the threads | diversity_auto.c, radio.c               | —          | Local  |
 | LC-024 | Fix       | Carrier/CW readout from the zero beat; client overlay repaint | diversity_menu.c                  | [LC-017]   | Local  |
@@ -851,6 +851,9 @@ recalls the slot of the row number, and its RADE V1 test is against the
 row, so choosing "Carrier" (row 2 = `DIV_REF_RADE_V1`) forces Sum and
 starts the RADE correlator. On `TEST` the line is
 `div_auto_ref = div_row_to_ref(...)` ahead of `restore_ref_values()`.
+Rebased onto `f5a0ce9c` the same day: still one commit, +30 −2, the row
+mapped before `store_ref_values()` / `restore_ref_values()` see it.
+Mergeable again, with a comment on the PR saying what changed.
 
 ### LC-016 — RADE V1's Min coherence is retired: the pilot already gates
 
@@ -1055,7 +1058,8 @@ it's merged, mark LC-021 *Upstream*.
 
 **Upstream, 2026-10-01.** `f5a0ce9c` deleted the two bad calls (a spin
 button with a step of 10 shows no decimals anyway). Our commit was
-dropped at the rebase. #151 now conflicts and can be closed.
+dropped at the rebase. #151 closed 2026-10-01 with a note saying why,
+and its branch `pr/diversity-spin-digits` deleted.
 
 ### LC-022 — Arm 0 follows the ADC the operator set RX1 to
 
@@ -1387,8 +1391,8 @@ Noted while porting, not yet decided:
   from upstream and flagged: no menu refresh on a mode change, and no
   scheme-1 migration. LT-012 follows in the tools. Every source commit
   compiles; the unit suite passes; `test_capture` differs on 0 of 160
-  blocks; `make DIVCAP=1` builds. PR #150 needs rebasing; #151 can be
-  closed.
+  blocks; `make DIVCAP=1` builds. Later the same day: PR #150 rebased
+  onto `f5a0ce9c` (mergeable), #151 closed.
 
 - 2026-09-30: `8a393217` (branch noise floor across frequency) ported,
   measured on 39 captures, and parked on `wip/lc-025-noise-floor`: the
