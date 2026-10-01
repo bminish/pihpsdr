@@ -86,6 +86,96 @@ reasoning.
    every block anyway. RADE V1 ages through a freeze (LC-010). CW ages
    every bin in its region every block (LC-017).
 
+## Who owns what: menu and engine (dl1ycf, 2026-10-01)
+
+dl1ycf proposed a division of work, and we follow it. He mostly takes
+`diversity_menu.c`; we take `diversity_auto.c`. The rules that make that
+workable are coding rules for every change from now on:
+
+1. **Settings come from two places only.** A setting is read from the
+   props file at start-up, or taken from the server when a client starts.
+   Both can be done in `diversity_auto.c`.
+2. **Apart from that, the engine never writes a setting the menu can
+   change.** If the algorithm needs a value of its own, it keeps it in a
+   separate variable, so "what the operator said" and "what the algorithm
+   is doing" stay distinct. The model is upstream's `man_div_gain` (the
+   operator's) versus `auto_div_gain` (the loop's).
+3. **No silent substitution.** If the engine can't do what the operator
+   asked, it says so in its status. It doesn't quietly change the
+   setting. dl1ycf's example: a failed `rade_corr_start()` must not set
+   `div_auto_ref` to `DIV_REF_DIGITAL_IQ`.
+4. **Mode-dependent settings go into the per-mode settings** handled by
+   `profiles.c` (`RXTXprofile[]`; dl1ycf's mail calls it
+   `mode_settings[]` / `profile.c`). This replaces calling
+   `diversity_auto_mode_changed()` from `rx_mode_changed()`. It's a
+   long-term goal.
+5. **Local first, client/server later.** Once that works, a client
+   sends only the parameters that changed, and the server does not reply.
+   This matches "Client/server: tracked, not fixed" below.
+
+In practice:
+- A change of ours that needs the menu to do something is written up for
+  dl1ycf rather than committed into `diversity_menu.c` behind his back.
+- Where an engine function computes a value for the menu (a seeded
+  window, say), it returns the value and the menu stores it.
+- Engine-to-menu calls (`g_idle_add` of menu functions) are not added.
+
+### Review against these rules (2026-10-01, `TEST` at `4f79c0be`)
+
+**What already complies:**
+- The menu writes the settings globals itself. It then calls the engine
+  to act on them: `diversity_auto_restart()`, `_reset()` and
+  `_invert()`.
+- The worker thread only reads settings.
+- The weight is split (`man_div_gain` / `auto_div_gain`).
+  `diversity_auto_att_changed()` and `_invert()` touch only `auto_div_*`.
+- Status (`div_auto_coherence`, `_clamped`, `_arm_*`, `div_norm`, ...)
+  is engine-owned output, not settings.
+- The engine includes `diversity_menu.h` but no longer calls into the
+  menu.
+
+**Where the engine writes operator settings:**
+
+| # | Where | What it writes | Origin | Proposed handling |
+|---|---|---|---|---|
+| E1 | `diversity_auto_start()`, RADE start failure | `div_auto_ref` → `DIGITAL_IQ` | upstream (our original code) | Don't substitute. Keep the reference, run without the correlator (hold, no weight) and report "RADE unavailable" in the status. It can't fire today: every DDC rate is a multiple of 8 kHz. So this is a small, safe fix on our side. |
+| E2 | `diversity_auto_seed_window()` | `div_auto_centre`, `div_auto_width` | LC-009 | Make it pure: `int diversity_auto_seed_window(double *centre, double *width)` returns 1 and fills the values, and the menu stores them. This needs a two-line change in `follow_cb` (dl1ycf's side). |
+| E3 | `div_settings_load()` | the live `div_auto_coherence_min`, from the reference's slot | LC-026 | The root problem is duplicated state: a live copy *and* per-reference slots for the window and threshold. The menu stores and recalls them by copying (LC-008). Proposal: the engine reads the selected reference's slot directly, and the live copies go away. That's a joint change, to discuss with dl1ycf. Until then, LC-026 stays as the bridge. |
+| E4 | `diversity_auto_set_hold()` | `div_auto_hold` | upstream; LC-007 | The menu and `radio_set_diversity()` call it, so the engine never decides on its own. Cleaner: the caller writes `div_auto_hold`, and the engine gets `diversity_auto_hold_changed()` for the weight handover (`div_jump`). Low priority. |
+| E5 | `diversity_auto_mode_changed()` + `div_group_*` | every setting, on a mode-group change | upstream (ours originally); LC-019 seed | Rule 4. Move the per-group blocks into `RXTXprofile[].rx` and save and restore them in `profiles.c`. Then the engine only reacts (restart and reset) when told the settings changed. This is the big one. See the notes below. |
+| E6 | `diversity_auto_apply_settings()` | every setting, from a block | upstream; client path | Client/server, deferred. Under rule 5 it is replaced by per-parameter commands. The radio-side "draw the consequences" logic stays in the engine. |
+| E7 | `diversity_auto_apply_status()` (client) | `diversity_enabled`, `adc[].attenuation` | upstream | Client/server, deferred. |
+| E8 | `diversity_auto_restore_state()` / `div_settings_validate()` | every setting, validated and pinned | LC-002, LC-006, LC-011, LC-016, LC-019 | **Allowed** (rule 1: start-up from the props file). The pinning in `div_settings_load()` (RADE cohmin 0, the live threshold) also runs on every mode change. That goes away with E5. |
+
+**Notes on E5 (mode settings into `profiles.c`):**
+- **Grouping differs.** `profiles_copy_rxtxprofile()` keeps
+  LSB/USB/**DSB** together. Our `div_group_of_mode()` puts DSB with AM
+  and SAM, because a symmetric passband makes a window and a carrier
+  search mean the same thing. FM, AM and SAM aren't copied in
+  `profiles.c` at all. Either diversity takes the profile grouping (DSB
+  then follows SSB) or `profiles.c` grows a diversity-specific copy.
+  This is dl1ycf's call.
+- **The block** (`DIV_SETTINGS`, about 24 fields) would become a
+  `struct _rxprofile` member. The props keys change from
+  `diversity_group[%d].*` to `modeset.%d.*`. A one-time migration from
+  the old keys keeps operators' settings.
+- **The CW seed (LC-019)** becomes a default in `RXTXprofile[modeCWU/L]`.
+- **Profile loading** (`profiles_load_rx_profile()`) then writes the
+  settings, and the engine is told to re-read them (restart if the
+  objective, resolution or RADE use changed; reset otherwise). That is
+  the same three-condition rule it already applies, but triggered by
+  the profile load instead of by `rx_mode_changed()`.
+- It also fixes "a mode change with the menu open doesn't refresh it"
+  (see "Flagged for a later patch"), if the profile load refreshes open
+  menus as it does for other per-mode settings.
+
+**Menu-side LCs.** These touch `diversity_menu.c`, so they now overlap
+with dl1ycf's work: LC-006, LC-007, LC-008, LC-009, LC-011, LC-012,
+LC-014, LC-015, LC-016, LC-017, LC-020, LC-024 and LC-030, plus the
+capture tooling. At the next re-sync, expect his rewrite of the menu to
+replace their menu halves. Each LC's engine half should keep working
+against whatever globals the menu sets.
+
 ## Commands
 
 List the local changes and their IDs:
@@ -1421,7 +1511,9 @@ changes it, we take upstream.
   engine swaps in the new mode group's settings, but the open menu keeps
   showing the old group's controls, and a moved control then writes the
   displayed (old) value. Rare, since the mode seldom changes with the
-  menu open. Taken from upstream for now (decided 2026-10-01).
+  menu open. Taken from upstream for now (decided 2026-10-01). The
+  intended cure is E5 under "Who owns what": the per-group settings move
+  into `profiles.c`.
 - Upstream leftovers from `f5a0ce9c`, harmless: `diversity_auto.h` still
   declares `diversity_auto_ref_store()` / `_recall()` and mentions
   `DIV_REF_SCHEME`, neither of which exists any more.
@@ -1485,6 +1577,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-01: dl1ycf's division of work recorded ("Who owns what: menu
+  and engine"), with the engine reviewed against it: E1 to E8.
 - 2026-10-01: **the noise-floor work landed** as LC-025, LC-027 to LC-030
   and LT-013 to LT-015, cut on `port/noise-floor` from the net difference
   of `test/noise-floor` (tag `noise-floor-eval-20261001`), not replayed.
