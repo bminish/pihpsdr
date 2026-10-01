@@ -208,7 +208,7 @@ int main(int argc, char **argv) {
     }
     else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
     else if (!strcmp(argv[i], "--sumnoise") && i + 1 < argc) {
-      /* test/noise-floor evaluation: time | ratio */
+      /* test/noise-floor evaluation: time | ratio. PORT-TO-TEST: remove with the selector. */
       div_eval_sum_noise = !strcmp(argv[++i], "time") ? DIV_SUMNOISE_TIME : DIV_SUMNOISE_RATIO;
     }
     /*

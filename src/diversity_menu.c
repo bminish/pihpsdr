@@ -1010,6 +1010,9 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
 // normaliser, so they can be compared by ear. Radio-side only: neither is
 // on the wire, so they are insensitive on a client.
 //
+// PORT-TO-TEST: remove sumnoise_cb() and the Sum noise row when this goes
+// to TEST. normalise_cb() stays.
+//
 static void sumnoise_cb(GtkWidget *widget, gpointer data) {
   (void)data;
   div_eval_sum_noise = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
@@ -1383,6 +1386,7 @@ void diversity_menu(GtkWidget *parent) {
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
   //
   // EVALUATION (test/noise-floor). See sumnoise_cb().
+  // PORT-TO-TEST: remove this row (label and combo) when this goes to TEST.
   //
   lbl = gtk_label_new("Sum noise");
   gtk_widget_set_name(lbl, "boldlabel");

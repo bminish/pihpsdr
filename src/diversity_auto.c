@@ -1969,6 +1969,7 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // was before this term existed.
 //
 static double div_wideband_sum_scale(void) {
+  // PORT-TO-TEST: remove the div_eval_sum_noise test; keep the rest.
   if (div_eval_sum_noise != DIV_SUMNOISE_TIME && div_nf_valid && div_nf1 > 0.0) {
     return div_nf0 / div_nf1;
   }
@@ -1976,6 +1977,10 @@ static double div_wideband_sum_scale(void) {
   return arm_nratio_valid ? arm_nratio : 1.0;
 }
 
+//
+// PORT-TO-TEST: remove this selector when this goes to TEST. Keep RATIO's
+// behaviour (the outside-filter floors, the time minimum as fallback)
+// as the only one, and drop the props key with it.
 //
 // EVALUATION (test/noise-floor). Which noise ratio the Window and Carrier
 // Sum weight uses, so the operator can compare them by ear:
@@ -4736,7 +4741,7 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
-  SetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
+  SetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);   // PORT-TO-TEST: remove
   SetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
@@ -4787,7 +4792,7 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
-  GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
+  GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);   // PORT-TO-TEST: remove, with the check below
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_RATIO) {
