@@ -213,36 +213,6 @@
 #define DIV_NORM_TAU        1.0
 #define DIV_NORM_MIN        0.01
 #define DIV_NORM_MAX        2.0
-//
-// EVALUATION (test/noise-floor). The gap covariance - see div_gap_update().
-//
-// DIV_GAP_FLAT: a block is a gap when the window's combined per-bin power
-// has a mean under this many times its median. Noise is flat across the
-// passband - its mean/median is 1.2 to 1.45 whatever its level, shared or
-// not - and voice, a carrier, keying or data mostly are not: measured on
-// twelve captures, noise-only blocks read a median 1.25 to 1.45 and p90
-// 1.5 to 1.8, signal blocks 2.7 to over 2000 - except 122632, whose signal
-// is itself flat (1.35 to 1.65) and passes as gap. Level-free, so a common
-// noise source raising the in-band level does not stop a gap being
-// recognised.
-//
-// DIV_GAP_MIN_BINS: fewer bins than this and a median says nothing.
-//
-// DIV_GAP_TAU: how fast the covariance forgets, in seconds; it ages every
-// block whether or not it is a gap (Settled decision 4), down to
-// DIV_GAP_STALE of what it was.
-//
-#define DIV_GAP_FLAT        1.6
-#define DIV_GAP_MIN_BINS    16
-#define DIV_GAP_TAU         2.0
-#define DIV_GAP_STALE       1e-3
-//
-// DIV_GAP_SNR_DB: how far the signal must stand above the gap noise, on
-// both arms, before Sum is solved against it. Swept 0/3/6/10 dB on six
-// captures: at 0 the solve steers to noise (154822 -7.92 dB against the
-// better antenna); 3 to 6 dB removes that; 10 starts to cost (123333).
-//
-#define DIV_GAP_SNR_DB      6.0
 
 //
 // The floor is tracked on power smoothed over this, not over the
@@ -947,14 +917,6 @@ static double best_lead = 0.0;
 static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
 static int    norm_valid = 0;
 int           div_auto_normalise = 1;
-//
-// EVALUATION (test/noise-floor). The in-band noise covariance measured in
-// gap blocks, per bin, and how much of it is still live data. See
-// div_gap_update().
-//
-static double gp_r00 = 0.0, gp_r11 = 0.0, gp_r01re = 0.0, gp_r01im = 0.0;
-static double gp_live = 0.0;
-static int    gp_valid = 0;
 
 //
 // CW key detection's temporal reference: the quietest the region's peak
@@ -1067,9 +1029,6 @@ static void div_reset_stats(void) {
   cw_act_valid = 0;
   best_lead = 0.0;
   norm_valid = 0;
-  gp_r00 = gp_r11 = gp_r01re = gp_r01im = 0.0;
-  gp_live = 0.0;
-  gp_valid = 0;
   div_norm = 1.0;
   cw_nf0 = cw_nf1 = 0.0;
   cw_nf_valid = 0;
@@ -2122,122 +2081,6 @@ static void div_norm_update(const struct div_context *ctx) {
   norm_xi += al * (xi - norm_xi);
   norm_valid = 1;
   div_norm_refresh();
-}
-
-//
-// EVALUATION (test/noise-floor). The "Gap covariance" Sum noise model.
-//
-// RATIO backs the noisier antenna off by the noise ratio, which is the
-// best weight only when the two antennas' noises are unrelated. Where both
-// hear one source - a local switching supply, say - the best weight also
-// cancels the shared part, and RATIO gives that up (154822). Measuring the
-// sharing from the bins outside the filter failed: they show none of it.
-// So this measures it where it is, inside the window, in the blocks that
-// carry no signal - gaps, recognised by flatness (DIV_GAP_FLAT), which a
-// shared noise raising the in-band level does not upset.
-//
-// Every block the covariance ages by the same factor; a gap block then
-// adds its own per-bin covariance. It is the noise of these bins between
-// signals, shared part included, and Sum is solved against it as MVDR
-// with the *signal* covariance - the window's less the noise's - as the
-// channel, so the shared noise steers the weight away from itself rather
-// than towards. With unrelated noise this is the RATIO weight.
-//
-// Computed only while the model is selected.
-//
-static void div_gap_update(const struct div_context *ctx, int klo, int khi,
-                           double sxx, double syy, double sxr, double sxi, int nb) {
-  if (div_eval_sum_noise != DIV_SUMNOISE_GAP) { return; }
-
-  const double a = 1.0 - exp(-blocktime / DIV_GAP_TAU);
-
-  if (gp_valid && gp_live > DIV_GAP_STALE) {
-    gp_r00 *= 1.0 - a;
-    gp_r11 *= 1.0 - a;
-    gp_r01re *= 1.0 - a;
-    gp_r01im *= 1.0 - a;
-    gp_live *= 1.0 - a;
-  }
-
-  if (nb < DIV_GAP_MIN_BINS) { return; }
-
-  //
-  // Flatness: mean over median of the combined per-bin power, strided into
-  // occ_scratch as the occupancy split samples its region.
-  //
-  const int n = khi - klo + 1;
-  const int stride = (n > DIV_OCC_MAX_SAMPLES) ? (n / DIV_OCC_MAX_SAMPLES + 1) : 1;
-  int ns = 0;
-  double sum = 0.0;
-
-  for (int k = klo; k <= khi && ns < DIV_OCC_MAX_SAMPLES; k += stride) {
-    if (div_bin_notched(ctx, k)) { continue; }
-
-    int idx = k % nfft;
-
-    if (idx < 0) { idx += nfft; }
-
-    const double p = (double)fftout0[idx][0] * fftout0[idx][0]
-                     + (double)fftout0[idx][1] * fftout0[idx][1]
-                     + (double)fftout1[idx][0] * fftout1[idx][0]
-                     + (double)fftout1[idx][1] * fftout1[idx][1];
-    occ_scratch[ns++] = p;
-    sum += p;
-  }
-
-  if (ns < DIV_GAP_MIN_BINS) { return; }
-
-  qsort(occ_scratch, (size_t)ns, sizeof(double), div_nf_cmp);
-  const double med = occ_scratch[ns / 2];
-
-  if (!(med > 0.0) || sum / (double)ns >= DIV_GAP_FLAT * med) { return; }
-
-  //
-  // A gap: add alpha of this block's per-bin covariance to what has just
-  // been aged by the same factor. The first gap is taken whole.
-  //
-  if (!gp_valid) {
-    gp_r00 = sxx / nb;
-    gp_r11 = syy / nb;
-    gp_r01re = sxr / nb;
-    gp_r01im = sxi / nb;
-    gp_valid = 1;
-  } else {
-    gp_r00 += a * (sxx / nb);
-    gp_r11 += a * (syy / nb);
-    gp_r01re += a * (sxr / nb);
-    gp_r01im += a * (sxi / nb);
-  }
-
-  gp_live = 1.0;
-}
-
-//
-// The Sum weight under "Gap covariance". 1: solved, into *wr/*wi. 0: the
-// model is not selected or has no gap yet - use the ratio. -1: the window
-// holds no more than the gap noise, so there is no signal to steer to -
-// hold.
-//
-static int div_gap_solve(int nacc, double *wr, double *wi) {
-  if (div_eval_sum_noise != DIV_SUMNOISE_GAP || !gp_valid || nacc <= 0) { return 0; }
-
-  const double cs00 = acc_xx - nacc * gp_r00;
-  const double cs11 = acc_yy - nacc * gp_r11;
-  const double cs01re = acc_xy_re - nacc * gp_r01re;
-  const double cs01im = acc_xy_im - nacc * gp_r01im;
-
-  //
-  // Hold unless the signal stands clear of the gap noise on both arms.
-  // Window minus noise is a small difference of two noisy numbers when
-  // there is little signal, and steering to it gives a large, random
-  // weight.
-  //
-  const double need = pow(10.0, 0.1 * DIV_GAP_SNR_DB);
-
-  if (!(cs00 > need * nacc * gp_r00) || !(cs11 > need * nacc * gp_r11)) { return -1; }
-
-  div_mvdr2(gp_r00, gp_r11, gp_r01re, gp_r01im, cs00, 0.0, cs01re, -cs01im, wr, wi);
-  return 1;
 }
 
 //
@@ -3685,7 +3528,6 @@ static void div_process_block(void) {
   // count summed and not the width of the window.
   //
   int used_bins = 0;
-  double blk_xr = 0.0, blk_xi = 0.0;   // this block's cross term, for div_gap_update()
 
   //
   // Per-bin running spectra. Keeping these per bin rather than as four
@@ -3716,8 +3558,6 @@ static void div_process_block(void) {
     //
     cur_xx += i0 * i0 + q0 * q0;
     cur_yy += i1 * i1 + q1 * q1;
-    blk_xr += i0 * i1 + q0 * q1;
-    blk_xi += q0 * i1 - i0 * q1;
     used_bins++;
   }
 
@@ -3730,8 +3570,6 @@ static void div_process_block(void) {
     div_digital_solve(&ctx, klo, khi);
     return;
   }
-
-  div_gap_update(&ctx, klo, khi, cur_xx, cur_yy, blk_xr, blk_xi, used_bins);
 
   //
   // Combine the bins.
@@ -3899,22 +3737,7 @@ static void div_process_block(void) {
   // Sum is maximum ratio combining and wants the branch noise ratio in
   // it; Null minimises power and does not. See div_wideband_sum_scale().
   //
-  if (div_auto_mode == DIV_AUTO_SUM) {
-    double wr, wi;
-    const int g = div_gap_solve(nacc, &wr, &wi);
-
-    if (g > 0) {
-      div_apply_weight(wr, wi);
-      return;
-    }
-
-    if (g < 0) {
-      div_auto_holding = 1;
-      return;
-    }
-
-    sign *= div_wideband_sum_scale();
-  }
+  if (div_auto_mode == DIV_AUTO_SUM) { sign *= div_wideband_sum_scale(); }
 
   div_apply_weight(sign * acc_xy_re / den, sign * acc_xy_im / den);
 }
@@ -4967,7 +4790,7 @@ void diversity_auto_restore_state(void) {
   GetPropI0("diversity_eval_sum_noise",      div_eval_sum_noise);
   GetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
-  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_GAP) {
+  if (div_eval_sum_noise < DIV_SUMNOISE_TIME || div_eval_sum_noise > DIV_SUMNOISE_RATIO) {
     div_eval_sum_noise = DIV_SUMNOISE_RATIO;
   }
 

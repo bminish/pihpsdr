@@ -208,10 +208,8 @@ int main(int argc, char **argv) {
     }
     else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
     else if (!strcmp(argv[i], "--sumnoise") && i + 1 < argc) {
-      /* test/noise-floor evaluation: time | ratio | gap */
-      const char *v = argv[++i];
-      div_eval_sum_noise = !strcmp(v, "time") ? DIV_SUMNOISE_TIME
-                           : !strcmp(v, "gap") ? DIV_SUMNOISE_GAP : DIV_SUMNOISE_RATIO;
+      /* test/noise-floor evaluation: time | ratio */
+      div_eval_sum_noise = !strcmp(argv[++i], "time") ? DIV_SUMNOISE_TIME : DIV_SUMNOISE_RATIO;
     }
     /*
      * Bin width in Hz, i.e. the Resolution control. Defaults to whatever
