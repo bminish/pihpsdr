@@ -126,15 +126,34 @@ over the real noise 50-200 Hz from the tone). Those scale with each
 antenna's signal, so a floor taken there reads the signal ratio as much as
 the noise ratio. A minimum region width did not fix it (+1.23 → +1.69 dB
 at 600 Hz minimum, the fade case untouched); the outside floor did
-(+1.23 → +2.08, +1.39 → +1.99). `cw_nf0`/`cw_nf1` are used in three more
-places, which should follow:
+(+1.23 → +2.08, +1.39 → +1.99). That is a fault in comparing the two
+antennas, so it matters where a ratio between them is formed, and only
+there:
 
 | Use | Today | Change | Expectation |
 |---|---|---|---|
 | Sum noise ratio | outside floor when Ratio is selected (`a5145aa6`) | always, `cw_nf` as fallback | measured: +0.6 to +0.85 dB |
 | Best's per-arm SNR (`div_arm_publish()`) | tone power over `cw_nf` | tone power over the outside floor, scaled to the tone bins as `div_arm_from_floor()` does for Window | Best switches on the right evidence in a fade and with keyclicks; to be measured |
-| Key detection seed (`cw_act_lo`) | `n0 + n1`, this block's off-tone floor | the outside floor, per bin | narrow filters stop depending on one or two edge bins; to be measured |
-| `DIV_CW_MIN_BINS` (6) | needed for the off-tone floor and key detection | with both of those moved, the region only needs the tone and a bin either side: try 3 | a 26 Hz filter acts instead of holding a stale weight; at 1536 kHz (23 Hz bins) filters under about 120 Hz stop being held; to be measured, especially for picking the wrong peak |
+| Key detection seed (`cw_act_lo`) | `n0 + n1`, this block's off-tone floor | **no change** - see below | |
+| `DIV_CW_MIN_BINS` (6) | the off-tone floor needs bins beside the tone | with the Sum ratio and Best's SNR from the outside floor, the region only needs the tone and a bin either side: try 3 | a 26 Hz filter acts instead of holding a stale weight; at 1536 kHz (23 Hz bins) filters under about 120 Hz stop being held; to be measured, especially for picking the wrong peak |
+
+**Key detection keeps CW's own floor.** It asks whether the region's peak
+stands 3 dB above the quietest that peak has recently been; the seed is
+only that minimum's starting value after a reset, so it should be what
+the peak looks like with the key up - the noise in the same region, the
+same filter and the same neighbourhood, which is what the off-tone floor
+is. The outside floor is the wrong quantity: a low percentile of quiet
+bins elsewhere, about 10 dB under the mean noise per bin, while a peak
+over dozens of noise bins sits several dB above that mean. Seeded from
+it, the minimum would start roughly 15 dB low, every block would read as
+keyed until it climbed back at 12 dB/s, and a steady carrier would be
+taken for keying for over a second after each reset - what LC-018 exists
+to stop. Keyclicks do not hurt it the way they hurt the Sum ratio: no
+ratio between the antennas is formed, and clicks only raise the seed
+during key-down, which makes it more cautious. Where a narrow filter
+leaves no off-tone bins, the seed already falls back to the peak itself:
+slow to start, but it cannot accept a carrier, so lowering
+`DIV_CW_MIN_BINS` does not need the seed to move.
 
 The tone search stays inside the filter: only the noise measurement looks
 wide. Widening the search would let it lock onto a station the operator
