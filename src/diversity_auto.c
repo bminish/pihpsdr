@@ -1761,6 +1761,23 @@ static int div_noise_floor_update(const struct div_context *ctx, int klo, int kh
 }
 
 //
+// The floor as it stands, per arm per bin (FFT power, relative to ADC
+// full scale), for readers outside the worker: the test harness, and the
+// attenuator calibration (docs/feature-att-calibration.md). Returns 0
+// while there is none. The worker writes these without a lock, so a
+// reader on another thread may see a value a block old, and on a 32-bit
+// machine could in principle see a double half written; nothing that
+// steers the combiner reads it this way.
+//
+int diversity_auto_noise_floor(double *n0, double *n1) {
+  if (!div_nf_valid) { return 0; }
+
+  *n0 = div_nf0;
+  *n1 = div_nf1;
+  return 1;
+}
+
+//
 // ------------------------------------------------------------------
 // Which antenna is better
 // ------------------------------------------------------------------
