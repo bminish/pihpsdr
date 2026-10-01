@@ -229,3 +229,115 @@ expected: their span was already ±19.2 kHz.
 
 And captures: one at 48 kHz and one at 1536 kHz on a busy band, and a CW
 one at 1536 kHz with filters of 100 Hz and under.
+
+## Bringing it to TEST
+
+Written 2026-10-01, after steps 1-4. `TEST` is an ancestor of
+`test/noise-floor`; the branch is 24 commits on top of it.
+
+### What the branch changes, net
+
+Its history is an evaluation trail: two covariance models added and
+dropped, a menu selector added and removed, one comment block rewritten
+three times. **It is not to be replayed.** The series for `TEST` is cut
+fresh from the *net* difference, which is six behaviours:
+
+| | What | Where | Depends on |
+|---|---|---|---|
+| A | An operator reset clears the statistics on the worker (a race fix) | `diversity_auto_reset()`, the worker loop | - |
+| B | Each arm's noise floor measured across frequency, outside the filter, ±20 kHz; the Window/Carrier Sum weight takes its noise ratio from it, the temporal minimum as fallback | `div_noise_floor_update()` and its constants, state, reset, scratch; `div_wideband_sum_scale()` | - |
+| C | Calmer Best: changes antenna after the other leads by 2 dB (was 1) for 1 s | `div_apply_best()`, `DIV_BEST_HYST_DB`, `DIV_BEST_DWELL`, `best_lead` | - |
+| D | Best's per-arm SNR from the floor of B | `div_arm_from_floor()` (bins counted, `used_bins`) | B, **and C** |
+| E | The CW reference's Sum noise ratio from the floor of B | `div_cw_solve()`, the floor update before the CW branch | B |
+| F | Level output: the combined output held at arm 0's level, with a menu tick that is greyed when it is not acting | `div_norm_update()`/`div_norm_refresh()`, `div_norm` in `radio.c`/`receiver.c`, `diversity_menu.c`, props key | - |
+
+D must never go without C: the plain floor gives Best a readout on every
+block, and with 1 dB hysteresis it collapsed to −17.97 dB on `154822` by
+switching antennas on 56 % of blocks; the 2 dB, 1 s rule is what removes
+that.
+
+Plus tooling and docs, which never go upstream:
+
+- `run_ref`'s `norm` column and `score_level.py` (for F); `test_digital`
+  counting the Window case and the `GAP_BRANCH_NOISE_RATIO` line gone
+  (for B); `GAP_LEVEL_OUTPUT` gone (for F). `run_ref --sumnoise`'s error
+  message is **not** carried: `TEST` never had the option.
+- Findings T-013 to T-018 into `docs/test-findings.md`;
+  `docs/test-noisefloor.md` (the record), this file, and
+  `docs/feature-att-calibration.md`. `docs/eval-noise-floor.md` is a
+  listening guide for this branch; its "what to listen for" table moves
+  into `docs/test-noisefloor.md` and the file is not carried.
+
+### The series
+
+On a branch `port/noise-floor` cut from `TEST`, one commit per change,
+with its `Local-Change:` trailer and its register entry in
+`docs/changes.md` in the same push, fixes first:
+
+| # | ID | Kind | Commit |
+|---|---|---|---|
+| 1 | LC-027 | Fix | A: resets on the worker |
+| 2 | LC-025 | Behaviour | B: the across-frequency floor, and the Window/Carrier Sum noise ratio from it (the ID the register already reserved for it) |
+| 3 | LT-012 + | Tooling | `test_digital` counts the Window case; `GAP_BRANCH_NOISE_RATIO` deleted |
+| 4 | LC-028 | Behaviour | C: calmer Best |
+| 5 | LC-029 | Behaviour | D: Best's per-arm SNR from the floor |
+| 6 | LC-030 | Behaviour | E: CW's Sum noise ratio from the floor |
+| 7 | LC-031 | Behaviour | F: Level output, engine, receiver and menu tick |
+| 8 | LT-013 | Tooling | `run_ref`'s `norm` column, `score_level.py`, `GAP_LEVEL_OUTPUT` deleted |
+| 9 | - | Docs | the register entries, T-013 to T-018, the record, this plan, the calibration feature |
+
+(LT numbers follow whatever `TEST` has reached when it is cut.)
+
+The "EVALUATION (test/noise-floor)" comments become ordinary comments
+saying what the code does and citing the findings, as the rest of the
+engine does.
+
+### Keeping each one easy to unwind
+
+The register's rules already say how; these are the places this work
+would break them if cut carelessly:
+
+1. **No shared lines.** B, C and F each add statics, constants and
+   `div_reset_stats()` lines, and on the branch they sit next to each
+   other (`best_lead`, `norm_*` and `div_nf*` are adjacent in the reset;
+   `DIV_BEST_*` and `DIV_NORM_*` adjacent at the top). Reverting one would
+   conflict with the others (rule 4). Each change gets its own block, with
+   its own comment, separated from the others.
+2. **Each applies to `TEST` alone where the table says it can:** A, B, C
+   and F each on bare `TEST`; D on B + C; E on B. Checked by cherry-picking
+   each onto a scratch branch from `TEST` and building.
+3. **Each reverts from the tip,** with its dependants: checked by
+   `git revert --no-commit` of each (and of D before C, E before B) on a
+   scratch copy of the finished series, building and running the suite.
+4. **Each builds, and the suite passes,** at every commit; the tooling
+   commits come straight after the change they test, never before it.
+5. **Each is measured on its own,** so a reader can see what it buys: the
+   45 Window/Carrier captures (`score_wideband.py` and the in-band score),
+   T-013 to T-018, and the CW captures (`score_cw.py`, the 300-900 Hz
+   score), replayed at each commit against the one before, and the
+   figures go in its register entry. Two have not been measured alone
+   yet and must be before they land: **C on `TEST`'s temporal floor**
+   (the dwell was only measured together with the floor), and **F's**
+   effect on SNR is nil by construction (one multiplier) but its
+   level figures were measured with B in place.
+6. **No switches left behind for unwinding.** The way back is
+   `git revert`, as for every other change. The one runtime control kept
+   is Level output's tick, because it is an operator choice (AGC
+   interacts with it), not a test switch.
+7. **The evaluation trail stays readable** for anyone who wants it: tag
+   the branch tip (`noise-floor-eval-20261001`) before anything is cut,
+   and cite the tag in the register entries. Nothing on the tag is
+   deleted.
+
+### Before cutting: the open steps
+
+- **Step 7 (sample-rate tests)** should come first: the harness cases for
+  48 / 192 / 1536 kHz, the fallback and the reset stress test. They are
+  what makes B safe to hand over, and they come across as tooling.
+- **Steps 5 and 6** (quickselect; CW's Best SNR and `DIV_CW_MIN_BINS`)
+  are separate behaviours. Either finish them on this branch and cut them
+  as further LCs, or leave them for `TEST` later; nothing above depends
+  on them.
+- **Captures at 48 kHz and 1536 kHz** on a busy band, and a 1536 kHz CW
+  one with filters of 100 Hz and under, to score B and E where they have
+  not been seen.
