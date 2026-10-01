@@ -211,6 +211,13 @@ extern void diversity_auto_invert(void);
 extern int div_arm_swapped(void);
 
 //
+// Each arm's noise floor measured outside the filter, per bin; 0 while
+// there is none. For the test harness and the attenuator calibration.
+// See div_noise_floor_update().
+//
+extern int diversity_auto_noise_floor(double *n0, double *n1);
+
+//
 // MVDR for a two-element array: w = R^-1 h, normalised so arm 0 carries
 // unity and expressed as the weight the combiner applies to arm 1.
 //
