@@ -22,7 +22,7 @@ CFLAGS  = -O2 -Wall -I$(TOP)/src -I$(TOP)/wdsp \
 LIBS    = `pkg-config --libs gtk+-3.0 fftw3f` -lm
 SRC     = $(TOP)/src/diversity_auto.c $(TOP)/src/rade_correlator.c
 
-all: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu
+all: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf
 
 test_modes_live: test_modes_live.c $(SRC)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
@@ -55,6 +55,18 @@ test_rates: test_rates.c $(SRC)
 bench_cpu: bench_cpu.c $(SRC)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC) $(LIBS)
 
+#
+# The noise floor's selection against the qsort it replaced. Uses the
+# engine's own div_nf_select() and div_nf_band_mean(), cut out of the
+# source, so it cannot drift from what the radio runs.
+#
+nf_select.inc: $(TOP)/src/diversity_auto.c
+	sed -n -e '/^static void div_nf_select(/,/^}/p' -e '/^static double div_nf_band_mean(/,/^}/p' $< > $@
+	@grep -q div_nf_band_mean $@ || { echo "div_nf_band_mean not found in $<"; rm -f $@; exit 1; }
+
+bench_nf: bench_nf.c nf_select.inc
+	$(CC) -O2 -Wall -o $@ $< -lm
+
 run: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates
 	./test_props
 	@echo
@@ -72,8 +84,9 @@ run: test_modes_live test_window test_rade test_digital test_props test_modal te
 	@echo
 	./test_rates
 
-bench: bench_cpu
+bench: bench_cpu bench_nf
 	./bench_cpu
+	./bench_nf
 
 clean:
-	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu
+	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf nf_select.inc
