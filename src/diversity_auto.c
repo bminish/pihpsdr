@@ -941,16 +941,22 @@ void diversity_auto_reset(void) {
   if (radio_is_remote) { return; }
 
   //
-  // Called from a UI thread or from rxtx(). Zeroing the transform accumulators from
-  // here is harmless - the worker only ever adds to them, so the worst
-  // case is one block's contribution lost.
+  // Called from a UI thread or from rxtx(), so it only asks: the worker
+  // performs the reset between blocks (see div_worker_thread()).
   //
-  // rade_corr_reset() is a different matter: it clears the correlator's
-  // lock state and memsets an 80 KB accumulation grid that the worker may
-  // be part way through reading. So it is requested here and performed by
-  // the worker between blocks instead.
+  // Doing it here raced the worker. rade_corr_reset() clears the
+  // correlator's lock state and memsets an 80 KB grid the worker may be
+  // part way through reading. And div_reset_stats() is not only the
+  // transform accumulators, which the worker merely adds to: it zeroes
+  // smoothed state the worker reads and writes in place - the noise
+  // floors, the noise ratio, the key-detection minimum - with their valid
+  // flags. Zeroed under a worker half way through an update, a floor could
+  // be rebuilt from zero and marked valid, and a wildly wrong noise ratio
+  // then smoothed into the Sum weight over seconds.
   //
-  div_reset_stats();
+  // With diversity stopped there is no worker to act on it, and none is
+  // needed: diversity_auto_start() resets everything itself.
+  //
   g_atomic_int_inc(&reset_gen);
 }
 
@@ -3276,6 +3282,7 @@ static gpointer div_worker_thread(gpointer data) {
 
     if (reset_now != reset_seen) {
       reset_seen = reset_now;
+      div_reset_stats();
       rade_corr_reset();
     }
 
