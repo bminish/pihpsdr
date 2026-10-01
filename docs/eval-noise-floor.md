@@ -17,22 +17,17 @@ Build it as usual (`make DIVCAP=1` keeps the Capture button).
    block from the bins outside the RX filter, instead of from the quietest
    moment in the recent past. It is accurate: within about 0.5 dB of the
    true ratio on every capture checked.
-2. **A choice of Sum noise model** for the Window, Carrier and CW references
-   (menu, "Sum noise"):
-   - *Old (time minimum)*: what `TEST` does.
-   - *Ratio (outside filter)*, the default: the noisier antenna is backed
-     off by the measured noise ratio.
-
-   It applies to the CW reference too (since `a5145aa6`): with Ratio, CW's
-   Sum weight takes the noise ratio from outside the filter; with Old it
-   uses the bins beside the tone, as `TEST` does. That is the one to listen
-   to with a narrow filter, a station with keyclicks, or a fading antenna
-   (T-017, T-018 in `docs/test-findings.md`).
-
-   A third option, *Gap covariance*, tried to cancel noise both antennas
-   share. It measured as no better than Ratio and has been removed; see
-   `docs/test-noisefloor.md`. The selector itself is an evaluation
-   control and goes when this moves to `TEST`.
+2. **Sum backs off the noisier antenna by the measured noise ratio**, on
+   the Window, Carrier and CW references, from the floor outside the
+   filter, no further than 20 kHz either side of the dial. Where too few
+   bins are left outside the filter it falls back to what `TEST` does: the
+   temporal minimum, or on CW the bins beside the tone. Until `6b2cdf2c`
+   this was a menu choice ("Sum noise": Old or Ratio); the measurements
+   below are from then. On CW it matters most with a narrow filter, a
+   station with keyclicks, or a fading antenna (T-017, T-018 in
+   `docs/test-findings.md`). Two attempts at cancelling noise both
+   antennas share (a covariance solve, Gap covariance) measured as no
+   better and were removed; see `docs/test-noisefloor.md`.
 3. **Calmer Best.** It changes antenna only when the other one has been
    more than 2 dB better (was 1 dB) for a full second.
 4. **Level output** (menu tick, on by default). The combined output is
@@ -41,8 +36,8 @@ Build it as usual (`make DIVCAP=1` keeps the Capture button).
    when Best hands over to the second antenna there is no jump. It is not
    applied in Null (making the output quieter is Null's job) or on RADE V1.
 
-The two menu controls work on the radio only; on a remote client they are
-greyed out.
+Level output works on the radio only; on a remote client it is greyed
+out.
 
 ## What was measured (39 Window and Carrier captures)
 
@@ -85,11 +80,12 @@ would need it measured beside the signal, not far from it.
 
 | Mode (reference) | Try | Listen for |
 |---|---|---|
-| SSB (Window) | Sum: Old against Ratio | With one antenna noisier, Ratio should sound quieter between words without losing the voice. With a local noise source both antennas hear (a switching supply, a neighbour's device), Old may sound better. |
-| AM / SAM (Carrier) | Sum: Old against Ratio | As SSB. A fading broadcast is where Old went most wrong in the feature branch's measurements. |
+| SSB (Window) | Sum, against `TEST` | With one antenna noisier, it should sound quieter between words without losing the voice. With a local noise source both antennas hear (a switching supply, a neighbour's device), `TEST` may sound better: see "Where it is known to be worse". |
+| AM / SAM (Carrier) | Sum, against `TEST` | As SSB. A fading broadcast is where `TEST`'s temporal minimum went most wrong in the feature branch's measurements. |
+| CW | Sum, against `TEST` | Narrow filters (50 Hz and under), a station with keyclicks, one antenna fading. |
 | SSB / AM | Best | Fewer changes of antenna; no loud jump when it changes. It will still sometimes pick the worse one. |
 | Any Sum or Best | Level output off against on | Off, switching diversity on makes the band louder, and Best's changes are 20 dB jumps. On, the level stays put and only the noise should drop. How your AGC setting reacts matters here. |
-| FSK/Digital, CW | Level output | The Sum noise choice does not apply (these measure their own noise); Level output does. |
+| FSK/Digital, CW | Level output | Applies here too. |
 | RADE V1, Null | — | Unchanged. |
 
 A capture of anything that sounds wrong is the most useful thing to bring

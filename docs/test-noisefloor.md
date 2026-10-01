@@ -40,7 +40,7 @@ of two fades (the feature branch measured +10.5 dB where the truth was
 | Piece | What it does | Lines (approx.) | State |
 |---|---|---|---|
 | Across-frequency floor | Each antenna's noise from the bins outside the RX filter, every block: mean of the 8th–12th percentile of up to 1024 bins, smoothed over 2 s. Time minimum kept as fallback | 95 | Keep |
-| Sum noise model (eval control) | Old (time minimum) / Ratio (outside-filter floor, default) | 35 (menu, props) | Evaluation only; marked `PORT-TO-TEST: remove` |
+| Sum noise model (eval control) | Old (time minimum) / Ratio (outside-filter floor, default) | — | Removed (`6b2cdf2c`): Ratio always, time minimum as fallback |
 | Calmer Best | Changes antenna only after the other has been > 2 dB better (was 1) for 1 s | 12 | Keep |
 | Level output (eval tick) | Combined output held at arm 0's passband level, recomputed whenever the weight is written; not in Null or RADE V1 | 60 + 2 multiplies per sample | Keep |
 | Covariance (outside filter) | MVDR against the noise covariance from the outside-filter bins | — | Removed: dead end |
@@ -193,9 +193,8 @@ would make it usable. Not built.
    check that the dwell rule is harmless with the old one.
 5. **The panadapter readout** (above), if an on-air cross-check is wanted.
 6. **Drop the evaluation controls** before anything moves to `TEST`.
-   Gap covariance is already gone. The Sum noise selector is marked
-   `PORT-TO-TEST: remove` at every place it lives (`git grep
-   PORT-TO-TEST`): Ratio becomes the only model, with the time minimum
+   Gap covariance is gone, and so is the Sum noise selector (`6b2cdf2c`):
+   Ratio is the only model, with the time minimum
    as its fallback. Level output, the calmer Best and the floor are
    kept.
 
@@ -214,6 +213,10 @@ would make it usable. Not built.
 | `4635df1b` | Gap covariance removed (reverts `6da9b6b3`) |
 | `5792117c` | The Sum noise selector marked `PORT-TO-TEST: remove` |
 | `a5145aa6` | CW's Sum noise ratio from the outside-filter floor (T-017, T-018) |
+| `422b0471` | An operator reset clears the statistics on the worker (refactor step 1) |
+| `f6974d50` | The floor looks no further than ±20 kHz from the dial (step 2) |
+| `0fd386a3` | Sum always takes the noise ratio from outside the filter (step 3) |
+| `6b2cdf2c` | The Sum noise selector removed (step 4) |
 
 Hashes as of the rebase onto the new `TEST` on 2026-10-01; they change
 whenever the branch is rebased again. The pre-rebase branch is kept as

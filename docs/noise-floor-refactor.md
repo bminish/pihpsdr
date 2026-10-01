@@ -11,6 +11,18 @@ The time-minimum ("Old") code stays, but only as the internal fallback for
 a block where the outside floor cannot be measured. It is no longer a
 choice.
 
+## Progress
+
+| Step | Commit | Result |
+|---|---|---|
+| 1. Resets on the worker | `422b0471` | Replays bit-identical (`162729`, 45 recorded resets; `164121`); suite passes |
+| 2. Span ±20 kHz | `f6974d50` | 45 Window/Carrier captures: 192 kHz (37) guard +0.02 dB, in-band −0.01 dB on average, at most ±0.35 on one; 48 kHz (8) bit-identical. CW: +2.08 → +2.07 (T-018), +1.99 → +2.07 (T-017) |
+| 3. Ratio always, engine | `0fd386a3` | Bit-identical to step 2 with the selector at its default |
+| 4. Selector removed | `6b2cdf2c` | Bit-identical to step 3; Capture back beside Invert; `run_ref --sumnoise` is an error |
+| 5. Quickselect | | |
+| 6. CW on the outside floor | | Sum ratio done (steps 3-4); Best's SNR and `DIV_CW_MIN_BINS` to do |
+| 7. Sample-rate tests | | |
+
 ## What the floor costs, and what it touches
 
 `div_noise_floor_update()` runs on the analysis worker thread, once per
@@ -132,7 +144,7 @@ there:
 
 | Use | Today | Change | Expectation |
 |---|---|---|---|
-| Sum noise ratio | outside floor when Ratio is selected (`a5145aa6`) | always, `cw_nf` as fallback | measured: +0.6 to +0.85 dB |
+| Sum noise ratio | outside floor when Ratio is selected (`a5145aa6`) | **done**: always, `cw_nf` as fallback (`0fd386a3`) | measured: +0.6 to +0.85 dB |
 | Best's per-arm SNR (`div_arm_publish()`) | tone power over `cw_nf` | tone power over the outside floor, scaled to the tone bins as `div_arm_from_floor()` does for Window | Best switches on the right evidence in a fade and with keyclicks; to be measured |
 | Key detection seed (`cw_act_lo`) | `n0 + n1`, this block's off-tone floor | **no change** - see below | |
 | `DIV_CW_MIN_BINS` (6) | the off-tone floor needs bins beside the tone | with the Sum ratio and Best's SNR from the outside floor, the region only needs the tone and a bin either side: try 3 | a 26 Hz filter acts instead of holding a stale weight; at 1536 kHz (23 Hz bins) filters under about 120 Hz stop being held; to be measured, especially for picking the wrong peak |
@@ -194,8 +206,9 @@ it stays as the fallback.
   140 Hz, so every CW filter under about 120 Hz is held. Lowering the
   minimum (CW table above) matters most here.
 
-**Not covered by any capture so far:** 48 kHz and 1536 kHz. Every capture
-in the set is 192 kHz.
+**Captures:** the set has 21 at 48 kHz (8 of them Window or Carrier),
+none at 1536 kHz. The span limit leaves the 48 kHz ones bit-identical, as
+expected: their span was already ±19.2 kHz.
 
 ### Tests to add to the harness
 
