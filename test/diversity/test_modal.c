@@ -28,6 +28,7 @@
 #include "vfo.h"
 #include "adc.h"
 #include "diversity_auto.h"
+#include "ref_slots.h"
 #include "radio.h"
 
 static RECEIVER rx0;
@@ -228,15 +229,15 @@ int main(void) {
 
     /* set one per reference, the way the menu does on a reference change */
     for (int i = 0; i < n; i++) {
-      diversity_auto_ref_recall(want[i].ref);
+      tool_ref_recall(want[i].ref);
       div_auto_ref = want[i].ref;
       div_auto_coherence_min = want[i].coh;
-      diversity_auto_ref_store(want[i].ref);
+      tool_ref_store(want[i].ref);
     }
 
     /* each must come back on its own */
     for (int i = 0; i < n; i++) {
-      diversity_auto_ref_recall(want[i].ref);
+      tool_ref_recall(want[i].ref);
       printf("    %-11s -> %.2f\n", want[i].name, div_auto_coherence_min);
       check(want[i].name, div_auto_coherence_min, want[i].coh);
     }
@@ -249,7 +250,7 @@ int main(void) {
     diversity_auto_mode_changed(modeUSB);
 
     for (int i = 0; i < n; i++) {
-      diversity_auto_ref_recall(want[i].ref);
+      tool_ref_recall(want[i].ref);
       check(want[i].name, div_auto_coherence_min, want[i].coh);
     }
   }
@@ -269,7 +270,7 @@ int main(void) {
     static const char *names2[] = { "Window", "Carrier", "FSK/Digital" };
 
     for (int i = 0; i < 3; i++) {
-      diversity_auto_ref_recall(refs[i]);
+      tool_ref_recall(refs[i]);
       printf("    %-11s -> %.2f\n", names2[i], div_auto_coherence_min);
       check(names2[i], div_auto_coherence_min, 0.42);
     }
