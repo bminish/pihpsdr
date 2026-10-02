@@ -115,7 +115,7 @@ above, and the quick steps mixed in the band noise changing over time (on
    props file. About 25 s per arm.
 2. **Live advice on the status line:** each arm's margin over its
    converter floor and what that implies, for example
-   `ADC0 +18 dB: can take 8 dB more  ADC1 +7 dB: hold`. If the overload
+   `ADC1 +18 dB: can take 8 dB more  ADC2 +7 dB: hold`. If the overload
    flag is set, the advice is to add attenuation regardless.
 3. **Advise, do not drive.** Every attenuator change resets the diversity
    statistics, so moving it automatically mid-QSO costs re-convergence. At
