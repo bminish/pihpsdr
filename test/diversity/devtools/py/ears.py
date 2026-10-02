@@ -24,20 +24,38 @@ import sys
 
 import numpy as np
 
-MODES = {0: "summed", 1: "per-ear", 2: "sum/diff"}
+MODES = {0: "summed", 1: "per-ear", 2: "sum/diff", -1: "no CSV (whole file)"}
 
 
 def read_wav(path):
+    """Float or 16/32-bit integer stereo, any chunk layout (pw-record too)."""
     with open(path, "rb") as f:
         b = f.read()
     if b[:4] != b"RIFF" or b[8:12] != b"WAVE":
         sys.exit(f"{path}: not a WAV")
-    fmt, ch, rate = struct.unpack("<HHI", b[20:28])
-    if fmt != 3 or ch != 2:
-        sys.exit(f"{path}: expected float stereo, got format {fmt}, {ch} ch")
-    n = struct.unpack("<I", b[40:44])[0]
-    x = np.frombuffer(b[44:44 + n], dtype="<f4").reshape(-1, 2)
-    return x, rate
+    pos, fmt, data = 12, None, None
+    while pos + 8 <= len(b):
+        cid, size = b[pos:pos + 4], struct.unpack("<I", b[pos + 4:pos + 8])[0]
+        body = b[pos + 8:pos + 8 + size]
+        if cid == b"fmt ":
+            fmt = struct.unpack("<HHIIHH", body[:16])
+            if fmt[0] == 0xFFFE:                      # WAVE_FORMAT_EXTENSIBLE
+                fmt = (struct.unpack("<H", body[24:26])[0],) + fmt[1:]
+        elif cid == b"data":
+            data = body
+        pos += 8 + size + (size & 1)
+    tag, ch, rate, _, _, bits = fmt
+    if ch != 2:
+        sys.exit(f"{path}: {ch} channels, expected 2")
+    if tag == 3 and bits == 32:
+        x = np.frombuffer(data, dtype="<f4")
+    elif tag == 1 and bits == 16:
+        x = np.frombuffer(data, dtype="<i2") / 32768.0
+    elif tag == 1 and bits == 32:
+        x = np.frombuffer(data, dtype="<i4") / 2147483648.0
+    else:
+        sys.exit(f"{path}: format {tag}/{bits} bits not handled")
+    return x[: len(x) // 2 * 2].reshape(-1, 2), rate
 
 
 def read_csv(path):
@@ -67,7 +85,12 @@ def main():
     ap.add_argument("--maxlag", type=int, default=2048)
     a = ap.parse_args()
     x, rate = read_wav(a.wav)
-    ev = read_csv(a.wav[:-4] + ".csv")
+    try:
+        ev = read_csv(a.wav[:-4] + ".csv")
+    except FileNotFoundError:
+        # A recording made outside piHPSDR (a sink monitor): one run.
+        ev = [{"frame": 0, "who": 2, "mode": -1, "paired": -1, "rx1_cnt": -1,
+               "bal_l": 0, "bal_r": 0}]
     print(f"{a.wav}: {len(x)} frames, {len(x) / rate:.1f} s, {len(ev)} blocks")
 
     # Mode runs, by the frame each block started at.
