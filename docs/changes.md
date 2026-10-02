@@ -173,8 +173,8 @@ usage: `test/diversity/devtools/README.md`.
 - **To port** from `feature/auto-diversity`: stand-down (which conflicts
   with the hold rule and needs a decision), time-based slew, 0.5 s
   default averaging, the 24/12/6 Hz Resolution menu, the Carrier tooltip.
-- **Pi CPU:** the FFTs are the largest measured cost; RADE V1 is not yet
-  measured on a Pi.
+- **Pi CPU: closed.** The Pi 5 copes, with headroom; the one clear win
+  left is vectorising RADE V1's decimator (3× on the Pi).
 
 All of it: [changes/open-items.md](changes/open-items.md).
 

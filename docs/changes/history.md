@@ -4,6 +4,11 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-02: the Pi CPU item closed. LT-020 (the Pi 5 bundle) run on a
+  CM5; analysis in `docs/bench/pi5-analysis.md`. The Pi copes with
+  every reference at every rate. Candidates ranked: RADE V1's decimator
+  (3× by vectorising), MEASURE plans from wisdom, and not decimating
+  before the FFT.
 - 2026-10-02: the register split into a short index (`changes.md`) and
   per-topic files under `docs/changes/`. LC-037's write-up corrected: it
   overstated the effect. The starting weight cannot delay a RADE lock
