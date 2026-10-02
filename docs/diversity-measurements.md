@@ -8701,6 +8701,14 @@ item is checked against `TEST`'s code below, in the order it appears.
    noise level. The Sum noise ratios (LC-025, LC-029) use only the ratio
    of the two floors, so the constant cancels there and they are
    unaffected. Re-score LC-028 with the correction before changing it.
+
+   **Fixed on `test/best-floor-bias` as LC-036.** The constant alone
+   made the clearance real, and requiring both arms to clear it then
+   silenced Best wherever one antenna is buried. So one arm must now
+   clear, and a buried arm is credited −10 dB. On the 45 Window/Carrier
+   captures in Best this scored +0.09 dB guard (better 3, worse 2), and
+   +6.0 dB in-band on `122843`. The both-arms rule scored −0.02. Details
+   in `docs/changes.md`, LC-036.
 2. **Before the loop's first solve, the combiner applies 1 + 1j.**
    `radio.c` initialises `auto_div_cos = 1.0` *and* `auto_div_sin = 1.0`
    (upstream, `4865d602`): +3.0 dB at 45°, not unity. It is applied from
