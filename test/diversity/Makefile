@@ -67,6 +67,14 @@ nf_select.inc: $(TOP)/src/diversity_auto.c
 bench_nf: bench_nf.c nf_select.inc
 	$(CC) -O2 -Wall -o $@ $< -lm
 
+#
+# One file to copy to a Raspberry Pi (or anywhere) and build with only a
+# C compiler: pi_bench.c with the engine's selection code spliced in.
+# See the head of pi_bench.c.
+#
+pi_bench_standalone.c: pi_bench.c nf_select.inc
+	sed -e '/^#include "nf_select.inc"/{r nf_select.inc' -e 'd}' pi_bench.c > $@
+
 run: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates
 	./test_props
 	@echo
@@ -89,4 +97,4 @@ bench: bench_cpu bench_nf
 	./bench_nf
 
 clean:
-	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf nf_select.inc
+	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf nf_select.inc pi_bench_standalone.c
