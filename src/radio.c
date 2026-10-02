@@ -2855,7 +2855,7 @@ void radio_set_panstep(int id, int value) {
 
 //
 // The step attenuator of one ADC, addressed by ADC rather than by
-// receiver. This is the only way to reach ADC1 while DIVERSITY is
+// receiver. This is the only way to reach ADC2 while DIVERSITY is
 // running, since the loop makes RX1 the active receiver and every other
 // path resolves the ADC through it.
 //

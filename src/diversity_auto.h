@@ -130,16 +130,18 @@ extern double div_auto_carrier;         // Hz, smoothed carrier estimate
 
 //
 // Which antenna is carrying the better signal-to-noise ratio, and by how
-// much. Positive means ADC1. Every reference estimates it - it is the
-// decision DIV_AUTO_BEST acts on - and it is worth showing whatever mode
-// is running, because nothing else an operator can see distinguishes an
-// antenna that is 12 dB down because it is deaf from one that is 12 dB
-// down because it is quiet. The two want opposite weights.
+// much. Positive means arm 1: ADC2, or ADC1 when RX1 is set to ADC2
+// (div_arm_swapped()). Every reference estimates
+// it - it is the decision DIV_AUTO_BEST acts on - and it is worth
+// showing whatever mode is running, because nothing else an operator can
+// see distinguishes an antenna that is 12 dB down because it is deaf from
+// one that is 12 dB down because it is quiet. The two want opposite
+// weights.
 //
 // _valid is 0 until the reference has something to judge on: a
 // measurement of the signal on both arms and a noise floor to divide it
-// by. _pick is what DIV_AUTO_BEST last decided, 0 for ADC0 and 1 for
-// ADC1, and is meaningless while _valid is 0.
+// by. _pick is what DIV_AUTO_BEST last decided, arm 0 or arm 1, and is
+// meaningless while _valid is 0.
 //
 extern double div_auto_arm_db;
 extern int    div_auto_arm_valid;
