@@ -1311,7 +1311,7 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
 
   //
   // The protocols hand these over as DDC0 then DDC1, which diversity
-  // forces to ADC0 and ADC1. Arm 0 is the one carried at unit gain below
+  // forces to ADC1 and ADC2. Arm 0 is the one carried at unit gain below
   // and the one w = 0 leaves behind, so it has to be the antenna the
   // operator would otherwise be listening to - which is the converter
   // they set RX1 to. See div_arm_swapped().

@@ -330,7 +330,7 @@
 // minimum, which also produces no answer at all on six. Rechecked on
 // test/noise-floor against the guard band beside the passband on seven captures,
 // including the worst-scoring ones: within 0.5 dB on all of them. The
-// two apparent outliers are the estimate being right: on `122632` it follows the operator's ADC1
+// two apparent outliers are the estimate being right: on `122632` it follows the operator's ADC2
 // attenuator one for one from 0 to 16 dB while arm 0's floor holds to
 // 0.7 dB, and on `002710` it finds the two undocumented attenuator steps
 // that capture's format-version-1 header could not record.
@@ -1269,7 +1269,7 @@ static int div_rade_side_expected(const struct div_context *ctx) {
 //
 // The answer is the operator's own: receiver[0]->adc is which converter
 // they set RX1 to. Both protocols override it while diversity runs -
-// ADC0 is forced to DDC0 and ADC1 to DDC1, because the array needs both -
+// ADC1 is forced to DDC0 and ADC2 to DDC1, because the array needs both -
 // so it is otherwise inert here, and it is still the only statement in
 // the program of which antenna they meant to listen to. Following it
 // needs no control of its own and cannot disagree with one.
@@ -2023,10 +2023,10 @@ static void div_arm_nratio_update(double x0, double x1, double p0, double p1) {
 // assumption that the two branches carry equal noise. Maximum ratio
 // combining actually wants conj(h1/h0) * (N0/N1), and on a pair of
 // antennas whose front ends are far apart that missing factor is the
-// whole answer. Measured on `002534` - ADC1 12.3 dB hotter and 5.1 dB
+// whole answer. Measured on `002534` - ADC2 12.3 dB hotter and 5.1 dB
 // worse - the loop applied |w| = 1.17 where 0.072 was right, made the
 // audio 14.8 dB louder with a noise floor 18.3 dB higher, and landed
-// 3.6 dB *below* simply listening to ADC0 where +1.4 dB was available.
+// 3.6 dB *below* simply listening to ADC1 where +1.4 dB was available.
 // The two forms differ by exactly the noise ratio and the measurement
 // says so: 16.2 against a measured 16.8. See Findings 20 and 22 in
 // docs/diversity-measurements.md.
@@ -2471,7 +2471,7 @@ double diversity_auto_coh_floor(int ref) {
 // the *noise* on its own, so "Sum" has to assume the two branches carry
 // equal, uncorrelated noise - which is what makes w = +Sxy/Sxx maximum
 // ratio combining. On a real station that assumption is usually false:
-// ADC1 is often a small loop or an active whip on a bare rear-panel
+// ADC2 is often a small loop or an active whip on a bare rear-panel
 // input, and much of what both antennas hear is common-mode noise picked
 // up on the feedlines, which is correlated between them.
 //
