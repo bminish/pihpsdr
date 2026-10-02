@@ -1633,6 +1633,7 @@ its far edge outside the overlay by the offset.
 
 **Checks.** Applies to bare `upstream/TEST` and builds; the suite passes.
 The overlay code is upstream's (`df47f59a`), so there's no LC dependency.
+On air (2026-10-02): the overlay covers both outer carriers.
 
 **Operating note (local config, not in the commit).** The three
 radios' `.props` files set the digi-mode Var filters for RADE V1, both
