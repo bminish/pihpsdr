@@ -11,8 +11,8 @@ Each item says what the engine does now, what the menu has to do, and
 what our `TEST` branch already does in the menu. That way a rewrite of
 the menu can carry it over, or do it differently.
 
-Register: [changes.md](changes.md), section "Who owns what: menu and
-engine".
+Register: [changes.md](changes.md); the rules are in
+[changes/ownership.md](changes/ownership.md).
 
 ---
 
@@ -117,9 +117,12 @@ double auto_div_sin = 1.0;  // should be 0.0
   `auto_div_*`. The manual pair is still masked. The automatic pair is
   not: nothing recomputes it and it isn't saved. So from start-up until
   the loop's first solve, the combiner applies 1 + 1j while the
-  automatic readout shows 0 dB / 0°. That's seconds on Window or
-  Carrier, but until the first lock on RADE V1, and while Best has
-  nothing to decide on.
+  automatic readout shows 0 dB / 0°.
+- **Effect: a degraded starting weight, no more.** The first solve
+  replaces it within seconds on Window, Carrier and FSK/Digital. On
+  RADE V1 it stands until the first lock but can't delay it, since the
+  correlator works on the raw arms. It's small in practice; worth fixing
+  because it's plainly wrong and the fix is two characters.
 
 **Fix:** `sin = 0.0` on both lines. That's our LC-037, which applies to
 your `TEST` as it stands.
@@ -128,7 +131,7 @@ your `TEST` as it stands.
 
 ## Still to discuss (no code yet)
 
-These are in the review table in `changes.md` (E3 to E5) and need a
+These are in the review table in [changes/ownership.md](changes/ownership.md) (E3 to E5) and need a
 decision from both sides before anyone writes code:
 
 - **E3: live copy versus per-reference slots.** The window and Min
