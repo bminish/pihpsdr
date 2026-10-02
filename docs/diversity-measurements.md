@@ -8668,6 +8668,101 @@ holds is the false-alarm line, and that part stands.
 
 ## What is still open
 
+### Status on `TEST` (evaluated 2026-10-02, `TEST` at `0bcd3a89`)
+
+This list was written on `feature/auto-diversity` and imported with the
+findings. Some of what it calls closed was closed only on that branch,
+and some of what it calls open has since been settled on `TEST`. Each
+item is checked against `TEST`'s code below, in the order it appears.
+"Feature only" means the change described exists on
+`feature/auto-diversity` and not on `TEST`.
+
+**Two correctness issues on `TEST` that the list does not name:**
+
+1. **Best's per-arm SNR reads the percentile floor as the mean noise.**
+   `div_arm_from_floor()` (LC-028) subtracts `nbins × div_nf` from the
+   passband power. `div_nf` is the mean of the 8th-12th percentile of
+   the bin powers, which for noise sits **9.78 dB below** the mean
+   (0.1051 of it, simulated over 2000 draws of 1024 exponential
+   values). This is Finding 56's "credits a white arm with 9.8 dB",
+   brought onto `TEST` by LC-028:
+   - A window of pure noise reads **9.3 dB** of SNR per arm and passes
+     the `DIV_ARM_MIN_DB` (6 dB) clearance, so the comparison never goes
+     invalid on an empty or dead window.
+   - Real differences are compressed. A true 6 dB reads as 5.4 dB at arm
+     SNRs of 6 and 12 dB, as 4.1 dB at 0 and 6 dB, and as **2.2 dB** at
+     −6 and 0 dB. So the 2 dB switch rule is effectively wider in true
+     terms on weak signals.
+   - The sign is never wrong, so the arm Best picks is the right one
+     whenever it acts.
+
+   The cure is to scale `div_nf` to the mean (÷ 0.1051, a constant fixed
+   by `DIV_NF_PCT` and `DIV_NF_BAND`) where it is used as an absolute
+   noise level. The Sum noise ratios (LC-025, LC-029) use only the ratio
+   of the two floors, so the constant cancels there and they are
+   unaffected. Re-score LC-028 with the correction before changing it.
+2. **Before the loop's first solve, the combiner applies 1 + 1j.**
+   `radio.c` initialises `auto_div_cos = 1.0` *and* `auto_div_sin = 1.0`
+   (upstream, `4865d602`): +3.0 dB at 45°, not unity. It is applied from
+   program start until the loop writes a weight: on RADE V1 until the
+   first lock, and on any reference whose gate stays shut. This is very
+   likely a typo for `sin = 0.0`. It is upstream's line, so it is for
+   dl1ycf, and it bears on item 2 below: what stands in for "not solved
+   yet" is now this, not the previous session's weight.
+
+**The list, item by item:**
+
+| # | Item | On `TEST` |
+|---|---|---|
+| 1 | Disconnected port makes the feature deaf (F56) | **Open.** LC-022 lets the operator put the live ADC on arm 0 (set RX1 to it), which mitigates it. No spectral-flatness guard. Issue 1 above is this item's `div_arm_from_floor()` half, now on `TEST`. |
+| 2 | RADE V1 has no fallback (F49) | **Open.** The loop's weight is no longer persisted between sessions (only the manual one is). The stale weight is now issue 2's 1 + 1j at start, or the previous band's within a session. `div_write_weight()` does not exist on `TEST`. |
+| 3 | `score_rade` streams not interchangeable | **Open** (tooling). |
+| 4 | Gate holds concentrated in fades (F47) | **Open.** LC-025's across-frequency floor is now on `TEST`: it is the measurement that could tell a fade (floor unchanged) from a signal that has gone. |
+| 5 | "Closed": stand-down on an empty band (`div_window_quiet()`) | **Feature only.** Not on `TEST`; no stand-down there. |
+| 6 | Branch-noise ratio unmeasurable on a mostly-noise window | **Closed on `TEST`** by LC-025 (floor across frequency), with LC-028 taking the Best half (subject to issue 1). |
+| 7 | "Mostly closed": Resolution 24 / 12 / 6 Hz | **Feature only.** `TEST` offers 12 / 6 / 3 Hz with `DIV_MIN_NFFT` 4096. At 768 kHz 6 and 3 Hz are the same setting, and at 1536 kHz all three give 23.4 Hz (`DIV_MAX_NFFT`). Nothing greys out an option that does nothing. |
+| 8 | Zero-weight guard: two captures not decode-scored (F11) | Guard on `TEST`. **Open** (re-score). |
+| 9 | Alias resolver never watched acquiring cold (F15) | Resolver on `TEST`. **Open** (on air). |
+| 10 | Correlator health readings are not decode | **Still the rule.** The hang parts are moot: hang is retired (LC-011, LC-014). |
+| 11 | `202743` cannot be checked | **Open** (capture). |
+| 12 | Threshold policy, mediumwave half | **Open** (one dead-air MW capture). |
+| 13 | "Closed": null limited by block period | Measurement stands. On `TEST` the coarsest option is 12 Hz, so "set Resolution to its coarsest bins" stops there. The menu guidance is **open** (dl1ycf's menu). |
+| 14 | Resync search cannot be scored on air | LC-010 on `TEST`. **Open** (capture where one antenna fails). |
+| 15 | Local interference: one capture, un-nullable | **Open** (capture). |
+| 16 | Window and averaging untested on weak wideband digital | **Open** (capture). |
+| 17 | Wanted modem plus common-mode noise | **Open** (capture). |
+| 18 | Analog voice spread | **Open**; folds into item 33. |
+| 19 | "Closed": a marginal capture | Closed. |
+| 20 | 20 Hz retune tolerance, upper end | `DIV_RETUNE_HZ` 20 on `TEST`. **Open** (capture). |
+| 21 | Default averaging may be wrong for a fast path | **Open on `TEST` at 2.0 s.** The feature branch later moved the default to 0.5 s on the evidence of Findings 47-48. Not ported. CW seeds 0.2 s (LC-019). |
+| 22 | Per-bin combining | **Open**, weaker case. Nothing to do. |
+| 23 | Threshold defaults are reproductions | **Partly outdated.** Window ships 0.20 on `TEST` (LC-006), not 0.30. FSK/Digital 0.30 and `DIV_OCC_COH` are still unswept. |
+| 24 | Sum weight's noise-ratio estimator | First limit (minimum over time sits on faded signal; minimum over bins untried) **closed on `TEST`** by LC-025, which is a floor over bins. The second (`003309`: one phase for many stations) is **open**. |
+| 25 | Output-level normaliser never listened to | **Open, and more pressing.** `TEST` ships Level output **on** by default (LC-030); this text says off. RADE V1 is not covered (true on `TEST`). `DIV_NORM_TAU` 1.0 is unswept. The listening table is in `docs/test-noisefloor.md`. |
+| 26 | Attenuation budget beyond 14-23 dB | **Open.** See `docs/feature-att-calibration.md`. |
+| 27 | Carrier gate has no discriminating power | **Open** in the engine. The tooltip that "now says so" is feature only. The tracker's-own-peak option is untried. |
+| 28 | Weighting and threshold change "still not made" | **Outdated: made on `TEST`** as LC-006 (Flat, Window 0.20). The RADE-decode half is moot: RADE V1's Min coherence is retired (LC-016). |
+| 29 | FSK/Digital occupancy has no false-alarm control | **Open.** |
+| 30 | CW measured once | **Outdated.** AD-50 (13 captures), T-017 and T-018, and the CW reference (LC-017, LC-018, LC-029) are on `TEST`. What is left is in `docs/noise-floor-refactor.md`: Best's CW SNR and `DIV_CW_MIN_BINS`. |
+| 31 | `--verify` never passed on air | **Open** (capture armed cold). |
+| 32 | Attenuator experiment replays | Tooling on `TEST`. The two historical gaps are **open** (fresh v3+ captures). |
+| 33 | Held weight has consequences | **Open on `TEST`**, plus issue 2's 1 + 1j at start. |
+| 34 | Coherence threshold cost unmeasured on matched floors | **Open.** Read "0.30" as Window's 0.20 on `TEST`; LC-012's floor applies. |
+| 35 | Best erratic below 0.5 s | **Needs re-measuring.** LC-028 changed Best (floor SNR, 2 dB / 1 s rule), and CW runs Best-capable at 0.2 s by default. |
+| 36 | "Fixed": three instrument defects | Fixed on `TEST`'s tooling (`run_ref` sets `div_auto_resolution` from the capture). The record caveat stands. |
+| 37 | "Closed": `replay_rade --weights` scores a weight not applied | Closed. |
+
+**Not on `TEST`, and marked closed or fixed in the findings:** the
+empty-band stand-down (item 5), the 24 / 12 / 6 Hz menu (item 7), the
+time-based slew of Finding 48 (`TEST` still slews 0.15 of the distance
+per block, the behaviour Finding 48 measured as hiding the bottom two
+thirds of the Averaging slider), the 0.5 s default (item 21) and the
+Carrier tooltip (item 27). These are the porting candidates for
+"Pending: to be ported from `feature/auto-diversity`" in
+`docs/changes.md`.
+
+### The list as written on `feature/auto-diversity`
+
 - **A disconnected antenna port makes the feature deaf, and every give-up
   path in the loop aims at it.** Finding 56. The combiner forms
   `z = z0 + w*z1` with arm 0 at unit gain, both protocols force arm 0 to
