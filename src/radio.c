@@ -2079,7 +2079,7 @@ static void rxtx(int state) {
       //
       if (!radio_is_remote && div_split_active()) {
         rx_on(receiver[1]);
-        receiver[1]->samples = 0;
+        div_split_align();
         receiver[1]->txrxmax = do_silence ? (receiver[1]->sample_rate >> do_silence) : 0;
         receiver[1]->txrxcount = 0;
       }
@@ -2411,13 +2411,17 @@ int div_split_on = 0;
 // 21 ms as the mode changes - the right price for a stereo image that is
 // actually aligned.
 //
-// The feeding thread may slip a sample between the two writes. That is a
-// one-sample error, twenty microseconds, and not worth a lock on the
-// audio path to avoid.
+// Done on the receive thread, not here. This runs on the GTK thread
+// while the receive thread is counting, and its samples + 1 can write
+// back over a zero made between its read and its write - leaving one
+// counter where it was and the ears out of step for the whole session.
+// So this only asks; rx_add_div_iq_samples() zeroes both before it feeds
+// the next sample, where nothing can come between the two.
 //
-static void div_split_align(void) {
-  receiver[0]->samples = 0;
-  receiver[1]->samples = 0;
+volatile int div_split_realign = 0;
+
+void div_split_align(void) {
+  div_split_realign = 1;
 }
 
 void div_split_set(int mode) {

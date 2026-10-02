@@ -1672,6 +1672,17 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
   }
 
   //
+  // The ear split's realignment, asked for from the GTK thread. Here,
+  // before this sample is fed to either ear, nothing can come between the
+  // two writes. See div_split_align().
+  //
+  if (div_split_realign) {
+    div_split_realign = 0;
+    receiver[0]->samples = 0;
+    receiver[1]->samples = 0;
+  }
+
+  //
   // The weighted second arm, w * z1, and the level it is all held at.
   //
   double iw, qw, nrm;

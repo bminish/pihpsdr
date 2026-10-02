@@ -321,6 +321,13 @@ static inline int div_rx1_takes_raw(void) {
 
 void div_split_set(int mode);
 
+//
+// Ask for both ears to restart their input blocks on the same sample. The
+// receive thread does it, in rx_add_div_iq_samples(). See radio.c.
+//
+extern volatile int div_split_realign;
+void div_split_align(void);
+
 extern int capture_state;
 extern const int capture_max;
 extern int capture_record_pointer;
