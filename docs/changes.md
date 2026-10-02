@@ -313,6 +313,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 | LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 | LC-034 | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when the arms are exchanged) | diversity_menu.c | LC-022 | Local |
+| LC-036 | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | `test/best-floor-bias` |
 | LC-035 | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
@@ -1482,6 +1483,57 @@ only. Upstream's own non-diversity text is left alone (see "Flagged for
 a later patch"). Its line dependencies are textual only: it rewords
 comments other LCs added.
 
+### LC-036 — Best's per-arm SNR from the mean noise, and one arm clear is enough
+
+**Why.** `div_arm_from_floor()` (LC-028) took `nbins × div_nf` as the
+noise in the window. `div_nf` is the 8th-12th percentile, 9.77 dB below
+the mean noise per bin. So:
+- a window of bare noise read 9.3 dB of SNR per arm and passed
+  `DIV_ARM_MIN_DB`, and the readout was valid on 98 % of blocks across
+  the capture set, noise or not;
+- real differences were compressed: 6 dB read as 2.2 dB at 0 dB arm
+  SNR.
+
+This was Finding 56's defect, found in the 2026-10-02 evaluation of the
+findings' open list.
+
+**Change.**
+- `DIV_NF_MEAN_FRAC` (0.1055) scales the floor to the mean noise before
+  it is used as an absolute level. The constant is exact for
+  exponential bin powers at 1024 samples, and within 0.2 dB at 128-850.
+  The Sum ratios divide one floor by the other, so it cancels there and
+  they are untouched.
+- One arm, not both, must clear `DIV_ARM_MIN_DB`. A buried arm is
+  credited `DIV_ARM_BURIED_DB` (−10 dB), so the readout becomes a lower
+  bound on the other arm's lead. With the floor corrected, requiring
+  both arms silenced Best where one antenna is buried: a weak antenna
+  or a dead port (Finding 56), which is the case Best exists for.
+
+**Measured.** In Best, on the 45 Window/Carrier captures, against
+`TEST` (`ab.py` guard and in-band, relative to the better antenna):
+
+| Variant | Readout valid | Guard (mean) | Better / worse | In-band (mean) |
+|---|---|---|---|---|
+| `TEST` | 98.0 % | | | |
+| Constant only, both arms must clear | 68.4 % | −0.022 dB | 4 / 11 | −0.107 dB |
+| **LC-036: constant, one arm must clear** | 76.7 % | **+0.088 dB** | **3 / 2** | +0.006 dB |
+
+- `122843` (ADC2 15 dB noisier): +6.0 dB in-band, +1.5 dB guard. `TEST`
+  sat on the noisier arm 62 % of the minute on noise-biased readings;
+  LC-036 sits there 13 %.
+- `233616` has no carrier at all. `TEST` read it valid on 46 % of blocks
+  and switched on noise; LC-036 never does (+3.0 dB guard). Its −6.8 dB
+  in-band figure has no signal behind it.
+- `142333` (−0.6 dB guard) never switches in any build. The loss is the
+  held weight: while the readout is invalid Best holds the weight it is
+  slewing, so the start's 1 + 0j lingers longer. That is item 33 of
+  the open list, not a wrong pick.
+- `test_rates` (LT-019): bare noise is invalid, a +3.91 dB lead reads
+  +4.09, and a buried arm 0 gives a valid +17.9 dB. All three fail on
+  `TEST`; the last two also fail with the constant alone.
+- Replays of the committed code match the scored variant on 45 of 45
+  captures.
+
 ---
 
 ## Local tooling (never upstream)
@@ -1514,6 +1566,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-016 | `bench_nf`: LC-033's selection against `qsort`, bit for bit and timed, on the engine's own functions | `test/diversity/` |
 | LT-017 | `pi_bench`: one file to copy to a Pi 5 and build with only `cc`; ballpark costs of the engine's hot spots, hot and paced | `test/diversity/pi_bench.c`, `docs/bench/` |
 | LT-018 | The tools name the ADCs ADC1 and ADC2 (follows LC-035) | `test/diversity/` |
+| LT-019 | `test_rates` checks Best's antenna readout against known answers (follows LC-036) | `test/diversity/test_rates.c` |
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot
@@ -1632,7 +1685,8 @@ changes it, we take upstream.
 
 ## Flagged for a later patch
 
-- **Best's per-arm SNR reads the percentile floor as the mean noise**
+- **Fixed on `test/best-floor-bias` as LC-036 (not yet on `TEST`).**
+  **Best's per-arm SNR reads the percentile floor as the mean noise**
   (LC-028; found 2026-10-02, details in `diversity-measurements.md`,
   "Status on `TEST`"). `div_nf` is 9.78 dB below the mean noise per
   bin, so a noise-only window passes `DIV_ARM_MIN_DB` with 9.3 dB per
@@ -1768,6 +1822,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: LC-036 and LT-019 on `test/best-floor-bias` (Best's
+  percentile-floor bias, and the one-arm-clear rule).
 - 2026-10-02: the findings' "What is still open" evaluated against
   `TEST`; two new issues flagged (Best's percentile floor, the 1 + 1j
   start weight); five feature-only changes listed under Pending.
