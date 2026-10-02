@@ -1664,6 +1664,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: Pi 5 (CM5) `pi_bench` run recorded in `docs/bench/`; LC-033
+  is 3.3× cheaper there paced, identical output.
 - 2026-10-02: LT-017 (`pi_bench`) for arm64 figures; x86 reference in
   `docs/bench/`.
 - 2026-10-02: LC-033 (the noise floor selects instead of sorting) and
