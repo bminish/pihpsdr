@@ -1474,6 +1474,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-014 | `test_rates`' CW cases, with LC-029; the 1536 kHz / 100 Hz limitation reported | `test/diversity/test_rates.c`, `known_gaps.h` |
 | LT-015 | LC-030's checks: Level output counted; `run_ref`'s `norm` column; `score_level.py` | `test/diversity/` |
 | LT-016 | `bench_nf`: LC-033's selection against `qsort`, bit for bit and timed, on the engine's own functions | `test/diversity/` |
+| LT-017 | `pi_bench`: one file to copy to a Pi 5 and build with only `cc`; ballpark costs of the engine's hot spots, hot and paced | `test/diversity/pi_bench.c`, `docs/bench/` |
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot
@@ -1663,6 +1664,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: LT-017 (`pi_bench`) for arm64 figures; x86 reference in
+  `docs/bench/`.
 - 2026-10-02: LC-033 (the noise floor selects instead of sorting) and
   LT-016 (`bench_nf`), on `test/quickselect`.
 - 2026-10-01: diversity takes `profiles.c`'s mode grouping (E5).
