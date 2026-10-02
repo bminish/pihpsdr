@@ -428,8 +428,14 @@ int audio_open_output(RECEIVER *rx) {
     .rate = 48000,
     .channels = 2,
   };
-  info.position[0] = SPA_AUDIO_CHANNEL_MONO;
-  info.position[1] = SPA_AUDIO_CHANNEL_MONO + 1;
+  //
+  // A stereo pair, front left and front right. Positions are an enum, not
+  // an index: MONO + 1 is FL, so [MONO, MONO + 1] declared a mono channel
+  // plus a left one, and PipeWire's channel mixer spread the first into
+  // both speakers and put the second in the left speaker only.
+  //
+  info.position[0] = SPA_AUDIO_CHANNEL_FL;
+  info.position[1] = SPA_AUDIO_CHANNEL_FR;
   uint8_t buffer[1024];
   struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
   const struct spa_pod *params[1];
