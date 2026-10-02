@@ -374,14 +374,15 @@ void rx_panadapter_update(RECEIVER *rx) {
       // The whole modem band, on the side the operator's sideband puts
       // it, and deliberately not clipped to the filter: the pilot
       // correlator taps the raw stream ahead of WDSP and needs all thirty
-      // carriers whatever the filter is set to.
+      // carriers whatever the filter is set to. Drawn to the occupied
+      // edges, half a carrier spacing beyond the outer carrier centres.
       //
       if (div_rade_side_get() < 0) {
-        wlo = -RADE_CORR_FHI;
-        whi = -RADE_CORR_FLO;
+        wlo = -RADE_CORR_OCC_HI;
+        whi = -RADE_CORR_OCC_LO;
       } else {
-        wlo = RADE_CORR_FLO;
-        whi = RADE_CORR_FHI;
+        wlo = RADE_CORR_OCC_LO;
+        whi = RADE_CORR_OCC_HI;
       }
 
       break;
