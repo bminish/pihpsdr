@@ -17,3 +17,5 @@ devtools/py/__pycache__/
 bench_nf
 nf_select.inc
 pi_bench_standalone.c
+pi5-bench.tar.gz
+pi5-bench/
