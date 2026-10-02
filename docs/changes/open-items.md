@@ -80,30 +80,25 @@ changes it, we take upstream.
   operator uses most of the time. 6 Hz doubles the FFT length and the
   block duration. The operator can still choose 12, 6 or 3 Hz.
 
-## Efficiency on the Pi: where it pays (measured 2026-10-02)
+## Efficiency on the Pi: closed (measured 2026-10-02)
 
-From `pi_bench` (LT-017) on a Compute Module 5 against the i7 reference
-(`docs/bench/`; details in `docs/noise-floor-refactor.md`, "Make it
-cheaper"). Per block, paced as the radio runs, as a share of one Pi
-core:
+Measured on a CM5 with the LT-020 bundle. The analysis is in
+[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 copes:**
+at 192 kHz and below every reference costs under 1 % of one core,
+except RADE V1 (up to about 6 % searching on an SSB passband, 9 % on an
+AM passband). The worst case, RADE V1 searching on an AM passband at
+1536 kHz, is 15 % of one core of four. What is left is headroom:
 
-- **Done: the noise floor (LC-033).** 172 → 52 µs, 0.20 % → 0.06 %, with
-  identical output on arm64.
-- **The FFTs are the largest measured cost.** Two a block: 0.32 % at
-  192 kHz, 1.12 % at 384 kHz, 3.64 % at 1536 kHz. The Pi is 3.4-4.3×
-  slower than the i7 here, against 1.3-2.6× on the sorts: from 32768
-  points the buffers outgrow the A76's 512 KB L2.
-  - Next to try: `FFTW_MEASURE` with saved wisdom (add the comparison to
-    `pi_bench`).
-  - Speculative: decimate before the FFT above 192 kHz, since only about
-    ±20 kHz is used. That would also lift the 1536 kHz / 100 Hz CW
-    limitation, but the decimator's own cost needs measuring.
-- **RADE V1 is not measured on the Pi yet** and is probably the largest
-  diversity cost there: 1.4-3.2 ms per block on the i7. Run `bench_cpu`
-  on the Pi first.
-- **Low priority:** the FSK/Digital median's `qsort` (0.46 % → 0.05 % by
-  selection, but only at the widest window; nothing for an SSB filter).
-  CW's sorts are too short to matter.
+- **Candidate LC:** vectorise RADE V1's decimator. 3.0× faster on the Pi,
+  same output; saves 0.7 % of a core at 192 kHz and 5.5 % at 1536 kHz.
+- **For dl1ycf, if at all:** FFTW_MEASURE plans from wisdom built at
+  first start (about 2.5 minutes on the Pi, as WDSP's), 35-48 % off the
+  FFTs from 8192 points up. Planning MEASURE live takes 17-51 s a size on the Pi, so it can
+  only come from wisdom.
+- **Not now:** decimating before the FFT (a gain only at 1536 kHz), the
+  sorts (negligible), and RADE V1's search (3-5 %; needs `perf` on the
+  Pi to go further).
+- Done earlier: the noise floor's selection (LC-033).
 
 ## Pending: to be ported from `feature/auto-diversity`
 
