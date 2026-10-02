@@ -8718,6 +8718,11 @@ item is checked against `TEST`'s code below, in the order it appears.
    dl1ycf, and it bears on item 2 below: what stands in for "not solved
    yet" is now this, not the previous session's weight.
 
+   **Fixed: LC-037, on `TEST` since 2026-10-02.** A 2019 slip
+   (`3d3bb23b` wrote `q_rotate`'s 0.0 as 1.0). It was masked for the
+   manual weight, and unmasked for the automatic one by the 2026 split.
+   The history is in `docs/changes.md`, LC-037.
+
 **The list, item by item:**
 
 | # | Item | On `TEST` |

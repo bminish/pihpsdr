@@ -95,6 +95,37 @@ protocol and simulator comments.
 
 ---
 
+## Outside the menu: the weights start at 1 + 1j (LC-037)
+
+Not a menu item, but it's your file (`radio.c`), so it goes here. Both
+weight pairs are initialised to `cos = 1.0, sin = 1.0`, which is +3 dB
+at 45°, while the gain and phase beside them say 0 dB and 0°:
+
+```c
+double man_div_sin = 1.0;   // should be 0.0
+double auto_div_sin = 1.0;  // should be 0.0
+```
+
+**How it happened:**
+- **`3d3bb23b` (2019-07-25)** replaced
+  `i_rotate[2] = {1.0, 1.0}` / `q_rotate[2] = {0.0, 0.0}` (unity) with
+  `div_cos = 1.0` / `div_sin = 1.0`.
+- **For seven years it was harmless.** `radio_set_diversity()` calls
+  `radio_calc_div_params()`, which recomputes the pair from gain and
+  phase, and the props file restores a consistent pair.
+- **`4865d602` (2026-09-27)** copied the pair into `man_div_*` and
+  `auto_div_*`. The manual pair is still masked. The automatic pair is
+  not: nothing recomputes it and it isn't saved. So from start-up until
+  the loop's first solve, the combiner applies 1 + 1j while the
+  automatic readout shows 0 dB / 0°. That's seconds on Window or
+  Carrier, but until the first lock on RADE V1, and while Best has
+  nothing to decide on.
+
+**Fix:** `sin = 0.0` on both lines. That's our LC-037, which applies to
+your `TEST` as it stands.
+
+---
+
 ## Still to discuss (no code yet)
 
 These are in the review table in `changes.md` (E3 to E5) and need a
