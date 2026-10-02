@@ -241,7 +241,7 @@ The context includes **both step attenuators**, from format version 2.
 `div_context_changed()` compares them, so moving either resets the
 statistics, and a capture that could not show them could not be replayed
 through that reset - which is what happened on the capture where the
-operator stepped ADC1 twice while recording, and the two settings had to
+operator stepped ADC2 twice while recording, and the two settings had to
 be inferred afterwards from arm 1's own noise floor. `att0` and `att1` sit
 in what was `pad0` plus the padding already there, so the block record is
 the same 208 bytes and a **v1 file still replays**; the tools say once
@@ -427,7 +427,7 @@ the real engine with the capture armed, then replays the file and checks
 the correlator ends up in the same state block for block. It is what stops
 the writer, the record layout and the replay drifting apart.
 
-It steps ADC1's attenuator once part-way through, which is the only thing
+It steps ADC2's attenuator once part-way through, which is the only thing
 an operator does that the samples cannot show. That gives the run a
 context change to carry, and the check asserts three things about it: the
 recorded `att1` follows the step, `rec_flags` bit 0 is set on exactly the
