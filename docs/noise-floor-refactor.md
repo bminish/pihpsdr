@@ -205,6 +205,39 @@ that run shows ahead of the Pi:
 - The FSK/Digital median's `qsort` is the larger remaining sort at wide
   windows: 238 → 28 µs at 4096 values.
 
+**The Pi 5 run** (2026-10-02, Compute Module 5 Lite, Cortex-A76 at
+2.4 GHz, `ondemand` governor, gcc 14 `-O3`, FFTW 3.3.10 with NEON;
+`docs/bench/pi_bench-cm5.txt`):
+
+| Per block, paced (one call per 85 ms) | Pi 5 µs | i7 µs | Pi / i7 | Pi 5, % of a core |
+|---|---|---|---|---|
+| Noise floor, `qsort` (TEST before LC-033) | 172 | 134 | 1.3× | 0.20 % |
+| Noise floor, selection (LC-033) | 52 | 23 | 2.3× | 0.06 % |
+| Two FFTs at 48 kHz (4096) | 46 | 22 | 2.1× | 0.05 % |
+| Two FFTs at 192 kHz (16384) | 271 | 103 | 2.6× | 0.32 % |
+| Two FFTs at 384 kHz (32768) | 956 | 223 | 4.3× | 1.12 % |
+| Two FFTs at 1536 kHz (65536, 23.4 blocks/s) | 1556 | 458 | 3.4× | 3.64 % |
+| FSK/Digital median, 4096 values (hot) | 395 → 45 by selection | 238 → 28 | 1.7× | 0.46 % → 0.05 % |
+
+What it says:
+- **LC-033 holds on arm64.** The output is identical, and the floor is
+  3.3× cheaper paced (172 → 52 µs) and 6.0× hot. On the Pi it took the
+  floor from 63 % of the 192 kHz FFT cost to 19 %.
+- **The Pi is 1.3-2.6× slower on the sorts** but 3.4-4.3× slower on the
+  large transforms. Above 16384 points the transforms stop fitting the
+  A76's 512 KB L2 (input and output: 512 KB at 32768), and paced they
+  fall further: 287 µs hot against 478 paced at 32768. That is memory,
+  not arithmetic, so the FFT is where the Pi pays most.
+- **Everything measured here is small on the Pi.** At 192 kHz the floor
+  plus both FFTs is about 0.4 % of one of four cores. At 1536 kHz the
+  FFTs alone are 3.6 %. The FSK/Digital median is worth converting only
+  for wide windows (0.46 % → 0.05 % at its maximum, nothing for an SSB
+  filter). CW's sorts are too short to matter.
+- **Not measured yet:** RADE V1, which `bench_cpu` puts at 1.4-3.2 ms
+  per block on the i7, 5-10 times the floor and the FFTs together. On
+  the Pi it is very likely the largest diversity cost. `bench_cpu` on
+  the Pi would say.
+
 ## The steps, as commits
 
 Each one builds, passes `make -C test/diversity run`, and is replayed on
