@@ -316,6 +316,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-036 | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
 | LC-037 | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
 | LC-035 | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
+| LC-038 | Fix       | The RADE V1 overlay covers the outer carriers whole (725-2225 Hz, not 750-2200) | rade_correlator.h, rx_panadapter.c | — | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1600,6 +1601,45 @@ list.
 **Checks.** Applies to bare `upstream/TEST` and builds; reverts from the
 tip; the suite passes. For dl1ycf: see
 [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md).
+
+---
+
+### LC-038 — The RADE V1 overlay covers the outer carriers whole
+
+**Problem.** The green overlay drawn on the RX panadapter for the RADE V1
+reference ran from `RADE_CORR_FLO` to `RADE_CORR_FHI`, 750 to 2200 Hz.
+Those are the centres of the first and last carriers. radae spaces the
+30 carriers 50 Hz apart (Fs/M = 8000/160) and puts carrier 1 in bin 15
+(`rade_ofdm.c`: 1500 − 50·30/2 = 750), so each carrier spends 25 Hz
+beyond its centre. The overlay cut the outer two carriers in half. Seen
+on air as "the overlay leaves out a little of the edge furthest from
+the carrier".
+
+**Change.**
+- New `RADE_CORR_OCC_LO`/`RADE_CORR_OCC_HI` in `rade_correlator.h`: the
+  outer centres widened by half the carrier spacing, written in terms of
+  `RADE_CORR_FS`/`RADE_CORR_M` (725 and 2225 Hz). The overlay draws those,
+  mirrored for LSB as before.
+- `RADE_CORR_FLO`/`FHI` are unchanged. The sideband test in
+  `div_rade_side_expected()` wants carrier centres, and the comment now
+  says that is what they are.
+- Comment: the modem's centre is 1475 Hz, not 1500. radae aims at 1500
+  and rounds the first carrier to the 50 Hz grid.
+
+**Not changed (decided 2026-10-02).** The overlay is still drawn at the
+nominal position. It isn't shifted by the tracked frequency offset
+(`rade_corr_freq_off`), so a station that is off-frequency still shows
+its far edge outside the overlay by the offset.
+
+**Checks.** Applies to bare `upstream/TEST` and builds; the suite passes.
+The overlay code is upstream's (`df47f59a`), so there's no LC dependency.
+
+**Operating note (local config, not in the commit).** The digi-mode
+2.0k filter in the three radios' `.props` files was reshaped as a RADE V1
+filter: DIGU 675 to 2275 Hz, DIGL −2275 to −675 Hz. That is the occupied
+band, 725 to 2225 Hz, plus 50 Hz each side for tuning offset. The key
+keeps its name, `filter.digu.2.0k`, because the title is the key. The
+1.5k preset (750 to 2250 Hz) cuts the lowest carrier at its centre.
 
 ---
 
