@@ -424,12 +424,19 @@ static void div_arm_status_set(void) {
 
     if (d > 99.9) { d = 99.9; }
 
+    //
+    // Named as the hardware and the attenuator row name them, ADC1 and
+    // ADC2, and by converter rather than by arm: arm 0 is the ADC RX1 is
+    // set to, so with RX1 on ADC2 arm 0 is ADC2.
+    //
+    const int rxadc = receiver[0]->adc;
+
     if (div_auto_mode == DIV_AUTO_BEST) {
-      snprintf(sel, sizeof(sel), "  using ADC%d", div_auto_arm_pick);
+      snprintf(sel, sizeof(sel), "  using ADC%d", (div_auto_arm_pick ^ rxadc) + 1);
     }
 
     snprintf(text, sizeof(text), "Antennas  ADC%d better by %4.1f dB%s",
-             (div_auto_arm_db > 0.0) ? 1 : 0, d, sel);
+             (((div_auto_arm_db > 0.0) ? 1 : 0) ^ rxadc) + 1, d, sel);
   }
 
   gtk_label_set_text(GTK_LABEL(arm_label), text);
