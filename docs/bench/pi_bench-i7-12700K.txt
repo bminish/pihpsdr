@@ -1,0 +1,44 @@
+pi_bench - diversity engine hot spots
+
+cpu:       12th Gen Intel(R) Core(TM) i7-12700K
+governor:  powersave
+max kHz:   4900000
+compiler:  16.2.1 20260819 (Red Hat 16.2.1-2), optimised, x86-64, FFTW fftw-3.3.10-sse2-avx-avx2-avx2_128
+
+Identity, selection against qsort on this machine: 21528 cases, 0 differ
+
+Order statistics, per block (both arms where the engine does both).
+                                     n   qsort us select us   ratio   % of a core, qsort -> select
+hot (back to back):
+  noise floor, quiet band         1024       99.9      17.0    5.9x    0.12% ->  0.02%
+  noise floor, quiet band          850       81.2      15.4    5.3x    0.09% ->  0.02%
+  noise floor, busy band (41 %)   1024       99.5      17.8    5.6x    0.12% ->  0.02%
+  Digital median, SSB filter       220        8.3       1.3    6.5x    0.01% ->  0.00%
+  Digital median, wide window     1024       49.9       7.1    7.0x    0.06% ->  0.01%
+  Digital median, maximum         4096      238.1      28.4    8.4x    0.28% ->  0.03%
+  CW off-tone floor, 100 Hz          8        0.1       0.1    1.8x    0.00% ->  0.00%
+  CW off-tone floor, 500 Hz         40        1.7       0.5    3.3x    0.00% ->  0.00%
+paced (one call per 85 ms, as the radio; median of 60):
+  noise floor, quiet band         1024      134.1      23.0    5.8x    0.16% ->  0.03%
+  Digital median, SSB filter       220       12.3       2.5    5.0x    0.01% ->  0.00%
+
+Noise-floor gather, per block (2 arms x 1024 strided bins of |X|^2):
+  nfft   4096:    1.81 us hot
+  nfft  16384:    1.81 us hot
+  nfft  65536:    1.83 us hot
+
+Per-bin cross-spectral accumulation, per block (approximate):
+  SSB filter, 3 kHz             256 bins:     0.25 us hot  ( 0.00% of a core)
+  AM / wide window, 16 kHz     1400 bins:     1.33 us hot  ( 0.00% of a core)
+  whole span at 192 kHz       16384 bins:    16.73 us hot  ( 0.02% of a core)
+
+FFT, one complex single-precision forward transform (the engine does two a block):
+    nfft  sample rate at 12 Hz bins        hot us   paced us  2 per block, % of a core (paced)
+    4096  48 kHz                              4.4       11.1   0.03%
+    8192  96 kHz                             17.2       24.7   0.06%
+   16384  192 kHz                            38.6       51.6   0.12%
+   32768  384 kHz                            82.0      111.3   0.26%
+   65536  768 and 1536 kHz (cap)            174.7      228.8   1.07% (at 1536 kHz, 23.4 blocks/s)
+
+For the whole engine (every reference, RADE V1 included), on a Pi that
+builds piHPSDR: make -C test/diversity bench_cpu && ./test/diversity/bench_cpu
