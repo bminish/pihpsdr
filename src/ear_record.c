@@ -16,6 +16,7 @@
 */
 
 #include <gtk/gtk.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,7 +39,7 @@ struct ear_event {
   int8_t   paired;
   int16_t  rx1_cnt;
   uint16_t nsamp;
-  float    bal_l, bal_r;
+  float    bal_l, bal_r, af_db;
 };
 
 volatile int ear_record_active = 0;
@@ -48,6 +49,7 @@ static struct ear_event *ering = NULL;
 static volatile uint32_t f_in = 0, f_out = 0, e_in = 0, e_out = 0;
 static volatile uint64_t f_total = 0;           // frames accepted
 static volatile uint32_t f_lost = 0, e_lost = 0;
+static uint64_t          clipped = 0;           // samples held at full scale
 static volatile int      w_run = 0;
 static GThread          *writer = NULL;
 static FILE             *wav = NULL, *csv = NULL;
@@ -61,20 +63,24 @@ static void put32(FILE *f, uint32_t v) {
 }
 
 //
-// WAVE_FORMAT_IEEE_FLOAT, 2 channels, 48 kHz. Written with zero sizes at
-// the start and patched at the end.
+// PCM, 16 bits, 2 channels, 48 kHz. Written with zero sizes at the start
+// and patched at the end.
+//
+// 16 bits is ample: the first recording (CW, AGC on) spanned about 30 dB,
+// -46 to -15 dBFS, and 16-bit quantisation sits at -95 dBFS. Float's only
+// gain, headroom above full scale, was never used.
 //
 static void wav_header(FILE *f, uint64_t frames) {
-  const uint64_t bytes = frames * 8u;
+  const uint64_t bytes = frames * 4u;
   const uint32_t data  = bytes > 0xFFFFFFF0u ? 0xFFFFFFF0u : (uint32_t)bytes;
   fwrite("RIFF", 1, 4, f);
   put32(f, 36u + data);
   fwrite("WAVEfmt ", 1, 8, f);
   put32(f, 16);
-  put32(f, 3u | (2u << 16));          // format 3 (float), 2 channels
+  put32(f, 1u | (2u << 16));          // format 1 (PCM), 2 channels
   put32(f, 48000);
-  put32(f, 48000u * 8u);              // byte rate
-  put32(f, 8u | (32u << 16));         // block align 8, 32 bits
+  put32(f, 48000u * 4u);              // byte rate
+  put32(f, 4u | (16u << 16));         // block align 4, 16 bits
   fwrite("data", 1, 4, f);
   put32(f, data);
 }
@@ -86,7 +92,23 @@ static void drain(void) {
   while (f_out != in) {
     const uint32_t o = f_out;
     const uint32_t n = (in > o) ? in - o : FRAME_RING - o;
-    fwrite(&fring[2 * o], sizeof(float), 2 * (size_t)n, wav);
+    int16_t pcm[2 * 1024];
+
+    for (uint32_t k = 0; k < 2 * n; k += 2 * 1024) {
+      const uint32_t m = (2 * n - k < 2 * 1024) ? 2 * n - k : 2 * 1024;
+
+      for (uint32_t j = 0; j < m; j++) {
+        double v = fring[2 * o + k + j] * 32768.0;
+
+        if (v > 32767.0) { v = 32767.0; clipped++; }
+        else if (v < -32768.0) { v = -32768.0; clipped++; }
+
+        pcm[j] = (int16_t)lrint(v);
+      }
+
+      fwrite(pcm, sizeof(int16_t), m, wav);
+    }
+
     written += n;
     MEMORY_BARRIER;
     f_out = (o + n) & (FRAME_RING - 1);
@@ -99,8 +121,8 @@ static void drain(void) {
     const struct ear_event *e = &ering[e_out];
 
     if (csv != NULL) {
-      fprintf(csv, "%llu,%u,%u,%d,%d,%u,%.4f,%.4f\n", (unsigned long long)e->frame,
-              e->who, e->mode, e->paired, e->rx1_cnt, e->nsamp, e->bal_l, e->bal_r);
+      fprintf(csv, "%llu,%u,%u,%d,%d,%u,%.4f,%.4f,%.1f\n", (unsigned long long)e->frame,
+              e->who, e->mode, e->paired, e->rx1_cnt, e->nsamp, e->bal_l, e->bal_r, e->af_db);
     }
 
     MEMORY_BARRIER;
@@ -136,7 +158,7 @@ void ear_record_put(double left, double right) {
 }
 
 void ear_record_block(int who, int mode, int paired, int rx1_cnt, int nsamp,
-                      double bal_l, double bal_r) {
+                      double bal_l, double bal_r, double af_db) {
   if (!ear_record_active) { return; }
 
   const uint32_t i = e_in;
@@ -153,6 +175,7 @@ void ear_record_block(int who, int mode, int paired, int rx1_cnt, int nsamp,
   e->nsamp   = (uint16_t)nsamp;
   e->bal_l   = (float)bal_l;
   e->bal_r   = (float)bal_r;
+  e->af_db   = (float)af_db;
   MEMORY_BARRIER;
   e_in = n;
 }
@@ -185,7 +208,7 @@ int ear_record_start(const char *wav_path, const char *csv_path, int owner) {
     if (csv == NULL) {
       t_perror("ear_record_start:fopen csv");
     } else {
-      fprintf(csv, "frame,who,mode,paired,rx1_cnt,nsamp,bal_l,bal_r\n");
+      fprintf(csv, "frame,who,mode,paired,rx1_cnt,nsamp,bal_l,bal_r,af_db\n");
     }
   }
 
@@ -193,6 +216,7 @@ int ear_record_start(const char *wav_path, const char *csv_path, int owner) {
   f_total = 0;
   f_lost = e_lost = 0;
   written = 0;
+  clipped = 0;
   g_strlcpy(wav_name, wav_path, sizeof(wav_name));
   owner_tag = owner;
   w_run = 1;
@@ -225,7 +249,8 @@ void ear_record_stop(int owner) {
     csv = NULL;
   }
 
-  t_print("%s: %s %.1f s%s\n", __func__, wav_name, written / 48000.0,
+  t_print("%s: %s %.1f s, %llu samples clipped%s\n", __func__, wav_name, written / 48000.0,
+          (unsigned long long)clipped,
           (f_lost || e_lost) ? " (frames lost: writer fell behind)" : "");
   owner_tag = EAR_REC_NONE;
 }

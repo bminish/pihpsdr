@@ -27,5 +27,6 @@ release/LatexManual/piHPSDR-Manual.pdf
 # set runs to tens of gigabytes - but the findings measured from it are,
 # in docs/diversity-measurements.md, which names every capture it uses.
 captures/
+wav/
 *.divc
 src/.divcap-*

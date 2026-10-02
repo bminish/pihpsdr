@@ -36,14 +36,20 @@ first guessed (2026-10-02/03).
 
 **What exists:**
 
-0. **The WAV button** (every build; Diversity menu, "Record:" row): RX1's
-   audio output as passed to `audio_write()`, both channels, float 48 kHz,
-   streamed to `wav/<YYYYMMDD-HHMMSS>_<kHz>_<mode>_<presentation>.wav`
-   (presentation: `rx1`, `div-manual|null|sum|best`, `div-per-ear`,
-   `div-sum-diff`, as at the start). Stops on a second press or when the
-   dialog closes. No length limit. `src/ear_record.c`. Tested standalone:
-   30 s through the ring (which holds 11 s) came back sample-exact.
-
+0. **The WAV button** (`make DIVCAP=1` only, like Capture: it is a test
+   feature and travels with it in the code; Diversity menu, "Record:"
+   row): RX1's audio output as passed to `audio_write()` but **before the
+   AF gain** (inverse of the panel gain, times upstream capture's 0.6),
+   both channels, **16-bit PCM**, 48 kHz, streamed to
+   `wav/<YYYYMMDD-HHMMSS>_<kHz>_<mode>_<presentation>.wav` with the
+   per-block CSV beside it (presentation: `rx1`,
+   `div-manual|null|sum|best`, `div-per-ear`, `div-sum-diff`, as at the
+   start). Stops on a second press or when the dialog closes. No length
+   limit. Clipped samples are counted in the log. `src/ear_record.c`.
+   16-bit because the first recording (CW, AGC on) spanned about 30 dB,
+   -46 to -15 dBFS, against 16-bit's -95 dBFS floor; float's headroom
+   was never used. Tested standalone: 30 s through the 11 s ring came
+   back within half an LSB, clipping counted.
 1. **The ear recorder beside a capture** (`make DIVCAP=1` only; the same
    `src/ear_record.c`, hooks in `rx_process_buffer()` in `src/receiver.c`).
    Armed and stopped with the Capture button (now on the "Record:" row, so
@@ -51,15 +57,16 @@ first guessed (2026-10-02/03).
    it is off, and in Manual starts the analysis thread for the capture
    alone, recording the manual weight as the live one), beside the I/Q capture of the
    same stamp:
-   - `captures/ears-<stamp>.wav`: RX1's output pair exactly as passed to
-     `audio_write()`, float stereo, 48 kHz. Covers summed and both split
+   - `captures/ears-<stamp>.wav`: as the WAV button's file (pre-AF,
+     16-bit, 48 kHz). Covers summed and both split
      modes.
    - `captures/ears-<stamp>.csv`: one row per `rx_process_buffer()` pass:
      `who` (receiver), `mode` (0 summed, 1 antenna per ear, 2 sum/diff),
      `paired` (on RX1's split pass, whether RX0's half was there; the right
      ear is dropped for the block if not), `rx1_cnt` (on RX0's pass, RX2's
      sample counter when RX0's buffer filled: **1023 = input blocks
-     aligned**, anything else is the offset), `nsamp`, `bal_l`, `bal_r`.
+     aligned**, anything else is the offset), `nsamp`, `bal_l`, `bal_r`,
+     `af_db` (the AF setting taken out).
    - No I/O on the receive thread: a writer thread streams the files.
      Only one recording at a time: Capture's ears or WAV, whichever began.
 2. **`test/diversity/devtools/py/ears.py`**: per mode run and per segment,

@@ -43,7 +43,13 @@
 #include "property.h"
 #include "radio.h"
 #include "receiver.h"
-#include "ear_record.h"
+#ifdef DIVERSITY_CAPTURE
+  //
+  // DEVELOPMENT TOOL: the WAV / capture audio recorder's hooks in
+  // rx_process_buffer(). See src/ear_record.h.
+  //
+  #include "ear_record.h"
+#endif
 #include "rx_panadapter.h"
 #include "sliders.h"
 #ifdef SOAPYSDR
@@ -1387,6 +1393,23 @@ static void rx_process_buffer(RECEIVER *rx) {
   t_print("RX lvl: %5.1f\n", 10.0 * log10(lvl));
 #endif
   const int split = div_split_active();
+#ifdef DIVERSITY_CAPTURE
+  //
+  // The recorder takes the audio before the AF gain, so its level does not
+  // follow the knob: the inverse of the panel gain rx_set_af_gain() sets
+  // (clamps included), times upstream capture's 0.6 for headroom. Both ears
+  // carry RX1's AF gain under the split. Muted (amplitude 0) there is
+  // nothing to recover, and zeros are recorded.
+  //
+  double recscale = 0.0;
+
+  if (ear_record_active) {
+    const double vol = receiver[0]->volume;
+    const double amp = (vol <= -39.5) ? 0.0 : (vol > 0.0) ? 1.0 : pow(10.0, 0.05 * vol);
+    recscale = (amp > 0.0) ? 0.6 / amp : 0.0;
+  }
+
+#endif
 #ifdef TCI
   //
   // One gain law for the pair. tci_volume is per receiver and is settable
@@ -1526,7 +1549,9 @@ static void rx_process_buffer(RECEIVER *rx) {
         // there would throw one ear away.
         //
         audio_write(receiver[0], split_left[i], ear);
-        ear_record_put(split_left[i], ear);
+#ifdef DIVERSITY_CAPTURE
+        ear_record_put(recscale * split_left[i], recscale * ear);
+#endif
       }
     } else {
       switch (rx->audio_channel) {
@@ -1544,8 +1569,11 @@ static void rx_process_buffer(RECEIVER *rx) {
 
       if (rx->local_audio) {
         audio_write(rx, left_sample, right_sample);
+#ifdef DIVERSITY_CAPTURE
 
-        if (rx->id == 0) { ear_record_put(left_sample, right_sample); }
+        if (rx->id == 0) { ear_record_put(recscale * left_sample, recscale * right_sample); }
+
+#endif
       }
     }
     if (rx == active_receiver) {
@@ -1569,6 +1597,7 @@ static void rx_process_buffer(RECEIVER *rx) {
   // has not run yet, and the ones either side of a sample rate change are
   // dropped rather than mispaired.
   //
+#ifdef DIVERSITY_CAPTURE
   //
   // The recorder's row for this pass (see ear_record.h). Before split_len
   // is handed over below, so RX1's row says whether it found RX0's half.
@@ -1577,8 +1606,10 @@ static void rx_process_buffer(RECEIVER *rx) {
     ear_record_block(rx->id, split ? div_split : 0,
                      (split && rx->id == 1) ? (split_len == rx->output_samples) : -1,
                      (rx->id == 0 && receiver[1] != NULL) ? receiver[1]->samples : -1,
-                     rx->output_samples, div_bal_l, div_bal_r);
+                     rx->output_samples, div_bal_l, div_bal_r, receiver[0]->volume);
   }
+
+#endif
 
   split_len = (split && rx->id == 0) ? rx->output_samples : 0;
 

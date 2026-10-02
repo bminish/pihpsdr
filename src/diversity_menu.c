@@ -23,7 +23,6 @@
 
 #include "client_server.h"
 #include "diversity_auto.h"
-#include "ear_record.h"
 #include "message.h"
 #include "mode.h"
 #include "new_menu.h"
@@ -39,6 +38,7 @@
   // See test/diversity/devtools/README.md.
   //
   #include "diversity_capture.h"
+  #include "ear_record.h"
 #endif
 
 //
@@ -66,7 +66,9 @@ static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
 static GtkWidget *level_b = NULL;
 static GtkWidget *split_combo = NULL;
+#ifdef DIVERSITY_CAPTURE
 static GtkWidget *wav_b = NULL;
+#endif
 static GtkWidget *balance_scale = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
@@ -228,8 +230,10 @@ static void cleanup(void) {
     // A WAV recording ends with the dialog, by request. (A capture does
     // not: see below.)
     //
+#ifdef DIVERSITY_CAPTURE
     ear_record_stop(EAR_REC_WAV);
     wav_b = NULL;
+#endif
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     win_centre_btn = NULL;
@@ -315,8 +319,10 @@ static void balance_cb(GtkWidget *widget, gpointer data) {
   radio_calc_split_balance();
 }
 
+#ifdef DIVERSITY_CAPTURE
 //
-// WAV: record RX1's audio output, both channels, to ./wav/. The name says
+// DEVELOPMENT TOOL. WAV: record RX1's audio output before the AF gain,
+// both channels, to ./wav/, with the per-block CSV beside it. The name says
 // when, where, in what mode, and what was being presented - so a folder of
 // them can be read without opening any. See ear_record.h.
 //
@@ -347,11 +353,12 @@ static void wav_cb(GtkWidget *widget, gpointer data) {
   (void)data;
 
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
-    char path[256];
+    char path[256], csvp[256];
     wav_name(path, sizeof(path));
+    snprintf(csvp, sizeof(csvp), "%.*s.csv", (int)strlen(path) - 4, path);
 
     if (g_mkdir_with_parents("wav", 0755) != 0 ||
-        !ear_record_start(path, NULL, EAR_REC_WAV)) {
+        !ear_record_start(path, csvp, EAR_REC_WAV)) {
       //
       // The folder or file would not open, or a capture is already
       // recording the ears. Come back out.
@@ -363,6 +370,7 @@ static void wav_cb(GtkWidget *widget, gpointer data) {
     gtk_button_set_label(GTK_BUTTON(widget), "WAV");
   }
 }
+#endif
 
 static void enable_cb(GtkWidget *widget, gpointer data) {
   int state = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
@@ -621,14 +629,14 @@ static int status_update_cb(gpointer data) {
   // them underneath would make the control useless.
   //
 
+#ifdef DIVERSITY_CAPTURE
+
   if (wav_b != NULL && ear_record_owner() == EAR_REC_WAV) {
     char t[32], lbl[48];
     ear_record_status(t, sizeof(t));
     snprintf(lbl, sizeof(lbl), "WAV %s", t);
     gtk_button_set_label(GTK_BUTTON(wav_b), lbl);
   }
-
-#ifdef DIVERSITY_CAPTURE
 
   //
   // DEVELOPMENT TOOL. The block count goes on the button rather than into
@@ -1370,20 +1378,20 @@ void diversity_menu(GtkWidget *parent) {
     g_signal_connect(balance_scale, "value_changed", G_CALLBACK(balance_cb), NULL);
     div_split_sensitive();
   }
+#ifdef DIVERSITY_CAPTURE
   row++;
   //
-  // Recording. In the main grid rather than with the auto controls, which
-  // are hidden in Manual. WAV is the audio as heard; Capture (DIVCAP=1
-  // builds only) is the two antenna streams for offline replay, with the
-  // audio beside it in captures/.
+  // DEVELOPMENT TOOLS. Recording. In the main grid rather than with the
+  // auto controls, which are hidden in Manual. WAV is the audio output
+  // (before the AF gain); Capture is the two antenna streams for offline
+  // replay, with the audio beside it in captures/.
   //
   lbl = gtk_label_new("Record:");
   gtk_widget_set_name(lbl, "boldlabel");
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
-#ifdef DIVERSITY_CAPTURE
   //
-  // DEVELOPMENT TOOL. A capture survives the menu being closed, so the
+  // A capture survives the menu being closed, so the
   // button is set before its handler is connected and does not read as
   // the operator pressing it. It cannot work from a remote client: the
   // file is written by the analysis thread, on the radio.
@@ -1403,11 +1411,12 @@ void diversity_menu(GtkWidget *parent) {
 
   if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
 
-#endif
   wav_b = gtk_toggle_button_new_with_label("WAV");
   gtk_widget_set_tooltip_text(wav_b,
-                              "Record the audio output, both channels, to the wav/ "
-                              "folder. Press again, or close this dialog, to stop. "
+                              "Development tool. Record the audio output before the "
+                              "AF gain, both channels, 16-bit, to the wav/ folder, "
+                              "with a CSV of the per-block state beside it. Press "
+                              "again, or close this dialog, to stop. "
                               "The file is named for the time, frequency, mode and "
                               "what is presented (RX1 alone, a diversity objective, "
                               "or the ear split).");
@@ -1417,6 +1426,7 @@ void diversity_menu(GtkWidget *parent) {
 
   if (radio_is_remote) { gtk_widget_set_sensitive(wav_b, FALSE); }
 
+#endif
   row++;
   //
   // Container for the "manual" controls

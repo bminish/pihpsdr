@@ -478,7 +478,6 @@ src/dxcluster.c \
 src/dxcluster_db.c \
 src/dxcluster_history_menu.c \
 src/dxcluster_popup.c \
-src/ear_record.c \
 src/encoder_menu.c \
 src/equalizer_menu.c \
 src/exit_menu.c \
@@ -582,7 +581,6 @@ src/dxcluster.o \
 src/dxcluster_db.o \
 src/dxcluster_history_menu.o \
 src/dxcluster_popup.o \
-src/ear_record.o \
 src/encoder_menu.o \
 src/equalizer_menu.o \
 src/exit_menu.o \
@@ -677,7 +675,8 @@ ifdef DIVCAP
 # Instrumentation for tuning the RADE V1 pilot correlator against
 # recorded real-world signals. Not part of the diversity feature: this
 # block, the guarded blocks in src/diversity_auto.c and
-# src/diversity_menu.c, and src/diversity_capture.[ch] all come out
+# src/diversity_menu.c and src/receiver.c, src/diversity_capture.[ch] and
+# src/ear_record.[ch] all come out
 # before it is submitted upstream. See test/diversity/devtools/README.md,
 # which has a script that does it.
 #
@@ -685,8 +684,8 @@ ifdef DIVCAP
 # conditional removes the comment with it.
 #
 CFLAGS  += -DDIVERSITY_CAPTURE
-SOURCES += src/diversity_capture.c
-OBJS    += src/diversity_capture.o
+SOURCES += src/diversity_capture.c src/ear_record.c
+OBJS    += src/diversity_capture.o src/ear_record.o
 #
 # Switching the instrument on or off changes -D for two files that are
 # built either way, and make cannot see a changed flag - it only looks at
@@ -699,11 +698,11 @@ OBJS    += src/diversity_capture.o
 # compiled into a binary that is supposed to be clean.
 #
 DIVCAP_SWITCH := $(shell test -f src/.divcap-on || \
-    { rm -f src/diversity_auto.o src/diversity_menu.o; touch src/.divcap-on; })
+    { rm -f src/diversity_auto.o src/diversity_menu.o src/receiver.o; touch src/.divcap-on; })
 else
 DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
     rm -f src/.divcap-on src/diversity_auto.o src/diversity_menu.o \
-          src/diversity_capture.o)
+          src/receiver.o src/diversity_capture.o src/ear_record.o)
 endif
 
 ##############################################################################

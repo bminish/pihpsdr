@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Analyse an ear recording: captures/ears-<stamp>.wav + .csv.
 
-The WAV is what piHPSDR handed to audio_write() for RX1's output (left,
-right). The CSV has one row per rx_process_buffer() pass. For each run of
+The WAV is RX1's output pair as handed to audio_write(), taken before the
+AF gain (x 0.6 headroom), 16-bit since 13539f8d's successor; older files
+are float.  The CSV has one row per rx_process_buffer() pass. For each run of
 one split mode this prints, per segment of --seg seconds:
 
   rms_l/rms_r   level of each ear, dBFS
