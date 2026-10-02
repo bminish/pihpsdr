@@ -153,7 +153,7 @@ say that is not decode. Five of the six reproduce bit-exactly against the
 build that made them; `193105` cannot, because it opens already locked.
 The seventh capture, `123333`, is **95 % bare band noise, the emptiest in
 the document**, and it is the third to measure the open branch-noise-ratio
-defect: ADC1 15.4 dB hot with a signal-to-noise ratio 3.8 dB *worse*, and
+defect: ADC2 15.4 dB hot with a signal-to-noise ratio 3.8 dB *worse*, and
 the loop applying seven decibels more weight than maximum ratio wants and
 raising the output 20.07 dB in the speech.
 
@@ -174,7 +174,7 @@ crediting whichever arm fades less. It costs 2.05 dB on one capture and
 makes Best pick the wrong antenna for a whole minute; on the other,
 `arm_db` is right to a decibel and **Best is the best row in the table** -
 level with the better antenna on the mean and +8.9 dB at the first
-percentile. The two captures were taken with ADC0's 6 dB pad in and out,
+percentile. The two captures were taken with ADC1's 6 dB pad in and out,
 so the branch-noise ratio is genuinely different in each, and the
 estimator is wrong in opposite directions on the two.
 
@@ -328,7 +328,7 @@ on the weak captures, which is the third independent measurement to say
 so and the first on the signals the control was supposed to help.
 
 **Twenty-two point seven decibels is the attenuator's real limit.**
-`122632` has the operator walking ADC1 from 0 to 16 dB in 1 dB steps, and
+`122632` has the operator walking ADC2 from 0 to 16 dB in 1 dB steps, and
 because the recorder now writes both attenuator values the noise can be
 fitted against the setting: band noise plus a constant chain floor, 0.23 dB
 rms over sixteen settings, floor 22.7 dB below the band noise. Sixteen
@@ -377,7 +377,7 @@ decoder's SNR on the deepest-fading capture in the set, while
 `232842`.
 
 **Fourteen decibels of step attenuator are free.** `234624` ends with the
-operator walking ADC0 from 0 to 14 dB in eleven recorded steps while ADC1
+operator walking ADC1 from 0 to 14 dB in eleven recorded steps while ADC2
 stays put, and against that untouched arm the signal falls 14.95 dB, the
 noise falls 14.94, and the arm's own signal-to-noise ratio moves from
 +5.19 to +5.18 dB. Finding 28 measured four decibels on 15 m at midday;
@@ -519,7 +519,7 @@ what would settle it is the same sweep scored against a decoder.
 of this document's own conclusions.
 
 **A hot antenna costs headroom and nothing else.** Seven to fourteen
-decibels of extra output on ADC1 buys an SNR that runs from 5.1 dB *worse*
+decibels of extra output on ADC2 buys an SNR that runs from 5.1 dB *worse*
 to 2.2 dB better, so the level says nothing about which antenna to use.
 Attenuating it is nearly free - 12 dB cost arm 1 a quarter of a decibel
 and cost the array nothing - and since Finding 22 put the noise ratio into
@@ -546,15 +546,15 @@ threshold while inflating the statistic on signal and on noise alike
 **Findings 21, 22 and 23** answer an operator's question and turn up a
 larger defect than the one they were asked about. Three captures on
 2 September - 20 m voice and CW near the MUF, and 30 m FT8 - all with
-**ADC1 running 9.8 to 13.2 dB hotter than ADC0**.
+**ADC2 running 9.8 to 13.2 dB hotter than ADC1**.
 
 **A hot second antenna costs 3.6 dB and it is not the attenuator's
 fault.** On `002534` the loop made the audio 14.8 dB louder with a noise
-floor 18.3 dB higher and an SNR 3.6 dB *below* ADC0 alone, where +1.4 dB
+floor 18.3 dB higher and an SNR 3.6 dB *below* ADC1 alone, where +1.4 dB
 was there to be had. The cause is Finding 20 again: Window and Carrier
 give Sum the channel ratio with no noise term, so they assume the two
 branches are equally noisy, and here they are 12 dB apart. `002710` has
-the operator stepping the ADC1 attenuator twice while recording, which is
+the operator stepping the ADC2 attenuator twice while recording, which is
 the experiment that settles it - the *available* gain is unchanged at
 +1.6 to +1.9 dB at all three settings, while what the loop *achieved* goes
 -3.4, -3.5, **+1.8 dB**. Equalising the chains does not improve the
@@ -645,7 +645,7 @@ recording.
 | `231532` | 3.588 | DIGL | FSK/Digital | **none** |
 | `232750` | 3.588 | DIGL | RADE V1 | **none** |
 | `233423` | 14.240 | DIGU | RADE V1 | **none** - band noise, occasional weak SSB |
-| `233615` | 1.985 | LSB | RADE V1 | **none** - strong local interferer on ADC0 |
+| `233615` | 1.985 | LSB | RADE V1 | **none** - strong local interferer on ADC1 |
 | `235853` | 3.663 | LSB | Window, coherence | analog voice, 33 s |
 | `000012` | 3.663 | LSB | Window, coherence | analog voice, 60 s, 5 kHz filter |
 | `235837` | 3.663 | LSB | Window, coherence | analog voice, **3.2 s - too short to use** |
@@ -664,10 +664,10 @@ recording.
 | `115357` | 7.19702 | DIGL | RADE V1 | locked 93 %, averaging 4.0 s, **operator walks the dial down 18 Hz** |
 | `000332` | 5.42810 | USB | Window, coherence | **wideband digital**, continuous, **operator sweeps Averaging 10.4 -> 0.2 s on air** |
 | `000747` | 5.28750 | USB | FSK/Digital, Window, then Carrier | **wideband digital**, 18 dB over the floor, fast selective fading, averaging 0.2-3.4 s |
-| `002534` | 14.19500 | USB | Window, coherence | **20 m analog voice**, several operators, averaging **0.2 s**, ADC1 12.3 dB hot |
-| `002710` | 14.01194 | CWL | Window, coherence | **20 m CW**, nfft 65536, **operator steps the ADC1 attenuator twice** |
+| `002534` | 14.19500 | USB | Window, coherence | **20 m analog voice**, several operators, averaging **0.2 s**, ADC2 12.3 dB hot |
+| `002710` | 14.01194 | CWL | Window, coherence | **20 m CW**, nfft 65536, **operator steps the ADC2 attenuator twice** |
 | `003309` | 10.13611 | USB | FSK/Digital, then Window | **30 m FT8**, nfft 16384, many stations, averaging 0.2-2.7 s |
-| `142026` | 11.65999 | AM | Window, **flat** | **DRM mode B, 10 kHz** - received in `AM` with a +/-6 kHz filter. ADC1 at **23 dB of attenuation**; operator cycles objective, reference and weighting |
+| `142026` | 11.65999 | AM | Window, **flat** | **DRM mode B, 10 kHz** - received in `AM` with a +/-6 kHz filter. ADC2 at **23 dB of attenuation**; operator cycles objective, reference and weighting |
 | `142333` | 21.04004 | CWL | Window, coherence | **15 m CW**, nfft 65536, **both attenuators swept 0-4 dB** |
 | `154822` | 14.11781 | USB | Window, coherence | **50 baud FSK, 205 Hz shift**, stops and idles on mark, then a **second source** appears out of band. No operator changes |
 | `165548` | 7.17700 | **LSB** | RADE V1 | 40 m RADE, first capture **outside a DIG mode**, locked 87 %, quality 0.26 |
@@ -676,9 +676,9 @@ recording.
 | `122211` | 7.172948 | LSB | Window, coherence | the same signal at **3 Hz bins**, nfft 65536 |
 | `122336` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 12 Hz bins, 14 s |
 | `122353` | 7.172948 | LSB | Window, coherence | the same signal at **48 kHz**, 6 Hz bins, 60 s |
-| `122632` | 18.143000 | USB | Window, coherence | **17 m near the MUF**, one side of a QSO, 59 % bare noise; **operator walks ADC1 0 to 16 dB in 1 dB steps** |
+| `122632` | 18.143000 | USB | Window, coherence | **17 m near the MUF**, one side of a QSO, 59 % bare noise; **operator walks ADC2 0 to 16 dB in 1 dB steps** |
 | `122843` | 18.143000 | USB | Window, coherence | the same station at **3 Hz bins**, 67 % bare noise - the capture the combiner loses on |
-| `123333` | 18.143000 | USB | Window, coherence | the same station again, nfft 16384 - **95 % bare noise, the emptiest in the set**, ADC1 15.4 dB hot (Finding 45) |
+| `123333` | 18.143000 | USB | Window, coherence | the same station again, nfft 16384 - **95 % bare noise, the emptiest in the set**, ADC2 15.4 dB hot (Finding 45) |
 | `190516` | 3.65400 | DIGL | RADE V1 | **80 m RADE**, nfft 65536, averaging 0.20 s, two overs |
 | `190715` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s |
 | `190822` | 3.65400 | DIGL | RADE V1 | the same, averaging 0.20 s, opens unlocked for 10.9 s |
@@ -694,7 +694,7 @@ means the flag cannot be used to find retunes in this file - the
 
 `111852` and `112151` are the first captures below 1.8 MHz, the first in
 `SAM`, and the first where the *second* antenna is the loud one by a wide
-margin: ADC1 runs 14.5 to 15.2 dB above ADC0 across the whole passband on
+margin: ADC2 runs 14.5 to 15.2 dB above ADC1 across the whole passband on
 both. See Finding 16.
 
 `000332` and `000747` are the first captures of **wideband digital signals
@@ -719,7 +719,7 @@ the first test of the FSK/Digital reference on actual FSK. See Finding 31.
 
 `142026` and `142333` are the first captures in **format version 2**, so
 they are the first that record what the step attenuators were set to.
-`142333` sweeps both of them and `142026` was taken with ADC1 already 23 dB
+`142333` sweeps both of them and `142026` was taken with ADC2 already 23 dB
 down; between them they answer the question Finding 24 had to leave open.
 `142026` is also the first capture in the **AM** mode group, the first with
 a wanted signal sitting on noise the two antennas largely share, and the
@@ -728,8 +728,8 @@ conventional AM, received in `AM` mode with the filter opened out. The
 mode column says what the radio was set to; the signal is OFDM. See
 Findings 28 and 30.
 
-`002534`, `002710` and `003309` were taken in one session with **ADC1
-running 9.8 to 13.2 dB hotter than ADC0** - the first captures where the
+`002534`, `002710` and `003309` were taken in one session with **ADC2
+running 9.8 to 13.2 dB hotter than ADC1** - the first captures where the
 imbalance between the two receive chains is the subject rather than a
 detail, and the first where the operator moved a step attenuator while
 recording. The two 20 m captures were taken with the band close to its
@@ -751,8 +751,8 @@ nothing but a minute of a quiet band.
 
 The four 60 m captures were taken with **no note recorded**, which the
 devtools README asks for and which nothing enforces. What is known of
-them comes from the operator afterwards: ADC0 is the main antenna,
-sometimes tuned and sometimes not, ADC1 an untuned doublet. That
+them comes from the operator afterwards: ADC1 is the main antenna,
+sometimes tuned and sometimes not, ADC2 an untuned doublet. That
 asymmetry is the subject of Finding 13, and the missing note is the
 reason it had to be established by measurement rather than read off the
 file. Every capture from `115357` onwards has no note either. Findings 20 and 22 turn on which antenna was on which ADC
@@ -1027,7 +1027,7 @@ tapped frame:
 | 1100-3000 Hz | -41 dB | -38.5 dB | 0.60-0.83 | -2.0 to -5.0 dB |
 
 The local source is the 574-996 Hz hump. It is up to **10.5 dB above the
-floor on ADC0 only**, and it is **incoherent between the arms**, so a
+floor on ADC1 only**, and it is **incoherent between the arms**, so a
 two-branch array cannot null it - the best a single complex weight can do
 there is 0.7 dB. What the array *can* do is de-weight the contaminated
 arm, which is what MVDR with a correct noise covariance would do by
@@ -1451,7 +1451,7 @@ indistinguishable from a tracked answer and is not one. The weight
 actually applied then slews towards zero and stays there: on the three
 60 m captures with a signal the recorded `div_cos, div_sin` has a median
 magnitude of **-175, -119 and -86 dB**. Arm 1 was muted for the whole
-minute. The operator was listening to ADC0 alone with the menu reporting
+minute. The operator was listening to ADC1 alone with the menu reporting
 a lock, a quality of 0.8 and a pilot SNR of 8 dB - all of which were
 true, and none of which reached the audio.
 
@@ -1607,8 +1607,8 @@ to +2500, `expect_bank` 1, averaging 5.6 s.
 | lock uptime, replayed cold | 94 % |
 | median quality | 0.51 |
 | median pilot SNR | +0.1 dB |
-| modem band against its mirror, ADC0 | **+11.3 dB** |
-| modem band against its mirror, ADC1 | +1.7 dB |
+| modem band against its mirror, ADC1 | **+11.3 dB** |
+| modem band against its mirror, ADC2 | +1.7 dB |
 
 94 % uptime from a single acquisition is the best in the set after
 `213155`. The frame inversion holds for a fourth time: with the modem on
@@ -1648,8 +1648,8 @@ scatter-not-trend the 40 m captures gave.
 
 ## Finding 13: the estimator measured the antenna difference correctly
 
-The 60 m pair is badly asymmetric - a main antenna on ADC0 against an
-untuned doublet on ADC1 - so it is a direct test of whether the
+The 60 m pair is badly asymmetric - a main antenna on ADC1 against an
+untuned doublet on ADC2 - so it is a direct test of whether the
 correlator's `h` and `R` describe the two arms honestly, or whether the
 weight it produced was wrong because the measurement behind it was.
 
@@ -1693,16 +1693,16 @@ The cause is visible in the guard bins themselves. They are 50 Hz-wide
 rectangular DFT bins taken inside one 20 ms pilot symbol, at
 `lock_f + k*50 Hz` for k = 6..14 and 45..57, skipping the modem's own
 carriers at k = 15..44. Measured from the raw blocks, the two bins that
-sit immediately beside the modem span read hot on ADC0 and flat on ADC1:
+sit immediately beside the modem span read hot on ADC1 and flat on ADC2:
 
 | guard bin | k=6 | k=10 | **k=14** | **k=45** | k=48 | k=57 |
 |---|---|---|---|---|---|---|
-| ADC0 | -23.4 dB | -23.1 | **-19.4** | **-20.2** | -22.9 | -23.4 |
-| ADC1 | -26.7 dB | -26.6 | -26.4 | -26.6 | -26.9 | -26.9 |
+| ADC1 | -23.4 dB | -23.1 | **-19.4** | **-20.2** | -22.9 | -23.4 |
+| ADC2 | -26.7 dB | -26.6 | -26.4 | -26.6 | -26.9 | -26.9 |
 
 That is modem leakage, and it can only bias the arm that can hear the
-modem. On `232842` ADC0's modem stands 11 dB above its own floor and
-ADC1's stands 1.9 dB above, so the leakage lands almost entirely on ADC0,
+modem. On `232842` ADC1's modem stands 11 dB above its own floor and
+ADC2's stands 1.9 dB above, so the leakage lands almost entirely on ADC1,
 inflates `acc_r00`, and pushes `r11/r00` down. On `202743`, where the
 modem is 5.8 dB above the floor and the two arms are within a decibel,
 the correlator's -0.59 dB and the independent -0.08 dB agree to half a
@@ -1711,7 +1711,7 @@ one capture with a strong modem and one deaf arm, and one with a strong
 modem on both.
 
 The pick was still right on `232842` - -11.2 dB and -15.0 dB both say
-ADC0, decisively - so this is an accuracy problem in a displayed number
+ADC1, decisively - so this is an accuracy problem in a displayed number
 and a margin problem for Best, not a wrong answer here.
 
 **What it means for the antennas.** The doublet is 11 to 13 dB down on
@@ -1726,8 +1726,8 @@ captures the correct answer is to weight the *quiet* antenna up, not
 down.
 
 This is also the clearest case yet for showing per-arm SNR in the menu.
-Nothing an operator can see distinguishes "ADC1 is 12 dB down because it
-is deaf" from "ADC1 is 12 dB down because it is quiet", and the two want
+Nothing an operator can see distinguishes "ADC2 is 12 dB down because it
+is deaf" from "ADC2 is 12 dB down because it is quiet", and the two want
 opposite weights.
 
 ### And on the no-signal capture
@@ -1862,25 +1862,25 @@ measures better in the passband (Findings 6 and 7):
 
 | capture | better arm | Window | Carrier | RADE V1 | FSK/Digital |
 |---|---|---|---|---|---|
-| `110923` | ADC0 | ADC0 | ADC0 | ADC0 | ADC0 |
-| `111051` | ADC1 | ADC1 | ADC1 | ADC1 | **ADC0** |
-| `111734` | ADC0 | ADC0 | ADC0 | ADC0 | ADC0 |
-| `213155` | ADC1 | ADC1 | ADC1 | **ADC0** | **ADC0** |
-| `233133` | ADC0 | ADC0 | ADC0 | ADC0 | ADC0 |
-| `233241` | ADC0 | ADC0 | ADC0 | ADC0 | ADC0 |
-| `235853` | ADC1 | **ADC0** | **ADC0** | no lock | **ADC0** |
-| `000012` | ADC1 | ADC1 | ADC1 | no lock | **ADC0** |
-| `000209` | ADC1 | ADC1 | ADC1 | no lock | ADC1 |
-| `000328` | ADC1 | ADC1 | ADC1 | no lock | **ADC0** |
-| `232842` | ADC0 | ADC0 | **ADC1** | ADC0 | ADC0 |
-| `111852` | ADC1 | ADC1 | ADC1 | no lock | ADC1 |
-| `112151` | ADC0 | ADC0 | ADC0 | no lock | ADC0 |
+| `110923` | ADC1 | ADC1 | ADC1 | ADC1 | ADC1 |
+| `111051` | ADC2 | ADC2 | ADC2 | ADC2 | **ADC1** |
+| `111734` | ADC1 | ADC1 | ADC1 | ADC1 | ADC1 |
+| `213155` | ADC2 | ADC2 | ADC2 | **ADC1** | **ADC1** |
+| `233133` | ADC1 | ADC1 | ADC1 | ADC1 | ADC1 |
+| `233241` | ADC1 | ADC1 | ADC1 | ADC1 | ADC1 |
+| `235853` | ADC2 | **ADC1** | **ADC1** | no lock | **ADC1** |
+| `000012` | ADC2 | ADC2 | ADC2 | no lock | **ADC1** |
+| `000209` | ADC2 | ADC2 | ADC2 | no lock | ADC2 |
+| `000328` | ADC2 | ADC2 | ADC2 | no lock | **ADC1** |
+| `232842` | ADC1 | ADC1 | **ADC2** | ADC1 | ADC1 |
+| `111852` | ADC2 | ADC2 | ADC2 | no lock | ADC2 |
+| `112151` | ADC1 | ADC1 | ADC1 | no lock | ADC1 |
 | **correct** | | **12/13** | **11/13** | **6/7** | **7/13** |
 
-`202743` is deliberately absent: decode makes ADC0 the better arm on
-synced frames (305 against 257) and ADC1 the better arm on mean SNR (+2.7
+`202743` is deliberately absent: decode makes ADC1 the better arm on
+synced frames (305 against 257) and ADC2 the better arm on mean SNR (+2.7
 against -0.3 dB), which is Trap 3 pointing both ways at once. Window and
-Carrier pick ADC1 there, RADE V1 and FSK/Digital pick ADC0, and there is
+Carrier pick ADC2 there, RADE V1 and FSK/Digital pick ADC1, and there is
 no honest way to mark any of them.
 
 The two mediumwave captures are the easiest rows in the table and all
@@ -2134,15 +2134,15 @@ it. The fix and what it scored are under "What was changed".
 
 ## Finding 16: mediumwave, where the noise is the coherent thing
 
-Two captures below 1 MHz, `SAM` with a +/-4 kHz filter, both with ADC1 -
-the untuned doublet - running 14.5 to 15.2 dB above ADC0 across the whole
+Two captures below 1 MHz, `SAM` with a +/-4 kHz filter, both with ADC2 -
+the untuned doublet - running 14.5 to 15.2 dB above ADC1 across the whole
 passband. They are the first captures in the set where the inter-arm
 noise is *more* correlated than not.
 
 | | `111852`, 692.9 kHz | `112151`, 724.4 kHz |
 |---|---|---|
 | what is there | 693 kHz broadcast carrier, 43 dB over the in-band median | band noise, strongest features 19.5 dB over median |
-| ADC1 - ADC0, passband | +15.2 dB | +14.5 dB |
+| ADC2 - ADC1, passband | +15.2 dB | +14.5 dB |
 | inter-arm coherence, passband | **0.982** | 0.524 |
 | inter-arm coherence, off-carrier | 0.782 | - |
 | noise `N1/N0` | +13.1 dB | +14.5 dB |
@@ -2153,14 +2153,14 @@ With a discrete carrier present, per-arm SNR is directly measurable -
 signal in the carrier bins, noise over the rest of the passband - with no
 model in the way:
 
-| | ADC0 | ADC1 |
+| | ADC1 | ADC2 |
 |---|---|---|
 | carrier SNR | +34.0 dB | **+36.2 dB** |
 
-ADC1 is 2.2 dB better, which is `h1/h0` = +15.3 dB against `N1/N0` =
+ADC2 is 2.2 dB better, which is `h1/h0` = +15.3 dB against `N1/N0` =
 +13.1 dB. The array, though, has almost nothing to add: the best fixed
 weight anywhere in the plane scores **+36.4 dB**, 0.17 dB above simply
-using ADC1. The reason is in the phases - the channel is at -55.7 degrees
+using ADC2. The reason is in the phases - the channel is at -55.7 degrees
 and the noise at -64.8, nine degrees apart, with the noise 78 %
 correlated. A two-element array cannot point at one and away from the
 other when they arrive from the same direction.
@@ -2184,7 +2184,7 @@ a signal rather than on an argument.
 
 ### Null reaches its ceiling on `111852`
 
-Measured as output power in the +/-4 kHz passband against ADC0 alone,
+Measured as output power in the +/-4 kHz passband against ADC1 alone,
 over the settled part of the capture (t > 20 s, 234 blocks):
 
 | | depth |
@@ -2241,10 +2241,10 @@ is offered and it is not offered often.
 
 ### What Best does with the +20 dB rail
 
-On `111852` Best correctly chooses ADC1 and, because "use arm 1 only" is
+On `111852` Best correctly chooses ADC2 and, because "use arm 1 only" is
 only reachable as `w -> infinity`, applies the `DIV_MAX_WEIGHT` clamp:
-`w` = +20.00 dB. The output is then ADC1 scaled by ten - **20 dB louder
-than either antenna alone** - with ADC0 20 dB down inside it. The SNR is
+`w` = +20.00 dB. The output is then ADC2 scaled by ten - **20 dB louder
+than either antenna alone** - with ADC1 20 dB down inside it. The SNR is
 right, the AGC step is not. Finding 14 predicted this from the algebra;
 this is the first capture where an operator would actually hear it.
 
@@ -2587,7 +2587,7 @@ measurement in that reference to tell it otherwise - Finding 14 says as
 much, and adds a minimum-statistics floor tracker to publish the per-arm
 figure, which the Sum path does not use.
 
-On `000332` the arms are not equal. ADC1 is 2.78 dB down on signal and
+On `000332` the arms are not equal. ADC2 is 2.78 dB down on signal and
 **6.31 dB down on noise**, so it is the better antenna by 3.5 dB - the
 same "quiet is not deaf" pattern Finding 13 found on 60 m, seen here by a
 wideband reference rather than by the correlator. Which antenna that was
@@ -2752,7 +2752,7 @@ average, and it appears in the numbers before the fading does.
 
 The operator's report had four parts: the second antenna has much more
 output; it raises the noise floor of the audio; it does not degrade the
-SNR; and setting the ADC1 step attenuator helps. Three of those are
+SNR; and setting the ADC2 step attenuator helps. Three of those are
 confirmed below. The third is true on two of the three captures and badly
 false on the voice one, where the loop gave away 3.6 dB. The capture that
 settles the attenuator question is `002710`, where it was moved twice
@@ -2789,7 +2789,7 @@ to arm 0 alone:
 | ideal causal MVDR | 0.074 | +1.87 | +0.52 | +20.39 | +1.37 |
 
 The audio was **14.8 dB louder with a noise floor 18.3 dB higher**, and
-the SNR was **3.6 dB worse than simply listening to ADC0**. The level and
+the SNR was **3.6 dB worse than simply listening to ADC1**. The level and
 the noise floor are exactly as reported. The SNR is not: on this capture
 it was degraded, and the 18.3 dB of extra noise is not a cosmetic
 consequence of a louder output but 3.6 dB of real loss hidden inside it.
@@ -2827,8 +2827,8 @@ FSK/Digital's other weaknesses dominate.
 
 ### The attenuator experiment
 
-`002710` contains the operator's own test. ADC1's noise floor steps down
-twice while ADC0's stays at -67.1 dB throughout:
+`002710` contains the operator's own test. ADC2's noise floor steps down
+twice while ADC1's stays at -67.1 dB throughout:
 
 | plateau | blocks | t | arm 1 - arm 0, floor | arm 1 SNR | arm 0 SNR |
 |---|---|---|---|---|---|
@@ -3003,9 +3003,9 @@ the difference is spent on headroom rather than on hearing.**
 `002710` is the experiment, and it is worth being precise about what it
 does and does not establish.
 
-**Established, with no model in the way.** Across two steps of the ADC1
+**Established, with no model in the way.** Across two steps of the ADC2
 attenuator, arm 1's own SNR was +9.72, +9.44 and +9.47 dB - flat to a
-quarter of a decibel - while ADC0, untouched, fell 4.7 dB over the same
+quarter of a decibel - while ADC1, untouched, fell 4.7 dB over the same
 minute as the path faded. The available two-branch gain was +1.68, +1.59
 and +1.89 dB over the better arm at the three settings. So the
 attenuation cost that arm **0.25 dB in total** and cost the array nothing,
@@ -3323,8 +3323,8 @@ since Finding 5.
 | filter, engine window | +/-6000 Hz | -1050..-50, window **-500..+500** |
 | reference, weighting | Window, **flat** | Window, coherence |
 | averaging | 0.20 s | 2.90 s |
-| attenuators | ADC1 at **23 dB**, stepped to 21 | **both swept**, 0 to 4 dB |
-| what the operator did | cycled objective, reference and weighting | swept ADC1 up and back, then ADC0 |
+| attenuators | ADC2 at **23 dB**, stepped to 21 | **both swept**, 0 to 4 dB |
+| what the operator did | cycled objective, reference and weighting | swept ADC2 up and back, then ADC1 |
 
 ### `142333`: the attenuator behaves exactly as the premise says
 
@@ -3335,12 +3335,12 @@ and the fit is not needed - the numbers can simply be read:
 
 | | guard-region floor | change |
 |---|---|---|
-| ADC1 at 0 dB | -48.67 dB | — |
-| ADC1 at 1 dB | -49.70 | **-1.03** |
-| ADC1 at 4 dB | -52.67 | **-4.00** |
-| ADC0 at 0 dB | -59.86 | — |
-| ADC0 at 2 dB | -61.84 | **-1.98** |
-| ADC0 at 4 dB | -63.88 | **-4.01** |
+| ADC2 at 0 dB | -48.67 dB | — |
+| ADC2 at 1 dB | -49.70 | **-1.03** |
+| ADC2 at 4 dB | -52.67 | **-4.00** |
+| ADC1 at 0 dB | -59.86 | — |
+| ADC1 at 2 dB | -61.84 | **-1.98** |
+| ADC1 at 4 dB | -63.88 | **-4.01** |
 
 **Both arms track the attenuator one for one, to within 0.03 dB over
 4 dB.** Nothing is compressing the step, which is what a receiver noise
@@ -3371,8 +3371,8 @@ keyed CW on a fading path, so those columns are not comparable between
 rows; the last column is, and it stays between +1.0 and +2.2 dB with no
 trend against either attenuator.
 
-`142333` is otherwise a hot-arm capture of the usual kind: ADC1 11.2 dB
-above ADC0 on noise and 3.4 dB worse on SNR, coherence time about 1.5 s,
+`142333` is otherwise a hot-arm capture of the usual kind: ADC2 11.2 dB
+above ADC1 on noise and 3.4 dB worse on SNR, coherence time about 1.5 s,
 and only 0.53 dB available to a per-bin weight - a single narrow signal in
 a 1 kHz window has no frequency structure to exploit.
 
@@ -3837,7 +3837,7 @@ amplitude dB:
 Unsmoothed it steps by up to 7.65 dB between blocks, which would be
 audible as pumping. At `DIV_NORM_TAU` = 1 s the ninetieth percentile is
 under a third of a decibel everywhere. The one remaining 3.95 dB step is
-on `002710`, where the operator moved the ADC1 attenuator mid-capture -
+on `002710`, where the operator moved the ADC2 attenuator mid-capture -
 a real level change that should move it.
 
 ### What is measured and what is not
@@ -4027,8 +4027,8 @@ block 0.
 | lock uptime, replayed | 84 % from 2 | 57 % from 4 | 2.9 % from 1 |
 | mean pilot SNR | -8.5 dB | -7.3 dB | -28.5 dB |
 
-**ADC0 is the noisy antenna and the better one.** Its band noise is
-9.7 dB above ADC1's and it hears the modem 15 dB louder, which leaves it
+**ADC1 is the noisy antenna and the better one.** Its band noise is
+9.7 dB above ADC2's and it hears the modem 15 dB louder, which leaves it
 5.5 dB ahead on what matters. That is Finding 16's "quiet is not deaf"
 inverted, and another distinct arrangement the per-arm statistic has had
 to get right.
@@ -4041,7 +4041,7 @@ first time a *RADE* capture has been measured for it. The open item asking
 for "a RADE station on a path with obvious common-mode noise" is not
 closed by 0.44, but it is no longer unmeasured.
 
-Two local sources sit on ADC0 alone: a carrier at +2.81 kHz in the tapped
+Two local sources sit on ADC1 alone: a carrier at +2.81 kHz in the tapped
 frame, 26 dB above arm 1 at that bin and 17 dB above arm 0's own band
 noise, at inter-arm coherence 0.03, and a second at +7.3 kHz. Neither is
 inside the operator's passband - the DIGL filter maps to +500..+2500 -
@@ -4084,8 +4084,8 @@ capture.
 
 ### The attenuator ramp: 14 dB, and it is free
 
-`234624` ends with the operator walking ADC0's step attenuator from 0 to
-14 dB in eleven recorded steps over the last nine seconds, with ADC1
+`234624` ends with the operator walking ADC1's step attenuator from 0 to
+14 dB in eleven recorded steps over the last nine seconds, with ADC2
 untouched. That is the sweep Finding 28's open item asked for, three times
 further out than Finding 28 could go.
 
@@ -4116,7 +4116,7 @@ Nothing is compressing, and nothing is running into the receiver's own
 floor. A converter floor contributing even a tenth of the power at the
 14 dB setting would show as a *shortfall* in the noise column; there is
 none - it falls a little more than nominal, not less. That bounds the
-receiver's own noise at roughly 10 dB or more below ADC0's attenuated band
+receiver's own noise at roughly 10 dB or more below ADC1's attenuated band
 noise, which is 24 dB or more below the band's at 0 dB, and it is a bound
 rather than a measurement: this experiment can only see the floor once the
 floor starts to bite. The single-block rows scatter by a decibel or so
@@ -4343,15 +4343,15 @@ separate properly. It is the path, not the antennas.
 
 ### On 17 m the second antenna is below the system noise floor
 
-`235906` is the most lopsided pair in this document. ADC1's noise floor
+`235906` is the most lopsided pair in this document. ADC2's noise floor
 is flat to about 1 dB across the **whole 192 kHz** DDC span - excluding
 the few 10 kHz slices carrying other broadcasts - sits 13.9 dB above
-ADC0's, and is 0.010 correlated with it. That is what an arm carrying its
+ADC1's, and is 0.010 correlated with it. That is what an arm carrying its
 own receiver noise and nothing else looks like: on 17 m at 23:00 UTC there
 is not enough band noise reaching that antenna to lift it off its own
 floor, so there is no common-mode component for the coherence to find.
 
-ADC0 nonetheless hears the station 8.4 dB *less* loudly and is 5.5 dB
+ADC1 nonetheless hears the station 8.4 dB *less* loudly and is 5.5 dB
 better on SNR - "quiet is not deaf" again - and the best single weight for
 the whole minute is `|w|` = **-21 dB** at +179 degrees: arm 1 all but
 muted, contributing a co-phased residue and no more.
@@ -4472,7 +4472,7 @@ detector has, and the one `112151` is criticised for being.
 | inter-arm noise coherence | 0.093 | 0.086 | 0.115 |
 | loop holding, as it ran | 18 % | 6 % | 3 % |
 
-Here ADC1 is the hot arm - the opposite way round from 160 m - by 5.5 to
+Here ADC2 is the hot arm - the opposite way round from 160 m - by 5.5 to
 6.9 dB, and on two of the three it is also the worse one. `000537` is the
 exception and the only capture in this batch where the *hotter* arm is
 also the better one - one more arrangement for the per-arm statistic to
@@ -4859,7 +4859,7 @@ sweep recommends and what has never been recorded on air.
 | loop holding, as it ran | **87 %** |
 | window occupancy, bins over the floor | 86 % of 85 |
 
-ADC0 is the hot arm here - the opposite way round from the 13 MHz trio and
+ADC1 is the hot arm here - the opposite way round from the 13 MHz trio and
 the same way as 160 m - and it is also the better one by 3.8 dB. That is
 the fifth distinct arrangement of the pair in this document, and the
 per-arm statistic gets it right again.
@@ -4905,7 +4905,7 @@ that as costing rather than gaining on five captures of six.
 This is also the second capture, after `000412`, where the noise-ratio
 term is not found. The window is **86 % occupied** - a broadcast filling
 the operator's whole filter - which is Finding 37's diagnosis exactly, and
-here the correction points the other way: with ADC0 the hotter arm the
+here the correction points the other way: with ADC1 the hotter arm the
 correct weight is `|w|` = -0.2 dB where the loop applies -11.7. It costs
 0.34 dB, because 0.57 is all there was.
 
@@ -5613,7 +5613,7 @@ at two sample rates, which is what separates the two.
 
 All six ran the Window reference with coherence weighting, hang 5.2 s and
 the window following the filter. `122119` has the operator changing the
-objective at block 73 and `122632` has the ADC1 attenuator stepped
+objective at block 73 and `122632` has the ADC2 attenuator stepped
 sixteen times, which is a separate result and is the last section here.
 Every figure below comes from `run_ref`, so the recorded objective and
 Resolution constrain nothing: each capture is re-run through the whole
@@ -5639,10 +5639,10 @@ directly comparable with the earlier tables.
 | that weight's magnitude | 2.857 | 3.613 | 2.572 | 2.263 | 0.306 | 0.166 |
 | blocks with signal / bare noise | 213 / 1 | 82 / 0 | 128 / 8 | 307 / 1 | 196 / **418** | 45 / **118** |
 
-**The two antennas differ in level and not in SNR.** On 40 m ADC0 runs 6.4
+**The two antennas differ in level and not in SNR.** On 40 m ADC1 runs 6.4
 to 8.1 dB hotter and its noise runs 7.2 to 8.4 dB hotter, so the SNRs land
 within 0.8 dB of each other on all four. On 17 m the arrangement reverses
-and grows: ADC1 is 15 dB hotter in both signal and noise, and the SNRs are
+and grows: ADC2 is 15 dB hotter in both signal and noise, and the SNRs are
 again within 1.4 dB. That is six captures in a row where **the level
 difference between the antennas says nothing about which one to listen
 to**, which is Finding 24's conclusion arriving from a different
@@ -5802,8 +5802,8 @@ to two hundredths. The same experiment on `122632` is worth 0.87 dB at
 
 That leaves the other half of `122843`'s problem, which the gate cannot
 touch: **during speech the combiner is still 1.6 to 4.5 dB below the
-better antenna**, because its weight is 7.4 dB too large there too. ADC1's
-noise is 15 dB above ADC0's, and any weight that puts appreciable ADC1
+better antenna**, because its weight is 7.4 dB too large there too. ADC2's
+noise is 15 dB above ADC1's, and any weight that puts appreciable ADC2
 into the sum brings that noise with it. `div_wideband_sum_scale()` exists
 precisely to divide it out, and on 40 m the engine's weight lands 0.8 to
 7.6 dB *below* the optimum rather than above, which is the direction the
@@ -5868,7 +5868,7 @@ is what would hide that and it is **off by default**.
 
 ### Sixteen decibels of attenuator, and the first measurement of a chain's own floor
 
-`122632` has the operator walking ADC1's attenuator from 0 to 16 dB in
+`122632` has the operator walking ADC2's attenuator from 0 to 16 dB in
 1 dB steps - ten of them between 38.1 and 42.2 s, six more between 52.3
 and 54.4 s. The capture records both attenuator values per block, which it
 could not do before the change recorded below, so for the first time the
@@ -5879,17 +5879,17 @@ constant chain floor:
 
 | | value |
 |---|---|
-| band noise on ADC1 at 0 dB | -24.93 dB |
-| ADC1 chain noise floor | **-47.64 dB** |
+| band noise on ADC2 at 0 dB | -24.93 dB |
+| ADC2 chain noise floor | **-47.64 dB** |
 | band-noise margin at 0 dB | **22.7 dB** |
 | fit residual over 16 settings | **0.23 dB rms** |
 | measured drop, 0 to 16 dB | 15.09 dB against an ideal 16.00 |
-| ADC0's noise, unattenuated, throughout | -40.0 dB, +/- 0.5 |
+| ADC1's noise, unattenuated, throughout | -40.0 dB, +/- 0.5 |
 
 **Sixteen decibels is not near the limit; 22.7 is.** The whole ramp is
 within 0.9 dB of ideal, the residual is a quarter of a decibel over
 sixteen settings, and at 16 dB the fit attributes 0.84 dB of what is left
-to the chain rather than the band. ADC1 lands on ADC0's noise level at
+to the chain rather than the band. ADC2 lands on ADC1's noise level at
 16.0 dB, which is where the operator stopped. Finding 24 could bound this
 only between -30 and -14 dB of margin across plausible step sizes; the
 answer on this band and this antenna is **22.7 dB, measured to a quarter
@@ -6113,7 +6113,7 @@ same thing:
   band noise at 0.52 (Finding 16). A stability-gated null points at the
   station.
 - **The one local-interference capture in the set is not nullable at
-  all.** `233615`'s 574-996 Hz hump is 10.5 dB above the floor on ADC0
+  all.** `233615`'s 574-996 Hz hump is 10.5 dB above the floor on ADC1
   only and **incoherent between the arms at 0.20 to 0.38**, where the
   deepest a single complex weight reaches is **0.2 to 0.7 dB** (Finding 5).
   Identifying it perfectly buys nothing; the array's answer there is to
@@ -6494,7 +6494,7 @@ formed and the weight goes out uncorrected.
 penalty was in the gaps - 12.18 dB of raised output noise between the
 overs, with the speech unharmed. Here it is in the *speech*, +20.07 dB
 against +5.45 in silence. Same station, same pair of antennas, four
-minutes apart. What differs is that `122843` was recorded with ADC1
+minutes apart. What differs is that `122843` was recorded with ADC2
 attenuated and this one at 0 dB, so the imbalance the loop has to correct
 is 15 dB rather than nothing - which says the two faces of this defect are
 the same fault seen at two attenuator settings, and that **the operator's
@@ -6676,7 +6676,7 @@ is left open from this finding is the gate holding through the fades. See
 "What was changed".
 
 They are the closest thing in this document to a controlled experiment,
-because only two things differ between them: **ADC0's step attenuator**,
+because only two things differ between them: **ADC1's step attenuator**,
 6 dB on the first and none on the second, and **the reference**, Window
 following the filter on the first and Carrier on the second. Everything
 else - antennas, station, band, objective, averaging - is the same.
@@ -6685,7 +6685,7 @@ else - antennas, station, band, objective, averaging - is the same.
 |---|---|---|
 | frequency, mode, filter | 7.280000 MHz, AM, +/-4000 | 7.279948 MHz, AM, +/-5000 |
 | reference, objective, averaging | **Window**, follows filter; Sum; 0.6 s | **Carrier**; Sum; 0.6 s |
-| step attenuators, ADC0 / ADC1 | **6 / 0 dB** | 0 / 0 dB |
+| step attenuators, ADC1 / ADC2 | **6 / 0 dB** | 0 / 0 dB |
 | arm 0 / arm 1 noise (guard bins) | -52.1 / -51.8 dB | -46.3 / -51.8 dB |
 | noise ratio `N0/N1` | **-0.35 dB** | **+5.46 dB** |
 | band SNR, arm 0 / arm 1 | +19.5 / +13.9 dB | +19.1 / +14.0 dB |
@@ -6696,8 +6696,8 @@ else - antennas, station, band, objective, averaging - is the same.
 | window occupancy, bins over the floor | 88 % of 683 | 63 % of 853 |
 
 The pad is the whole of the noise-ratio difference: it takes 6 dB off
-ADC0's chain and with it ADC0's own noise, so the two front ends read
-0.35 dB apart on the first capture and 5.46 dB apart on the second. ADC0
+ADC1's chain and with it ADC1's own noise, so the two front ends read
+0.35 dB apart on the first capture and 5.46 dB apart on the second. ADC1
 is the better arm on both, by 5.3 and 4.4 dB of carrier C/N. **Two
 captures, one pair of antennas, and a branch-noise ratio that is
 deliberately different in each** - which is what makes them worth having
@@ -6797,7 +6797,7 @@ and always has been.
 
 **The on-air rows collect almost none of it.** `143952` gives away 1.52 dB
 of carrier C/N and 1.71 dB of sideband SNR against simply listening to
-ADC0 - though it does fill the deepest fades, which is why the operator's
+ADC1 - though it does fill the deepest fades, which is why the operator's
 impression that the feature was helping is correct and why the mean alone
 would have called it a failure. `144505` gains 0.29 dB on the mean and
 makes the *worst* moments worse, its first percentile falling 1.9 dB below
@@ -6851,7 +6851,7 @@ one station, and the branch-noise ratio is wrong in opposite directions on
 each** - loudly wrong where the two chains match, absent where they do not.
 
 The same corruption reaches `div_arm_from_floor()`, which is what Best
-decides on. `arm_db` is positive when ADC1 is the better arm; on blocks
+decides on. `arm_db` is positive when ADC2 is the better arm; on blocks
 where it was published:
 
 | | `arm_db` published | median while published | truth | error |
@@ -7111,7 +7111,7 @@ evening before the other five.
 | | `232850` | `152310` | `152423` | `152724` | `153114` | `153301` |
 |---|---|---|---|---|---|---|
 | dial | 1.987 MHz | 7.197 | 7.197 | 7.177 | 7.177 | 7.177 |
-| attenuators, ADC0 / ADC1 | **0 / 16 dB** | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| attenuators, ADC1 / ADC2 | **0 / 16 dB** | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 | averaging, as recorded | 0.62 s | 0.30 | 0.30 | 0.33 | 0.33 | 0.33 |
 | station transmitting | 100 % | 51 % | 60 % | 91 % | 45 % | 64 % |
 | modem-band SNR, arm 0 | +11.85 dB | +5.56 | +9.53 | +7.93 | **+2.87** | +3.98 |
@@ -7764,7 +7764,7 @@ genie is scored against the same noisy measurement as everyone else and
 wins partly by fitting that noise. Differences between tuning points are
 what it is for.
 
-## Finding 56: a disconnected ADC0 makes the radio deaf, and every give-up path in the loop points at it
+## Finding 56: a disconnected ADC1 makes the radio deaf, and every give-up path in the loop points at it
 
 One capture, `112712`, taken 2026-09-20 on 40 m LSB: Angelia, protocol 2,
 192 kHz, nfft 16384 (11.72 Hz bins), 703 blocks, 59.99 s, dial 7134970 /
@@ -7815,11 +7815,11 @@ privileged: it is in the output whatever happens, and "arm 0 alone" is
 
 Which stream is arm 0 is not the operator's choice. Both protocols
 override the receiver's own ADC when diversity is switched on -
-`new_protocol.c:1425`, "We always use DDC0 for the signals from ADC0, and
-DDC1 for the signals from ADC1", and `old_protocol.c:2112`, "use ADC0 for
-RX1 and ADC1 for RX2 (fixed setting)". `receiver[0]->adc` is ignored.
+`new_protocol.c:1425`, "We always use DDC0 for the signals from ADC1, and
+DDC1 for the signals from ADC2", and `old_protocol.c:2112`, "use ADC1 for
+RX1 and ADC2 for RX2 (fixed setting)". `receiver[0]->adc` is ignored.
 
-**So an operator receiving on ADC1 with nothing on ADC0 acquires a dead
+**So an operator receiving on ADC2 with nothing on ADC1 acquires a dead
 arm 0 at the instant they press Diversity**, and there is no control
 anywhere in the feature that says which arm carries the antenna.
 
@@ -7881,7 +7881,7 @@ from `w = 1` rather than the -5.2 dB that was in force at block 0.
   menu as the -27 dB floor with phase 0, indistinguishable from a real
   answer".
 
-**The failure mode of a disconnected ADC0 is therefore silence, not a lost
+**The failure mode of a disconnected ADC1 is therefore silence, not a lost
 array gain.** There is no path in the loop that fails towards the antenna
 that is working.
 
@@ -8215,7 +8215,7 @@ changing one silently retunes the other.
 
 Nothing here is decode-scored - there is no CW decoder in the harness, so
 the yardstick is tone-to-noise and not copy. All thirteen captures have
-ADC1 8 to 12 dB hotter in noise and none has genuinely independent fading
+ADC2 8 to 12 dB hotter in noise and none has genuinely independent fading
 of the kind Finding 37 found. And thirteen captures with a scatter near
 1 dB resolve effects down to about +/-0.6 dB: a real 0.3 dB advantage for
 this reference would not have been detected.
@@ -8588,19 +8588,19 @@ holds is the false-alarm line, and that part stands.
   `111328`), and FSK/Digital never produced a weight. On the
   voice captures all three references hold through the gaps between overs.
   None of them invents an answer from noise, including with the 160 m
-  interferer at full strength on ADC0. Six more no-signal columns are in
+  interferer at full strength on ADC1. Six more no-signal columns are in
   "False alarms", and three of them are the symmetric-filter `SAM`
   configuration with both pilot banks searched, which produces nothing at
   any threshold from 1.00. **Holding correctly is not the same as costing
   nothing**: on `235906` the reference declines two thirds of a minute for
   the right reason and the weight it leaves applied costs 3.5 dB
   (Finding 36).
-- **Level says nothing about which antenna is better.** ADC1 has been
+- **Level says nothing about which antenna is better.** ADC2 has been
   measured 13 to 15 dB *louder* and better (Finding 16), 9.8 dB louder and
   exactly equal (`003309`), and 12.3 dB louder and 5.1 dB worse
-  (`002534`). The 160 m RADE trio adds the fourth arrangement - ADC0
-  9.7 dB louder, carrying two local sources ADC1 cannot hear, and 5.5 dB
-  **better** (Finding 34) - and 17 m the fifth, where ADC0 is 13.9 dB
+  (`002534`). The 160 m RADE trio adds the fourth arrangement - ADC1
+  9.7 dB louder, carrying two local sources ADC2 cannot hear, and 5.5 dB
+  **better** (Finding 34) - and 17 m the fifth, where ADC1 is 13.9 dB
   *quieter*, hears the station 8.4 dB less loudly and is still 5.5 dB
   better (Finding 36). Only the ratio of signal to noise decides, which is
   what MVDR computes and what a listener cannot hear.
@@ -8671,7 +8671,7 @@ holds is the false-alarm line, and that part stands.
 - **A disconnected antenna port makes the feature deaf, and every give-up
   path in the loop aims at it.** Finding 56. The combiner forms
   `z = z0 + w*z1` with arm 0 at unit gain, both protocols force arm 0 to
-  ADC0 when diversity is enabled whatever the receiver was set to, and
+  ADC1 when diversity is enabled whatever the receiver was set to, and
   `w = 0` - "arm 0 alone" - is what the stand-down, `div_apply_best()`'s
   initial pick, a decorrelated Null solve and a degenerate MVDR solve all
   write. On `112712` that is 8.79 s of the minute at 26.4 dB below the
@@ -8750,7 +8750,7 @@ holds is the false-alarm line, and that part stands.
   defect wherever the occupancy split can find both occupied and
   unoccupied bins. On the two 17 m captures it can do so on **17 to 42 %**
   of blocks, and the weight comes out 7.4 to 9.3 dB above the measured
-  optimum with ADC1's noise 15 dB above ADC0's - so on `122843` the
+  optimum with ADC2's noise 15 dB above ADC1's - so on `122843` the
   combiner sits 1.6 to 4.5 dB *below* the better antenna during speech at
   every setting of every control. Neither Best nor any slider recovers it.
   What would is a noise ratio taken from the silent blocks, which is where
@@ -9007,11 +9007,11 @@ holds is the false-alarm line, and that part stands.
 - **The attenuation budget is measured over 14 dB and open beyond it.**
   Finding 28 tracked both arms one for one to within 0.03 dB over 4 dB on
   15 m at midday; `002710` added that 12 dB cost 0.25 dB; **Finding 34
-  walks ADC0 from 0 to 14 dB in eleven recorded steps on 160 m at night
+  walks ADC1 from 0 to 14 dB in eleven recorded steps on 160 m at night
   and finds signal and noise both falling 14.95 dB, with the arm's own SNR
   against the untouched arm moving from +5.19 to +5.18 dB.** Fourteen
   decibels are free on the noisier of two antennas on a noisy band.
-  **Finding 42 finds the far end on one band.** `122632` walks ADC1 from 0
+  **Finding 42 finds the far end on one band.** `122632` walks ADC2 from 0
   to 16 dB in 1 dB steps on 17 m at midday, and the recorded settings let
   the noise be fitted as band noise plus a constant chain floor: the floor
   sits **22.7 dB** below the band noise, the fit residual is 0.23 dB rms
@@ -9195,7 +9195,7 @@ this list needs compute any more.
 ### The captures, in the order they are worth taking
 
 **0. One minute of bare 41 m, with the pad in and out.** *Ideal:* the
-same two antennas, the same band, no station - a minute at ADC0 padded
+same two antennas, the same band, no station - a minute at ADC1 padded
 6 dB and a minute unpadded, back to back with Finding 47's pair.
 *Closes:* it measures `N0/N1` directly, on the same chains and within the
 hour, which is the one number Finding 47 has to take from guard bins
@@ -9271,7 +9271,7 @@ is now the most valuable capture on the list.**~~
 **Taken, five times over, and it is Finding 49.** `152310`, `152423`,
 `152724`, `153114` and `153301` are 41 m RADE V1 under heavy analog QRM
 with arm 0 alone recovering between 6 % and 69 % of the minute, and
-`232850` is a 160 m one with a 16 dB pad on ADC1. They did what this item
+`232850` is a 160 m one with a 16 dB pad on ADC2. They did what this item
 said they would: the tracking half of Finding 41 now has five recordings
 under it rather than one, and the answer they give is not the one that was
 expected. The combiner's whole prize on these paths is 0.7 to 2.3 dB, the
@@ -9280,7 +9280,7 @@ around it. The item is closed.
 
 **1. A quiet high band with a lopsided pair, and long silences.**
 *Ideal:* 17 m, 15 m or 12 m SSB after dark, one antenna receiver-noise
-limited as `235906`'s ADC1 was, a station working someone you cannot hear,
+limited as `235906`'s ADC2 was, a station working someone you cannot hear,
 so the minute is half dead air. *Closes:* the held-weight question, which
 is the largest single unexplained decibel figure in this document -
 `235906` alone says +8.5 dB is available from a control the operator
@@ -9737,7 +9737,7 @@ the sidetone from `div_shift_to_bin()` fails all four.
 
 A devtool change, and the one open item it closes. `div_context_changed()`
 compares `att0` and `att1`, so moving either resets the statistics; the
-capture recorded neither, so on `002710` - where the operator stepped ADC1
+capture recorded neither, so on `002710` - where the operator stepped ADC2
 twice while recording - the settings had to be inferred from arm 1's own
 noise floor and a replay could not reproduce the resets.
 
@@ -9838,7 +9838,7 @@ waited for.
 
 The two that look like outliers are the new estimate being right and the
 whole-capture reference being wrong. On `122632` it follows the operator's
-ADC1 attenuator one for one from 0 to 16 dB while arm 0's floor holds to
+ADC2 attenuator one for one from 0 to 16 dB while arm 0's floor holds to
 0.7 dB - which reproduces Finding 28's "one for one to within 0.03 dB"
 from a different measurement - and on `002710` it finds the two attenuator
 steps that capture's format-version-1 header could not record, and which
@@ -10039,7 +10039,7 @@ alarm for the copy drifting again.
 
 The round-trip check is what stops the writer, the layout and the replay
 drifting apart, and it could not have caught either of the faults above
-because its synthetic run never changed anything. It now steps ADC1's
+because its synthetic run never changed anything. It now steps ADC2's
 attenuator once part-way through - the one thing an operator does that the
 samples cannot show - and asserts that the recorded `att1` follows it,
 that bit 0 is set on exactly the blocks whose recorded context differs
@@ -10578,8 +10578,8 @@ by ear every time diversity was switched on.
 
 `div_last_att[2]` and `div_last_att_valid` hold the pair as it stood the
 last time the two step attenuators were split. Every move of either while
-diversity runs with them split stores both - both, so that an ADC0 from
-one session cannot end up beside an ADC1 from another - and the pair is
+diversity runs with them split stores both - both, so that an ADC1 from
+one session cannot end up beside an ADC2 from another - and the pair is
 put back when the operator ticks **ATT** and when diversity starts with it
 already ticked. Until they have been set at least once nothing is
 asserted, so an untouched radio keeps the ATT the operator set by hand.

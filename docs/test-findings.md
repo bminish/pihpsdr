@@ -189,9 +189,9 @@ stickier, or Sum's weight tied more closely to the arm SNRs the
 correlator already measures, needs captures where the arms are close
 and captures where they aren't, scored in the same way.
 
-## T-006: the antenna switch on ADC1 isn't visible as a clean step
+## T-006: the antenna switch on ADC2 isn't visible as a clean step
 
-**Capture.** `180949` (T-004, T-005). The operator switched ADC1's (arm
+**Capture.** `180949` (T-004, T-005). The operator switched ADC2's (arm
 1's) antenna during the capture.
 
 - **Nothing in the capture marks it.** The engine doesn't watch antenna

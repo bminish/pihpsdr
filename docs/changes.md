@@ -46,6 +46,20 @@ time.
    which carries that LC's `Local-Change:` trailer. `TEST` is never
    rewritten for them. When the LC's PR branch is cut, its fixups are
    folded into it (see "Cutting a PR branch" below).
+10. **ADC naming follows the hardware: ADC1 and ADC2.** Upstream's
+    `890ed310` relabelled the diversity attenuators from ADC0/ADC1 to
+    ADC1/ADC2, the names the hardware gives the two converter paths.
+    Every user-visible string, comment and document of ours does the
+    same.
+    - Identifiers keep their indices: `adc[0]` is ADC1 and `adc[1]` is
+      ADC2. `att0`/`att1` and the capture fields stay as they are.
+    - "Arm 0" and "arm 1" are the combiner's inputs, not converters. Arm
+      0 is ADC1 unless RX1 is set to ADC2, which exchanges the arms
+      (LC-022). Say "arm" when the arm is meant, and name the ADC only
+      when the converter is meant.
+    - Everything written before 2026-10-02 was converted at the
+      re-sync (LC-035, LT-018 and the docs). Findings that quote a
+      capture's own note keep the new names too.
 
 ## Settled decisions (do not reopen without new evidence)
 
@@ -298,6 +312,8 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-031 | Fix       | A RADE correlator that cannot start no longer changes the reference | diversity_auto.c | — | Local |
 | LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 | LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
+| LC-034 | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when the arms are exchanged) | diversity_menu.c | LC-022 | Local |
+| LC-035 | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1189,8 +1205,8 @@ part is LT-011.
 
 **Problem.** The combiner forms z = z0 + w·z1 with arm 0 at unit gain,
 and every way the loop gives up resolves to w = 0: arm 0 alone. Both
-protocols force ADC0 to DDC0 and ADC1 to DDC1 while diversity runs, so
-arm 0 was always ADC0. An operator on ADC1 with nothing on ADC0 got a
+protocols force ADC1 to DDC0 and ADC2 to DDC1 while diversity runs, so
+arm 0 was always ADC1. An operator on ADC2 with nothing on ADC1 got a
 dead arm 0 when they enabled diversity: 8.79 s of a minute at 26.4 dB
 below the live antenna on capture `112712` (Finding 56).
 
@@ -1201,7 +1217,7 @@ manual and the automatic combine. Each protocol's raw feed to RX2 swaps
 too, so RX2 still shows the other antenna. Read live; a move is in the
 analysis context and restarts the statistics.
 
-**Note.** With RX1 on ADC0 nothing changes. With RX1 on ADC1, the RX
+**Note.** With RX1 on ADC1 nothing changes. With RX1 on ADC2, the RX
 menu's ADC control now has an effect while diversity is on, including on
 which antenna the manual weight applies to. It decides which port the
 loop fails towards; it does not stop it failing deaf (Finding 56's
@@ -1444,6 +1460,28 @@ result is the same bit for bit. `div_nf_cmp` goes.
 Not measured on a Raspberry Pi. The plan's "factor of 5-10" holds at the
 low end on real data.
 
+### LC-034 — The antenna readout names the converter, ADC1 or ADC2
+
+**Why.** The menu's antenna line printed the arm index as the ADC
+("ADC0 better by ...", "using ADC1"). After `890ed310` the attenuator
+row beside it says ADC1 and ADC2, so the two disagreed. The line was
+also wrong with RX1 set to the second ADC: the arms are then exchanged
+(LC-022), and arm 0 is ADC2.
+
+**Change.** The line shows `(arm ^ div_arm_swapped()) + 1`, at the same
+width. This is in dl1ycf's file, so it is written up for him in
+[menu-notes-dl1ycf.md](menu-notes-dl1ycf.md).
+
+### LC-035 — Comments name the ADCs ADC1 and ADC2, as the hardware does
+
+**Change.** ADC0 → ADC1 and ADC1 → ADC2 in every diversity comment:
+our own files, and the diversity comments of ours in `radio.c`,
+`receiver.c` and `client_server.c`. Two header comments that called
+arms ADCs (`div_auto_arm_db`, `_pick`) now say arm 0 / arm 1. Comments
+only. Upstream's own non-diversity text is left alone (see "Flagged for
+a later patch"). Its line dependencies are textual only: it rewords
+comments other LCs added.
+
 ---
 
 ## Local tooling (never upstream)
@@ -1475,6 +1513,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-015 | LC-030's checks: Level output counted; `run_ref`'s `norm` column; `score_level.py` | `test/diversity/` |
 | LT-016 | `bench_nf`: LC-033's selection against `qsort`, bit for bit and timed, on the engine's own functions | `test/diversity/` |
 | LT-017 | `pi_bench`: one file to copy to a Pi 5 and build with only `cc`; ballpark costs of the engine's hot spots, hot and paced | `test/diversity/pi_bench.c`, `docs/bench/` |
+| LT-018 | The tools name the ADCs ADC1 and ADC2 (follows LC-035) | `test/diversity/` |
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot
@@ -1593,6 +1632,25 @@ changes it, we take upstream.
 
 ## Flagged for a later patch
 
+- **LC-022 does not apply to bare upstream.** It conflicts in
+  `diversity_auto.c` on `890ed310`, and also on `f5a0ce9c`, so it
+  predates this re-sync. The register lists no dependency, so there is
+  an unlisted textual one on an earlier LC. Find it and list it
+  (bracketed), or move LC-022's lines (rule 4). LC-034 depends on
+  LC-022 for `div_arm_swapped()`.
+
+- **Upstream text still says ADC0/ADC1** (for dl1ycf, not changed
+  here):
+  - `rx_panadapter.c`'s overload warnings ("ADC0 overload", "ADC1
+    overload", "ADC0+1 overload");
+  - `receiver.c`'s "hard-wired to ADC0" comments;
+  - the protocol and simulator comments (`old_protocol.c`,
+    `new_protocol.c`, `newhpsdrsim.c`, `hpsdrsim.c`), which already mix
+    both conventions;
+  - the `ADC0`/`ADC1` overload globals in `radio.c`.
+
+  The receive menu already says ADC1/ADC2.
+
 - **A mode change with the Diversity menu open no longer refreshes it.**
   `f5a0ce9c` removed `g_idle_add(diversity_menu_settings_changed, ...)`
   from `diversity_auto_mode_changed()` and the function itself. The
@@ -1689,6 +1747,16 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: **re-synced onto upstream `890ed310`** ("small updates to
+  DIV menu": the attenuators relabelled ADC1/ADC2; switching to Manual
+  copies the loop's weight into the manual sliders; a
+  `sanitize_man_values()` helper). Rebased on
+  `resync/TEST-890ed310`. One conflict, textual: LC-030's
+  `div_level_sensitive()` sat where upstream added its helper, so both
+  were kept. The pre-rebase `TEST` is kept as
+  `history/backup/TEST-pre-890ed310`. Then LC-034, LC-035, LT-018 and
+  rule 10 (ADC naming), and the docs renamed (141 lines). PR #150 still
+  applies cleanly.
 - 2026-10-02: Pi 5 (CM5) `pi_bench` run recorded in `docs/bench/`; LC-033
   is 3.3× cheaper there paced, identical output.
 - 2026-10-02: LT-017 (`pi_bench`) for arm64 figures; x86 reference in
