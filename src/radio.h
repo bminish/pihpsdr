@@ -258,6 +258,69 @@ extern double man_div_cos, man_div_sin;
 extern double man_div_gain, man_div_phase;
 extern double auto_div_gain, auto_div_phase;
 
+//
+// Ear split: the two arms presented one to each ear instead of summed
+// into one stream. The DDCs are locked together in the FPGA, so the two
+// are sample-aligned with no clock drift between them and the ears agree
+// on what they are hearing.
+//
+// Not to be confused with rx->binaural, which is WDSP's stereo spread on
+// one receiver's own audio.
+//
+enum {
+  DIV_SPLIT_OFF = 0,
+  DIV_SPLIT_RAW,        // arm 0 left, arm 1 right
+  DIV_SPLIT_SUMDIFF     // sum left, difference right
+};
+
+extern int div_split;
+//
+// Ear balance, in dB of left minus right. Applied as attenuation on the
+// louder-by-definition side only, so it trims the image without needing
+// headroom the AF gain has not got: at 0 dB AF gain there is nothing to
+// raise, and an ear that could only be corrected upwards could not be
+// corrected at all.
+//
+// Either side of centre. This is a trim, not a fader: it exists to line
+// two antennas - or two ears - up with each other, and the range is what
+// makes the fine end of it reachable. A pair further apart than this is
+// an antenna or attenuator problem rather than a balance one.
+//
+#define DIV_BALANCE_MAX 6.0    // dB
+
+extern double div_split_balance;
+extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
+void radio_calc_split_balance(void);
+
+//
+// Whether the split is running, as a plain flag rather than a predicate.
+//
+// rx_add_div_iq_samples() and both protocols' aux feeds ask this once per
+// IQ sample - 768k times a second at 384 kHz - and the predicate lives in
+// radio.c, so from receiver.c or either protocol it was a real call that
+// could not be inlined, paid by every user whether or not they have ever
+// engaged the split.
+//
+// div_split_set() maintains it, and is called from everything that can
+// change the answer: radio_set_diversity(), radio_change_receivers(),
+// rx_change_sample_rate() for RX0, and once at startup. Anything else that
+// comes to move diversity_enabled, receivers or a sample rate has to call
+// it too, or this goes stale.
+//
+extern int div_split_on;
+
+static inline int div_split_active(void) { return div_split_on; }
+
+//
+// Should the protocol hand raw arm-1 IQ to receiver[1]? With the split off
+// this is the condition both protocols always used.
+//
+static inline int div_rx1_takes_raw(void) {
+  return div_split_on ? (div_split == DIV_SPLIT_RAW) : (receivers > 1);
+}
+
+void div_split_set(int mode);
+
 extern int capture_state;
 extern const int capture_max;
 extern int capture_record_pointer;
