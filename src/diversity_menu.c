@@ -19,10 +19,13 @@
 
 #include <gtk/gtk.h>
 #include <math.h>
+#include <glib/gstdio.h>
 
 #include "client_server.h"
 #include "diversity_auto.h"
+#include "ear_record.h"
 #include "message.h"
+#include "mode.h"
 #include "new_menu.h"
 #include "radio.h"
 #include "rade_correlator.h"
@@ -63,6 +66,7 @@ static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
 static GtkWidget *level_b = NULL;
 static GtkWidget *split_combo = NULL;
+static GtkWidget *wav_b = NULL;
 static GtkWidget *balance_scale = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
@@ -169,6 +173,7 @@ static GtkWidget *divcap_b = NULL;
 // is a permanent file and this is not.
 //
 extern int diversity_auto_capture_start(void);
+extern void diversity_auto_capture_stop(void);
 
 static void divcap_cb(GtkWidget *widget, gpointer data) {
   (void)data;
@@ -195,7 +200,7 @@ static void divcap_cb(GtkWidget *widget, gpointer data) {
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
     }
   } else {
-    diversity_capture_stop();
+    diversity_auto_capture_stop();
   }
 }
 #endif
@@ -219,6 +224,12 @@ static void cleanup(void) {
     level_b = NULL;
     split_combo = NULL;
     balance_scale = NULL;
+    //
+    // A WAV recording ends with the dialog, by request. (A capture does
+    // not: see below.)
+    //
+    ear_record_stop(EAR_REC_WAV);
+    wav_b = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     win_centre_btn = NULL;
@@ -302,6 +313,55 @@ static void split_cb(GtkWidget *widget, gpointer data) {
 static void balance_cb(GtkWidget *widget, gpointer data) {
   div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
   radio_calc_split_balance();
+}
+
+//
+// WAV: record RX1's audio output, both channels, to ./wav/. The name says
+// when, where, in what mode, and what was being presented - so a folder of
+// them can be read without opening any. See ear_record.h.
+//
+static void wav_name(char *buf, size_t len) {
+  const char *pres;
+
+  if (!diversity_enabled) {
+    pres = "rx1";
+  } else if (div_split_active()) {
+    pres = (div_split == DIV_SPLIT_RAW) ? "div-per-ear" : "div-sum-diff";
+  } else {
+    static const char *obj[] = { "div-manual", "div-null", "div-sum", "div-best" };
+    pres = (div_auto_mode >= 0 && div_auto_mode <= 3) ? obj[div_auto_mode] : "div";
+  }
+
+  const long long f = vfo[0].ctun ? vfo[0].ctun_frequency : vfo[0].frequency;
+  const int m = vfo[0].mode;
+  time_t now = time(NULL);
+  struct tm tm;
+  char stamp[32];
+  localtime_r(&now, &tm);
+  strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm);
+  snprintf(buf, len, "wav/%s_%.3fkHz_%s_%s.wav", stamp, (double)f / 1000.0,
+           (m >= 0 && m < MODES) ? mode_string[m] : "mode", pres);
+}
+
+static void wav_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    char path[256];
+    wav_name(path, sizeof(path));
+
+    if (g_mkdir_with_parents("wav", 0755) != 0 ||
+        !ear_record_start(path, NULL, EAR_REC_WAV)) {
+      //
+      // The folder or file would not open, or a capture is already
+      // recording the ears. Come back out.
+      //
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+    }
+  } else {
+    ear_record_stop(EAR_REC_WAV);
+    gtk_button_set_label(GTK_BUTTON(widget), "WAV");
+  }
 }
 
 static void enable_cb(GtkWidget *widget, gpointer data) {
@@ -560,6 +620,13 @@ static int status_update_cb(gpointer data) {
   // Not under Hold: the sliders belong to the operator then, and moving
   // them underneath would make the control useless.
   //
+
+  if (wav_b != NULL && ear_record_owner() == EAR_REC_WAV) {
+    char t[32], lbl[48];
+    ear_record_status(t, sizeof(t));
+    snprintf(lbl, sizeof(lbl), "WAV %s", t);
+    gtk_button_set_label(GTK_BUTTON(wav_b), lbl);
+  }
 
 #ifdef DIVERSITY_CAPTURE
 
@@ -1305,6 +1372,53 @@ void diversity_menu(GtkWidget *parent) {
   }
   row++;
   //
+  // Recording. In the main grid rather than with the auto controls, which
+  // are hidden in Manual. WAV is the audio as heard; Capture (DIVCAP=1
+  // builds only) is the two antenna streams for offline replay, with the
+  // audio beside it in captures/.
+  //
+  lbl = gtk_label_new("Record:");
+  gtk_widget_set_name(lbl, "boldlabel");
+  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
+#ifdef DIVERSITY_CAPTURE
+  //
+  // DEVELOPMENT TOOL. A capture survives the menu being closed, so the
+  // button is set before its handler is connected and does not read as
+  // the operator pressing it. It cannot work from a remote client: the
+  // file is written by the analysis thread, on the radio.
+  //
+  divcap_b = gtk_toggle_button_new_with_label("Capture");
+  gtk_widget_set_tooltip_text(divcap_b,
+                              "Development tool. Record the two antenna streams as "
+                              "the analysis thread sees them, for replaying offline, "
+                              "and the audio output beside them (captures/ears-*). "
+                              "Switches diversity on if it is off, in the objective "
+                              "last used; works in Manual too. Stops by itself at "
+                              "PIHPSDR_DIVCAP_SECONDS (default 60). The label counts "
+                              "blocks written.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), div_capture_active != 0);
+  g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), divcap_b, 2, row, 4, 1);
+
+  if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
+
+#endif
+  wav_b = gtk_toggle_button_new_with_label("WAV");
+  gtk_widget_set_tooltip_text(wav_b,
+                              "Record the audio output, both channels, to the wav/ "
+                              "folder. Press again, or close this dialog, to stop. "
+                              "The file is named for the time, frequency, mode and "
+                              "what is presented (RX1 alone, a diversity objective, "
+                              "or the ear split).");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(wav_b), ear_record_owner() == EAR_REC_WAV);
+  g_signal_connect(wav_b, "toggled", G_CALLBACK(wav_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), wav_b, 7, row, 4, 1);
+
+  if (radio_is_remote) { gtk_widget_set_sensitive(wav_b, FALSE); }
+
+  row++;
+  //
   // Container for the "manual" controls
   //
   mcontainer = gtk_fixed_new();
@@ -1486,27 +1600,6 @@ void diversity_menu(GtkWidget *parent) {
   //                            "an antenna rather than steering a null.");
   gtk_grid_attach(GTK_GRID(agrid), btn, 8, 5, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
-#ifdef DIVERSITY_CAPTURE
-  //
-  // DEVELOPMENT TOOL. Where the Hang slider was. A capture survives the
-  // menu being closed, so the button is set before its handler is
-  // connected and does not read as the operator pressing it. It cannot
-  // work from a remote client: the file is written by the analysis
-  // thread, on the radio.
-  //
-  divcap_b = gtk_toggle_button_new_with_label("Capture");
-  gtk_widget_set_tooltip_text(divcap_b,
-                              "Development tool. Record the two antenna streams as "
-                              "the analysis thread sees them, for replaying offline. "
-                              "Stops by itself at PIHPSDR_DIVCAP_SECONDS (default 60). "
-                              "The label counts blocks written.");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(divcap_b), div_capture_active != 0);
-  g_signal_connect(divcap_b, "toggled", G_CALLBACK(divcap_cb), NULL);
-  gtk_grid_attach(GTK_GRID(agrid), divcap_b, 2, 5, 4, 1);
-
-  if (radio_is_remote) { gtk_widget_set_sensitive(divcap_b, FALSE); }
-
-#endif
   //
   // The status line spans both columns and is held to exactly
   // DIV_STATUS_CHARS characters, so it fits inside the width the controls

@@ -44,6 +44,7 @@
 
 #include "atomic.h"
 #include "diversity_capture.h"
+#include "ear_record.h"
 #include "discovered.h"
 #ifdef __APPLE__
   #include "MacOS.h"        // for apple_sem()
@@ -203,150 +204,22 @@ static int divcap_env_int(const char *name, int dflt, int lo, int hi) {
 }
 
 //
-// ===================================================================
-//  The ear recorder. See diversity_capture.h.
-// ===================================================================
+// The ears, beside the I/Q: captures/divcap-<stamp>.divc ->
+// captures/ears-<stamp>.wav and .csv. See ear_record.h.
 //
-struct earcap_event {
-  uint32_t frame;      // ear frames written before this block
-  uint8_t  who, mode;
-  int8_t   paired;
-  uint8_t  pad;
-  int16_t  rx1_cnt;
-  uint16_t nsamp;
-  float    bal_l, bal_r;
-};
-
-#define EARCAP_MAX_SECS   300
-#define EARCAP_MAX_EVENTS (EARCAP_MAX_SECS * 1600)
-
-volatile int div_earcap_active = 0;
-static float               *ear_buf = NULL;      // kept between captures
-static struct earcap_event *ear_ev  = NULL;
-static volatile uint32_t    ear_n = 0, ear_nev = 0;
-static uint32_t             ear_max = 0;
-static char                 ear_wav[300], ear_csv[300];
-
-void diversity_earcap_put(double left, double right) {
-  if (!div_earcap_active) { return; }
-
-  const uint32_t n = ear_n;
-
-  if (n >= ear_max) { return; }
-
-  ear_buf[2 * n]     = (float)left;
-  ear_buf[2 * n + 1] = (float)right;
-  ear_n = n + 1;
-}
-
-void diversity_earcap_block(int who, int mode, int paired, int rx1_cnt, int nsamp,
-                            double bal_l, double bal_r) {
-  if (!div_earcap_active) { return; }
-
-  const uint32_t k = ear_nev;
-
-  if (k >= EARCAP_MAX_EVENTS) { return; }
-
-  struct earcap_event *e = &ear_ev[k];
-  e->frame   = ear_n;
-  e->who     = (uint8_t)who;
-  e->mode    = (uint8_t)mode;
-  e->paired  = (int8_t)paired;
-  e->pad     = 0;
-  e->rx1_cnt = (int16_t)rx1_cnt;
-  e->nsamp   = (uint16_t)nsamp;
-  e->bal_l   = (float)bal_l;
-  e->bal_r   = (float)bal_r;
-  ear_nev = k + 1;
-}
-
-static void earcap_start(const char *iq_path, int secs) {
-  if (div_earcap_active) { return; }
-
-  if (secs > EARCAP_MAX_SECS) { secs = EARCAP_MAX_SECS; }
-
-  const uint32_t want = (uint32_t)secs * 48000u;
-
-  if (ear_buf == NULL || ear_max < want) {
-    g_free(ear_buf);
-    ear_buf = g_malloc((size_t)want * 2 * sizeof(float));
-    ear_max = want;
-  }
-
-  if (ear_ev == NULL) { ear_ev = g_malloc(sizeof(struct earcap_event) * EARCAP_MAX_EVENTS); }
-
-  //
-  // captures/divcap-<stamp>.divc -> captures/ears-<stamp>.wav / .csv
-  //
+static void earcap_start(const char *iq_path) {
   const char *base = strrchr(iq_path, '/');
   const int   dlen = base ? (int)(base - iq_path) + 1 : 0;
   const char *stem = (base ? base + 1 : iq_path) + strlen("divcap-");
   const int   slen = (int)strlen(stem) - (int)strlen(".divc");
-  snprintf(ear_wav, sizeof(ear_wav), "%.*sears-%.*s.wav", dlen, iq_path, slen, stem);
-  snprintf(ear_csv, sizeof(ear_csv), "%.*sears-%.*s.csv", dlen, iq_path, slen, stem);
-  ear_n = 0;
-  ear_nev = 0;
-  MEMORY_BARRIER;
-  div_earcap_active = 1;
-  t_print("%s: %s limit=%ds\n", __func__, ear_wav, secs);
-}
-
-static void earcap_put32(FILE *f, uint32_t v) {
-  unsigned char b[4] = { v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff };
-  fwrite(b, 1, 4, f);
-}
-
-static void earcap_stop(void) {
-  if (!div_earcap_active) { return; }
-
-  div_earcap_active = 0;
+  char wavp[512], csvp[512];
+  snprintf(wavp, sizeof(wavp), "%.*sears-%.*s.wav", dlen, iq_path, slen, stem);
+  snprintf(csvp, sizeof(csvp), "%.*sears-%.*s.csv", dlen, iq_path, slen, stem);
   //
-  // Let a pass already inside _put or _block finish; the buffers are
-  // never freed, so a late write lands in memory that is still ours.
+  // Not if the WAV button is already recording: one recording at a time,
+  // and that one is the operator's.
   //
-  g_usleep(50000);
-  const uint32_t n = ear_n, nev = ear_nev;
-  FILE *f = fopen(ear_wav, "wb");
-
-  if (f == NULL) {
-    t_perror("earcap_stop:fopen");
-  } else {
-    //
-    // WAVE_FORMAT_IEEE_FLOAT, 2 channels, 48 kHz, little-endian floats
-    // as this host writes them.
-    //
-    const uint32_t data = n * 2u * 4u;
-    fwrite("RIFF", 1, 4, f);
-    earcap_put32(f, 36u + data);
-    fwrite("WAVEfmt ", 1, 8, f);
-    earcap_put32(f, 16);
-    earcap_put32(f, 3u | (2u << 16));          // format 3, 2 channels
-    earcap_put32(f, 48000);
-    earcap_put32(f, 48000u * 8u);              // byte rate
-    earcap_put32(f, 8u | (32u << 16));         // block align 8, 32 bits
-    fwrite("data", 1, 4, f);
-    earcap_put32(f, data);
-    fwrite(ear_buf, sizeof(float), (size_t)n * 2, f);
-    fclose(f);
-  }
-
-  f = fopen(ear_csv, "w");
-
-  if (f == NULL) {
-    t_perror("earcap_stop:fopen csv");
-  } else {
-    fprintf(f, "frame,who,mode,paired,rx1_cnt,nsamp,bal_l,bal_r\n");
-
-    for (uint32_t k = 0; k < nev; k++) {
-      const struct earcap_event *e = &ear_ev[k];
-      fprintf(f, "%u,%u,%u,%d,%d,%u,%.4f,%.4f\n", e->frame, e->who, e->mode, e->paired,
-              e->rx1_cnt, e->nsamp, e->bal_l, e->bal_r);
-    }
-
-    fclose(f);
-  }
-
-  t_print("%s: %s %u frames (%.1f s), %u blocks\n", __func__, ear_wav, n, n / 48000.0, nev);
+  ear_record_start(wavp, csvp, EAR_REC_DIVCAP);
 }
 
 int diversity_capture_start(int sample_rate, int nfft) {
@@ -469,7 +342,7 @@ int diversity_capture_start(int sample_rate, int nfft) {
 
   cap_run = 1;                    // before the thread, or it can exit at once
   writer = g_thread_new("divcap", divcap_writer_thread, NULL);
-  earcap_start(cap_path, secs);
+  earcap_start(cap_path);
   div_capture_active = 1;
   t_print("%s: %s rate=%d nfft=%d limit=%us (%u blocks, %.0f MB)\n", __func__,
           cap_path, sample_rate, nfft, secs, cap_max_blocks,
@@ -482,7 +355,7 @@ void diversity_capture_stop(void) {
   // First, and whether or not the I/Q side is still open: the I/Q writer
   // stops itself at its budget, and the ears go on until the button.
   //
-  earcap_stop();
+  ear_record_stop(EAR_REC_DIVCAP);
 
   if (writer == NULL && fp == NULL) { return; }
 

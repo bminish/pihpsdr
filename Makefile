@@ -478,6 +478,7 @@ src/dxcluster.c \
 src/dxcluster_db.c \
 src/dxcluster_history_menu.c \
 src/dxcluster_popup.c \
+src/ear_record.c \
 src/encoder_menu.c \
 src/equalizer_menu.c \
 src/exit_menu.c \
@@ -581,6 +582,7 @@ src/dxcluster.o \
 src/dxcluster_db.o \
 src/dxcluster_history_menu.o \
 src/dxcluster_popup.o \
+src/ear_record.o \
 src/encoder_menu.o \
 src/equalizer_menu.o \
 src/exit_menu.o \
@@ -941,6 +943,7 @@ src/discovery.o: src/stemlab_discovery.h src/tts.h src/saturnmain.h
 src/display_menu.o: src/client_server.h src/mode.h src/receiver.h
 src/display_menu.o: src/transmitter.h src/main.h src/new_menu.h src/radio.h
 src/display_menu.o: src/adc.h src/discovered.h
+src/diversity_menu.o: src/ear_record.h
 src/diversity_menu.o: src/client_server.h src/mode.h src/receiver.h
 src/diversity_menu.o: src/transmitter.h src/new_menu.h src/radio.h src/adc.h
 src/diversity_menu.o: src/discovered.h
@@ -960,6 +963,7 @@ src/dxcluster_popup.o: src/dxcluster_popup.h src/dxcluster.h src/band.h
 src/dxcluster_popup.o: src/bandstack.h src/main.h src/radio.h src/adc.h
 src/dxcluster_popup.o: src/discovered.h src/receiver.h src/transmitter.h
 src/dxcluster_popup.o: src/vfo.h src/mode.h src/message.h
+src/ear_record.o: src/atomic.h src/ear_record.h src/message.h
 src/encoder_menu.o: src/action_dialog.h src/actions.h src/agc.h src/band.h
 src/encoder_menu.o: src/bandstack.h src/channel.h src/gpio.h src/i2c.h
 src/encoder_menu.o: src/main.h src/new_menu.h src/radio.h src/adc.h
@@ -1118,6 +1122,7 @@ src/radio_menu.o: src/gpio.h src/main.h src/message.h src/new_menu.h
 src/radio_menu.o: src/new_protocol.h src/MacOS.h src/buffer.h src/atomic.h
 src/radio_menu.o: src/radio.h src/adc.h src/sliders.h src/actions.h
 src/radio_menu.o: src/soapy_protocol.h src/vfo.h
+src/receiver.o: src/ear_record.h
 src/receiver.o: src/agc.h src/audio.h src/receiver.h src/transmitter.h
 src/receiver.o: src/band.h src/bandstack.h src/channel.h src/client_server.h
 src/receiver.o: src/mode.h src/discovered.h src/ext.h src/filter.h src/main.h

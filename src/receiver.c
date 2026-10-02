@@ -43,12 +43,7 @@
 #include "property.h"
 #include "radio.h"
 #include "receiver.h"
-#ifdef DIVERSITY_CAPTURE
-  //
-  // DEVELOPMENT TOOL: the ear recorder hooks in rx_process_buffer().
-  //
-  #include "diversity_capture.h"
-#endif
+#include "ear_record.h"
 #include "rx_panadapter.h"
 #include "sliders.h"
 #ifdef SOAPYSDR
@@ -1531,9 +1526,7 @@ static void rx_process_buffer(RECEIVER *rx) {
         // there would throw one ear away.
         //
         audio_write(receiver[0], split_left[i], ear);
-#ifdef DIVERSITY_CAPTURE
-        diversity_earcap_put(split_left[i], ear);
-#endif
+        ear_record_put(split_left[i], ear);
       }
     } else {
       switch (rx->audio_channel) {
@@ -1551,9 +1544,8 @@ static void rx_process_buffer(RECEIVER *rx) {
 
       if (rx->local_audio) {
         audio_write(rx, left_sample, right_sample);
-#ifdef DIVERSITY_CAPTURE
-        if (rx->id == 0) { diversity_earcap_put(left_sample, right_sample); }
-#endif
+
+        if (rx->id == 0) { ear_record_put(left_sample, right_sample); }
       }
     }
     if (rx == active_receiver) {
@@ -1577,17 +1569,17 @@ static void rx_process_buffer(RECEIVER *rx) {
   // has not run yet, and the ones either side of a sample rate change are
   // dropped rather than mispaired.
   //
-#ifdef DIVERSITY_CAPTURE
   //
-  // Before split_len is handed over below, so RX1's row says whether it
-  // found RX0's half. On RX0's row, receiver[1]->samples is where RX1 was
-  // when RX0's buffer filled: 1023 when the input blocks are aligned.
+  // The recorder's row for this pass (see ear_record.h). Before split_len
+  // is handed over below, so RX1's row says whether it found RX0's half.
   //
-  diversity_earcap_block(rx->id, split ? div_split : 0,
-                         (split && rx->id == 1) ? (split_len == rx->output_samples) : -1,
-                         (rx->id == 0 && receiver[1] != NULL) ? receiver[1]->samples : -1,
-                         rx->output_samples, div_bal_l, div_bal_r);
-#endif
+  if (ear_record_active) {
+    ear_record_block(rx->id, split ? div_split : 0,
+                     (split && rx->id == 1) ? (split_len == rx->output_samples) : -1,
+                     (rx->id == 0 && receiver[1] != NULL) ? receiver[1]->samples : -1,
+                     rx->output_samples, div_bal_l, div_bal_r);
+  }
+
   split_len = (split && rx->id == 0) ? rx->output_samples : 0;
 
 #ifdef TCI
@@ -1717,6 +1709,11 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
     iw  = man_div_cos * i1 - man_div_sin * q1;
     qw  = man_div_sin * i1 + man_div_cos * q1;
     nrm = 1.0;
+    //
+    // Only ever running in Manual for a development capture (DIVCAP=1);
+    // otherwise div_auto_running is 0 here and this is one load.
+    //
+    if (div_auto_running) { diversity_auto_sample(i0, q0, i1, q1); }
   } else  {
     //
     // Feed the raw, uncombined pair to the auto-phasing analysis. This

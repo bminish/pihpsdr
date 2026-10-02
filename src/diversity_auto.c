@@ -3370,8 +3370,11 @@ static void div_process_block(void) {
     m.live_coherence   = div_auto_coherence;
     m.live_track_gain  = div_track_gain;
     m.live_track_phase = div_track_phase;
-    m.live_cos         = auto_div_cos;
-    m.live_sin         = auto_div_sin;
+    //
+    // The weight applied to the audio: in Manual that is the manual one.
+    //
+    m.live_cos         = (div_auto_mode == DIV_MANUAL) ? man_div_cos : auto_div_cos;
+    m.live_sin         = (div_auto_mode == DIV_MANUAL) ? man_div_sin : auto_div_sin;
     diversity_capture_block(work0, work1, &m);
   }
 
@@ -4061,10 +4064,27 @@ void diversity_auto_gap(void) {
   g_atomic_int_inc(&gap_gen);
 }
 
+#ifdef DIVERSITY_CAPTURE
+//
+// DEVELOPMENT TOOL. Set while a capture has the analysis thread running in
+// Manual, where nothing else would start it. See
+// diversity_auto_capture_start().
+//
+static int div_capture_manual = 0;
+#endif
+
 void diversity_auto_start(void) {
   if (div_auto_running) { return; }
 
+#ifdef DIVERSITY_CAPTURE
+
+  if (div_auto_mode == DIV_MANUAL && !div_capture_manual) { return; }
+
+#else
+
   if (div_auto_mode == DIV_MANUAL) { return; }
+
+#endif
 
   if (!diversity_enabled || receivers < 1 || receiver[0] == NULL) { return; }
 
@@ -4163,6 +4183,20 @@ void diversity_auto_start(void) {
 // has to be sized for - nfft - is private to this file.
 //
 int diversity_auto_capture_start(void) {
+  //
+  // In Manual the analysis thread is not running, and the capture is
+  // written from it. Start it for the capture alone: in Manual the sample
+  // path combines with the manual weight and never reads the loop's, so
+  // the loop running changes nothing that is heard. Each block records
+  // the manual weight as the live one, since that is what was applied.
+  //
+  if (!div_auto_running && diversity_enabled && div_auto_mode == DIV_MANUAL) {
+    div_capture_manual = 1;
+    diversity_auto_start();
+
+    if (!div_auto_running) { div_capture_manual = 0; }
+  }
+
   if (!div_auto_running || receivers < 1 || receiver[0] == NULL) { return 0; }
 
   //
@@ -4171,6 +4205,16 @@ int diversity_auto_capture_start(void) {
   //
   divcap_haveprev = 0;
   return diversity_capture_start(receiver[0]->sample_rate, nfft);
+}
+
+//
+// The menu stops a capture through here, so that an analysis thread
+// started for it in Manual goes with it.
+//
+void diversity_auto_capture_stop(void) {
+  diversity_capture_stop();
+
+  if (div_capture_manual) { diversity_auto_stop(); }
 }
 
 #endif
@@ -4187,6 +4231,11 @@ void diversity_auto_stop(void) {
   if (!div_auto_running) { return; }
 
 #ifdef DIVERSITY_CAPTURE
+  //
+  // Whatever stops the thread ends a Manual capture's reason to run it, so
+  // a restart in Manual (a sample-rate change, say) does not bring it back.
+  //
+  div_capture_manual = 0;
   //
   // The blocks stop here, so the file has to be closed here: a capture
   // left armed across a sample-rate change would otherwise be waiting for
