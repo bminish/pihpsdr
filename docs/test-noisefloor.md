@@ -197,8 +197,8 @@ would make it usable. Not built.
 1. **Settle the scoring before settling Ratio.** Build a proper
    voice-against-quiet in-band scorer (Finding 6's method, not the rough
    threshold used here) and report both scores for every comparison.
-2. **Listen.** Old against Ratio in SSB and AM, quiet antenna on ADC0 and
-   noisier on ADC1, Level output on; and once with a local noise source on
+2. **Listen.** Old against Ratio in SSB and AM, quiet antenna on ADC1 and
+   noisier on ADC2, Level output on; and once with a local noise source on
    both antennas, where Old may sound better. Capture each.
 3. **Shared noise is the real gap.** Neither cancelling attempt worked.
    If it matters on the air, the noise has to be measured close to the
