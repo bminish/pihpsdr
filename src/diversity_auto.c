@@ -1882,6 +1882,34 @@ static void div_arm_floor_update(double p0, double p1) {
 }
 
 //
+// What the noise floor (div_noise_floor_update()) is as a fraction of the
+// mean noise power per bin. It averages order statistics 8 % to 12 %,
+// and the bin power of noise is exponentially distributed, where the
+// k-th smallest of n has mean H(n) - H(n-k) times the mean (H the
+// harmonic numbers). Over that band at n = DIV_NF_SAMPLES this is
+// 0.1055, 9.77 dB down; at the 128 to 850 samples a wide filter or a
+// narrow span leaves it is 0.106 to 0.111, within 0.2 dB of it.
+//
+// A ratio of the two floors needs none of this - the fraction cancels -
+// so it matters only where the floor stands for the noise in absolute
+// terms: div_arm_from_floor(). Without it a window of pure noise read
+// 9.3 dB of SNR on each arm, passed DIV_ARM_MIN_DB, and real differences
+// came out compressed - 6 dB as 2.2 dB at an arm SNR of 0 dB. Finding 56
+// in docs/diversity-measurements.md, and its status note.
+//
+#define DIV_NF_MEAN_FRAC    0.1055
+
+//
+// The SNR an arm buried in its own noise is credited with, so that the
+// other arm's lead stays finite. Scored with DIV_NF_MEAN_FRAC on the 45
+// Window/Carrier captures: requiring both arms to clear DIV_ARM_MIN_DB
+// silenced Best on the lopsided captures it exists for and lost 0.02 dB
+// of guard on average; requiring one, with this floor under the other,
+// gained 0.09 and 6.0 dB in-band on 122843, where ADC2 is 15 dB noisier.
+//
+#define DIV_ARM_BURIED_DB   (-10.0)
+
+//
 // The advantage of arm 1, in dB. Fails while there is no noise reference,
 // and while either arm is sitting on its own floor - there is no signal
 // to compare then, and the ratio of two noises is not an answer to the
@@ -1893,12 +1921,15 @@ static void div_arm_floor_update(double p0, double p1) {
 // which is also why it cannot be mixed with the other: the two are the
 // same quantity in different units and only nbins relates them.
 //
+// The spectral floor is also a low percentile, not a mean, so it is
+// scaled up to the mean noise per bin first - see DIV_NF_MEAN_FRAC.
+//
 static int div_arm_from_floor(double p0, double p1, int nbins, double *db) {
   double n0, n1;
 
   if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0 && nbins > 0) {
-    n0 = (double)nbins * div_nf0;
-    n1 = (double)nbins * div_nf1;
+    n0 = (double)nbins * div_nf0 / DIV_NF_MEAN_FRAC;
+    n1 = (double)nbins * div_nf1 / DIV_NF_MEAN_FRAC;
   } else if (arm_floor_valid && arm_floor0 > 0.0 && arm_floor1 > 0.0) {
     n0 = arm_floor0;
     n1 = arm_floor1;
@@ -1906,18 +1937,25 @@ static int div_arm_from_floor(double p0, double p1, int nbins, double *db) {
     return 0;
   }
 
-  const double s0 = p0 - n0;
-  const double s1 = p1 - n1;
-
-  if (!(s0 > 0.0) || !(s1 > 0.0)) { return 0; }
+  double s0 = p0 - n0;
+  double s1 = p1 - n1;
 
   //
-  // Both arms have to stand clear of their own floor, or there is no
-  // signal to compare. See DIV_ARM_MIN_DB.
+  // One arm has to stand clear of its own floor, or there is no signal
+  // to compare. See DIV_ARM_MIN_DB. Only one: an arm buried in its noise
+  // - a weak antenna, or a dead port - is precisely the case where the
+  // other one is the answer, so it is credited with DIV_ARM_BURIED_DB
+  // and the readout becomes a lower bound on the other's lead.
   //
   const double need = pow(10.0, 0.1 * DIV_ARM_MIN_DB) - 1.0;
 
-  if (s0 < need * n0 || s1 < need * n1) { return 0; }
+  if (!(s0 >= need * n0) && !(s1 >= need * n1)) { return 0; }
+
+  const double buried = pow(10.0, 0.1 * DIV_ARM_BURIED_DB);
+
+  if (!(s0 >= buried * n0)) { s0 = buried * n0; }
+
+  if (!(s1 >= buried * n1)) { s1 = buried * n1; }
 
   *db = 10.0 * log10((s1 / n1) / (s0 / n0));
   return 1;
