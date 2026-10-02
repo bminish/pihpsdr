@@ -2527,7 +2527,13 @@ void div_split_set(int mode) {
     rx_set_af_gain(receiver[1]);
     rx_set_squelch(receiver[1]);
 
-    if (receivers < 2) { rx_off(receiver[1], 0); }
+    //
+    // Waiting, so the slew-down is complete before anything can bring the
+    // channel back up. On TEST rx_off() honours its wait argument again,
+    // and a channel switched off without waiting and then straight back on
+    // - diversity off and on, or the split changed - came back dead.
+    //
+    if (receivers < 2) { rx_off(receiver[1], 1); }
 
     div_split_on = 0;
   }
