@@ -1634,12 +1634,15 @@ its far edge outside the overlay by the offset.
 **Checks.** Applies to bare `upstream/TEST` and builds; the suite passes.
 The overlay code is upstream's (`df47f59a`), so there's no LC dependency.
 
-**Operating note (local config, not in the commit).** The digi-mode
-2.0k filter in the three radios' `.props` files was reshaped as a RADE V1
-filter: DIGU 675 to 2275 Hz, DIGL −2275 to −675 Hz. That is the occupied
-band, 725 to 2225 Hz, plus 50 Hz each side for tuning offset. The key
-keeps its name, `filter.digu.2.0k`, because the title is the key. The
-1.5k preset (750 to 2250 Hz) cuts the lowest carrier at its centre.
+**Operating note (local config, not in the commit).** The three
+radios' `.props` files set the digi-mode Var filters for RADE V1, both
+centred 1500 Hz from the carrier: Var1 1600 Hz wide (DIGU 700 to 2300 Hz,
+DIGL −2300 to −700 Hz), which covers the occupied 725 to 2225 Hz with
+25 Hz to spare each side, and Var2 1000 Hz wide (1000 to 2000 Hz). The
+stock 2.0k preset is left as shipped. A reshaped 2.0k was tried and
+dropped because its button would still read "2.0k": the title is
+compiled in and is also the props key. The 1.5k preset (750 to 2250 Hz)
+cuts the lowest carrier at its centre.
 
 ---
 
