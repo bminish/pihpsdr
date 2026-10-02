@@ -257,6 +257,66 @@ static void check_rate(int rate) {
   diversity_auto_stop();
 }
 
+/*
+ * Best's per-arm SNR (div_arm_from_floor()) against a known answer. The
+ * floor is a low percentile, about a tenth of the mean noise per bin, and
+ * has to be scaled back to the mean before it can stand for the noise in
+ * the window (DIV_NF_MEAN_FRAC). Without that a window of bare noise read
+ * about 9 dB of SNR on each arm and counted as a valid comparison, and a
+ * real difference came out compressed.
+ *
+ * Scene 1: noise only, equal on both arms - there is nothing to compare,
+ * so the readout must be invalid.
+ * Scene 2: the signal over 600-2400 Hz of a 2600 Hz window, arm 0's
+ * in-window SNR +3 dB; arm 1 hears it through h (-2.11 dB) with noise
+ * 6 dB lower, so arm 1 is ahead by 10*log10(|h|^2 / 0.25) = +3.91 dB.
+ * The old floor read 3.0 dB here.
+ * Scene 3: arm 0 buried (in-window SNR -10 dB), arm 1 20 dB quieter and
+ * well clear of its floor. Best must still be able to choose: the
+ * readout is valid and arm 1 well ahead (DIV_ARM_BURIED_DB).
+ */
+static void check_best_snr(void) {
+  const struct scene quiet = { 192000, 1.0, 1.0, 1e9, 0.0, 600.0, 2400.0, 0, 0.0 };
+  setup(192000, modeLSB, -2800, -200, DIV_REF_BAND);
+  srand(21);
+  diversity_auto_start();
+  scene_begin(&quiet);
+  feed_blocks(&quiet, (int)ceil(4.0 * div_auto_binhz));
+  const int noise_valid = div_auto_arm_valid;
+  printf("noise only:  antenna readout %s (%+.2f dB)\n",
+         noise_valid ? "VALID" : "invalid", div_auto_arm_db);
+  expect(!noise_valid, "Best: a window of bare noise is not a valid antenna comparison");
+  scene_end();
+  diversity_auto_stop();
+  const double h2 = hr * hr + hi * hi;
+  const double truth = 10.0 * log10(h2 / 0.25);
+  const double sig = sqrt(2.0 * 2600.0 / 1800.0);
+  const struct scene known = { 192000, 0.5, 0.5, 1e9, sig, 600.0, 2400.0, 0, 0.0 };
+  setup(192000, modeLSB, -2800, -200, DIV_REF_BAND);
+  srand(22);
+  diversity_auto_start();
+  scene_begin(&known);
+  feed_blocks(&known, (int)ceil(5.0 * div_auto_binhz));
+  printf("known:       antenna readout %s %+.2f dB (truth %+.2f)\n",
+         div_auto_arm_valid ? "valid" : "INVALID", div_auto_arm_db, truth);
+  expect(div_auto_arm_valid && fabs(div_auto_arm_db - truth) < 0.5,
+         "Best: arm 1's advantage within 0.5 dB of the truth at +3 dB arm SNR");
+  scene_end();
+  diversity_auto_stop();
+  const struct scene buried = { 192000, 0.1, 0.1, 1e9, sqrt(0.1 * 2600.0 / 1800.0), 600.0, 2400.0, 0, 0.0 };
+  setup(192000, modeLSB, -2800, -200, DIV_REF_BAND);
+  srand(23);
+  diversity_auto_start();
+  scene_begin(&buried);
+  feed_blocks(&buried, (int)ceil(5.0 * div_auto_binhz));
+  printf("arm 0 buried: antenna readout %s %+.2f dB (arm 1 at about +7.9 dB, arm 0 -10)\n",
+         div_auto_arm_valid ? "valid" : "INVALID", div_auto_arm_db);
+  expect(div_auto_arm_valid && div_auto_arm_db > 10.0,
+         "Best: with arm 0 buried the readout stays valid and arm 1 leads by over 10 dB");
+  scene_end();
+  diversity_auto_stop();
+}
+
 static void check_span(void) {
   /* 1536 kHz: arm 1 10 dB noisier within 20 kHz of the dial, equal beyond */
   const struct scene sc = { 1536000, sqrt(10.0), 1.0, 20000.0,
@@ -445,6 +505,8 @@ int main(int argc, char **argv) {
   check_cw(192000, 650, 750, 0);
   check_cw(1536000, 500, 900, 0);
   check_cw(1536000, 650, 750, 1);
+  printf("\n");
+  check_best_snr();
   printf("\n");
   check_reset_race();
   printf("\n%s\n", fails ? "FAIL" : "PASS");
