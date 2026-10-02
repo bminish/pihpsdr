@@ -297,6 +297,37 @@ double auto_div_sin = 0.0;
 //
 double div_norm = 1.0;
 //
+// Ear split. See the enum in radio.h.
+//
+int div_split = DIV_SPLIT_OFF;
+double div_split_balance = 0.0;    // dB, left minus right
+double div_bal_l = 1.0;
+double div_bal_r = 1.0;
+
+//
+// Balance as two amplitudes. Attenuate-only: whichever ear the trim
+// favours is left alone and the other is brought down, so the pair never
+// asks for gain above what the AF slider is set to. Working the other way
+// round - raising one ear - would do nothing at the top of the AF range,
+// which is where an operator with a hot antenna is most likely to be.
+//
+void radio_calc_split_balance(void) {
+  //
+  // Held to the slider's own range here rather than only in the widget,
+  // so that a value arriving from a props file written against a wider
+  // range cannot sit outside what the control can show or take back.
+  //
+  if (div_split_balance >  DIV_BALANCE_MAX) { div_split_balance =  DIV_BALANCE_MAX; }
+
+  if (div_split_balance < -DIV_BALANCE_MAX) { div_split_balance = -DIV_BALANCE_MAX; }
+
+  const double l = (div_split_balance < 0.0) ?  div_split_balance : 0.0;
+  const double r = (div_split_balance > 0.0) ? -div_split_balance : 0.0;
+  div_bal_l = pow(10.0, 0.05 * l);
+  div_bal_r = pow(10.0, 0.05 * r);
+}
+
+//
 // Audio capture and replay
 // (Equalisers are switched off during capture and replay)
 //
@@ -1555,6 +1586,13 @@ void radio_start_radio(void) {
   radio_change_region(region);
   radio_create_visual();
   radio_reconfigure_screen();
+  //
+  // The ear split, if the props file had it on. After radio_create_visual(),
+  // which is what builds receiver[1] and gives it a demodulator to clone
+  // onto, and after the screen is settled so that "receivers" means what
+  // it will go on meaning.
+  //
+  div_split_set(div_split);
 #ifdef GPIO
   gpio_set_orion_options();
 #endif
@@ -1777,6 +1815,11 @@ void radio_change_receivers(int r) {
   }
   radio_reconfigure_screen();
   rx_set_active(receiver[0]);
+  //
+  // The ear split owns receiver[1] only while it has no panel of its own,
+  // so it stands down as RX2 appears and comes back as RX2 goes away.
+  //
+  div_split_set(div_split);
   if (!radio_is_remote) {
     schedule_high_priority();
     if (protocol == ORIGINAL_PROTOCOL) {
@@ -1902,11 +1945,24 @@ static void rxtx(int state) {
         gtk_container_remove(GTK_CONTAINER(fixed), receiver[i]->panel);
       }
       //
+      // The ear split's second receiver has no panel and so is not in that
+      // loop, but it is one half of a stereo pair with RX1 and has to be
+      // slewed down with it: one ear cutting while the other fades is
+      // exactly the artefact a listener notices. In parallel, like the rest.
+      //
+      if (!radio_is_remote && div_split_active()) {
+        rx_off(receiver[1], 0);
+      }
+      //
       // Now wait for all receiver slew-downs to be completed
       //
       if (!radio_is_remote) {
         for (int i = 0; i < receivers; i++) {
           rx_off(receiver[i], 1);
+        }
+
+        if (div_split_active()) {
+          rx_off(receiver[1], 1);
         }
       }
     }
@@ -2016,6 +2072,16 @@ static void rxtx(int state) {
         } else {
           send_startstop_rxspectrum(cl_sock_tcp, i, 1);
         }
+      }
+
+      //
+      // ...and back up with it. Same left-over samples to drop, too.
+      //
+      if (!radio_is_remote && div_split_active()) {
+        rx_on(receiver[1]);
+        receiver[1]->samples = 0;
+        receiver[1]->txrxmax = do_silence ? (receiver[1]->sample_rate >> do_silence) : 0;
+        receiver[1]->txrxcount = 0;
       }
     }
   }
@@ -2285,6 +2351,188 @@ void radio_calc_div_params(void) {
   man_div_sin = amplitude * sin(arg);
 }
 
+//
+// Ear split.
+//
+// receiver[1] is built for every RECEIVERS at startup and OpenChannel()
+// starts its WDSP channel running, so it demodulates whether or not its
+// panel is on screen - and with receivers == 1 every other path in the
+// program that would drive it is guarded by receivers, so nothing else
+// writes to it. That is what makes it safe to own from here, and it is
+// why the split needs no second panel: this is an audio path, not a
+// second receiver for the operator to look at.
+//
+// And it is why receivers < 2 is part of the test rather than incidental
+// to it. Bring RX2 up and it stops being ours: vfo.c starts driving its
+// mode and filter from VFO B on every change, which is the one thing
+// rx_clone_dsp() is written to avoid, and the two would overwrite each
+// other in whatever order the last event happened to arrive. The split
+// stands down instead, and comes back when the panel goes away.
+//
+// The sample rate is in the test for a plainer reason: RX1 is fed from
+// RX0's stream, so a rate mismatch would be a buffer mismatch.
+//
+static int div_split_recheck(void) {
+  return div_split != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
+         RECEIVERS > 1 && receivers < 2 && receiver[0] != NULL && receiver[1] != NULL &&
+         receiver[0]->sample_rate == receiver[1]->sample_rate;
+}
+
+//
+// Whether receiver[1] is currently ours: set up, running and being fed.
+//
+// Kept rather than re-derived, because it answers a different question
+// from div_split_recheck() and the difference is exactly where the work
+// is. Everything that can change the answer - diversity going off, the
+// sample rate moving, the props file arriving with the split already on -
+// moves what the predicate would say without moving what has been done to
+// receiver[1]. Comparing the two is what says which way to go, and it
+// makes div_split_set(div_split) a safe thing to call at any time: it
+// reconciles rather than toggles.
+//
+// It is also the flag div_split_active() reads, so that the per-sample
+// paths cost a load rather than a call into this file. See radio.h.
+//
+int div_split_on = 0;
+
+//
+// Start both ears on the same input sample.
+//
+// The two receivers are handed the same stream one sample at a time and
+// both fill a 1024-sample buffer, so they demodulate in lockstep - but
+// only if their counters agree. Zeroing one while the other sits part way
+// through a buffer leaves the two firing rx_full_buffer() a fixed number
+// of samples apart, and since they then advance together that offset
+// never closes: up to 1023 samples, 21 ms at 48 kHz, of one ear lagging
+// the other for as long as the split is up. Which is audible, and was
+// whatever it happened to be at the moment the split was engaged.
+//
+// So both, together. RX0 loses its part buffer, which is one gap of up to
+// 21 ms as the mode changes - the right price for a stereo image that is
+// actually aligned.
+//
+// The feeding thread may slip a sample between the two writes. That is a
+// one-sample error, twenty microseconds, and not worth a lock on the
+// audio path to avoid.
+//
+static void div_split_align(void) {
+  receiver[0]->samples = 0;
+  receiver[1]->samples = 0;
+}
+
+void div_split_set(int mode) {
+  //
+  // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
+  // from rx_change_sample_rate(), which a client does run, and there is
+  // nothing wrong with asking - there is simply no second ear at the far
+  // end to give anything to. The remote audio path carries one mono sample
+  // per receiver.
+  //
+  if (radio_is_remote) { return; }
+
+  div_split = mode;
+
+  //
+  // Match the two rates before asking whether the split can run, because
+  // div_split_active() tests them. Left until afterwards, a mismatch
+  // would be permanently unfixable: the split could never engage, and the
+  // one thing that would fix it sits inside the path that never runs.
+  //
+  // A hidden receiver[1] is exactly where a mismatch comes from -
+  // radio_change_sample_rate() walks receivers, not RECEIVERS, so it is
+  // left behind by every rate change made while it has no panel.
+  //
+  if (div_split != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
+      RECEIVERS > 1 && receivers < 2 && receiver[0] != NULL && receiver[1] != NULL &&
+      receiver[0]->sample_rate != receiver[1]->sample_rate) {
+    rx_change_sample_rate(receiver[1], receiver[0]->sample_rate);
+  }
+
+  const int want = div_split_recheck();
+
+  if (want && div_split_on) {
+    //
+    // Already up, and only the presentation changed. Who feeds RX1 moves
+    // between the protocol and the combiner with it, so drop the part
+    // buffers rather than splice two sources into one block - and drop
+    // both, for the reason in div_split_align() below.
+    //
+    div_split_align();
+    return;
+  }
+
+  if (want) {
+    //
+    // Nothing to set up but the demodulation. rx_create_receiver() builds
+    // every RECEIVERS at startup, not merely the ones on screen, and it
+    // restores each one's own props and opens its audio sink on the way
+    // past - so receiver[1] already has its output device open whether or
+    // not it has a panel. Its WDSP channel is running too: OpenChannel()
+    // is given state 1. What is missing is samples, something to
+    // demodulate them as, and the first ear's output device.
+    //
+    // Its own settings, filed before anything is cloned over them. The
+    // props are where the teardown reads them back from, and on a radio
+    // that has never saved with two receivers there might be nothing
+    // there yet - GetProp leaves a field alone when its key is absent, so
+    // a restore from an empty section would return nothing at all.
+    //
+    rx_save_state(receiver[1]);
+    div_split_align();
+    rx_clone_dsp(receiver[1], receiver[0]);
+    //
+    // Level with the first ear on the way in, whatever RX2's own props
+    // last left it at. Balance is what makes them differ from here.
+    //
+    // It still gets an AF gain of its own even though its sink is never
+    // opened: WDSP applies the gain inside the channel, so this is what
+    // sets the level of the ear before it reaches the pair.
+    //
+    receiver[1]->volume = receiver[0]->volume;
+    rx_set_af_gain(receiver[1]);
+    radio_calc_split_balance();
+    rx_on(receiver[1]);
+    div_split_on = 1;
+  } else if (div_split_on) {
+    //
+    // Stop it only if nothing else wants it. The split stands down when
+    // RX2 is brought up, and RX2 is this same receiver - now on screen,
+    // running, and being listened to in its own right. Switching it off
+    // on the way past would silence the panel that had just appeared.
+    //
+    // The sink is left open either way: it was not opened here.
+    //
+    //
+    // Give it its own settings back, before it is stopped.
+    //
+    // rx_restore_state() reads every field from the props, which is the
+    // point: this is deliberately not the mirror image of rx_clone_dsp()'s
+    // field list. That list can fall behind as fields are added and the
+    // worst that happens is an ear that stops following. Falling behind
+    // here would leave the operator's own settings overwritten, so it is
+    // done by the function that already knows all of them.
+    //
+    // The setters afterwards are the sequence rx_create_receiver() runs
+    // after its own restore, for the same reason: the restore puts values
+    // in the struct and nothing else.
+    //
+    rx_restore_state(receiver[1]);
+    rx_set_mode(receiver[1]);
+    rx_set_filter(receiver[1]);
+    rx_set_offset(receiver[1]);
+    rx_set_agc(receiver[1]);
+    rx_set_noise(receiver[1]);
+    rx_set_notch(receiver[1]);
+    rx_set_fft_params(receiver[1]);
+    rx_set_af_gain(receiver[1]);
+    rx_set_squelch(receiver[1]);
+
+    if (receivers < 2) { rx_off(receiver[1], 0); }
+
+    div_split_on = 0;
+  }
+}
+
 //  
 // True while the automatic loop owns the weight, so a manual set from an
 // encoder, a popup slider or a remote client would be overwritten within
@@ -2393,6 +2641,14 @@ void radio_set_diversity(int state) {
       diversity_auto_stop();
     }
 
+    //
+    // And bring the ear split up or take it down with the combiner it
+    // rides on. div_split itself is left where the operator put it, so it
+    // comes back when diversity does; div_split_set() reconciles against
+    // what has actually been done to receiver[1], which is why one call
+    // serves both directions.
+    //
+    div_split_set(div_split);
   }
   diversity_enabled = state;
   g_idle_add(ext_vfo_update, NULL);
@@ -2716,6 +2972,24 @@ void radio_set_af_gain(int id, double value) {
   RECEIVER *rx = receiver[id];
   rx->volume = value;
   rx_set_af_gain(rx);
+
+  //
+  // One AF gain for the pair. The ear split's second receiver is not on
+  // screen and so is past the guard above - AF_GAIN_RX2 and the RX2
+  // slider both return early on it - which left the right ear stuck at
+  // whatever its props file last said while the left one moved. The
+  // difference between the ears is the Balance control's business, not
+  // this one's, and it is applied separately.
+  //
+  // rx_set_af_gain() writes the per-mode profile back for RX0 only, so
+  // this does not put the second ear's volume into the operator's stored
+  // settings.
+  //
+  if (id == 0 && div_split_active()) {
+    receiver[1]->volume = value;
+    rx_set_af_gain(receiver[1]);
+  }
+
   g_idle_add(sliders_af_gain, GINT_TO_POINTER(100 * suppress_popup_sliders + id));
 }
 
@@ -3205,6 +3479,8 @@ static void radio_restore_state(void) {
     GetPropI0("radio_sample_rate",                           soapy_radio_sample_rate);
     GetPropI0("diversity_auto_mode",                         div_auto_mode);
     GetPropI0("diversity_enabled",                           diversity_enabled);
+    GetPropI0("diversity_split",                             div_split);
+    GetPropF0("diversity_split_balance",                     div_split_balance);
     GetPropF0("diversity_gain",                              man_div_gain);
     GetPropF0("diversity_phase",                             man_div_phase);
     GetPropF0("diversity_cos",                               man_div_cos);
@@ -3325,7 +3601,10 @@ static void radio_restore_state(void) {
   //
   if (RECEIVERS < 2 || n_adc < 2) {
     diversity_enabled = 0;
+    div_split = DIV_SPLIT_OFF;
   }
+
+  radio_calc_split_balance();
   //
   // If the N2ADR filter board is selected, this determines  most  OC settings
   //
@@ -3352,6 +3631,19 @@ void radio_save_state(void) {
   // are restored in create_receiver/create_transmitter
   //
   for (int i = 0; i < RECEIVERS; i++) {
+    //
+    // Not the ear split's second receiver. What it is holding is RX0's
+    // settings, cloned onto it, not its own - and this loop runs over
+    // RECEIVERS rather than receivers, so it reaches a receiver that has
+    // no panel and no way for the operator to have set any of it. Writing
+    // that into its props overwrites the configuration it had before the
+    // split was engaged, with nothing to recover it from.
+    //
+    // Skipping leaves those props holding the original, which is what the
+    // restore in div_split_set() reads back.
+    //
+    if (i == 1 && div_split_active()) { continue; }
+
     rx_save_state(receiver[i]);
   }
   if ((protocol == ORIGINAL_PROTOCOL || protocol == NEW_PROTOCOL) && !radio_is_remote) {
@@ -3433,6 +3725,8 @@ void radio_save_state(void) {
     SetPropF0("diversity_phase",                             man_div_phase);
     SetPropF0("diversity_cos",                               man_div_cos);
     SetPropF0("diversity_sin",                               man_div_sin);
+    SetPropI0("diversity_split",                             div_split);
+    SetPropF0("diversity_split_balance",                     div_split_balance);
     SetPropI0("new_pa_board",                                new_pa_board);
     SetPropI0("region",                                      region);
     SetPropI0("atlas_penelope",                              atlas_penelope);

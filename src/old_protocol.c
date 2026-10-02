@@ -1378,7 +1378,7 @@ static void process_ozy_byte(int b) {
         // converter, so that what it shows is the other antenna whichever
         // way round the operator has them. See div_arm_swapped().
         //
-        if (receivers > 1) {
+        if (div_rx1_takes_raw()) {
           if (div_arm_swapped()) {
             rx_add_iq_samples(receiver[1], left_sample_double_main, right_sample_double_main);
           } else {

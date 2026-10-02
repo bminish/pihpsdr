@@ -62,6 +62,8 @@ static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
 static GtkWidget *level_b = NULL;
+static GtkWidget *split_combo = NULL;
+static GtkWidget *balance_scale = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -215,6 +217,8 @@ static void cleanup(void) {
     //
     hold_b = NULL;
     level_b = NULL;
+    split_combo = NULL;
+    balance_scale = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     win_centre_btn = NULL;
@@ -272,6 +276,34 @@ static void div_level_sensitive(void) {
   if (gtk_widget_get_sensitive(level_b) != active) { gtk_widget_set_sensitive(level_b, active); }
 }
 
+//
+// The ear split needs the combiner running to have two arms to split, and
+// it stands down while RX2 has a panel of its own (see div_split_set()).
+// It is local to the radio for now: the remote audio path carries one mono
+// sample per receiver. div_split keeps whatever the operator chose while
+// the combo is greyed, so it comes back with Div. Balance is worth setting
+// whenever a split is chosen, running or not.
+//
+static void div_split_sensitive(void) {
+  if (split_combo != NULL) {
+    gtk_widget_set_sensitive(split_combo, !radio_is_remote && diversity_enabled && receivers < 2);
+  }
+
+  if (balance_scale != NULL) {
+    gtk_widget_set_sensitive(balance_scale, !radio_is_remote && div_split != DIV_SPLIT_OFF);
+  }
+}
+
+static void split_cb(GtkWidget *widget, gpointer data) {
+  div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
+  div_split_sensitive();
+}
+
+static void balance_cb(GtkWidget *widget, gpointer data) {
+  div_split_balance = gtk_range_get_value(GTK_RANGE(widget));
+  radio_calc_split_balance();
+}
+
 static void enable_cb(GtkWidget *widget, gpointer data) {
   int state = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   //
@@ -280,6 +312,7 @@ static void enable_cb(GtkWidget *widget, gpointer data) {
   //
   radio_set_diversity(state);
   div_level_sensitive();
+  div_split_sensitive();
 }
 
 static void att_cb(GtkWidget *widget, gpointer data) {
@@ -1221,6 +1254,54 @@ void diversity_menu(GtkWidget *parent) {
     gtk_range_set_value(GTK_RANGE(btn), adc[1].attenuation);
     g_signal_connect(btn, "value_changed", G_CALLBACK(att_cb), GINT_TO_POINTER(1));
     gtk_grid_attach(GTK_GRID(grid), btn, 7, row, 4, 1);
+  }
+  if (RECEIVERS > 1 && n_adc > 1) {
+    row++;
+    //
+    // What the two arms are presented as: summed (the normal combiner),
+    // or one to each ear. Like Level output it changes what is heard, not
+    // what is measured - the analysis sees both raw arms either way.
+    //
+    lbl = gtk_label_new("Audio:");
+    gtk_widget_set_name(lbl, "boldlabel");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
+    split_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Summed");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Antenna per ear");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Sum L / Difference R");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), div_split);
+    gtk_widget_set_tooltip_text(split_combo,
+                                "Present the two antennas one to each ear instead of "
+                                "summing them. The DDCs are locked together in the "
+                                "FPGA, so the ears cannot drift apart.\n\n"
+                                "Antenna per ear: the ADC RX1 is set to in the left "
+                                "ear, the other ADC in the right.\n\n"
+                                "Sum L / Difference R: the combined output in the "
+                                "left ear and its inverse (the null) in the right, "
+                                "so a signal nulls in one ear while it peaks in the "
+                                "other.\n\n"
+                                "Uses the second receiver without putting it on "
+                                "screen; it follows RX1's mode, filter, AGC and "
+                                "noise settings. Not available while RX2 is shown. "
+                                "A mono output device mixes the ears back together.");
+    gtk_grid_attach(GTK_GRID(grid), split_combo, 2, row, 4, 1);
+    g_signal_connect(split_combo, "changed", G_CALLBACK(split_cb), NULL);
+    lbl = gtk_label_new("Bal L-R:");
+    gtk_widget_set_name(lbl, "boldlabel");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 6, row, 1, 1);
+    balance_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL,
+                    -DIV_BALANCE_MAX, +DIV_BALANCE_MAX, 0.25);
+    gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance);
+    gtk_widget_set_tooltip_text(balance_scale,
+                                "Trim the two ears against each other, in dB of left "
+                                "minus right. The favoured ear is left alone and the "
+                                "other is brought down, so this never asks for level "
+                                "the AF gain has not got.");
+    gtk_grid_attach(GTK_GRID(grid), balance_scale, 7, row, 4, 1);
+    g_signal_connect(balance_scale, "value_changed", G_CALLBACK(balance_cb), NULL);
+    div_split_sensitive();
   }
   row++;
   //

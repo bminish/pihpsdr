@@ -2190,7 +2190,7 @@ static void process_div_iq_data(const unsigned char*buffer) {
     // fixed converter, so that what RX2 shows is the other antenna
     // whichever way round the operator has them. See div_arm_swapped().
     //
-    if (receivers > 1 && (receiver[0]->sample_rate == receiver[1]->sample_rate)) {
+    if (div_rx1_takes_raw() && (receiver[0]->sample_rate == receiver[1]->sample_rate)) {
       if (div_arm_swapped()) {
         rx_add_iq_samples(receiver[1], leftsampledouble0, rightsampledouble0);
       } else {

@@ -1070,6 +1070,175 @@ void rx_set_sam_mode(const RECEIVER *rx) {
   SetRXAAMDSBMode(rx->id, rx->sam_sb_mode);
 }
 
+//
+// Give dst the same demodulation as src, without going through dst's own
+// VFO.
+//
+// Under the ear split dst is receiver[1] and src is receiver[0], and
+// receiver[1]'s controlling VFO is VFO B - the operator's split VFO,
+// shown in the VFO bar and used for split transmit. Slaving it would be
+// the short way to do this and would quietly change what split TX
+// transmits with, so the demodulation is set here instead and VFO B is
+// left alone.
+//
+// The filter edges are copied rather than recomputed. rx_set_filter()
+// derives them from vfo[id].mode and vfo[id].filter, which is exactly
+// what must not be consulted; src's are already folded for CW and
+// already correct.
+//
+//
+// The noise-reduction and notch settings, copied ear to ear.
+//
+// Two ears of one stereo image have to be fighting the noise the same way.
+// Different NR or a notch on one side only is not a mismatch in a detail -
+// it is a mismatch in the thing being listened to, and the brain reads the
+// difference as position.
+//
+// Split out from rx_clone_dsp() because these two also have to follow every
+// later change, and the hooks that do that are at the tail of rx_set_noise()
+// and rx_set_notch() rather than at their fifty-odd call sites.
+//
+// The lists are what those two functions read. A field added to either
+// without being added here would silently stop following, which is the one
+// way this can rot; the restore path deliberately does not work this way.
+//
+static void rx_copy_noise(RECEIVER *dst, const RECEIVER *src) {
+  dst->nb          = src->nb;
+  dst->nb2_mode    = src->nb2_mode;
+  dst->nb_tau      = src->nb_tau;
+  dst->nb_advtime  = src->nb_advtime;
+  dst->nb_hang     = src->nb_hang;
+  dst->nb_thresh   = src->nb_thresh;
+  dst->nr          = src->nr;
+  dst->nr_agc      = src->nr_agc;
+  dst->snb         = src->snb;
+  dst->anf         = src->anf;
+  dst->anf_taps    = src->anf_taps;
+  dst->anf_delay   = src->anf_delay;
+  dst->anf_gain    = src->anf_gain;
+  dst->anf_leakage = src->anf_leakage;
+  dst->nr2_gain_method        = src->nr2_gain_method;
+  dst->nr2_npe_method         = src->nr2_npe_method;
+  dst->nr2_trained_threshold  = src->nr2_trained_threshold;
+  dst->nr2_trained_t2         = src->nr2_trained_t2;
+  dst->nr2_post               = src->nr2_post;
+  dst->nr2_post_nlevel        = src->nr2_post_nlevel;
+  dst->nr2_post_factor        = src->nr2_post_factor;
+  dst->nr2_post_rate          = src->nr2_post_rate;
+  dst->nr2_post_taper         = src->nr2_post_taper;
+  dst->nr4_reduction_amount   = src->nr4_reduction_amount;
+  dst->nr4_smoothing_factor   = src->nr4_smoothing_factor;
+  dst->nr4_whitening_factor   = src->nr4_whitening_factor;
+  dst->nr4_noise_rescale      = src->nr4_noise_rescale;
+  dst->nr4_post_threshold     = src->nr4_post_threshold;
+  dst->nr4_noise_scaling_type = src->nr4_noise_scaling_type;
+}
+
+//
+// The AGC settings, ear to ear.
+//
+// The inputs only. agc_hang and agc_thresh are read back out of WDSP at
+// the end of rx_set_agc() and depend on the receiver's own analyser size
+// and sample rate, so they are its own to compute and not ours to copy.
+//
+static void rx_copy_agc(RECEIVER *dst, const RECEIVER *src) {
+  dst->agc                = src->agc;
+  dst->agc_gain           = src->agc_gain;
+  dst->agc_hang_threshold = src->agc_hang_threshold;
+  dst->agc_custom_attack  = src->agc_custom_attack;
+  dst->agc_custom_decay   = src->agc_custom_decay;
+  dst->agc_custom_hang    = src->agc_custom_hang;
+  dst->agc_custom_slope   = src->agc_custom_slope;
+}
+
+static void rx_copy_notch(RECEIVER *dst, const RECEIVER *src) {
+  dst->notch_min_width = src->notch_min_width;
+
+  for (int i = 0; i < 3; i++) {
+    dst->multi_notch_enable[i] = src->multi_notch_enable[i];
+    dst->multi_notch_center[i] = src->multi_notch_center[i];
+    dst->multi_notch_width[i]  = src->multi_notch_width[i];
+  }
+}
+
+void rx_clone_dsp(RECEIVER *dst, const RECEIVER *src) {
+  ASSERT_SERVER();
+  const int mode = vfo[src->id].mode;
+  SetRXAMode(dst->id, mode);
+  dst->filter_low  = src->filter_low;
+  dst->filter_high = src->filter_high;
+  dst->deviation   = src->deviation;
+  rx_set_deviation(dst);
+  rx_set_bandpass(dst);
+  rx_set_cw_peak(dst,
+                 (mode == modeCWU || mode == modeCWL) ? vfo[src->id].cwAudioPeakFilter : 0,
+                 (double)cw_keyer_sidetone_frequency);
+  //
+  // Before rx_set_agc(), which applies whatever the receiver is holding -
+  // and without this it would go on applying its own.
+  //
+  rx_copy_agc(dst, src);
+  rx_set_agc(dst);
+  dst->squelch_enable = src->squelch_enable;
+  dst->squelch        = src->squelch;
+  rx_set_squelch_for(dst, mode);
+  rx_set_offset_for(dst, mode, vfo[src->id].offset);
+
+  //
+  // The filter's shape, because the filter's shape is its delay.
+  //
+  // fft_size is the tap count and low_latency selects minimum phase over
+  // linear phase, and both are per receiver and stored per receiver. A
+  // linear-phase FIR delays by half its taps - 1024 samples, 21 ms, at
+  // the default 2048 - and a minimum-phase one by far less, so two ears
+  // that disagree about either arrive at different times. That is not a
+  // subtle mismatch in a stereo image: it is the whole of what a stereo
+  // image is made of.
+  //
+  // dst's values come from its own props and, while it has no panel, the
+  // FFT menu does not draw a column for it - so nothing would show the
+  // operator why one ear lagged, or let them correct it.
+  //
+  // Guarded because RXASetNC() stops and restarts the channel, and this
+  // runs on every mode and filter change. After the first call it is a
+  // comparison and nothing else.
+  //
+  if (dst->fft_size    != src->fft_size ||
+      dst->low_latency != src->low_latency ||
+      dst->nbp_window  != src->nbp_window) {
+    dst->fft_size    = src->fft_size;
+    dst->low_latency = src->low_latency;
+    dst->nbp_window  = src->nbp_window;
+    rx_set_fft_params(dst);
+  }
+
+  //
+  // Noise and notches. Plain WDSP setters, no channel restart, so these are
+  // applied every time rather than guarded like the filter shape above.
+  //
+  rx_copy_noise(dst, src);
+  rx_set_noise(dst);
+  rx_copy_notch(dst, src);
+  rx_set_notch(dst);
+
+  //
+  // sam_sb_mode is deliberately not copied. LSB in one ear and USB in the
+  // other on an AM carrier is a reason to have two.
+  //
+}
+
+//
+// Keep the split's second ear on the same demodulation as the first.
+// Called from the two functions every mode and filter change goes
+// through, RX0 only - RX1 is the one being written, and a change made to
+// it here must not come back round.
+//
+static void rx_sync_split(const RECEIVER *rx) {
+  if (rx->id == 0 && div_split_active()) {
+    rx_clone_dsp(receiver[1], rx);
+  }
+}
+
 void rx_filter_changed(RECEIVER *rx) {
   ASSERT_SERVER();
   rx_set_filter(rx);
@@ -1078,6 +1247,7 @@ void rx_filter_changed(RECEIVER *rx) {
       tx_set_filter(transmitter);
     }
   }
+  rx_sync_split(rx);
   //
   // TODO: Filter window has possibly moved outside CTUN range
   //
@@ -1096,6 +1266,12 @@ void rx_mode_changed(RECEIVER *rx) {
   if (rx->id == 0) {
     diversity_auto_mode_changed(vfo[rx->id].mode);
   }
+
+  //
+  // After rx_set_offset() above, so the clone carries the mode's BFO
+  // offset rather than the one it had a moment ago.
+  //
+  rx_sync_split(rx);
 }
 
 void rx_vfo_changed(RECEIVER *rx) {
@@ -1114,6 +1290,58 @@ void rx_vfo_changed(RECEIVER *rx) {
 // form the "RX engine".
 //
 //////////////////////////////////////////////////////////////////////////////////////
+
+//
+// The ear split's left ear, held between the two receivers' passes.
+//
+// Both ears go out of ONE stream, receiver[0]'s. They used to go out of
+// two, one per receiver, and two streams cannot be kept together: each has
+// its own ring, audio_write() pins a ring to AUDIO_LAT_TARGET only when it
+// crosses a water mark, and anything that stops one ear for a moment
+// leaves the two at different depths for as long as neither crosses one.
+// A sample rate change does exactly that - rx_change_sample_rate() stops
+// and restarts each receiver at a different moment and for a different
+// length of time, and touches no ring - so the ears came apart on every
+// rate change and did not come back until a transmit drained both rings
+// and re-pinned them together.
+//
+// One ring cannot drift from itself. RX1's pass has RX0's half in hand -
+// it is fed second, and div_split_align() holds the two in phase - so it
+// writes the finished pair to RX0's sink and RX1's sink is never opened.
+//
+// output_samples is buffer_size/(rate/48000) with buffer_size 1024, so
+// 1024 is the ceiling. Single-threaded: rx_process_buffer() is only
+// reached from rx_add_iq_samples(), on the protocol's receive thread.
+//
+static double split_left[1024];
+static int    split_len = 0;          // 0 = nothing valid held
+
+#ifdef TCI
+//
+// The same thing for TCI, which needs its own because it taps earlier in
+// the chain - ahead of mute - and carries a different gain law.
+//
+// TCI carries a stereo pair per receiver already - the rings are
+// interleaved and every frame header says channels = 2 - so the split has a
+// place to go without any change to the protocol. What it needs is for one
+// pass to have both ears at once, and tci_audio_rx_sample() takes the ring
+// id as an argument, so the producer of ring 0 does not have to be RX0.
+//
+// RX1 is fed second in both protocols and in rx_add_div_iq_samples(), and
+// div_split_align() keeps the two buffers in phase, so by the time RX1's
+// pass runs RX0's half of the same block is already computed. RX1 therefore
+// emits the finished pair on stream 0, which is the stream a client already
+// opens. Nothing in tci.c changes.
+//
+// No lock: rx_process_buffer() is only reached from rx_add_iq_samples(), on
+// the protocol's receive thread, so the two passes are one thread.
+//
+// buffer_size is 1024 for every receiver and output_samples is
+// buffer_size/(rate/48000), so 1024 is the ceiling.
+//
+static double tci_split_left[1024];
+static int    tci_split_len = 0;      // 0 = nothing valid held
+#endif
 
 static void rx_process_buffer(RECEIVER *rx) {
   ASSERT_SERVER();
@@ -1156,6 +1384,18 @@ static void rx_process_buffer(RECEIVER *rx) {
   }
   lvl = 0.9 * lvl + (0.1 * sum) / rx->output_samples;
   t_print("RX lvl: %5.1f\n", 10.0 * log10(lvl));
+#endif
+  const int split = div_split_active();
+#ifdef TCI
+  //
+  // One gain law for the pair. tci_volume is per receiver and is settable
+  // only in the RX menu, which with one panel always opens on RX0 - so
+  // RX2's is whatever its props last said and cannot be reached, exactly
+  // as audio_name was. Both ears therefore take RX0's.
+  //
+  const double pairscale = split
+                           ? pow(10.0, -0.05 * (receiver[0]->volume - receiver[0]->tci_volume))
+                           : tciscale;
 #endif
   for (int i = 0; i < rx->output_samples; i++) {
     double left_sample = rx->audio_output_buffer[i * 2];
@@ -1202,29 +1442,107 @@ static void rx_process_buffer(RECEIVER *rx) {
     // programs, we ship out before applying mute_rx or STEREO effects.
     //
     if (tci_audio_rx_active) {
-      tci_audio_rx_sample(rx->id, tciscale * left_sample, tciscale * right_sample);
+      if (split) {
+        //
+        // Each ear folded to mono the same way the headphone path folds it,
+        // and for the same reason: rx->binaural is WDSP's spread on a single
+        // receiver, and half of that is half of a different signal rather
+        // than this ear. Balance is applied so the TCI image matches what is
+        // in the headphones; the AF gain is not, because pairscale cancels
+        // it - a TCI consumer's level must not follow the AF knob.
+        //
+        const double ear = 0.5 * (left_sample + right_sample);
+
+        if (rx->id == 0) {
+          if (i < (int)(sizeof(tci_split_left) / sizeof(tci_split_left[0]))) {
+            tci_split_left[i] = pairscale * ear * div_bal_l;
+          }
+        } else if (tci_split_len == rx->output_samples) {
+          tci_audio_rx_sample(0, tci_split_left[i], pairscale * ear * div_bal_r);
+        }
+      } else {
+        tci_audio_rx_sample(rx->id, tciscale * left_sample, tciscale * right_sample);
+      }
     }
 #endif
     if (xmit && mute_rx_while_transmitting) {
       left_sample = 0.0;
       right_sample = 0.0;
     }
-    if (rx->mute_radio || (rx != active_receiver && rx->mute_when_not_active)) {
+    //
+    // Both ears of the split must keep sounding whichever receiver has
+    // the focus. Suspended for the pair rather than cleared on them: a
+    // flag cleared here would not find its way back.
+    //
+    // ...and its own mute is ignored for the same reason: it is persisted
+    // per receiver and set from the RX menu, which a receiver with no
+    // panel does not have, so an RX2 muted while it had one would be a
+    // permanently dead right ear with nothing on screen to say why.
+    //
+    if ((rx->mute_radio && !(split && rx->id == 1)) ||
+        (!split && rx != active_receiver && rx->mute_when_not_active)) {
       left_sample = 0.0;
       right_sample = 0.0;
     }
-    switch (rx->audio_channel) {
-    case STEREO:
-      break;
-    case LEFT:
-      right_sample = 0.0;
-      break;
-    case RIGHT:
-      left_sample = 0.0;
-      break;
-    }
-    if (rx->local_audio) {
-      audio_write(rx, left_sample, right_sample);
+    //
+    // Each receiver to its own ear. Its own output is folded to mono
+    // first, because rx->binaural is WDSP's stereo spread and puts
+    // genuinely different audio in L and R - taking one half of that
+    // would be half of a different signal, not this ear's.
+    //
+    // rx->audio_channel is not written to do this. The per-mode RXTX
+    // profile owns that field and reloads it on every mode change
+    // (profiles.c), so an assignment would not survive; and computing
+    // the channel here means switching the split off restores exactly
+    // what was there before, with nothing left behind.
+    //
+    if (split) {
+      //
+      // This receiver's ear: folded to mono, because rx->binaural is
+      // WDSP's spread on a single receiver and half of that is half of a
+      // different signal; then the balance trim.
+      //
+      // The trim is applied here rather than through rx->volume because
+      // that field is the AF gain itself - read by the slider, by CAT and
+      // by the per-mode profile - and folding a trim into it would make
+      // all three disagree about what the AF gain is.
+      //
+      const double ear = 0.5 * (left_sample + right_sample)
+                         * ((rx->id == 0) ? div_bal_l : div_bal_r);
+
+      if (rx->id == 0) {
+        //
+        // Held for RX1's pass, which does the writing. Nothing goes to
+        // this receiver's sink from here.
+        //
+        if (i < (int)(sizeof(split_left) / sizeof(split_left[0]))) {
+          split_left[i] = ear;
+        }
+      } else if (split_len == rx->output_samples && receiver[0]->local_audio) {
+        //
+        // Both ears, one stream, receiver[0]'s. Its audio_channel is not
+        // consulted: a stereo pair is what this is, and LEFT or RIGHT
+        // there would throw one ear away.
+        //
+        audio_write(receiver[0], split_left[i], ear);
+      }
+    } else {
+      switch (rx->audio_channel) {
+      case STEREO:
+        break;
+
+      case LEFT:
+        right_sample = 0.0;
+        break;
+
+      case RIGHT:
+        left_sample = 0.0;
+        break;
+      }
+
+      if (rx->local_audio) {
+        audio_write(rx, left_sample, right_sample);
+      }
     }
     if (rx == active_receiver) {
       switch (protocol) {
@@ -1239,6 +1557,31 @@ static void rx_process_buffer(RECEIVER *rx) {
       }
     }
   }
+
+  //
+  // Hand the left ear over, or take it back. Marked with the length of the
+  // block it came from rather than a flag, so RX1 only ever pairs a half
+  // made from a block of its own size: the one after engaging, where RX0
+  // has not run yet, and the ones either side of a sample rate change are
+  // dropped rather than mispaired.
+  //
+  split_len = (split && rx->id == 0) ? rx->output_samples : 0;
+
+#ifdef TCI
+  //
+  // Hand the left half over, or take it back. Marking it with the length
+  // rather than a flag is what makes the pairing safe: RX1 only uses a half
+  // that was made from a block of its own size, so the one after engaging -
+  // where RX0 has not run yet - and one either side of a sample rate change
+  // are skipped rather than mispaired. Ring 0 simply does not advance for
+  // that block, which the consumer absorbs.
+  //
+  if (split && tci_audio_rx_active) {
+    tci_split_len = (rx->id == 0) ? rx->output_samples : 0;
+  } else {
+    tci_split_len = 0;
+  }
+#endif
 }
 
 static void rx_full_buffer(RECEIVER *rx) {
@@ -1307,7 +1650,6 @@ void rx_add_iq_samples(RECEIVER *rx, double i_sample, double q_sample) {
 
 void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double q1) {
   ASSERT_SERVER();
-  double i_sample, q_sample;
 
   //
   // The protocols hand these over as DDC0 then DDC1, which diversity
@@ -1329,33 +1671,65 @@ void rx_add_div_iq_samples(RECEIVER *rx, double i0, double q0, double i1, double
     q1 = tq;
   }
 
+  //
+  // The weighted second arm, w * z1, and the level it is all held at.
+  //
+  double iw, qw, nrm;
+
   if (div_auto_mode == DIV_MANUAL) {
     //
     // Take the "manual" values derived from the "manual" gain and phase
-    i_sample = i0 + (man_div_cos * i1 - man_div_sin * q1);
-    q_sample = q0 + (man_div_sin * i1 + man_div_cos * q1);
+    //
+    iw  = man_div_cos * i1 - man_div_sin * q1;
+    qw  = man_div_sin * i1 + man_div_cos * q1;
+    nrm = 1.0;
   } else  {
     //
     // Feed the raw, uncombined pair to the auto-phasing analysis. This
     // happens before the summation below and before the noise blanker, so
     // both antennas are seen with identical (that is, no) processing.
-    // 
+    //
     if (div_auto_running) { diversity_auto_sample(i0, q0, i1, q1); }
-    i_sample = i0 + (auto_div_cos * i1 - auto_div_sin * q1);
-    q_sample = q0 + (auto_div_sin * i1 + auto_div_cos * q1);
+    iw  = auto_div_cos * i1 - auto_div_sin * q1;
+    qw  = auto_div_sin * i1 + auto_div_cos * q1;
     //
     // Held at the level of arm 0 alone when the normaliser is on; 1.0
     // otherwise. See div_norm_refresh() in diversity_auto.c.
     //
-    i_sample *= div_norm;
-    q_sample *= div_norm;
+    nrm = div_norm;
   }
 
-  //
-  // Note that we sum the second channel onto the first one
-  // and then simply pass to add_iq_samples
-  //
-  rx_add_iq_samples(rx, i_sample, q_sample);
+  switch (div_split_active() ? div_split : DIV_SPLIT_OFF) {
+  case DIV_SPLIT_RAW:
+    //
+    // The left ear is arm 0 on its own. The right ear is already being
+    // fed raw arm 1 by the protocol - that feed exists for RX2 under
+    // ordinary diversity, follows div_arm_swapped() there, and is exactly
+    // what this wants - so there is nothing to do for it here. See
+    // div_rx1_takes_raw().
+    //
+    rx_add_iq_samples(receiver[0], i0, q0);
+    break;
+
+  case DIV_SPLIT_SUMDIFF:
+    //
+    // Sum in the left ear, difference in the right: the peaked sum and
+    // the inverted null at the same time, rather than toggling Invert to
+    // hear them one after the other. Subtracting w*z1 is the same thing
+    // as rotating the weight by 180 degrees, which is what Invert does.
+    //
+    rx_add_iq_samples(receiver[0], (i0 + iw) * nrm, (q0 + qw) * nrm);
+    rx_add_iq_samples(receiver[1], (i0 - iw) * nrm, (q0 - qw) * nrm);
+    break;
+
+  default:
+    //
+    // Note that we sum the second channel onto the first one
+    // and then simply pass to add_iq_samples
+    //
+    rx_add_iq_samples(rx, (i0 + iw) * nrm, (q0 + qw) * nrm);
+    break;
+  }
 }
 
 void rx_update_width(RECEIVER *rx) {
@@ -1563,6 +1937,13 @@ void rx_change_sample_rate(RECEIVER *rx, int sample_rate) {
 
   if (rx->id == 0) {
     diversity_auto_restart();
+    //
+    // The ear split's second receiver has to keep the same rate, and the
+    // callers that change one only walk the receivers that are on screen.
+    // Reconciling here catches every route instead - and cannot recurse,
+    // because the receiver it goes on to change is not RX0.
+    //
+    div_split_set(div_split);
   }
 }
 
@@ -1860,7 +2241,11 @@ void rx_set_agc(RECEIVER *rx) {
     RXTXprofile[mode].rx.agc_custom_slope  = rx->agc_custom_slope;
     profiles_copy_rxtxprofile(mode);
   }
-  if (remoteclient.running) {
+  //
+  // Not for the ear split's second receiver: what it holds is RX0's AGC,
+  // copied over, and the client would file it as RX2's own.
+  //
+  if (remoteclient.running && !(id == 1 && div_split_active())) {
     //
     // Send AGC data to the client. This data includes updated "hang" and
     // "thresh" levels.
@@ -1868,6 +2253,24 @@ void rx_set_agc(RECEIVER *rx) {
     // new AGC gain value.
     //
     send_agc(remoteclient.sock_tcp,  rx);
+  }
+
+  //
+  // The ear split's second receiver follows this one, the same way it
+  // follows the noise reduction and the notches. The AGC slider, the
+  // encoder action, the AGC menu and CAT all arrive here - and
+  // radio_set_agc_gain() turns the second receiver away before this,
+  // because it returns early for any id past the number of panels on
+  // screen - so this is the one place that catches all of them.
+  //
+  // Two ears riding their gain differently is worse than either setting:
+  // it is the stereo image itself moving with the signal.
+  //
+  // rx->id == 0 is what stops it recursing.
+  //
+  if (id == 0 && div_split_active()) {
+    rx_copy_agc(receiver[1], rx);
+    rx_set_agc(receiver[1]);
   }
 }
 
@@ -2127,6 +2530,20 @@ void rx_set_notch(const RECEIVER *rx) {
   }
   // global enable/disable flag
   RXANBPSetNotchesRun(rx->id, notch);
+
+  //
+  // The ear split's second receiver has no menu, no encoder and no CAT of
+  // its own, so it cannot be set - it follows this one. The hook is here
+  // rather than at the call sites because there are about fifty of them
+  // across nine files, and one missed would be an ear quietly out of step.
+  //
+  // rx->id == 0 is also what stops the recursion: the call below lands on
+  // receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    rx_copy_notch(receiver[1], rx);
+    rx_set_notch(receiver[1]);
+  }
 }
 
 void rx_set_noise(const RECEIVER *rx) {
@@ -2263,13 +2680,28 @@ void rx_set_noise(const RECEIVER *rx) {
   // SNB
   //
   SetRXASNBARun(rx->id,                 rx->snb);
+
+  //
+  // The ear split's second receiver has no menu, no encoder and no CAT of
+  // its own, so it cannot be set - it follows this one. The hook is here
+  // rather than at the call sites because there are about fifty of them
+  // across nine files, and one missed would be an ear quietly out of step.
+  //
+  // rx->id == 0 is also what stops the recursion: the call below lands on
+  // receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    rx_copy_noise(receiver[1], rx);
+    rx_set_noise(receiver[1]);
+  }
 }
 
-void rx_set_offset(const RECEIVER *rx) {
+//
+// Split for the same reason as rx_set_squelch(): rx_clone_dsp() supplies
+// the mode and offset of a different receiver's VFO.
+//
+void rx_set_offset_for(const RECEIVER *rx, int mode, long long offset) {
   ASSERT_SERVER();
-  int id = rx->id;
-  int mode = vfo[id].mode;
-  long long offset = vfo[id].offset;
   //
   // CW BFO offset is done HERE.
   //
@@ -2292,12 +2724,27 @@ void rx_set_offset(const RECEIVER *rx) {
   }
 }
 
-void rx_set_squelch(const RECEIVER *rx) {
+void rx_set_offset(const RECEIVER *rx) {
+  rx_set_offset_for(rx, vfo[rx->id].mode, vfo[rx->id].offset);
+}
+
+//
+// The squelch mapping is per mode, and the mode normally comes from the
+// receiver's own VFO. rx_clone_dsp() needs it from somewhere else - it
+// gives receiver[1] receiver[0]'s demodulation without going through
+// VFO B - so the mode is a parameter here and rx_set_squelch() is the
+// wrapper that supplies the usual one. Every existing caller keeps going
+// through the wrapper, so nothing about their behaviour changes.
+//
+void rx_set_squelch_for(const RECEIVER *rx, int mode) {
   if (radio_is_remote) {
     send_squelch(cl_sock_tcp, rx->id, rx->squelch_enable, rx->squelch);
     return;
   }
-  int mode = vfo[rx->id].mode;
+  //
+  // Only RX0 writes the profile back. That is what keeps a clone onto
+  // receiver[1] out of the operator's stored per-mode settings.
+  //
   if (rx->id == 0) {
     RXTXprofile[mode].rx.squelch_enable = rx->squelch_enable;
     RXTXprofile[mode].rx.squelch        = rx->squelch;
@@ -2364,5 +2811,9 @@ void rx_set_squelch(const RECEIVER *rx) {
   SetRXAAMSQRun(rx->id, am_squelch);
   SetRXAFMSQRun(rx->id, fm_squelch);
   SetRXASSQLRun(rx->id, voice_squelch);
+}
+
+void rx_set_squelch(const RECEIVER *rx) {
+  rx_set_squelch_for(rx, vfo[rx->id].mode);
 }
 
