@@ -5,7 +5,7 @@
  * covers that - but that knowing the noise separately is worth something.
  * The wideband Sum objective, w = +Sxy/Sxx, is maximum ratio combining
  * only when the two branches carry equal, uncorrelated noise. On a real
- * station they do not: ADC1 is usually a small loop or a whip on a bare
+ * station they do not: ADC2 is usually a small loop or a whip on a bare
  * rear-panel input, and both feedlines pick up the same common-mode hash.
  *
  * A digital signal is narrow and sits in a passband that is mostly empty,
