@@ -1632,6 +1632,18 @@ changes it, we take upstream.
 
 ## Flagged for a later patch
 
+- **Best's per-arm SNR reads the percentile floor as the mean noise**
+  (LC-028; found 2026-10-02, details in `diversity-measurements.md`,
+  "Status on `TEST`"). `div_nf` is 9.78 dB below the mean noise per
+  bin, so a noise-only window passes `DIV_ARM_MIN_DB` with 9.3 dB per
+  arm, and real differences are compressed (6 dB reads as 2.2 dB at
+  weak SNR). Scale by 1/0.1051 where it is used as an absolute level,
+  and re-score LC-028. The Sum ratios are unaffected (the constant
+  cancels).
+- **The combiner applies 1 + 1j until the loop's first solve.**
+  `radio.c`'s `auto_div_cos = 1.0, auto_div_sin = 1.0` (upstream
+  `4865d602`) is +3 dB at 45°, probably meant as unity. For dl1ycf.
+
 - **LC-022 does not apply to bare upstream.** It conflicts in
   `diversity_auto.c` on `890ed310`, and also on `f5a0ce9c`, so it
   predates this re-sync. The register lists no dependency, so there is
@@ -1700,6 +1712,15 @@ core:
 
 ## Pending: to be ported from `feature/auto-diversity`
 
+From the 2026-10-02 evaluation of the findings' open list
+(`diversity-measurements.md`, "Status on `TEST`"), these are described
+as done in the findings but are on `feature/auto-diversity` only:
+- the empty-band stand-down (`div_window_quiet()`, `DIV_QUIET_DWELL`);
+- the time-based slew (Finding 48);
+- the 0.5 s default averaging;
+- the 24 / 12 / 6 Hz Resolution menu (`DIV_MIN_NFFT` 2048);
+- the Carrier tooltip.
+
 Features and documentation will be brought in from
 `feature/auto-diversity` one at a time. Each one gets the next `LC`
 number, a commit (or a short run of commits) that follows the rules
@@ -1747,6 +1768,9 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: the findings' "What is still open" evaluated against
+  `TEST`; two new issues flagged (Best's percentile floor, the 1 + 1j
+  start weight); five feature-only changes listed under Pending.
 - 2026-10-02: **re-synced onto upstream `890ed310`** ("small updates to
   DIV menu": the attenuators relabelled ADC1/ADC2; switching to Manual
   copies the loop's weight into the manual sliders; a
