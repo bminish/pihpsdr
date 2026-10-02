@@ -300,7 +300,7 @@ double div_norm = 1.0;
 // Ear split. See the enum in radio.h.
 //
 int div_split = DIV_SPLIT_OFF;
-double div_split_balance = 0.0;    // dB, left minus right
+double div_split_balance = 0.0;    // dB toward the right
 double div_bal_l = 1.0;
 double div_bal_r = 1.0;
 
@@ -321,8 +321,8 @@ void radio_calc_split_balance(void) {
 
   if (div_split_balance < -DIV_BALANCE_MAX) { div_split_balance = -DIV_BALANCE_MAX; }
 
-  const double l = (div_split_balance < 0.0) ?  div_split_balance : 0.0;
-  const double r = (div_split_balance > 0.0) ? -div_split_balance : 0.0;
+  const double l = (div_split_balance > 0.0) ? -div_split_balance : 0.0;
+  const double r = (div_split_balance < 0.0) ?  div_split_balance : 0.0;
   div_bal_l = pow(10.0, 0.05 * l);
   div_bal_r = pow(10.0, 0.05 * r);
 }
@@ -3490,7 +3490,7 @@ static void radio_restore_state(void) {
     GetPropI0("diversity_auto_mode",                         div_auto_mode);
     GetPropI0("diversity_enabled",                           diversity_enabled);
     GetPropI0("diversity_split",                             div_split);
-    GetPropF0("diversity_split_balance",                     div_split_balance);
+    GetPropF0("diversity_split_bal",                         div_split_balance);
     GetPropF0("diversity_gain",                              man_div_gain);
     GetPropF0("diversity_phase",                             man_div_phase);
     GetPropF0("diversity_cos",                               man_div_cos);
@@ -3736,7 +3736,7 @@ void radio_save_state(void) {
     SetPropF0("diversity_cos",                               man_div_cos);
     SetPropF0("diversity_sin",                               man_div_sin);
     SetPropI0("diversity_split",                             div_split);
-    SetPropF0("diversity_split_balance",                     div_split_balance);
+    SetPropF0("diversity_split_bal",                         div_split_balance);
     SetPropI0("new_pa_board",                                new_pa_board);
     SetPropI0("region",                                      region);
     SetPropI0("atlas_penelope",                              atlas_penelope);

@@ -1287,7 +1287,7 @@ void diversity_menu(GtkWidget *parent) {
                                 "A mono output device mixes the ears back together.");
     gtk_grid_attach(GTK_GRID(grid), split_combo, 2, row, 4, 1);
     g_signal_connect(split_combo, "changed", G_CALLBACK(split_cb), NULL);
-    lbl = gtk_label_new("Bal L-R:");
+    lbl = gtk_label_new("Balance:");
     gtk_widget_set_name(lbl, "boldlabel");
     gtk_widget_set_halign(lbl, GTK_ALIGN_END);
     gtk_grid_attach(GTK_GRID(grid), lbl, 6, row, 1, 1);
@@ -1295,10 +1295,10 @@ void diversity_menu(GtkWidget *parent) {
                     -DIV_BALANCE_MAX, +DIV_BALANCE_MAX, 0.25);
     gtk_range_set_value(GTK_RANGE(balance_scale), div_split_balance);
     gtk_widget_set_tooltip_text(balance_scale,
-                                "Trim the two ears against each other, in dB of left "
-                                "minus right. The favoured ear is left alone and the "
-                                "other is brought down, so this never asks for level "
-                                "the AF gain has not got.");
+                                "Trim the two ears against each other, up to 12 dB. "
+                                "Slide toward the ear you want louder: the other ear "
+                                "is brought down and this one left alone, so this "
+                                "never asks for level the AF gain has not got.");
     gtk_grid_attach(GTK_GRID(grid), balance_scale, 7, row, 4, 1);
     g_signal_connect(balance_scale, "value_changed", G_CALLBACK(balance_cb), NULL);
     div_split_sensitive();

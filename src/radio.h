@@ -275,8 +275,9 @@ enum {
 
 extern int div_split;
 //
-// Ear balance, in dB of left minus right. Applied as attenuation on the
-// louder-by-definition side only, so it trims the image without needing
+// Ear balance, in dB toward the right: positive turns the left ear down,
+// negative the right, so the image moves the way the slider does. Applied
+// as attenuation on the side it moves away from only, so it trims the image without needing
 // headroom the AF gain has not got: at 0 dB AF gain there is nothing to
 // raise, and an ear that could only be corrected upwards could not be
 // corrected at all.
@@ -286,7 +287,7 @@ extern int div_split;
 // makes the fine end of it reachable. A pair further apart than this is
 // an antenna or attenuator problem rather than a balance one.
 //
-#define DIV_BALANCE_MAX 6.0    // dB
+#define DIV_BALANCE_MAX 12.0   // dB
 
 extern double div_split_balance;
 extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
