@@ -36,9 +36,20 @@ first guessed (2026-10-02/03).
 
 **What exists:**
 
-1. **The ear recorder** (`make DIVCAP=1` only; `src/diversity_capture.c`,
-   hooks in `rx_process_buffer()` in `src/receiver.c`). Armed and stopped
-   with the Diversity menu's Capture button, beside the I/Q capture of the
+0. **The WAV button** (every build; Diversity menu, "Record:" row): RX1's
+   audio output as passed to `audio_write()`, both channels, float 48 kHz,
+   streamed to `wav/<YYYYMMDD-HHMMSS>_<kHz>_<mode>_<presentation>.wav`
+   (presentation: `rx1`, `div-manual|null|sum|best`, `div-per-ear`,
+   `div-sum-diff`, as at the start). Stops on a second press or when the
+   dialog closes. No length limit. `src/ear_record.c`. Tested standalone:
+   30 s through the ring (which holds 11 s) came back sample-exact.
+
+1. **The ear recorder beside a capture** (`make DIVCAP=1` only; the same
+   `src/ear_record.c`, hooks in `rx_process_buffer()` in `src/receiver.c`).
+   Armed and stopped with the Capture button (now on the "Record:" row, so
+   reachable in Manual; it switches diversity on in the last objective if
+   it is off, and in Manual starts the analysis thread for the capture
+   alone, recording the manual weight as the live one), beside the I/Q capture of the
    same stamp:
    - `captures/ears-<stamp>.wav`: RX1's output pair exactly as passed to
      `audio_write()`, float stereo, 48 kHz. Covers summed and both split
@@ -49,8 +60,8 @@ first guessed (2026-10-02/03).
      ear is dropped for the block if not), `rx1_cnt` (on RX0's pass, RX2's
      sample counter when RX0's buffer filled: **1023 = input blocks
      aligned**, anything else is the offset), `nsamp`, `bal_l`, `bal_r`.
-   - No I/O on the receive thread; files are written at stop. Limit: the
-     I/Q capture's seconds, at most 300.
+   - No I/O on the receive thread: a writer thread streams the files.
+     Only one recording at a time: Capture's ears or WAV, whichever began.
 2. **`test/diversity/devtools/py/ears.py`**: per mode run and per segment,
    each ear's level, the L/R lag maximising |cross-correlation| and the
    signed correlation there (negative = inversion), plus the counter
