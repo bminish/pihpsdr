@@ -313,7 +313,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 | LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 | LC-034 | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when the arms are exchanged) | diversity_menu.c | LC-022 | Local |
-| LC-036 | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | `test/best-floor-bias` |
+| LC-036 | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
 | LC-035 | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
@@ -1505,7 +1505,16 @@ findings' open list.
   they are untouched.
 - One arm, not both, must clear `DIV_ARM_MIN_DB`. A buried arm is
   credited `DIV_ARM_BURIED_DB` (−10 dB), so the readout becomes a lower
-  bound on the other arm's lead. With the floor corrected, requiring
+  bound on the other arm's lead.
+- The stored floor is never scaled. `div_nf0`/`div_nf1`, the Sum ratios
+  and `diversity_auto_noise_floor()` all keep the raw low percentile,
+  which stays the measurement because the stations on a busy band
+  cannot reach it. The conversion happens only where the floor is
+  subtracted from a summed window power, and is named there
+  (`mean_noise0/1`, the fixup). It is a fixed multiplier, so it lets no
+  signal in. Real band noise follows the statistics it assumes: on
+  `122843`'s outside bins the median sits 8.16 dB over the 10th
+  percentile, against 8.17 for pure noise. With the floor corrected, requiring
   both arms silenced Best where one antenna is buried: a weak antenna
   or a dead port (Finding 56), which is the case Best exists for.
 
@@ -1685,7 +1694,7 @@ changes it, we take upstream.
 
 ## Flagged for a later patch
 
-- **Fixed on `test/best-floor-bias` as LC-036 (not yet on `TEST`).**
+- **Fixed: LC-036 (on `TEST` 2026-10-02).**
   **Best's per-arm SNR reads the percentile floor as the mean noise**
   (LC-028; found 2026-10-02, details in `diversity-measurements.md`,
   "Status on `TEST`"). `div_nf` is 9.78 dB below the mean noise per
@@ -1822,6 +1831,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: LC-036 (with its naming fixup) and LT-019 brought into
+  `TEST` from `test/best-floor-bias` by fast-forward.
 - 2026-10-02: LC-036 and LT-019 on `test/best-floor-bias` (Best's
   percentile-floor bias, and the one-arm-clear rule).
 - 2026-10-02: the findings' "What is still open" evaluated against
