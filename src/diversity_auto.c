@@ -1890,9 +1890,18 @@ static void div_arm_floor_update(double p0, double p1) {
 // 0.1055, 9.77 dB down; at the 128 to 850 samples a wide filter or a
 // narrow span leaves it is 0.106 to 0.111, within 0.2 dB of it.
 //
-// A ratio of the two floors needs none of this - the fraction cancels -
-// so it matters only where the floor stands for the noise in absolute
-// terms: div_arm_from_floor(). Without it a window of pure noise read
+// The low percentile stays the measurement: on a busy band it is the
+// statistic the stations cannot reach. Its low bins are not quieter
+// noise, though - bin power fluctuates, and on bare noise a tenth of the
+// bins read 10 dB under the noise every bin carries (122843's outside
+// bins: median 8.16 dB over the 10th percentile, theory 8.17). Dividing
+// by this fraction is a fixed multiplier, so it lets no signal in; it
+// only puts the floor on the same footing as a summed window power.
+//
+// div_nf0/div_nf1 themselves are never scaled. A ratio of the two floors
+// needs none of this - the fraction cancels - and the accessor returns
+// the raw percentile, so it matters only where the floor stands for the
+// noise in absolute terms: div_arm_from_floor(). Without it a window of pure noise read
 // 9.3 dB of SNR on each arm, passed DIV_ARM_MIN_DB, and real differences
 // came out compressed - 6 dB as 2.2 dB at an arm SNR of 0 dB. Finding 56
 // in docs/diversity-measurements.md, and its status note.
@@ -1921,15 +1930,18 @@ static void div_arm_floor_update(double p0, double p1) {
 // which is also why it cannot be mixed with the other: the two are the
 // same quantity in different units and only nbins relates them.
 //
-// The spectral floor is also a low percentile, not a mean, so it is
-// scaled up to the mean noise per bin first - see DIV_NF_MEAN_FRAC.
+// The spectral floor is a low percentile, and the noise in p0 and p1 is
+// there at its mean, so the floor is converted to the mean noise per bin
+// at this one point of use - see DIV_NF_MEAN_FRAC.
 //
 static int div_arm_from_floor(double p0, double p1, int nbins, double *db) {
   double n0, n1;
 
   if (div_nf_valid && div_nf0 > 0.0 && div_nf1 > 0.0 && nbins > 0) {
-    n0 = (double)nbins * div_nf0 / DIV_NF_MEAN_FRAC;
-    n1 = (double)nbins * div_nf1 / DIV_NF_MEAN_FRAC;
+    const double mean_noise0 = div_nf0 / DIV_NF_MEAN_FRAC;
+    const double mean_noise1 = div_nf1 / DIV_NF_MEAN_FRAC;
+    n0 = (double)nbins * mean_noise0;
+    n1 = (double)nbins * mean_noise1;
   } else if (arm_floor_valid && arm_floor0 > 0.0 && arm_floor1 > 0.0) {
     n0 = arm_floor0;
     n1 = arm_floor1;
