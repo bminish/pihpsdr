@@ -31,6 +31,19 @@ Findings from captures taken on `TEST` itself are in
 | LT-017 | `pi_bench`: one file to copy to a Pi 5 and build with only `cc`; ballpark costs of the engine's hot spots, hot and paced | `test/diversity/pi_bench.c`, `docs/bench/` |
 | LT-018 | The tools name the ADCs ADC1 and ADC2 (follows LC-035) | `test/diversity/` |
 | LT-019 | `test_rates` checks Best's antenna readout against known answers (follows LC-036) | `test/diversity/test_rates.c` |
+| LT-020 | The Pi 5 bundle: `make pi5-bench.tar.gz`, `run_pi5.sh`; `bench_cpu` splits worker from feeder, paces as the radio, adds CW and 768/1536 kHz, and its RADE rows now lock; `pi_bench` adds the FFTW planners with wisdom and the RADE decimator against a vectorised one | `test/diversity/pi5/`, `bench_cpu.c`, `pi_bench.c`, `Makefile`, `docs/bench/` |
+
+**LT-020.** One tarball (`make -C test/diversity pi5-bench.tar.gz`) holds
+the engine's own sources (found by the compiler's dependency list),
+`bench_cpu`, `pi_bench` and `run_pi5.sh`. On the Pi, `./run_pi5.sh`
+checks the packages, records the machine (governor, clocks,
+temperature, throttling, load), builds at `-O3`, runs everything, and
+leaves one `results-<host>-<time>.tar.gz` to copy back. Every timing
+also comes out as a `TSV` line for analysis. Two things it fixed in
+`bench_cpu`: the RADE V1 "locked" row never locked, because the raw
+buffer's spectrum is the mirror of the dial's and the row looked in the
+upper passband; and "% of a core" assumed an 85.3 ms block at every rate
+(it is 42.7 ms at 1536 kHz).
 
 **LT-012.** `f5a0ce9c` moved `diversity_auto_ref_store()` and
 `diversity_auto_ref_recall()` into the menu, which the tools cannot

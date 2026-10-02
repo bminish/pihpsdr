@@ -75,6 +75,23 @@ bench_nf: bench_nf.c nf_select.inc
 pi_bench_standalone.c: pi_bench.c nf_select.inc
 	sed -e '/^#include "nf_select.inc"/{r nf_select.inc' -e 'd}' pi_bench.c > $@
 
+#
+# The Pi 5 bundle: the engine's sources, bench_cpu, pi_bench and the run
+# script, in one tarball to copy to the Pi. The sources are found by the
+# compiler's own dependency list, so the bundle follows the engine.
+#
+#   make -C test/diversity pi5-bench.tar.gz
+#   scp test/diversity/pi5-bench.tar.gz pi@<your-pi>:
+#
+pi5-bench.tar.gz: bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh $(SRC)
+	rm -rf pi5-bench && mkdir -p pi5-bench/src
+	cp bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh pi5-bench/
+	$(CC) $(CFLAGS) -MM bench_cpu.c $(SRC) | tr ' \\' '\n\n' | grep '^$(TOP)/src/' | sort -u \
+	  | xargs -I{} cp {} pi5-bench/src/
+	git -C $(TOP) describe --always --dirty > pi5-bench/VERSION
+	tar czf $@ pi5-bench
+	rm -rf pi5-bench
+
 run: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates
 	./test_props
 	@echo
@@ -97,4 +114,4 @@ bench: bench_cpu bench_nf
 	./bench_nf
 
 clean:
-	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf nf_select.inc pi_bench_standalone.c
+	rm -f test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf nf_select.inc pi_bench_standalone.c pi5-bench.tar.gz
