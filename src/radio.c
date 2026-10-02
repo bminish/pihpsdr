@@ -281,7 +281,7 @@ int div_auto_mode = DIV_MANUAL;
 
 // Parameters for "manual" diversity
 double man_div_cos = 1.0;       // I factor for diversity
-double man_div_sin = 1.0;       // Q factor for diversity
+double man_div_sin = 0.0;       // Q factor for diversity
 double man_div_gain = 0.0;      // gain for diversity (in dB)
 double man_div_phase = 0.0;    // phase for diversity (in degrees, 0 ... 360)
 
@@ -289,7 +289,7 @@ double man_div_phase = 0.0;    // phase for diversity (in degrees, 0 ... 360)
 double auto_div_gain = 0.0;
 double auto_div_phase = 0.0;
 double auto_div_cos = 1.0;
-double auto_div_sin = 1.0;
+double auto_div_sin = 0.0;
 //
 // Scales the combined output so it stays at the level of arm 0 alone. 1.0
 // unless the auto-diversity engine sets it - see div_norm_refresh() in
