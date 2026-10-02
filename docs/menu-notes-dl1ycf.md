@@ -71,6 +71,30 @@ written by the menu instead of the engine.
 
 ---
 
+## The antenna readout: ADC1 / ADC2 (LC-034)
+
+Your `890ed310` relabelled the attenuators ADC1 and ADC2. The antenna
+line above them still printed the arm index ("ADC0 better by ...",
+"using ADC1"). It was also wrong with RX1 set to the second ADC, because
+the arms are then exchanged (`div_arm_swapped()`, LC-022). Our
+`div_arm_status_set()` now does:
+
+```c
+const int sw = div_arm_swapped();
+...
+snprintf(sel, sizeof(sel), "  using ADC%d", (div_auto_arm_pick ^ sw) + 1);
+...
+snprintf(text, sizeof(text), "Antennas  ADC%d better by %4.1f dB%s",
+         (((div_auto_arm_db > 0.0) ? 1 : 0) ^ sw) + 1, d, sel);
+```
+
+Elsewhere, outside the menu, upstream text still says ADC0/ADC1: the
+panadapter's overload warnings ("ADC0 overload", "ADC1 overload",
+"ADC0+1 overload"), `receiver.c`'s "hard-wired to ADC0", and some
+protocol and simulator comments.
+
+---
+
 ## Still to discuss (no code yet)
 
 These are in the review table in `changes.md` (E3 to E5) and need a
