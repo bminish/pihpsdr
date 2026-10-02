@@ -314,6 +314,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 | LC-034 | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when the arms are exchanged) | diversity_menu.c | LC-022 | Local |
 | LC-036 | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
+| LC-037 | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
 | LC-035 | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
@@ -1543,6 +1544,63 @@ findings' open list.
 - Replays of the committed code match the scored variant on 45 of 45
   captures.
 
+### LC-037 — The weights start at unity, not 1 + 1j
+
+**Problem.** `radio.c` initialised both weight pairs to `cos = 1.0`,
+`sin = 1.0`:
+```c
+double man_div_cos = 1.0;   double man_div_sin = 1.0;
+double auto_div_cos = 1.0;  double auto_div_sin = 1.0;
+```
+That is +3.0 dB at 45°, while the gain and phase declared beside them
+are 0 dB and 0°.
+
+**How it happened.**
+1. **Before July 2019** the weight was stored as rotation arrays,
+   `i_rotate[2] = {1.0, 1.0}` and `q_rotate[2] = {0.0, 0.0}`: unity.
+2. **`3d3bb23b` (2019-07-25, "gain+phase rather than I+Q")** replaced
+   them with the scalars `div_cos`, `div_sin`, `div_gain` and
+   `div_phase`, and wrote the Q factor as 1.0. The I array's 1.0 was
+   evidently copied to both lines.
+3. **For seven years it was masked.** `radio_set_diversity()`, the path
+   that switches diversity on, calls `radio_calc_div_params()`, which
+   recomputes cos and sin from gain and phase, and the props file
+   restores a consistent saved pair. The stray 1.0 never reached the
+   audio.
+4. **`4865d602` (2026-09-27)** split the weight into a manual half
+   (`man_div_*`) and an automatic half (`auto_div_*`) and copied the
+   pair into both. The manual half is still masked as before. The
+   automatic half is not: `radio_calc_div_params()` only touches the
+   manual pair, the automatic pair is not persisted, and nothing else
+   sets it before the loop's first solve.
+
+**Effect, 2026-09-27 to this fix.** From program start until the loop
+wrote its first weight, the combiner applied 1 + 1j while the automatic
+gain and phase readout claimed 0 dB / 0°:
+- seconds on Window or Carrier, eased away at the slew;
+- until the first lock on RADE V1, which on a marginal or absent signal
+  can be minutes or the whole session;
+- for as long as Best's antenna readout stays invalid, since Best holds
+  what is applied (LC-036 makes that readout invalid more often, and
+  correctly so).
+
+`div_reset_stats()` seeds the tracked readout from `auto_div_gain`, so
+that readout was wrong in the same way.
+
+**Change.** `man_div_sin = 0.0` and `auto_div_sin = 0.0`, matching the
+gain and phase beside them. Two characters, upstream's lines otherwise
+untouched.
+
+**Why nothing caught it.** The test harness and `run_ref` define their
+own `auto_div_cos`/`auto_div_sin` and start them at 1 + 0j. They don't
+link `radio.c`, so no tool here can see its initialisers. Found by
+reading the code in the 2026-10-02 evaluation of the findings' open
+list.
+
+**Checks.** Applies to bare `upstream/TEST` and builds; reverts from the
+tip; the suite passes. For dl1ycf: see
+[menu-notes-dl1ycf.md](menu-notes-dl1ycf.md).
+
 ---
 
 ## Local tooling (never upstream)
@@ -1703,7 +1761,8 @@ changes it, we take upstream.
   weak SNR). Scale by 1/0.1051 where it is used as an absolute level,
   and re-score LC-028. The Sum ratios are unaffected (the constant
   cancels).
-- **The combiner applies 1 + 1j until the loop's first solve.**
+- **Fixed: LC-037 (on `TEST` 2026-10-02).** **The combiner applies
+  1 + 1j until the loop's first solve.**
   `radio.c`'s `auto_div_cos = 1.0, auto_div_sin = 1.0` (upstream
   `4865d602`) is +3 dB at 45°, probably meant as unity. For dl1ycf.
 
@@ -1831,6 +1890,8 @@ Noted while porting, not yet decided:
 
 ## History
 
+- 2026-10-02: LC-037, the weights start at unity (`radio.c`, a 2019
+  slip unmasked by the 2026 manual/auto split); written up for dl1ycf.
 - 2026-10-02: LC-036 (with its naming fixup) and LT-019 brought into
   `TEST` from `test/best-floor-bias` by fast-forward.
 - 2026-10-02: LC-036 and LT-019 on `test/best-floor-bias` (Best's
