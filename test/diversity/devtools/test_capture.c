@@ -58,7 +58,7 @@ int div_indep_att = 1;
 #define ATT0 7
 #define ATT1 23
 /*
- * ...and a step of ADC1's attenuator part-way through, so the file
+ * ...and a step of ADC2's attenuator part-way through, so the file
  * carries a context change. It is the one thing the operator does that
  * the samples cannot show, it is what rec_flags exists to mark, and it is
  * what a replay has to reproduce - div_context_changed() compares both
@@ -422,7 +422,7 @@ int main(int argc, char **argv) {
       printf("  ok\n");
     }
 
-    printf("swap:    %d block(s) with arm 0 on ADC1, %d reversion(s)",
+    printf("swap:    %d block(s) with arm 0 on ADC2, %d reversion(s)",
            swap_seen, swap_back);
 
     /*

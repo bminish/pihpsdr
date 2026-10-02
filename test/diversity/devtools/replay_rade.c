@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
     struct divcap_block m0;
 
     if (fread(&m0, sizeof(m0), 1, f) == 1 && m0.rec_magic == DIVCAP_REC_MAGIC) {
-      printf("# att        adc0 %d dB, adc1 %d dB (at block 0)\n", m0.att0, m0.att1);
+      printf("# att        ADC1 %d dB, ADC2 %d dB (at block 0)\n", m0.att0, m0.att1);
     }
 
     fseek(f, data_start, SEEK_SET);
