@@ -297,7 +297,7 @@ the backup branch, to come back later. **Dropped** means abandoned.
 | LC-030 | Behaviour | Level output: the combined output at one antenna's level | diversity_auto.c/.h, diversity_menu.c, radio.c/.h, receiver.c | — | Local |
 | LC-031 | Fix       | A RADE correlator that cannot start no longer changes the reference | diversity_auto.c | — | Local |
 | LC-032 | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
-| LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | `test/quickselect` |
+| LC-033 | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -1614,6 +1614,31 @@ changes it, we take upstream.
   want, and the Averaging slider, not Resolution, is the control an
   operator uses most of the time. 6 Hz doubles the FFT length and the
   block duration. The operator can still choose 12, 6 or 3 Hz.
+
+## Efficiency on the Pi: where it pays (measured 2026-10-02)
+
+From `pi_bench` (LT-017) on a Compute Module 5 against the i7 reference
+(`docs/bench/`; details in `docs/noise-floor-refactor.md`, "Make it
+cheaper"). Per block, paced as the radio runs, as a share of one Pi
+core:
+
+- **Done: the noise floor (LC-033).** 172 → 52 µs, 0.20 % → 0.06 %, with
+  identical output on arm64.
+- **The FFTs are the largest measured cost.** Two a block: 0.32 % at
+  192 kHz, 1.12 % at 384 kHz, 3.64 % at 1536 kHz. The Pi is 3.4-4.3×
+  slower than the i7 here, against 1.3-2.6× on the sorts: from 32768
+  points the buffers outgrow the A76's 512 KB L2.
+  - Next to try: `FFTW_MEASURE` with saved wisdom (add the comparison to
+    `pi_bench`).
+  - Speculative: decimate before the FFT above 192 kHz, since only about
+    ±20 kHz is used. That would also lift the 1536 kHz / 100 Hz CW
+    limitation, but the decimator's own cost needs measuring.
+- **RADE V1 is not measured on the Pi yet** and is probably the largest
+  diversity cost there: 1.4-3.2 ms per block on the i7. Run `bench_cpu`
+  on the Pi first.
+- **Low priority:** the FSK/Digital median's `qsort` (0.46 % → 0.05 % by
+  selection, but only at the widest window; nothing for an SSB filter).
+  CW's sorts are too short to matter.
 
 ## Pending: to be ported from `feature/auto-diversity`
 
