@@ -52,6 +52,7 @@ def strip_ifdef(path, token, opener, closer):
 jobs = [
     ("src/diversity_auto.c", "DIVERSITY_CAPTURE", "#ifdef", "#endif"),
     ("src/diversity_menu.c", "DIVERSITY_CAPTURE", "#ifdef", "#endif"),
+    ("src/receiver.c",       "DIVERSITY_CAPTURE", "#ifdef", "#endif"),
     ("Makefile",             "DIVCAP",            "ifdef",  "endif"),
 ]
 
@@ -68,7 +69,8 @@ print("%-24s %s" % (".gitignore", "4 line(s)" if cut in gi else "NOT FOUND - che
 if do and cut in gi:
     open(".gitignore", "w").write(gi.replace(cut, ""))
 
-for f in ("src/diversity_capture.c", "src/diversity_capture.h"):
+for f in ("src/diversity_capture.c", "src/diversity_capture.h",
+          "src/ear_record.c", "src/ear_record.h"):
     print("%-24s %s" % (f, "delete" if os.path.exists(f) else "gone"))
     if do and os.path.exists(f):
         os.remove(f)
