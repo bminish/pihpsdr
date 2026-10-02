@@ -183,6 +183,28 @@ same at `-O2` and `-O3`):
   function pointer for every comparison, which an in-order core handles
   worst.
 
+**Measuring it on a Pi 5** (LT-017). `test/diversity/pi_bench.c`
+becomes a single file, with the engine's selection code spliced in
+(`make -C test/diversity pi_bench_standalone.c`). On the Pi it builds
+with `cc -O3 [-DWITH_FFTW] pi_bench_standalone.c [-lfftw3f] -lm` and
+runs in about a minute. It times:
+- the floor (qsort against selection), hot and paced at one call per
+  85 ms;
+- the two `qsort`s still in the engine: the FSK/Digital median and the
+  CW off-tone floor, against selection;
+- the floor's gather;
+- a per-bin accumulation;
+- the FFTs, with `-DWITH_FFTW`.
+
+It was checked on arm64: built with gcc 14 in an emulated Debian trixie
+container, with the selection identical to `qsort` on 21 528 cases. The
+x86 reference run is `docs/bench/pi_bench-i7-12700K.txt`. Two things
+that run shows ahead of the Pi:
+- The paced FFTs (two a block) cost more than the floor even after
+  LC-033: 0.12 % of a core at 192 kHz against 0.03 %.
+- The FSK/Digital median's `qsort` is the larger remaining sort at wide
+  windows: 238 → 28 µs at 4096 values.
+
 ## The steps, as commits
 
 Each one builds, passes `make -C test/diversity run`, and is replayed on
