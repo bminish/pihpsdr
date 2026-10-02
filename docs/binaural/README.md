@@ -1,7 +1,7 @@
 # Binaural diversity on TEST (`feature/diversity-binaural-2`)
 
 This branch is `TEST` plus the diversity ear split (binaural presentation of
-the two diversity arms), ported from `feature/diversity-binaural`. It is
+the two diversity arms), ported from `history/diversity/binaural` (was `feature/diversity-binaural`). It is
 rebased onto `TEST` as a short series on top, the way `TEST` itself follows
 `upstream/TEST`. Work here is meant to reach `TEST` later, in stages.
 
@@ -14,7 +14,7 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 - **`diversity_menu.c` may be changed freely.** On `TEST` it is left to
   dl1ycf.
 
-`feature/diversity-binaural` is kept unchanged as the reference.
+`history/diversity/binaural` (was `feature/diversity-binaural`) is kept unchanged as the reference.
 
 ## The series so far
 
