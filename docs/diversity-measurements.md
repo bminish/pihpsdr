@@ -8708,12 +8708,15 @@ item is checked against `TEST`'s code below, in the order it appears.
    clear, and a buried arm is credited −10 dB. On the 45 Window/Carrier
    captures in Best this scored +0.09 dB guard (better 3, worse 2), and
    +6.0 dB in-band on `122843`. The both-arms rule scored −0.02. Details
-   in `docs/changes.md`, LC-036.
+   in `docs/changes/lc-noise-floor.md`, LC-036.
 2. **Before the loop's first solve, the combiner applies 1 + 1j.**
    `radio.c` initialises `auto_div_cos = 1.0` *and* `auto_div_sin = 1.0`
    (upstream, `4865d602`): +3.0 dB at 45°, not unity. It is applied from
    program start until the loop writes a weight: on RADE V1 until the
-   first lock, and on any reference whose gate stays shut. This is very
+   first lock, and on any reference whose gate stays shut. It is a
+   degraded starting position, not a lost signal: it cannot delay a
+   RADE lock (the correlator works on the raw arms), and a non-optimal
+   combine costs little on a fading HF channel. Not measured. This is very
    likely a typo for `sin = 0.0`. It is upstream's line, so it is for
    dl1ycf, and it bears on item 2 below: what stands in for "not solved
    yet" is now this, not the previous session's weight.
@@ -8721,7 +8724,7 @@ item is checked against `TEST`'s code below, in the order it appears.
    **Fixed: LC-037, on `TEST` since 2026-10-02.** A 2019 slip
    (`3d3bb23b` wrote `q_rotate`'s 0.0 as 1.0). It was masked for the
    manual weight, and unmasked for the automatic one by the 2026 split.
-   The history is in `docs/changes.md`, LC-037.
+   The history is in `docs/changes/lc-engine.md`, LC-037.
 
 **The list, item by item:**
 
