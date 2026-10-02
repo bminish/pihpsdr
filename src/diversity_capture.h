@@ -274,4 +274,25 @@ extern void diversity_capture_block(const float *arm0, const float *arm1,
 //
 extern void diversity_capture_status(char *buf, size_t len);
 
+//
+// The ear recorder: what is handed to audio_write() for RX1's output, as
+// a 2-channel float WAV at 48 kHz, and one CSV row per audio block. Armed
+// and disarmed with the I/Q capture, beside it as ears-<stamp>.wav/.csv.
+//
+// _put is called once per output frame and _block once per
+// rx_process_buffer() pass, both on the receive thread. Neither does I/O:
+// the files are written at stop, on the GTK thread.
+//
+// who: the receiver whose pass this is (0 or 1). mode: div_split as in
+// force (0 summed, 1 antenna per ear, 2 sum/difference). paired: on RX1's
+// split pass, whether RX0's half was there to pair with (the right ear is
+// dropped for the block otherwise); -1 where it does not apply. rx1_cnt:
+// on RX0's pass, receiver[1]->samples at the moment RX0's buffer filled -
+// 1023 when the two input blocks are aligned, anything else the offset.
+//
+extern volatile int div_earcap_active;
+extern void diversity_earcap_put(double left, double right);
+extern void diversity_earcap_block(int who, int mode, int paired, int rx1_cnt, int nsamp,
+                                   double bal_l, double bal_r);
+
 #endif

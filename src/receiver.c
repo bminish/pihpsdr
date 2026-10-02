@@ -43,6 +43,12 @@
 #include "property.h"
 #include "radio.h"
 #include "receiver.h"
+#ifdef DIVERSITY_CAPTURE
+  //
+  // DEVELOPMENT TOOL: the ear recorder hooks in rx_process_buffer().
+  //
+  #include "diversity_capture.h"
+#endif
 #include "rx_panadapter.h"
 #include "sliders.h"
 #ifdef SOAPYSDR
@@ -1525,6 +1531,9 @@ static void rx_process_buffer(RECEIVER *rx) {
         // there would throw one ear away.
         //
         audio_write(receiver[0], split_left[i], ear);
+#ifdef DIVERSITY_CAPTURE
+        diversity_earcap_put(split_left[i], ear);
+#endif
       }
     } else {
       switch (rx->audio_channel) {
@@ -1542,6 +1551,9 @@ static void rx_process_buffer(RECEIVER *rx) {
 
       if (rx->local_audio) {
         audio_write(rx, left_sample, right_sample);
+#ifdef DIVERSITY_CAPTURE
+        if (rx->id == 0) { diversity_earcap_put(left_sample, right_sample); }
+#endif
       }
     }
     if (rx == active_receiver) {
@@ -1565,6 +1577,17 @@ static void rx_process_buffer(RECEIVER *rx) {
   // has not run yet, and the ones either side of a sample rate change are
   // dropped rather than mispaired.
   //
+#ifdef DIVERSITY_CAPTURE
+  //
+  // Before split_len is handed over below, so RX1's row says whether it
+  // found RX0's half. On RX0's row, receiver[1]->samples is where RX1 was
+  // when RX0's buffer filled: 1023 when the input blocks are aligned.
+  //
+  diversity_earcap_block(rx->id, split ? div_split : 0,
+                         (split && rx->id == 1) ? (split_len == rx->output_samples) : -1,
+                         (rx->id == 0 && receiver[1] != NULL) ? receiver[1]->samples : -1,
+                         rx->output_samples, div_bal_l, div_bal_r);
+#endif
   split_len = (split && rx->id == 0) ? rx->output_samples : 0;
 
 #ifdef TCI
