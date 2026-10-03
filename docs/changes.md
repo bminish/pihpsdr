@@ -71,7 +71,7 @@ written up for dl1ycf. Rules and the E1 to E8 review:
 ## Git workflow
 
 The series is re-synced by **rebasing** onto `upstream/TEST` on a new
-branch, with the old `TEST` kept as a `history/backup/` branch, and
+branch, with the old `TEST` kept as a `backup/` tag, and
 force-pushed only with the owner's OK. A PR branch is cut fresh from
 `upstream/TEST` with the change's fixups folded in. Commands, PR
 cutting and the dependency notes:
