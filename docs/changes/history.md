@@ -4,6 +4,23 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-03: **branches tidied.** Branches that were finished,
+  contained elsewhere or idle were removed or moved under `history/`;
+  pre-rebase backups became tags. Nothing was lost: each old name below
+  maps to where its commits now are. `docs/TCI_PROTOCOL.md` (a
+  reference for the TCI server, 2026-07-08) was on the local `master`
+  only; it is now here and on `history/docs/tci-protocol`.
+
+  | Old name | Now |
+  |---|---|
+  | `history/backup/<name>` (7 branches) | tag `backup/<name>` |
+  | `wip/lc-025-noise-floor` | `history/diversity/noise-floor-wip` |
+  | `fix/p2-unused-adc-bpf-bypass-TEST` | `history/upstream/p2-unused-adc-bpf-bypass-TEST` |
+  | `test/noise-floor` | tag `noise-floor-eval-20261001` (same commit) |
+  | `test/diversity-arm-swap` | contained in `history/diversity/binaural`; on `TEST` as LC-022 |
+  | `test/best-floor-bias`, `test/quickselect`, `port/noise-floor`, `resync/TEST-890ed310`, `TEST-rebase-20261001` | on `TEST` (removed) |
+  | `master` (local) | reset to `origin/master`; its one commit is `history/docs/tci-protocol` |
+
 - 2026-10-02: the Pi CPU item closed. LT-020 (the Pi 5 bundle) run on a
   CM5; analysis in `docs/bench/pi5-analysis.md`. The Pi copes with
   every reference at every rate. Candidates ranked: RADE V1's decimator

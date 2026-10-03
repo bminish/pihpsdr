@@ -82,7 +82,7 @@ slot first) is a client fix and is deferred with it.
 ## LC-003 — Start a client's settings block from the settings in force
 
 **Deferred (client), 2026-10-01.** Taken out of the series at the
-rebase onto `f5a0ce9c`, kept on `history/backup/TEST-pre-rebase-20261001`.
+rebase onto `f5a0ce9c`, kept as tag `backup/TEST-pre-rebase-20261001`.
 Upstream put the radio's `CMD_DIV_SETTINGS` handler under `#if 0`, so
 the server half now edits dead code. We are not working on client/server
 for now; see [open-items.md](open-items.md#clientserver-tracked-not-fixed).
