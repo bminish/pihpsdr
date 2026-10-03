@@ -233,7 +233,7 @@ blast radius. The menu reads "search". The only trace is
 multiple of 8 kHz. So, deliberately, there is no status flag and no menu
 change (decided 2026-10-01). The first cut, with a
 `div_auto_rade_unavailable` flag and an "n/a" status, is kept on
-`history/backup/TEST-lc031-flag-20261001`.
+tag `backup/TEST-lc031-flag-20261001`.
 
 ---
 
