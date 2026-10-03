@@ -126,6 +126,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-036](changes/lc-noise-floor.md#lc-036) | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
 | [LC-037](changes/lc-engine.md#lc-037) | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
 | [LC-038](changes/lc-rade.md#lc-038) | Fix       | The RADE V1 overlay covers the outer carriers whole (725-2225 Hz, not 750-2200) | rade_correlator.h, rx_panadapter.c | — | Local |
+| [LC-039](changes/lc-menu.md#lc-039) | UI        | Restart averaging button removed                      | diversity_menu.c                          | —          | Local  |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
