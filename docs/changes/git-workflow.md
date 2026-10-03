@@ -36,17 +36,18 @@ one at a time (merging was the rule until 2026-10-01; see [history.md](history.m
 
 ```sh
 git fetch upstream
-git branch history/backup/TEST-pre-rebase-<date> TEST
+git tag backup/TEST-pre-rebase-<date> TEST
 git switch -c TEST-rebase-<date> TEST
 git rebase -i upstream/TEST      # drop what upstream took, resolve, reword
 # every source commit compiles; make -C test/diversity run passes
 git switch TEST && git reset --hard TEST-rebase-<date>
 git push --force-with-lease origin TEST     # only with the owner's OK
+git branch -d TEST-rebase-<date>
 ```
 
 A rebase rewrites `origin/TEST`, so it is force-pushed, and only after
-the owner has looked at the result. The backup branch keeps the old
-series. If upstream has taken a change, drop its commit in the rebase
+the owner has looked at the result. The backup tag keeps the old
+series (a tag, not a branch, so backups stay out of the branch list). If upstream has taken a change, drop its commit in the rebase
 and mark it *Upstream* in the [register](../changes.md#register). If upstream reshapes the
 code a change sits in, the change is re-expressed on upstream's shape
 (its LC number stays), not used to undo upstream's.
