@@ -106,7 +106,34 @@ endif
 	      rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c \
 	      $(RADE_LIB) `pkg-config --libs opus` $(LIBS)
 
-clean:
-	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref
+#
+# RADE V2 decode scoring against rade_c (third_party/rade_c, a submodule).
+# Optional and off by default, like score: build rade_c first.
+#
+#   cmake -S ../../../third_party/rade_c -B ../../../third_party/rade_c/build \
+#         -DCMAKE_BUILD_TYPE=Release && make -C ../../../third_party/rade_c/build
+#   make -C test/diversity/devtools radev2
+#
+# See docs/tools/radev2-scoring.md. rade_c's include paths go first, for
+# the same nnet.h reason as score_rade.
+#
+RADEV2_DIR ?= $(abspath $(TOP)/third_party/rade_c)
+RADEV2_BLD ?= $(RADEV2_DIR)/build
+RADEV2_OPUS = $(RADEV2_BLD)/build_opus-prefix/src/build_opus
+RADEV2_CFLAGS = -I$(RADEV2_DIR)/src -I$(RADEV2_OPUS)/dnn -I$(RADEV2_OPUS)/include
+RADEV2_LIBS = -L$(RADEV2_BLD)/src -lrade -Wl,-rpath,$(RADEV2_BLD)/src
 
-.PHONY: all run score clean
+radev2: radev2_iq score_radev2
+
+radev2_iq: radev2_iq.c radev2_probe.c radev2_probe.h
+	$(CC) -O2 -Wall $(RADEV2_CFLAGS) -o $@ radev2_iq.c radev2_probe.c $(RADEV2_LIBS) -lm
+
+score_radev2: score_radev2.c radev2_probe.c radev2_probe.h $(GEN) rade_tuning.c divcap_replay.c rade_tuning.h
+	$(CC) $(RADEV2_CFLAGS) $(CFLAGS) -o $@ score_radev2.c radev2_probe.c \
+	      rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c \
+	      $(RADEV2_LIBS) $(LIBS)
+
+clean:
+	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref radev2_iq score_radev2
+
+.PHONY: all run score radev2 clean

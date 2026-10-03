@@ -12,6 +12,8 @@ devtools/build/
 devtools/replay_rade
 devtools/run_ref
 devtools/score_rade
+devtools/score_radev2
+devtools/radev2_iq
 devtools/test_capture
 devtools/py/__pycache__/
 bench_nf

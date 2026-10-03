@@ -76,6 +76,13 @@ LD_LIBRARY_PATH=$D/rade_build/src test/diversity/devtools/score_rade captures/<f
 make DIVCAP=1                                   # radio with the Capture button; plain make strips it
 ```
 
+### Scoring RADE V2
+
+`score_radev2` decodes V2 captures with rade_c (`third_party/rade_c`)
+the way `score_rade` decodes V1, and `py/radev2_calib.py` calibrates its
+measures against true feature loss. Build, usage and what the numbers
+mean: `docs/tools/radev2-scoring.md`. Results: `docs/diversity-radeV2.md`.
+
 ### Scoring a change on Window, Carrier and Digital captures
 
 `score_rade` scores RADE on decode. The other references have no decoder,

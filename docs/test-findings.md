@@ -218,6 +218,10 @@ antennas could help.
 
 ## T-008: three RADE V2 captures, kept for a future V2 correlator
 
+**Scored on `test/radeV2-correlator`**: see
+[diversity-radeV2.md](diversity-radeV2.md), "The captures". The note
+below is as logged.
+
 **Logged, not analysed.** `TEST` has no RADE V2 reference, so there is
 nothing to replay them against yet. They're here so that work on a V2
 correlation algorithm can start from them.
@@ -243,6 +247,11 @@ interference in one set. Scoring will need a V2 decoder in the loop, as
 `score_rade` does for V1 with librade.
 
 ## T-009: RADE V2 on the lower sideband, under strong SSB interference
+
+**Scored on `test/radeV2-correlator`**: see
+[diversity-radeV2.md](diversity-radeV2.md). The passband rule decodes it
+as it stands; no un-mirroring is needed (V2-F3 there). The note below is
+as logged.
 
 **Logged, not analysed.** As with T-008, `TEST` has no V2 reference yet.
 

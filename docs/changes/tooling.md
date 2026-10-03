@@ -32,6 +32,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-018 | The tools name the ADCs ADC1 and ADC2 (follows LC-035) | `test/diversity/` |
 | LT-019 | `test_rates` checks Best's antenna readout against known answers (follows LC-036) | `test/diversity/test_rates.c` |
 | LT-020 | The Pi 5 bundle: `make pi5-bench.tar.gz`, `run_pi5.sh`; `bench_cpu` splits worker from feeder, paces as the radio, adds CW and 768/1536 kHz, and its RADE rows now lock; `pi_bench` adds the FFTW planners with wisdom and the RADE decimator against a vectorised one | `test/diversity/pi5/`, `bench_cpu.c`, `pi_bench.c`, `Makefile`, `docs/bench/` |
+| LT-021 | RADE V2 decode scoring against rade_c (submodule `third_party/rade_c`): `score_radev2`, `radev2_iq`, `radev2_calib.py`. Branch `test/radeV2-correlator`; see `docs/tools/radev2-scoring.md` and `docs/diversity-radeV2.md` | `test/diversity/devtools/`, `.gitmodules`, `third_party/rade_c` |
 
 **LT-020.** One tarball (`make -C test/diversity pi5-bench.tar.gz`) holds
 the engine's own sources (found by the compiler's dependency list),
