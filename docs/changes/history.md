@@ -19,6 +19,7 @@ Newest first.
   | `test/noise-floor` | tag `noise-floor-eval-20261001` (same commit) |
   | `test/diversity-arm-swap` | contained in `history/diversity/binaural`; on `TEST` as LC-022 |
   | `test/best-floor-bias`, `test/quickselect`, `port/noise-floor`, `resync/TEST-890ed310`, `TEST-rebase-20261001` | on `TEST` (removed) |
+  | `feature/parallel-rx-shutdown` (PR #139, closed 2026-10-03: superseded by upstream `49892a0b`) | `history/upstream/parallel-rx-shutdown` |
   | `master` (local) | reset to `origin/master`; its one commit is `history/docs/tci-protocol` |
 
 - 2026-10-02: the Pi CPU item closed. LT-020 (the Pi 5 bundle) run on a
