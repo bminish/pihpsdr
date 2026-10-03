@@ -212,3 +212,20 @@ also wrong with RX1 set to the second ADC: the arms are then exchanged
 **Change.** The line shows `(arm ^ div_arm_swapped()) + 1`, at the same
 width. This is in dl1ycf's file, so it is written up for him in
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+## LC-039 — The Restart averaging button is removed
+
+**Why.** Averaging forgets by itself (settled decision 4: averages age
+at the Averaging time whether or not a gate accepts the block), and a
+reference or follow change already restarts the estimate. A control
+that throws the statistics away by hand is not needed, and the Menu is
+better with one button fewer. The menu is dl1ycf's file; this is a UI
+removal that upstream may or may not want, tracked here so it is not
+mistaken for an accident at a re-sync.
+
+**Change.** `diversity_menu.c` loses the button and its `reset_cb()`.
+The engine is untouched: `diversity_auto_reset()` and
+`DIV_ACTION_RESET` stay, as the client/server path and LC-027 still use
+them, and the grid cell beside Hold is left empty. Written up for him in
+[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+

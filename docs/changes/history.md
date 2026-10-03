@@ -27,6 +27,8 @@ Newest first.
   every reference at every rate. Candidates ranked: RADE V1's decimator
   (3× by vectorising), MEASURE plans from wisdom, and not decimating
   before the FFT.
+- 2026-10-03: LC-039, the Restart averaging button removed from the
+  Diversity menu (a UI removal in dl1ycf's file; tracked, written up for him).
 - 2026-10-02: the register split into a short index (`changes.md`) and
   per-topic files under `docs/changes/`. LC-037's write-up corrected: it
   overstated the effect. The starting weight cannot delay a RADE lock
