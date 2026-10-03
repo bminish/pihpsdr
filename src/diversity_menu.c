@@ -1139,16 +1139,6 @@ static void res_changed_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
-// cppcheck-suppress constParameterCallback
-static void reset_cb(GtkWidget *widget, gpointer data) {
-  //
-  // The one control that changes no setting, so it cannot be seen as a
-  // difference between two blocks and travels as an action instead.
-  //
-  diversity_auto_reset();
-  div_send_settings(DIV_ACTION_RESET);
-}
-
 void diversity_menu(GtkWidget *parent) {
   GtkWidget *btn, *lbl;
   dialog = gtk_dialog_new();
@@ -1379,12 +1369,6 @@ void diversity_menu(GtkWidget *parent) {
   //
   // "Status" info at the bottom
   //
-  btn = gtk_button_new_with_label("Restart averaging");
-  //gtk_widget_set_tooltip_text(reset_b,
-  //                            "Discard the accumulated statistics and start the "
-  //                            "estimate again from nothing.");
-  gtk_grid_attach(GTK_GRID(agrid), btn, 8, 3, 3, 1);
-  g_signal_connect(btn, "clicked", G_CALLBACK(reset_cb), NULL);
   btn = gtk_toggle_button_new_with_label("Hold");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), div_auto_hold);
   //gtk_widget_set_tooltip_text(hold_b,
