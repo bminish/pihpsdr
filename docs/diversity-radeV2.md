@@ -17,6 +17,7 @@
 | A decode-based score for V2 (`score_radev2`) | done |
 | The score calibrated against true feature loss (`radev2_calib.py`) | done, synthetic channels only |
 | The four V2 captures (T-008, T-009) scored | done; results below |
+| A V2 reference: blind scalar weight, in `score_radev2` | done as a replay stream; ties Window on T-008, beats it on T-009; see [`diversity-radeV2-combining.md`](diversity-radeV2-combining.md) section 9 |
 | A V2 reference in the engine | not started |
 | A better V1 correlator | not started |
 

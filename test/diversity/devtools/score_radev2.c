@@ -88,7 +88,8 @@ double myatof(const char *s) { return atof(s); }
 
 /* ------------------------------------------------------------------ */
 
-#define MAX_STREAM 10
+#define MAX_STREAM 16
+#define MAX_BLIND   6
 
 struct wseq {
   double *wr, *wi;
@@ -160,7 +161,171 @@ static int wseq_load(struct wseq *w, const char *path) {
   return 1;
 }
 
-/* -1 arm 0, -2 arm 1, -3 the recorded weight, >= 0 an index into wseq[] */
+
+/* ------------------------------------------------------------------ */
+/*
+ * The blind scalar reference, docs/diversity-radeV2-combining.md section 8.
+ *
+ * Both arms (in the V2 sense: conjugated on the mirrored bank) go through
+ * the receiver's own band filter, 975 Hz at 1469 Hz, and the running
+ *     p0 = <|x0|^2>,  p1 = <|x1|^2>,  c = <x1 conj(x0)>
+ * are kept with a time constant of TAU symbols (160 samples each). With the
+ * transmitted symbol cancelling, R = c / p0 is h1/h0 in the band, and the
+ * combination is the noise-weighted MRC at arm 0's phase:
+ *     out = (x0 + rho conj(R) x1) / sqrt(1 + rho |R|^2),  rho = n0 / n1
+ * where n0, n1 are the arms' in-band noise and n0 is taken off p0. Mode k
+ * measures them in two guard bands (500-900 and 1950-2350 Hz, the lower
+ * density of the two, scaled to the signal band): no use when the operator's
+ * passband has no empty part. Mode c takes n = p (1 - rho_cp) from each arm's
+ * own V2 receiver's CP correlation. Mode u skips it (rho = 1, nothing taken
+ * off): right only for arms with equal noise.
+ *
+ * It is an estimator on the 8 kHz stream and needs no symbol timing: the
+ * pooled covariance over the carriers is the in-band time-domain
+ * correlation. The weight changes every sample unless the stream is "hold":
+ * then it is latched at the start of each capture block from the end of the
+ * one before, which is how the engine can apply a weight at best.
+ */
+#define BP_NT 101
+
+struct bpf {
+  double h[BP_NT], pr, pi, ir, ii;
+  double mr[BP_NT], mi[BP_NT];
+  int    pos;
+};
+
+static void bpf_init(struct bpf *b, double centre, double bw, double fs) {
+  memset(b, 0, sizeof(*b));
+  const double B = bw / fs;
+
+  for (int i = 0; i < BP_NT; i++) {
+    const double n = i - (BP_NT - 1) / 2, x = M_PI * n * B;
+    b->h[i] = B * (x == 0.0 ? 1.0 : sin(x) / x);
+  }
+
+  b->pr = 1.0;
+  b->ir = cos(2.0 * M_PI * centre / fs);
+  b->ii = -sin(2.0 * M_PI * centre / fs);
+}
+
+/* mix down, low-pass; the mix back up is not needed for powers and for
+   products of two arms mixed the same way */
+static void bpf_step(struct bpf *b, double xr, double xi, double *yr, double *yi) {
+  const double nr = b->pr * b->ir - b->pi * b->ii, ni = b->pr * b->ii + b->pi * b->ir;
+  b->pr = nr;
+  b->pi = ni;
+  b->pos = (b->pos + 1) % BP_NT;
+  b->mr[b->pos] = xr * nr - xi * ni;
+  b->mi[b->pos] = xr * ni + xi * nr;
+  double ar = 0.0, ai = 0.0;
+
+  for (int k = 0; k < BP_NT; k++) {
+    const int j = (b->pos - k + BP_NT) % BP_NT;
+    ar += b->h[k] * b->mr[j];
+    ai += b->h[k] * b->mi[j];
+  }
+
+  *yr = ar;
+  *yi = ai;
+}
+
+struct blindcfg {
+  const char *name;
+  double tau;      /* symbols */
+  int    noisek;   /* 1: noise-aware (mode k), 2: from the arms' own CP correlation (mode c), 0: mode u */
+  int    hold;
+};
+
+struct blindst {
+  struct blindcfg c;
+  double a, wsum, p0, p1, cr, ci;
+  double wr, wi, nrm;     /* current: w for out = nrm*(x0 + w x1), in the V2 domain */
+  double lwr, lwi, lnrm;  /* latched at the start of the block */
+};
+
+/* shared front end: the filters every blind stream reads */
+struct blindfe {
+  struct bpf sig[2], glo[2], ghi[2];
+  double psig[2], pglo[2], pghi[2];   /* running powers, 1 s */
+  double n[2];                        /* in-band noise estimate per arm */
+  double cp[2];                       /* each arm's own CP correlation peak, as of the last block */
+  double xr[2], xi[2];                /* the filtered signal band, this sample */
+  int    ready;
+};
+
+static void blindfe_init(struct blindfe *f) {
+  memset(f, 0, sizeof(*f));
+
+  for (int k = 0; k < 2; k++) {
+    bpf_init(&f->sig[k], 1468.75, 975.0, 8000.0);
+    bpf_init(&f->glo[k], 700.0, 400.0, 8000.0);
+    bpf_init(&f->ghi[k], 2150.0, 400.0, 8000.0);
+  }
+}
+
+static void blindfe_step(struct blindfe *f, const double xr[2], const double xi[2]) {
+  const double al = exp(-1.0 / 8000.0);
+
+  for (int k = 0; k < 2; k++) {
+    double gr, gi, hr, hi;
+    bpf_step(&f->sig[k], xr[k], xi[k], &f->xr[k], &f->xi[k]);
+    bpf_step(&f->glo[k], xr[k], xi[k], &gr, &gi);
+    bpf_step(&f->ghi[k], xr[k], xi[k], &hr, &hi);
+    f->pglo[k] = al * f->pglo[k] + (1.0 - al) * (gr * gr + gi * gi);
+    f->pghi[k] = al * f->pghi[k] + (1.0 - al) * (hr * hr + hi * hi);
+    /* density per Hz, the lower guard, times the signal band; the lowpass
+       passes bw of each, so the bands' own widths are 400 and 975 */
+    const double dlo = f->pglo[k] / 400.0, dhi = f->pghi[k] / 400.0;
+    f->n[k] = ((dlo < dhi) ? dlo : dhi) * 975.0;
+  }
+
+  f->ready = 1;
+}
+
+static void blind_init(struct blindst *b, const struct blindcfg *c) {
+  memset(b, 0, sizeof(*b));
+  b->c = *c;
+  b->a = exp(-1.0 / (c->tau * 160.0));
+  b->wr = b->lwr = 0.0;
+  b->nrm = b->lnrm = 1.0;
+}
+
+static void blind_step(struct blindst *b, const struct blindfe *f) {
+  const double a = b->a;
+  b->wsum = a * b->wsum + (1.0 - a);
+  b->p0 = a * b->p0 + (1.0 - a) * (f->xr[0] * f->xr[0] + f->xi[0] * f->xi[0]);
+  b->p1 = a * b->p1 + (1.0 - a) * (f->xr[1] * f->xr[1] + f->xi[1] * f->xi[1]);
+  /* x1 conj(x0) */
+  b->cr = a * b->cr + (1.0 - a) * (f->xr[1] * f->xr[0] + f->xi[1] * f->xi[0]);
+  b->ci = a * b->ci + (1.0 - a) * (f->xi[1] * f->xr[0] - f->xr[1] * f->xi[0]);
+  const double p0 = b->p0 / b->wsum, cr = b->cr / b->wsum, ci = b->ci / b->wsum;
+  double den = p0, rho = 1.0;
+
+  if (b->c.noisek) {
+    double n0 = f->n[0], n1 = f->n[1];
+
+    if (b->c.noisek == 2) {   /* from each arm's own receiver: noise share = 1 - CP correlation */
+      n0 = p0 * (1.0 - f->cp[0]);
+      n1 = (b->p1 / b->wsum) * (1.0 - f->cp[1]);
+    }
+
+    den = p0 - n0;
+
+    if (den < 0.1 * p0) { den = 0.1 * p0; }
+
+    rho = (n1 > 0.0) ? n0 / n1 : 1.0;
+  }
+
+  if (den <= 0.0) { return; }
+
+  const double Rr = cr / den, Ri = ci / den;                   /* h1/h0 */
+  const double R2 = Rr * Rr + Ri * Ri;
+  b->wr = rho * Rr;                                            /* rho conj(R) */
+  b->wi = -rho * Ri;
+  b->nrm = 1.0 / sqrt(1.0 + rho * R2);
+}
+
+/* -1 arm 0, -2 arm 1, -3 the recorded weight, 0.. an index into wseq[], 1000.. a blind stream */
 struct stream {
   struct v2probe p;
   int   src;
@@ -300,7 +465,8 @@ static void paired(const char *what, const char *unit, struct bins *b,
 
 static void usage(const char *me) {
   fprintf(stderr,
-          "usage: %s FILE.divc [--weights NAME=FILE]... [--flip] [--no-agc] [--gain G]\n"
+          "usage: %s FILE.divc [--weights NAME=FILE]... [--blind NAME=TAU,k|c|u[,hold]]...\n"
+          "          [--flip] [--no-agc] [--gain G]\n"
           "          [--noise SIGMA] [--seed N] [--bin SECONDS]\n"
           "          [--csv-dir DIR] [--iq-dir DIR] [-v]\n", me);
 }
@@ -312,7 +478,8 @@ int main(int argc, char **argv) {
   int flip = 0, agc = 1;
   struct wseq wseq[MAX_STREAM];
   const char *wname[MAX_STREAM];
-  int nw = 0;
+  int nw = 0, nbl = 0;
+  struct blindcfg bcfg[MAX_BLIND];
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-v")) {
@@ -348,6 +515,24 @@ int main(int argc, char **argv) {
       if (!wseq_load(&wseq[nw], eq + 1)) { return 1; }
 
       nw++;
+    } else if (!strcmp(argv[i], "--blind") && i + 1 < argc) {
+      char *a = argv[++i];
+      char *eq = strchr(a, '=');
+      double tau;
+      char mode[8] = "k", hold[8] = "";
+
+      if (eq == NULL || nbl >= MAX_BLIND ||
+          sscanf(eq + 1, "%lf,%7[^,],%7s", &tau, mode, hold) < 1) {
+        fprintf(stderr, "score_radev2: --blind wants NAME=TAU,k|c|u[,hold]\n");
+        return 2;
+      }
+
+      *eq = '\0';
+      bcfg[nbl].name = a;
+      bcfg[nbl].tau = tau;
+      bcfg[nbl].noisek = (mode[0] == 'u') ? 0 : (mode[0] == 'c') ? 2 : 1;
+      bcfg[nbl].hold = (hold[0] == 'h');
+      nbl++;
     } else if (argv[i][0] == '-') {
       usage(argv[0]);
       return 2;
@@ -366,14 +551,29 @@ int main(int argc, char **argv) {
 
   rade_initialize();
   struct stream st[MAX_STREAM];
-  const int nst = 3 + nw;
+  const int nst = 3 + nw + nbl;
   const char *base[3] = { "arm0", "arm1", "radio" };
+  struct blindst bst[MAX_BLIND];
+  struct blindfe bfe;
+  blindfe_init(&bfe);
 
   for (int i = 0; i < nst; i++) {
     memset(&st[i], 0, sizeof(st[i]));
-    st[i].src = (i < 3) ? -(i + 1) : (i - 3);
+    const char *nm;
 
-    if (!v2probe_open(&st[i].p, (i < 3) ? base[i] : wname[i - 3], verbose, agc)) { return 1; }
+    if (i < 3) {
+      st[i].src = -(i + 1);
+      nm = base[i];
+    } else if (i < 3 + nw) {
+      st[i].src = i - 3;
+      nm = wname[i - 3];
+    } else {
+      st[i].src = 1000 + (i - 3 - nw);
+      nm = bcfg[i - 3 - nw].name;
+      blind_init(&bst[i - 3 - nw], &bcfg[i - 3 - nw]);
+    }
+
+    if (!v2probe_open(&st[i].p, nm, verbose, agc)) { return 1; }
   }
 
   if (csv_dir != NULL || iq_dir != NULL) {
@@ -501,12 +701,30 @@ int main(int argc, char **argv) {
     mirror_used = mirror;
     const double sgn = mirror ? -1.0 : 1.0;
 
+    for (int k = 0; k < 2; k++) {       /* each arm's CP correlation, from the receivers just run */
+      double r = st[k].p.r->rx_v2.Ry_max;
+      bfe.cp[k] = (r < 0.0) ? 0.0 : (r > 0.98) ? 0.98 : r;
+    }
+
+    for (int j = 0; j < nbl; j++) {      /* the hold variants take last block's answer */
+      bst[j].lwr = bst[j].wr;
+      bst[j].lwi = bst[j].wi;
+      bst[j].lnrm = bst[j].nrm;
+    }
+
     for (int64_t a = before; a < ringtotal; a++) {
       const cplx z0 = ring_get(ring0, a);
       const cplx z1 = ring_get(ring1, a);
 
+      if (nbl > 0) {                    /* the V2 domain: conjugated on the mirrored bank */
+        const double xr[2] = { z0.re, z1.re }, xi[2] = { sgn * z0.im, sgn * z1.im };
+        blindfe_step(&bfe, xr, xi);
+
+        for (int j = 0; j < nbl; j++) { blind_step(&bst[j], &bfe); }
+      }
+
       for (int i = 0; i < nst; i++) {
-        double ar, ai;
+        double ar, ai, nrm = 1.0;
 
         if (st[i].src == -1) {
           ar = z0.re;
@@ -520,6 +738,14 @@ int main(int argc, char **argv) {
           if (st[i].src == -3) {
             ur = m.live_cos;
             ui = m.live_sin;
+          } else if (st[i].src >= 1000) {
+            const struct blindst *q = &bst[st[i].src - 1000];
+            const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
+            const double k = q->c.hold ? q->lnrm : q->nrm;
+            /* the weight is in the V2 domain; the sum below is not */
+            ur = k * wr;
+            ui = k * (mirror ? -wi : wi);
+            nrm = k;
           } else {
             const struct wseq *q = &wseq[st[i].src];
             const int k = (blocks < q->n) ? (int)blocks : (q->n - 1);
@@ -527,8 +753,8 @@ int main(int argc, char **argv) {
             ui = (k >= 0) ? q->wi[k] : 0.0;
           }
 
-          ar = z0.re + (ur * z1.re - ui * z1.im);
-          ai = z0.im + (ur * z1.im + ui * z1.re);
+          ar = nrm * z0.re + (ur * z1.re - ui * z1.im);
+          ai = nrm * z0.im + (ur * z1.im + ui * z1.re);
         }
 
         const float o[2] = { (float)(gain * ar), (float)(gain * sgn * ai) };
@@ -560,6 +786,14 @@ int main(int argc, char **argv) {
          path, h.sample_rate, h.nfft, blocks, first.mode, first.filter_low,
          first.filter_high, first.frequency * 1e-6);
   printf("# input gain %.1f dB\n", 20.0 * log10(gain));
+
+  if (nbl > 0) {                        /* what the blind estimator ended on: is its noise measurement sane? */
+    printf("# blind: in-band power arm0 %.3g arm1 %.3g; noise from the guard bands arm0 %.3g arm1 %.3g"
+           " (%.1f%% / %.1f%% of in-band); |R| %.2f\n",
+           bst[0].p0 / bst[0].wsum, bst[0].p1 / bst[0].wsum, bfe.n[0], bfe.n[1],
+           100.0 * bfe.n[0] / (bst[0].p0 / bst[0].wsum), 100.0 * bfe.n[1] / (bst[0].p1 / bst[0].wsum),
+           sqrt(bst[0].cr * bst[0].cr + bst[0].ci * bst[0].ci) / (bst[0].p0 + 1e-30) / 1.0);
+  }
   printf("# sense: %s%s%s\n", mirror_used ? "conjugated (USB bank)" : "as tapped (LSB bank)",
          flip ? ", --flip" : "", mirror_changes ? ", CHANGED during the capture" : "");
   printf("\n%-10s %7s %6s %6s %7s %4s %4s %8s %8s %7s %7s\n",

@@ -52,6 +52,7 @@ Streams, each decoded by its own receiver:
 |---|---|
 | `arm0`, `arm1` | each antenna alone |
 | `radio` | `arm0 + w·arm1` with the weight the radio recorded as applied (`live_cos`, `live_sin`), i.e. what the operator heard |
+| `NAME` | from `--blind NAME=TAU,MODE[,hold]`: a stream whose weight is estimated from the two arms as it goes, no `run_ref` series needed. A scalar weight at arm 0's phase from a running cross-spectrum over TAU symbols, in the V2 band; MODE `c` takes each arm's noise from its own V2 receiver's CP correlation, `k` from two guard bands (500-900 and 1950-2350 Hz, useless if the passband has no empty part), `u` none (right only for equal noise); `hold` latches the weight at each block start, a block late. See [`diversity-radeV2-combining.md`](../diversity-radeV2-combining.md) |
 | `NAME` | from `--weights NAME=FILE`: a weight series from `run_ref` or `replay_rade` (columns `wr`, `wi`, `ok`), one row per block, the same convention as `score_rade` |
 
 To get weight series for the existing references, replay them with the

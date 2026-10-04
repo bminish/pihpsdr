@@ -393,3 +393,78 @@ this way.
   and a per-carrier weight in the decoder-only path. Experiments 3 (EOO as
   on-air truth) and 4 (two-input prototype) are not needed to decide the
   combining; 3 remains the only on-air check of the relative channel.
+
+## 9. On the four captures
+
+The scalar reference of section 8, as a stream in `score_radev2`
+(`--blind NAME=TAU,MODE[,hold]`; see `docs/tools/radev2-scoring.md`), against
+Window as `run_ref` replays it (Flat, Min coherence 0.20, `--pace 20000`, as in
+`diversity-radeV2.md`). Same capture, same bins, same decoder, the arms' own
+receivers alongside. Decoded |aux| against the better antenna, over the bins
+where either antenna has a V2 signal (14 to 60 bins; a difference under about
+0.01 is not a ranking):
+
+| capture | window | blind, tau 6, noise from guard bands (`k`) | tau 6, noise from the arms' CP correlation (`c`) | the same held per block, a block late | tau 12 (`c`) | tau 6, no noise (`u`) |
+|---|---|---|---|---|---|---|
+| T-008 `184835` | +0.019 | +0.013 | +0.018 | +0.023 | +0.022 | +0.006 |
+| T-008 `185337` | +0.005 | -0.002 | +0.002 | +0.007 | +0.001 | +0.002 |
+| T-008 `185725` | +0.009 | +0.016 | +0.014 | +0.014 | +0.019 | +0.001 |
+| T-009 `192558` | +0.030 | +0.043 | **+0.067** | +0.065 | +0.065 | -0.003 |
+
+Against per-bin selection with hindsight, T-009: Window -0.044, `c` -0.007
+(`u` -0.076, the radio's weight -0.102). On T-008 `c` is within 0.005 of
+selection on all three. Frame-sync confidence against the better antenna,
+`c` against Window: +0.011 / +0.014, +0.010 / +0.007, +0.012 / +0.002 and
++0.054 / +0.024. The CP SNR estimate is higher for `c` on all four (+1.98,
++1.75, +1.10, +1.63 dB against Window's +1.76, +1.32, +0.93, +0.79), which
+V2-F2 says not to read as quality.
+
+What it says, sized honestly:
+
+- **On T-008 the blind scalar is level with Window**, within 0.01 on every
+  measure of every capture: a tie, and an unremarkable one, since a single
+  antenna is already at |aux| 0.94 to 0.97 there, where the measure moves about
+  0.01 per dB.
+- **On T-009, the weak one with SSB QRM, it is clearly better**: +0.067 against
+  the better antenna, 0.037 over Window, and 0.007 short of per-bin selection
+  where Window is 0.044 short and the radio 0.102. The decoder-only test said
+  the gain should appear where the antennas are weak and the channel is bad.
+  This is the first on-air capture to show it, and it is one capture.
+- **The noise term decides it.** No noise term (`u`) gives nothing (+0.006,
+  +0.002, +0.001, -0.003): the two arms' noise differs and weighting as if it
+  were equal is wrong. The guard-band measurement (`k`) works on T-008 and half
+  works on T-009. These captures were taken with a 1000 to 2000 Hz passband
+  (T-009 mirrored), so the guard bands (500-900 and 1950-2350 Hz) lie outside
+  it and the estimator reads filter skirts: it read the noise as 2% and 6% of
+  the in-band power on T-009 where the arms' own CP correlation says it is
+  well over half. That `k` still gains there is the noise *ratio* between the
+  arms doing most of the work. `c` takes the noise from each arm's own V2
+  receiver (`p (1 - rho_cp)`), which needs no guard band and was the best
+  mode on three of four. It needs a CP correlation per arm, which the engine
+  does not have for V2; the decoder-only test used the noise as known.
+- **Update rate hardly matters on these captures.** Held per block and applied a
+  block late (the engine's best case), `c` is within 0.005 of per-symbol
+  updates on all four, against 0.015 to 0.04 on the synthetic fading of section
+  8. These channels fade slowly (about 1 Hz at most), so the block delay is
+  small against them. It would matter on faster fading.
+- **tau 3 is worse, 6 and 12 are equal** (T-009: `b3c` +0.033, `b6c` +0.067,
+  `b12c` +0.065), as the decoder-only test found the optimum near 6 and
+  not much worse at 12.
+
+**Selection effects.** tau 6 came from the synthetic study, not from these
+captures; 3 and 12 are shown. The noise mode was not: `k` was tried first, read
+badly on T-009, the diagnostic above followed, and `c` was written after. All
+four captures were scored with every variant. The T-009 figure especially
+should be read as "with a noise term taken from the arms' own receivers, the
+scalar reference does what the synthetic test said it should", not as a
+measured +0.067. Not tested for significance.
+
+### Status of the V2 reference
+
+A scalar weight on arm 1 at arm 0's phase, estimated from a power-weighted
+cross-spectrum over about 6 symbols with a per-arm noise term, ties Window on
+T-008 and beats it on T-009. It is a reference in the replay tool, not in the
+engine. What stands between it and the engine: the noise term (the arms' CP
+correlation, or a guard-band measurement that the operator's passband
+may not allow), the engine's update rate (section 8), and the phase-step limit
+of V2-F4 against Invert and Null/Sum. Nothing here touches `diversity_menu.c`.
