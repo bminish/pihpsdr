@@ -156,6 +156,6 @@ decision from both sides before anyone writes code:
 We removed the "Restart averaging" button and its `reset_cb()` from
 `diversity_menu.c`. Averaging forgets by itself, and a reference or
 follow change already restarts the estimate, so a hand reset is not
-needed. The cell beside Hold (row 3, column 8) is left empty. The engine
+needed. Hold and Invert then move up one row each into the freed cell (LC-040, our own layout, not for upstream), so Hold is at row 3, column 8. The engine
 is untouched: `diversity_auto_reset()` and `DIV_ACTION_RESET` remain.
 

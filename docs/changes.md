@@ -127,6 +127,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-037](changes/lc-engine.md#lc-037) | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
 | [LC-038](changes/lc-rade.md#lc-038) | Fix       | The RADE V1 overlay covers the outer carriers whole (725-2225 Hz, not 750-2200) | rade_correlator.h, rx_panadapter.c | — | Local |
 | [LC-039](changes/lc-menu.md#lc-039) | UI        | Restart averaging button removed                      | diversity_menu.c                          | —          | Local  |
+| [LC-040](changes/lc-menu.md#lc-040) | UI        | Hold and Invert move up into the freed cell           | diversity_menu.c                          | LC-039     | Local  |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
