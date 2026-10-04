@@ -468,3 +468,101 @@ engine. What stands between it and the engine: the noise term (the arms' CP
 correlation, or a guard-band measurement that the operator's passband
 may not allow), the engine's update rate (section 8), and the phase-step limit
 of V2-F4 against Invert and Null/Sum. Nothing here touches `diversity_menu.c`.
+
+## 10. Noise and interference from the cyclic prefix, and MVDR
+
+Section 3 listed what a combiner inside the receiver could do that one outside
+cannot. This tests the one that matters most: measuring the **noise covariance
+of the two arms from the data, with no guard band**, and combining against it.
+`rade_v2_ofdm.c` and `rade_rx_v2.c` already hold the pieces (`compute_autocorr`
+forms `D_cp`, `D_m` and `Ry`); `radev2_oracle.py` has them as `cp_noise`,
+`blind_mvdr` and `mvdr_out`. Decoder-only path again (section 7), gate 0.0815.
+
+**The measurement.** The cyclic prefix and the tail it copies carry the same
+signal, so `x[n] - x[n+M]` over CP samples 16 to 31 (clear of a 2 ms delay
+spread, as the demod's own window) holds only noise and interference. Its 2x2
+covariance across the arms, halved, scaled to one DFT bin (x `M`, x `Fs/975`
+because the receiver's filter band-limits it), is the in-band `Rnn`, with
+the correlation between the arms. Checked on a synthetic stream against the
+true value: the diagonal is within about 1% (with interference) to 20%
+(thermal only, where a little signal leaks into the difference); the cross
+term reads about 15% of the noise when it should be zero.
+
+**The combiner.** `u = (1, R)` is the signal's direction at arm 0's phase and
+`out = u^H Rnn^-1 y / sqrt(q)`, `q = u^H Rnn^-1 u`. `R` comes from the pooled
+covariance of the latents with the noise covariance taken off: the whole 2x2
+(`bcpf`, full) or the diagonal only (`bcpd`, which is mode `c` of section 9).
+The cross term is the point: a coherent interferer puts correlation between the
+arms that the diagonal reads as signal.
+
+**The interference model.** White Gaussian, through its own flat Rayleigh
+channel (0.5 Hz) to each arm, so its direction `g1/g0` differs from the
+signal's; the SIR is in the signal band; thermal noise at the SNR shown. Two
+paths for the signal as before (flat, mpp). 6 seeds. Loss, +12 dB thermal SNR,
+the arms about equal (arm 0 shown):
+
+| signal channel, SIR | arm 0 | scalar, true R, blind to the interferer | blind diagonal (`bcpd`) | **blind full 2x2 (`bcpf`)** | oracle MVDR (true R and Rnn) |
+|---|---|---|---|---|---|
+| flat, +6 dB | 0.386 | 0.252 | 0.270 | **0.174** | 0.204 |
+| flat, 0 dB | 0.777 | 0.432 | 0.612 | **0.273** | 0.227 |
+| flat, -6 dB | 1.574 | 0.968 | 1.500 | **0.420** | 0.258 |
+| mpp, +6 dB | 0.300 | 0.239 | 0.256 | **0.175** | 0.210 |
+| mpp, 0 dB | 0.650 | 0.455 | 0.655 | **0.242** | 0.265 |
+| mpp, -6 dB | 1.553 | 1.130 | 1.668 | **0.410** | 0.317 |
+
+(`bcpf` is tau 6 on the signal and 4 on the noise.) Loss above about 0.4 is not
+speech. At 0 dB the antennas are 0.65 to 0.78 and a scalar weight from the true
+channel 0.43 to 0.46: nothing the combiners of section 8 do reaches 0.25. The
+full covariance does. At +4 dB thermal the same ordering holds with every loss
+larger (flat, 0 dB: 0.830, 0.438, 0.629, 0.330, 0.273).
+
+Without interference it costs little: thermal only, flat / mpp, +4 and +12 dB,
+`bcpd` 0.163 / 0.183 and 0.133 / 0.137, `bcpf` 0.176 / 0.187 and 0.140 / 0.140,
+the known-noise combiner of section 8 0.160 / 0.190 and 0.130 / 0.136. So the
+CP-derived noise is as good as known noise (the engine could use `bcpd` for the
+noise term of section 9 without a guard band), and the cross term costs about
+0.01 when there is nothing to null.
+
+**The noise has to be tracked as fast as the interference fades.** Signal tau 6,
+noise tau varied, flat 0 dB, +12 dB thermal:
+
+| noise tau (symbols) | 48 | 24 | 12 | 8 | 6 | 4 | 3 | 2 |
+|---|---|---|---|---|---|---|---|---|
+| loss, SIR 0 dB | 0.619 | 0.496 | 0.361 | 0.280 | 0.270 | 0.273 | 0.267 | 0.252 |
+| loss, SIR -6 dB | 1.638 | 1.347 | 0.951 | 0.694 | 0.525 | 0.420 | 0.433 | 0.438 |
+| loss, no interference, +4 dB | | | | | 0.164 | 0.176 | 0.183 | 0.211 |
+
+Slow smoothing, the natural choice for a noise floor, is wrong here: the
+interferer's direction fades at the same rate as the signal's. Tau 4 is where
+the interference result stops improving and the thermal-only cost has not yet
+grown.
+
+What it says, sized honestly:
+
+- **The cross term is the whole gain.** The diagonal version does no better
+  than the antennas on strong interference and loses to the scalar at -6 dB.
+  Oracle MVDR with only the diagonal of the true `Rnn` (`mvdr_od`) is 0.371 /
+  0.795 / 0.777 against 0.227 / 0.258 with the full matrix at flat 0 dB, -6 dB
+  and +12 dB thermal (flat, 0 dB, -6 dB).
+- **Blind full gets most of the way to the oracle**, beats it at +6 dB and on mpp
+  at 0 dB (smoothing again, section 8), and is 0.05 to 0.16 short of it at flat
+  0 dB and -6 dB. The gap is the estimate of the signal's `R` when the signal
+  covariance is a small difference of two large ones.
+- **What this model leaves out**, and each is open: the interferer is white
+  across the whole band and stationary, where SSB speech occupies part of the
+  band and starts and stops; `Rnn` is taken as flat across the 14 carriers, so a
+  narrow interferer would need a per-carrier one the CP difference cannot give;
+  one interferer, so two arms can null it exactly; the signal's leak into the
+  difference is a few percent here; no frequency offset in the synthetic; the
+  decoder-only path has no sync, and the CP difference needs symbol timing.
+- **Against the engine's approach.** For wideband stationary interference an
+  engine that can see an empty part of the passband measures the same `Rnn`
+  there with no symbol timing, and does not need a receiver. The CP route earns
+  its place when the operator's passband has no empty part, as on the four
+  captures (1000 to 2000 Hz), or when the interferer is inside the band only.
+  Section 9's guard-band mode failed on exactly those captures.
+- **Not tried on a capture.** T-009 has SSB QRM and is where it would show, and
+  that needs the CP difference inside a receiver (a copy of `rade_rx_v2` in
+  devtools with a second input) because `score_radev2` has the 8 kHz streams but
+  not the symbol timing of each arm's receiver. That is the first build that
+  needs the two-input receiver.

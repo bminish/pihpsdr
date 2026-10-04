@@ -272,6 +272,13 @@ this is the summary and what is unsettled.
   short of per-bin selection; Window +0.030). It needs a per-arm noise term:
   without one it gains nothing, and the guard-band measurement fails on a
   1000-2000 Hz passband. The CP-correlation noise (`c`) was the best mode.
+- **V2 noise and interference from the CP** (combining doc section 10, synthetic,
+  decoder only): the 2x2 noise covariance of the two arms measured from
+  `x[n] - x[n+M]` over the CP matches known noise without a guard band, and with
+  a coherent interferer the full-covariance (MVDR) combiner reaches 0.24 to 0.42
+  loss where the antennas read 0.65 to 1.6 and a scalar weight 0.43 to 1.1. The
+  cross term between the arms is the whole gain. Noise must be tracked at about 4
+  symbols. Not tried on a capture; that needs the two-input receiver.
 - **Tools** (all in `test/diversity/devtools/`): `score_radev2 --blind`,
   `py/radev2_oracle.py` (oracle ladder and blind estimator, decoder only),
   `py/radev2_steps.py` (weight-step cost). The gate for the offline path is a

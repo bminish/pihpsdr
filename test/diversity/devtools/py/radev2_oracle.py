@@ -321,6 +321,78 @@ def combine_R(az0, az1, R):
     return (az0 + np.conj(R) * az1) / np.sqrt(1 + np.abs(R) ** 2)
 
 
+
+# ------------------------------------------- noise and interference from the CP
+
+def cp_noise(r0, r1, s0, nsym):
+    """
+    The 2x2 noise covariance of the two arms, per symbol, from the cyclic prefix
+    alone: the CP and the tail it copies carry the same signal, so
+    x[n] - x[n+M] over the part of the CP clear of the delay spread (samples 16 to
+    31, as the demod's own window) holds only noise and interference, and its
+    cross-covariance across the arms holds their correlation. Halved (two noisy
+    copies) and scaled to the variance per DFT bin: x M, and x Fs/975 because the
+    difference is band-limited by the receiver's filter and the noise is taken as
+    flat in the band. Per-symbol estimates are 16 samples: they are for smoothing.
+    """
+    out = np.empty((nsym, 2, 2), complex)
+    scale = M * FS / 975.0 / 2
+
+    for i in range(nsym):
+        st = s0 + SYM * i
+        d = np.stack([r[st + 16:st + NCP] - r[st + 16 + M:st + NCP + M] for r in (r0, r1)])
+        out[i] = scale * (d @ d.conj().T) / d.shape[1]
+
+    return out
+
+
+def mvdr_out(v, R, Rnn):
+    """
+    u = (1, R) is the signal's direction at arm 0's phase; out = u^H Rnn^-1 v / sqrt(q),
+    q = u^H Rnn^-1 u: the matched filter for that direction against that noise, arm 0's
+    phase kept, noise power Rnn[0,0]. A diagonal Rnn is the combiner of mode c. v is (2, ...).
+    """
+    Rinv = np.linalg.inv(Rnn + 1e-3 * np.trace(Rnn).real / 2 * np.eye(2))
+    u = np.array([1.0, R])
+    f = u.conj() @ Rinv
+    q = (f @ u).real
+    return np.tensordot(f, v, axes=1) / np.sqrt(q) * np.sqrt(Rnn[0, 0].real)
+
+
+def blind_mvdr(az0, az1, Ncp, tau, tau_n, full):
+    """
+    Blind scalar weight with the noise measured from the CP. The signal's R comes
+    from the pooled covariance of the latents with the noise covariance taken off
+    (full: the whole 2x2, the cross term too, which is what a coherent interferer
+    puts into the cross-covariance and would otherwise be read as signal; else the
+    diagonal only); the combiner is mvdr_out against the same Rnn.
+    """
+    y = np.stack([az0.reshape(-1, NC), az1.reshape(-1, NC)], 1)      # (nsym, 2, NC)
+    a, an = np.exp(-1.0 / tau), np.exp(-1.0 / tau_n)
+    C = np.zeros((2, 2), complex)
+    Nn = np.zeros((2, 2), complex)
+    w = wn = 0.0
+    out = np.empty(y.shape[:1] + (NC,), complex)
+
+    for i in range(y.shape[0]):
+        C = a * C + (1 - a) * (y[i] @ y[i].conj().T)
+        Nn = an * Nn + (1 - an) * Ncp[i]
+        w, wn = a * w + (1 - a), an * wn + (1 - an)
+        c, n = C / w, Nn / wn
+        n = n if full else np.diag(np.diag(n).real).astype(complex)
+        c00 = max((c[0, 0] - NC * n[0, 0]).real, 0.1 * c[0, 0].real)
+        R = (c[1, 0] - NC * n[1, 0]) / c00
+        out[i] = mvdr_out(y[i], R, n)
+
+    return out.reshape(-1, 2, NC)
+
+
+def block_mean(x, t0, nfr, hold):
+    nb = (nfr + hold - 1) // hold
+    return np.array([np.mean(x[t0 + k * hold * 2 * SYM: min(t0 + (k + 1) * hold * 2 * SYM, len(x))])
+                     for k in range(nb)])
+
+
 # ----------------------------------------------------------------- scenario
 
 def energy(az):
@@ -333,13 +405,26 @@ def run_scenario(args):
     S = np.mean(np.abs(tx[np.abs(tx) > 1e-6]) ** 2)
     sigma2 = S * FS / (3000.0 * 10 ** (snr / 10))
     chans = []
+    base, _, sir = kind.partition('_q')              # <channel>_q<SIR dB>: a coherent interferer
+    gi = [None, None]
 
     for _ in range(2):
-        y, a, b, d = channel2(tx, kind, rng)
+        y, a, b, d = channel2(tx, base, rng)
         rot = 1 if os.environ.get('NOROT') else np.exp(1j * rng.uniform(0, 2 * np.pi))  # a second antenna's path phase
         chans.append((y * rot, a * rot, b * rot, d))
 
-    r = [rx_bpf(c[0] + noise(len(tx), sigma2, rng)) for c in chans]
+    sq2 = 0.0
+    q = np.zeros(len(tx), complex)
+
+    if sir:
+        # white Gaussian interference through its own fading channel to each arm; the SIR
+        # is in the signal band (975 of the 8000 Hz the white noise covers)
+        sq2 = S * 10 ** (-float(sir) / 10) / (975.0 / FS)
+        q = noise(len(tx), sq2, rng)
+        gi = [doppler_fade(len(tx), 0.5, rng) * np.exp(1j * rng.uniform(0, 2 * np.pi)) for _ in range(2)]
+
+    r = [rx_bpf(c[0] + (gi[k] * q if sir else 0) + noise(len(tx), sigma2, rng))
+         for k, c in enumerate(chans)]
     BPF_DELAY = (BPF_NTAP - 1) // 2
     a0 = s0 - BPF_DELAY                                  # tx sample of frame 0 (the tx BPF delay is in tx)
     H = [block_h(c[1], c[2], c[3], a0, nfr, hold) for c in chans]
@@ -347,11 +432,28 @@ def run_scenario(args):
     r = [g * x for x in r]
     az0, az1 = demod(r[0], s0, nfr), demod(r[1], s0, nfr)
     ref = energy(az0)
+    nb_ = H[0].shape[0]
+    Rtrue = weights_R(H[0], H[1], 1)[:, 0]                                  # the signal's R, per block
+    Gb = np.stack([block_mean(gi[k], a0, nfr, hold) if sir else np.zeros(nb_) for k in range(2)], 1)
+    Rnn_true = g * g * M * (sigma2 * np.eye(2)[None] + sq2 * Gb[:, :, None] * np.conj(Gb)[:, None, :])
     res = {}
     tag = os.path.join(work, '%s_%d_%d' % (kind, snr, seed))
 
     for name in rungs:
-        if name.startswith('b'):                        # b<S>_<mode>_<tau>[_fir<L>]
+        if name in ('mvdr_o', 'mvdr_od'):               # true R, true noise + interference covariance
+            y = np.stack([az0, az1], 0)
+            az = np.empty_like(az0)
+
+            for f in range(nfr):
+                k = f // hold
+                n = Rnn_true[k] if name == 'mvdr_o' else np.diag(np.diag(Rnn_true[k]).real).astype(complex)
+                az[f] = mvdr_out(y[:, f], Rtrue[k], n)
+        elif name.startswith('bcp'):                    # bcp<d|f>_<tau>: the blind weight, noise from the CP
+            Ncp = cp_noise(r[0], r[1], s0, 2 * nfr)
+            f_ = name.split('_')                         # bcp<d|f>_<tau>[_<tau of the noise>]
+            tau = float(f_[1])
+            az = blind_mvdr(az0, az1, Ncp, tau, float(f_[2]) if len(f_) > 2 else max(2 * tau, 12.0), name[3] == 'f')
+        elif name.startswith('b'):                        # b<S>_<mode>_<tau>[_fir<L>]
             p = name[1:].split('_')
             Rb = blind_R(az0, az1, p[0], p[1], float(p[2]), g * g * M * sigma2)
 
