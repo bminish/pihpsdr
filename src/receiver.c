@@ -1630,9 +1630,113 @@ static void rx_process_buffer(RECEIVER *rx) {
 #endif
 }
 
+//
+// The ear split with one AGC gain for both ears.
+//
+// With the AGCs linked (rx_link_agc()), the two WDSP channels have to be
+// inside their AGC at the same time, so they cannot be run one after the
+// other with fexchange0(): the first would wait for the second for good.
+// Instead the ear whose buffer fills first stashes it, and the one that
+// fills second submits both blocks, then collects and processes RX0 and
+// RX1 in that order, as before. Which fills first does not matter.
+//
+// A block still stashed when its own receiver fills again had no partner
+// and is dropped - the same fate the split gives an unpaired block. The
+// stash is cleared on every pass that is not paired, so a block left over
+// from before the split went away cannot meet one from after it came back.
+//
+static int rx_agc_linked = 0;
+static double *pend_buf[2] = { NULL, NULL };
+static int pend_len[2] = { 0, 0 };
+static int pend_valid[2] = { 0, 0 };
+
+void rx_link_agc(int on) {
+  if (on) {
+    SetRXAAGCLink(0, 1, 1);
+    rx_agc_linked = 1;
+  } else {
+    //
+    // The flag first: nothing new is stashed, and the WDSP side lets go
+    // once the pair in flight has finished.
+    //
+    rx_agc_linked = 0;
+    SetRXAAGCLink(0, 1, 0);
+  }
+}
+
+static void rx_full_buffer_paired(RECEIVER *rx) {
+  const int id = rx->id;
+  RECEIVER *other = receiver[1 - id];
+  const int n = 2 * rx->buffer_size;
+
+  if (!pend_valid[other->id] || rx->buffer_size != other->buffer_size ||
+      pend_len[other->id] != n) {
+    if (pend_len[id] != n) {
+      g_free(pend_buf[id]);
+      pend_buf[id] = g_new(double, n);
+      pend_len[id] = n;
+    }
+    memcpy(pend_buf[id], rx->iq_input_buffer, n * sizeof(double));
+    pend_valid[id] = 1;
+    return;
+  }
+
+  pend_valid[other->id] = 0;
+  double *buf[2];
+  buf[id] = rx->iq_input_buffer;
+  buf[other->id] = pend_buf[other->id];
+
+  if (!g_mutex_trylock(&receiver[0]->mutex)) { return; }
+  if (!g_mutex_trylock(&receiver[1]->mutex)) {
+    g_mutex_unlock(&receiver[0]->mutex);
+    return;
+  }
+
+  int sub[2];
+  for (int i = 0; i < 2; i++) {
+    RECEIVER *r = receiver[i];
+    switch (r->nb) {
+    case 1:
+      xanbEXT(r->id, buf[i], buf[i]);
+      break;
+    case 2:
+      xnobEXT(r->id, buf[i], buf[i]);
+      break;
+    default:
+      break;
+    }
+    sub[i] = fexchange0_submit(r->id, buf[i]);
+    if (r->displaying) {
+      g_mutex_lock(&r->display_mutex);
+      Spectrum0(1, r->id, 0, 0, buf[i]);
+      g_mutex_unlock(&r->display_mutex);
+    }
+  }
+  for (int i = 0; i < 2; i++) {
+    RECEIVER *r = receiver[i];
+    int error = 0;
+    if (sub[i]) {
+      fexchange0_collect(r->id, r->audio_output_buffer, &error);
+      if (error != 0) {
+        t_print("%s: id=%d fexchange0: error=%d\n", __func__, r->id, error);
+      }
+    }
+    rx_process_buffer(r);
+  }
+  g_mutex_unlock(&receiver[1]->mutex);
+  g_mutex_unlock(&receiver[0]->mutex);
+}
+
 static void rx_full_buffer(RECEIVER *rx) {
   ASSERT_SERVER();
   int error;
+  if (rx_agc_linked && div_split_active() && rx->id < 2 &&
+      receiver[0] != NULL && receiver[1] != NULL) {
+    rx_full_buffer_paired(rx);
+    return;
+  }
+  pend_valid[0] = 0;
+  pend_valid[1] = 0;
   //t_print("%s: rx=%p\n",__func__,rx);
   //
   // rx->mutex is locked if a sample rate change is currently going on,

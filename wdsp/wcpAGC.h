@@ -98,6 +98,9 @@ typedef struct _wcpagc
 	double tau_hang_decay;
 	double hang_decay_mult;
 	int decay_type;
+
+	struct _agcpair *pair;		// non-NULL while linked to the other ear's AGC
+	int slot;					// 0 or 1 within the pair
 } wcpagc, *WCPAGC;
 
 extern void loadWcpAGC (WCPAGC a);
