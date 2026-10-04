@@ -626,6 +626,8 @@ WDSP_API void use_impulse_cache (int use);
 /*  ---- iobuffs.c --------------------------------------------------------- */
 
 WDSP_API void fexchange0 (int channel, double* in, double* out, int* error);
+WDSP_API int  fexchange0_submit (int channel, double* in);
+WDSP_API void fexchange0_collect (int channel, double* out, int* error);
 WDSP_API void fexchange2 (int channel, INREAL *Iin, INREAL *Qin, OUTREAL *Iout, OUTREAL *Qout, int* error);
 
 /*  ---- matchedCW.c ------------------------------------------------------- */
@@ -894,6 +896,7 @@ WDSP_API void SetRXAAGCFixed (int channel, double fixed_agc);
 WDSP_API void SetRXAAGCHang (int channel, int hang);
 WDSP_API void SetRXAAGCHangLevel (int channel, double hangLevel);
 WDSP_API void SetRXAAGCHangThreshold (int channel, int hangthreshold);
+WDSP_API void SetRXAAGCLink (int channel_a, int channel_b, int on);
 WDSP_API void SetRXAAGCMaxInputLevel (int channel, double level);
 WDSP_API void SetRXAAGCMode (int channel, int mode);
 WDSP_API void SetRXAAGCSlope (int channel, int slope);
