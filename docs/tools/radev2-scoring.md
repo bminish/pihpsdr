@@ -10,6 +10,8 @@ what they have found so far, is tracked in
 | `test/diversity/devtools/score_radev2` | Decodes a `.divc` capture several ways at once (each antenna, the weight the radio applied, any replayed weight series) and scores each |
 | `test/diversity/devtools/radev2_iq` | Decodes one 8 kHz I/Q file with the same probe and prints a one-line summary; the calibration's decoder |
 | `test/diversity/devtools/py/radev2_calib.py` | Calibrates the score against true feature loss on synthetic two-antenna channels |
+| `test/diversity/devtools/py/radev2_oracle.py` | The oracle ladder: with the true channels known, how well the decoder alone (no sync) does on each way of presenting two antennas. See [`diversity-radeV2-combining.md`](../diversity-radeV2-combining.md) |
+| `test/diversity/devtools/py/radev2_steps.py` | What a step or ramp in the channel phase, or a gain step, costs the decoder on one antenna |
 | `test/diversity/devtools/radev2_probe.[ch]` | The shared probe: one rade_c V2 receiver that records every symbol |
 
 ## Building
