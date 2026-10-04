@@ -1380,7 +1380,7 @@ void diversity_menu(GtkWidget *parent) {
   //                            "it is held, and releasing puts the tracked answer in "
   //                            "place in one step. The status line shows the tracked "
   //                            "value meanwhile, so the two can be compared.");
-  gtk_grid_attach(GTK_GRID(agrid), btn, 8, 4, 3, 1);
+  gtk_grid_attach(GTK_GRID(agrid), btn, 8, 3, 3, 1);
   g_signal_connect(btn, "toggled", G_CALLBACK(hold_cb), NULL);
   hold_b = btn;
   btn = gtk_button_new_with_label("Invert");
@@ -1390,7 +1390,7 @@ void diversity_menu(GtkWidget *parent) {
   //                            "array is pointed at the wanted signal or at the "
   //                            "interference. Does not apply to Best, which selects "
   //                            "an antenna rather than steering a null.");
-  gtk_grid_attach(GTK_GRID(agrid), btn, 8, 5, 3, 1);
+  gtk_grid_attach(GTK_GRID(agrid), btn, 8, 4, 3, 1);
   g_signal_connect(btn, "clicked", G_CALLBACK(invert_cb), NULL);
 #ifdef DIVERSITY_CAPTURE
   //
