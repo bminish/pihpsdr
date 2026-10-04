@@ -4,8 +4,10 @@
 > on 2026-10-03. Work on a RADE V2 reference for the diversity engine, and
 > on a better RADE V1 correlator if the chance comes. This file tracks the
 > V2 work. The tool details are in
-> [`tools/radev2-scoring.md`](tools/radev2-scoring.md). For V1 see
-> [`diversity-rade.md`](diversity-rade.md).
+> [`tools/radev2-scoring.md`](tools/radev2-scoring.md). What can be
+> presented to the codec, and what a two-input receiver involves, is in
+> [`diversity-radeV2-combining.md`](diversity-radeV2-combining.md). For V1
+> see [`diversity-rade.md`](diversity-rade.md).
 
 ## Status
 
@@ -251,7 +253,12 @@ What these say, sized honestly:
    without any known symbols); the end-of-over pilots, rare but known;
    and decision-directed estimation from the decoded latents. Each must
    be scored on decoded measures (V2-F2), against Window, which is the
-   bar on these captures.
+   bar on these captures. The analysis of what the receiver can be handed
+   (a per-carrier cross-spectrum also gives `h1/h0` without known
+   symbols), the options, and the experiment order are in
+   [`diversity-radeV2-combining.md`](diversity-radeV2-combining.md). Its
+   first experiment, an oracle ladder from scalar to per-carrier weights,
+   sets the bound before anything is built.
 2. **Learn more about V2-F2** before a correlator optimises against it:
    whether it holds for a weight a real estimator produces, and for other
    multipath models.
