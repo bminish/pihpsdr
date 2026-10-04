@@ -1,4 +1,4 @@
-# RADE V2 diversity: scoring, and a correlator to come
+# RADE V2 diversity: scoring, and a reference to come
 
 > **Branch `test/radeV2-correlator`**, cut from `feature/diversity-binaural-2`
 > on 2026-10-03. Work on a RADE V2 reference for the diversity engine, and
@@ -246,27 +246,67 @@ What these say, sized honestly:
   where the gap is largest, is 13 s long and the radio entered it with a
   held weight, while the replay starts cold.
 
+## Where we are (2026-10-04)
+
+Detail and tables are in [`diversity-radeV2-combining.md`](diversity-radeV2-combining.md);
+this is the summary and what is unsettled.
+
+- **The receiver takes raw per-carrier latents**, no equaliser and no pilot, so
+  the combination becomes the channel the decoder sees. A two-input
+  `rade_rx_v2` was worked out (stage by stage, section 3 there) and is **not
+  needed**: a filter pair or a scalar weight reaches the same decoder-only loss.
+- **V2-F4: the decoder is hurt by steps in channel phase** (90 deg and up),
+  not by gain steps, and follows a phase ramp up to about 1 Hz. So hard
+  selection between antennas is worse than staying on one, and a V2 weight needs
+  a phase slew limit. Invert and Null/Sum are 180 deg steps. Not yet checked
+  against what the engine does.
+- **V2-F5, V2-F6 (decoder only, synthetic channels):** with the true channel
+  known, combining beats the better antenna at low SNR and loses at high SNR;
+  a *blind*, time-smoothed scalar estimate (6 symbols, noise-weighted) does
+  better than the true channel and does not lose at high SNR. Update rate and
+  latency matter more than weight structure: held 160 ms costs 0.015 to 0.04
+  against per-symbol, held 320 ms leaves no gain. Per-carrier weights add about
+  0.01 over a scalar.
+- **On the captures** the blind scalar (`score_radev2 --blind`) ties Window on
+  T-008 and beats it on T-009 (+0.067 |aux| against the better antenna, 0.007
+  short of per-bin selection; Window +0.030). It needs a per-arm noise term:
+  without one it gains nothing, and the guard-band measurement fails on a
+  1000-2000 Hz passband. The CP-correlation noise (`c`) was the best mode.
+- **Tools** (all in `test/diversity/devtools/`): `score_radev2 --blind`,
+  `py/radev2_oracle.py` (oracle ladder and blind estimator, decoder only),
+  `py/radev2_steps.py` (weight-step cost). The gate for the offline path is a
+  clean decode at loss 0.0815.
+- **Unsettled:** V2-F2 as first written ("not the weight steps") against the
+  decoder-only finding that holding the weight costs; the oracle's loss to the
+  smoothed blind estimate (a hypothesis, not isolated); the |aux| gain on T-009
+  is one capture with the noise mode chosen after seeing the others; no
+  significance test; no weak-station capture besides T-009.
+
 ## Next
 
-1. **A V2 reference for the engine.** With no pilot, the candidates are:
-   the cyclic prefix across the two arms (cross-arm CP correlation at the
-   receiver's own timing, which gives `h1/h0` from the CP's redundancy
-   without any known symbols); the end-of-over pilots, rare but known;
-   and decision-directed estimation from the decoded latents. Each must
-   be scored on decoded measures (V2-F2), against Window, which is the
-   bar on these captures. The analysis of what the receiver can be handed
-   (a per-carrier cross-spectrum also gives `h1/h0` without known
-   symbols), the options, and the experiment order are in
-   [`diversity-radeV2-combining.md`](diversity-radeV2-combining.md). Its
-   first experiment, an oracle ladder from scalar to per-carrier weights,
-   sets the bound before anything is built.
-2. **Learn more about V2-F2** before a correlator optimises against it:
-   whether it holds for a weight a real estimator produces, and for other
-   multipath models.
+1. **The V2 reference in the engine.** The specification is in section 8 of the
+   combining doc: a scalar weight at arm 0's phase, power-weighted
+   cross-spectrum over about 6 symbols, per-arm noise term, updated as near each
+   symbol as the correlator allows. Open: the noise term (the arms' CP
+   correlation needs a CP correlator per arm in the engine; a guard-band
+   measurement needs a passband with an empty part), the engine's update rate
+   and latency, and the phase-step limit against Invert and Null/Sum. The
+   engine's `diversity_menu.c` is dl1ycf's: the engine does not write menu
+   settings.
+2. **Reconcile V2-F2.** Does the decoder-only cost of holding a weight show on
+   the full receiver with its sync? Why does the smoothed blind estimate beat
+   the true channel (the hypothesis: a power-weighted average does not follow
+   the phase near a fade of arm 0)? Other multipath models and delay spreads.
 3. **More captures**: a weaker V2 station, where single antennas fail and
-   there is headroom for combining; and one off a single station without
-   QRM.
-4. **V1**, if the opportunity arises. `score_rade` scores V1 on sync and
+   there is headroom for combining; one off a single station without QRM; and
+   fast fading, where the update rate should matter.
+4. **Smooth reference phase.** The oracle with the channel phase removed
+   (`eq`) is far ahead of every blind rung and needs absolute phase, which
+   the pilotless receiver cannot see. Is there a smooth reference built from
+   `h1/h0` that gets part of the way?
+5. **EOO pilots as on-air truth** for the relative channel, on T-008 and T-009:
+   the only on-air check of the estimator.
+6. **V1**, if the opportunity arises. `score_rade` scores V1 on sync and
    SNR only. It has not been checked for a level problem like V2-F1;
    V1's pilot-based equalisation should make it immune, but that is not
    measured.
