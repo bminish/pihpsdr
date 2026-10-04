@@ -541,9 +541,9 @@ What it says, sized honestly:
 
 - **The cross term is the whole gain.** The diagonal version does no better
   than the antennas on strong interference and loses to the scalar at -6 dB.
-  Oracle MVDR with only the diagonal of the true `Rnn` (`mvdr_od`) is 0.371 /
-  0.795 / 0.777 against 0.227 / 0.258 with the full matrix at flat 0 dB, -6 dB
-  and +12 dB thermal (flat, 0 dB, -6 dB).
+  Oracle MVDR with only the diagonal of the true `Rnn` (`mvdr_od`), flat, +12 dB
+  thermal: 0.371 at SIR 0 dB and 0.777 at -6 dB, against 0.227 and 0.258 with the
+  full matrix.
 - **Blind full gets most of the way to the oracle**, beats it at +6 dB and on mpp
   at 0 dB (smoothing again, section 8), and is 0.05 to 0.16 short of it at flat
   0 dB and -6 dB. The gap is the estimate of the signal's `R` when the signal
