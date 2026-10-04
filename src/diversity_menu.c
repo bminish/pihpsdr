@@ -70,6 +70,7 @@ static GtkWidget *split_combo = NULL;
 static GtkWidget *wav_b = NULL;
 #endif
 static GtkWidget *balance_scale = NULL;
+static GtkWidget *agc_link_check = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -226,6 +227,7 @@ static void cleanup(void) {
     level_b = NULL;
     split_combo = NULL;
     balance_scale = NULL;
+    agc_link_check = NULL;
     //
     // A WAV recording ends with the dialog, by request. (A capture does
     // not: see below.)
@@ -307,11 +309,19 @@ static void div_split_sensitive(void) {
   if (balance_scale != NULL) {
     gtk_widget_set_sensitive(balance_scale, !radio_is_remote && div_split != DIV_SPLIT_OFF);
   }
+
+  if (agc_link_check != NULL) {
+    gtk_widget_set_sensitive(agc_link_check, !radio_is_remote && div_split != DIV_SPLIT_OFF);
+  }
 }
 
 static void split_cb(GtkWidget *widget, gpointer data) {
   div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   div_split_sensitive();
+}
+
+static void agc_link_cb(GtkWidget *widget, gpointer data) {
+  radio_set_agc_link(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
 }
 
 static void balance_cb(GtkWidget *widget, gpointer data) {
@@ -1376,6 +1386,21 @@ void diversity_menu(GtkWidget *parent) {
                                 "never asks for level the AF gain has not got.");
     gtk_grid_attach(GTK_GRID(grid), balance_scale, 7, row, 4, 1);
     g_signal_connect(balance_scale, "value_changed", G_CALLBACK(balance_cb), NULL);
+    row++;
+    lbl = gtk_label_new("AGC:");
+    gtk_widget_set_name(lbl, "boldlabel");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
+    agc_link_check = gtk_check_button_new_with_label("Linked across ears");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(agc_link_check), div_agc_link);
+    gtk_widget_set_tooltip_text(agc_link_check,
+                                "Both ears take one AGC gain, driven by the average "
+                                "of the two antennas' levels, so the gains move "
+                                "together at every instant. Off: each ear has its own "
+                                "AGC, as before. Applies while a per-ear Audio mode "
+                                "is running.");
+    gtk_grid_attach(GTK_GRID(grid), agc_link_check, 2, row, 4, 1);
+    g_signal_connect(agc_link_check, "toggled", G_CALLBACK(agc_link_cb), NULL);
     div_split_sensitive();
   }
 #ifdef DIVERSITY_CAPTURE

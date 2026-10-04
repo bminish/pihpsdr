@@ -290,6 +290,8 @@ extern int div_split;
 #define DIV_BALANCE_MAX 12.0   // dB
 
 extern double div_split_balance;
+extern int    div_agc_link;           // the ears share one AGC gain under the split
+void radio_set_agc_link(int on);
 extern double div_bal_l, div_bal_r;    // the two amplitudes it works out to
 void radio_calc_split_balance(void);
 

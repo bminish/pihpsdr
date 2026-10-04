@@ -301,6 +301,7 @@ double div_norm = 1.0;
 //
 int div_split = DIV_SPLIT_OFF;
 double div_split_balance = 0.0;    // dB toward the right
+int    div_agc_link = 1;           // the ears share one AGC gain under the split
 double div_bal_l = 1.0;
 double div_bal_r = 1.0;
 
@@ -2424,6 +2425,16 @@ void div_split_align(void) {
   div_split_realign = 1;
 }
 
+//
+// The operator's choice of whether the ears share one AGC gain. Takes effect
+// at once when the split is up, and is applied when it next comes up if not.
+// Off leaves two ordinary AGCs, one per ear, as before the link existed.
+//
+void radio_set_agc_link(int on) {
+  div_agc_link = on ? 1 : 0;
+  if (!radio_is_remote && div_split_on) { rx_link_agc(div_agc_link); }
+}
+
 void div_split_set(int mode) {
   //
   // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
@@ -2496,7 +2507,7 @@ void div_split_set(int mode) {
     rx_set_af_gain(receiver[1]);
     radio_calc_split_balance();
     rx_on(receiver[1]);
-    rx_link_agc(1);
+    rx_link_agc(div_agc_link);
     div_split_on = 1;
   } else if (div_split_on) {
     //
@@ -3493,6 +3504,7 @@ static void radio_restore_state(void) {
     GetPropI0("diversity_enabled",                           diversity_enabled);
     GetPropI0("diversity_split",                             div_split);
     GetPropF0("diversity_split_bal",                         div_split_balance);
+    GetPropI0("diversity_agc_link",                          div_agc_link);
     GetPropF0("diversity_gain",                              man_div_gain);
     GetPropF0("diversity_phase",                             man_div_phase);
     GetPropF0("diversity_cos",                               man_div_cos);
@@ -3739,6 +3751,7 @@ void radio_save_state(void) {
     SetPropF0("diversity_sin",                               man_div_sin);
     SetPropI0("diversity_split",                             div_split);
     SetPropF0("diversity_split_bal",                         div_split_balance);
+    SetPropI0("diversity_agc_link",                          div_agc_link);
     SetPropI0("new_pa_board",                                new_pa_board);
     SetPropI0("region",                                      region);
     SetPropI0("atlas_penelope",                              atlas_penelope);
