@@ -2496,6 +2496,7 @@ void div_split_set(int mode) {
     rx_set_af_gain(receiver[1]);
     radio_calc_split_balance();
     rx_on(receiver[1]);
+    rx_link_agc(1);
     div_split_on = 1;
   } else if (div_split_on) {
     //
@@ -2520,6 +2521,7 @@ void div_split_set(int mode) {
     // after its own restore, for the same reason: the restore puts values
     // in the struct and nothing else.
     //
+    rx_link_agc(0);
     rx_restore_state(receiver[1]);
     rx_set_mode(receiver[1]);
     rx_set_filter(receiver[1]);

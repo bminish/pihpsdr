@@ -622,6 +622,8 @@ extern void destroy_impulse_cache(void);
 //
 
 extern void fexchange0 (int channel, double* in, double* out, int* error);
+extern int  fexchange0_submit (int channel, double* in);
+extern void fexchange0_collect (int channel, double* out, int* error);
 extern void fexchange2 (int channel, INREAL *Iin, INREAL *Qin, OUTREAL *Iout, OUTREAL *Qout, int* error);
 
 //
@@ -1012,6 +1014,7 @@ extern int GetRXAWBFMStereoIndicator(int channel);
 //
 
 extern void SetRXAAGCMode (int channel, int mode);
+extern void SetRXAAGCLink (int channel_a, int channel_b, int on);
 extern void SetRXAAGCAttack (int channel, int attack);
 extern void SetRXAAGCDecay (int channel, int decay);
 extern void SetRXAAGCHang (int channel, int hang);

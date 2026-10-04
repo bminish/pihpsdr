@@ -515,6 +515,76 @@ void fexchange0 (int channel, double* in, double* out, int* error)
 	}
 }
 
+//
+// fexchange0() in two halves. Submit hands the block over and returns; the
+// channel's thread starts on it. Collect waits for the result. Two channels
+// that rendezvous inside the DSP (the paired AGC) cannot be run one after
+// the other with fexchange0(): the first would wait for the second for
+// good. So submit both, then collect both.
+//
+// csEXCH is held from submit to collect, as fexchange0() holds it from top
+// to bottom, so a flush cannot come between. Both calls are made by the
+// same thread. Submit returns 0, with nothing held, if the channel is not
+// exchanging; collect is then not to be called.
+//
+PORT
+int fexchange0_submit (int channel, double* in)
+{
+	int n;
+	IOB a;
+	if (!_InterlockedAnd (&ch[channel].exchange, 1))
+		return 0;
+	EnterCriticalSection (&ch[channel].csEXCH);
+	a = ch[channel].iob.pe;
+	if (_InterlockedAnd (&a->slew.upflag, 1))
+		upslew0 (a, in);
+	else
+		memcpy (a->r1_baseptr + 2 * a->r1_inidx, in, a->in_size * sizeof (complex));
+	if ((a->r1_unqueuedsamps += a->in_size) >= a->r1_outsize)
+	{
+		n = a->r1_unqueuedsamps / a->r1_outsize;
+		ReleaseSemaphore(a->Sem_BuffReady, n, 0);
+		a->r1_unqueuedsamps -= n * a->r1_outsize;
+	}
+	if ((a->r1_inidx += a->in_size) == a->r1_active_buffsize)
+		a->r1_inidx = 0;
+	a->pend_doit = 0;
+	EnterCriticalSection (&a->r2_ControlSection);
+	if (a->r2_havesamps >= a->out_size)
+		a->pend_doit = 1;
+	if ((a->r2_havesamps -= a->out_size) < 0) a->r2_havesamps = 0;
+	LeaveCriticalSection (&a->r2_ControlSection);
+	return 1;
+}
+
+PORT
+void fexchange0_collect (int channel, double* out, int* error)
+{
+	IOB a = ch[channel].iob.pe;
+	*error = 0;
+	if (a->bfo) WaitForSingleObject (a->Sem_OutReady, INFINITE);
+	if (a->bfo || a->pend_doit)
+		if (_InterlockedAnd (&a->slew.downflag, 1))
+		{
+			downslew0 (a, out);
+			if (!_InterlockedAnd (&a->slew.downflag, 1))
+			{
+				InterlockedBitTestAndReset (&ch[channel].exchange, 0);
+				ReleaseSemaphore(a->Sem_Flush, 1, 0);
+			}
+		}
+		else
+			memcpy (out, a->r2_baseptr + 2 * a->r2_outidx, a->out_size * sizeof (complex));
+	else
+	{
+		memset (out, 0, a->out_size * sizeof (complex));
+		*error += -2;
+	}
+	if ((a->r2_outidx += a->out_size) == a->r2_active_buffsize)
+		a->r2_outidx = 0;
+	LeaveCriticalSection (&ch[channel].csEXCH);
+}
+
 PORT	//separate I/Q buffers
 void fexchange2 (int channel, INREAL *Iin, INREAL *Qin, OUTREAL *Iout, OUTREAL *Qout, int* error)
 {

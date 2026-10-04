@@ -51,6 +51,7 @@ typedef struct _iobf
 	int   r2_unqueuedsamps;						// number of output samples not yet queued / released for output
 	CRITICAL_SECTION r2_ControlSection;
 
+	int pend_doit;								// fexchange0_submit() to fexchange0_collect()
 	int bfo;									// block_for_output, wait until output is available before proceeding
 	HANDLE Sem_OutReady;						// count = number of 'out_size' buffers processed and available for output
 	HANDLE Sem_BuffReady;						// count = number of 'dsp_size' buffers queued for processing
@@ -88,6 +89,11 @@ extern void flush_iobuffs (int channel);
 
 PORT	// double, interleaved I/Q
 void fexchange0 (int channel, double* in, double* out, int* error);	
+
+PORT	// fexchange0() in two halves, for two channels that must run at the same time
+int fexchange0_submit (int channel, double* in);
+PORT
+void fexchange0_collect (int channel, double* out, int* error);
 
 PORT	// separate I/Q buffers
 extern void fexchange2 (int channel, INREAL *Iin, INREAL *Qin, OUTREAL *Iout, OUTREAL *Qout, int* error);
