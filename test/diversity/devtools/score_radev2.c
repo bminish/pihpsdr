@@ -88,8 +88,9 @@ double myatof(const char *s) { return atof(s); }
 
 /* ------------------------------------------------------------------ */
 
-#define MAX_STREAM 16
+#define MAX_STREAM 24
 #define MAX_BLIND   6
+#define MAX_RX2     8
 
 struct wseq {
   double *wr, *wi;
@@ -466,6 +467,7 @@ static void paired(const char *what, const char *unit, struct bins *b,
 static void usage(const char *me) {
   fprintf(stderr,
           "usage: %s FILE.divc [--weights NAME=FILE]... [--blind NAME=TAU,k|c|u[,hold]]...\n"
+          "          [--rx2 NAME=SYNC,COMB[,TAU[,TAUN]]]...\n"
           "          [--flip] [--no-agc] [--gain G]\n"
           "          [--noise SIGMA] [--seed N] [--bin SECONDS]\n"
           "          [--csv-dir DIR] [--iq-dir DIR] [-v]\n", me);
@@ -478,8 +480,10 @@ int main(int argc, char **argv) {
   int flip = 0, agc = 1;
   struct wseq wseq[MAX_STREAM];
   const char *wname[MAX_STREAM];
-  int nw = 0, nbl = 0;
+  int nw = 0, nbl = 0, nx2 = 0;
   struct blindcfg bcfg[MAX_BLIND];
+  struct rx2_cfg xcfg[MAX_RX2];
+  const char *xname[MAX_RX2];
 
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-v")) {
@@ -533,6 +537,25 @@ int main(int argc, char **argv) {
       bcfg[nbl].noisek = (mode[0] == 'u') ? 0 : (mode[0] == 'c') ? 2 : 1;
       bcfg[nbl].hold = (hold[0] == 'h');
       nbl++;
+    } else if (!strcmp(argv[i], "--rx2") && i + 1 < argc) {
+      char *a = argv[++i];
+      char *eq = strchr(a, '=');
+      int sy = 1, co = 2;
+      double tau = 6.0, taun = 4.0;
+
+      if (eq == NULL || nx2 >= MAX_RX2 ||
+          sscanf(eq + 1, "%d,%d,%lf,%lf", &sy, &co, &tau, &taun) < 2) {
+        fprintf(stderr, "score_radev2: --rx2 wants NAME=SYNC,COMB[,TAU[,TAUN]]\n");
+        return 2;
+      }
+
+      *eq = '\0';
+      xname[nx2] = a;
+      xcfg[nx2].sync_both = sy;
+      xcfg[nx2].comb = co;
+      xcfg[nx2].tau = (float)tau;
+      xcfg[nx2].tau_n = (float)taun;
+      nx2++;
     } else if (argv[i][0] == '-') {
       usage(argv[0]);
       return 2;
@@ -551,7 +574,7 @@ int main(int argc, char **argv) {
 
   rade_initialize();
   struct stream st[MAX_STREAM];
-  const int nst = 3 + nw + nbl;
+  const int nst = 3 + nw + nbl + nx2;
   const char *base[3] = { "arm0", "arm1", "radio" };
   struct blindst bst[MAX_BLIND];
   struct blindfe bfe;
@@ -567,13 +590,18 @@ int main(int argc, char **argv) {
     } else if (i < 3 + nw) {
       st[i].src = i - 3;
       nm = wname[i - 3];
-    } else {
+    } else if (i < 3 + nw + nbl) {
       st[i].src = 1000 + (i - 3 - nw);
       nm = bcfg[i - 3 - nw].name;
       blind_init(&bst[i - 3 - nw], &bcfg[i - 3 - nw]);
+    } else {
+      st[i].src = 2000 + (i - 3 - nw - nbl);
+      nm = xname[i - 3 - nw - nbl];
     }
 
-    if (!v2probe_open(&st[i].p, nm, verbose, agc)) { return 1; }
+    if (st[i].src >= 2000) {
+      if (!v2probe_open2(&st[i].p, nm, &xcfg[st[i].src - 2000], agc)) { return 1; }
+    } else if (!v2probe_open(&st[i].p, nm, verbose, agc)) { return 1; }
   }
 
   if (csv_dir != NULL || iq_dir != NULL) {
@@ -725,6 +753,26 @@ int main(int argc, char **argv) {
 
       for (int i = 0; i < nst; i++) {
         double ar, ai, nrm = 1.0;
+
+        if (st[i].src >= 2000) {        /* the two-input receiver: both arms, no weight */
+          /* sync == 2: the third stream is the first --blind stream's output, the engine's own
+             time-domain combination, in the V2 domain */
+          double cr = 0.0, ci = 0.0;
+
+          if (xcfg[st[i].src - 2000].sync_both == 2 && nbl > 0) {
+            const struct blindst *q = &bst[0];
+            const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
+            const double k = q->c.hold ? q->lnrm : q->nrm;
+            const double x0r = z0.re, x0i = sgn * z0.im, x1r = z1.re, x1i = sgn * z1.im;
+            cr = k * x0r + k * (wr * x1r - wi * x1i);
+            ci = k * x0i + k * (wr * x1i + wi * x1r);
+          }
+
+          v2probe_push2(&st[i].p, (float)(gain * z0.re), (float)(gain * sgn * z0.im),
+                        (float)(gain * z1.re), (float)(gain * sgn * z1.im),
+                        (float)(gain * cr), (float)(gain * ci));
+          continue;
+        }
 
         if (st[i].src == -1) {
           ar = z0.re;

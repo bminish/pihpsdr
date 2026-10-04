@@ -125,11 +125,11 @@ RADEV2_LIBS = -L$(RADEV2_BLD)/src -lrade -Wl,-rpath,$(RADEV2_BLD)/src
 
 radev2: radev2_iq score_radev2
 
-radev2_iq: radev2_iq.c radev2_probe.c radev2_probe.h
-	$(CC) -O2 -Wall $(RADEV2_CFLAGS) -o $@ radev2_iq.c radev2_probe.c $(RADEV2_LIBS) -lm
+radev2_iq: radev2_iq.c radev2_probe.c radev2_probe.h radev2_rx2.c radev2_rx2.h
+	$(CC) -O2 -Wall $(RADEV2_CFLAGS) -o $@ radev2_iq.c radev2_probe.c radev2_rx2.c $(RADEV2_LIBS) -lm
 
-score_radev2: score_radev2.c radev2_probe.c radev2_probe.h $(GEN) rade_tuning.c divcap_replay.c rade_tuning.h
-	$(CC) $(RADEV2_CFLAGS) $(CFLAGS) -o $@ score_radev2.c radev2_probe.c \
+score_radev2: score_radev2.c radev2_probe.c radev2_probe.h radev2_rx2.c radev2_rx2.h $(GEN) rade_tuning.c divcap_replay.c rade_tuning.h
+	$(CC) $(RADEV2_CFLAGS) $(CFLAGS) -o $@ score_radev2.c radev2_probe.c radev2_rx2.c \
 	      rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c \
 	      $(RADEV2_LIBS) $(LIBS)
 

@@ -44,51 +44,64 @@ void v2probe_push(struct v2probe *p, float re, float im) {
   p->n++;
 }
 
+static void record(struct v2probe *p, const rade_rx_v2_state *rx, int got, int has_eoo, int nin) {
+  p->consumed += nin;
+
+  if (p->nsym >= p->symcap) {
+    p->symcap *= 2;
+    p->sym = realloc(p->sym, sizeof(struct v2sym) * (size_t)p->symcap);
+  }
+
+  struct v2sym *s = &p->sym[p->nsym++];
+  s->t      = (double)p->consumed / RADE_MODEM_SAMPLE_RATE;
+  s->sync   = (rx->state == RADE_RX_V2_SYNC);
+  s->sig    = (rx->Ry_max > V2_TSIG) && (rx->Ry_max / (rx->Ry_min + 1e-12f) >= V2_TSIN);
+  s->valid  = (got > 0);
+  s->eoo    = has_eoo;
+  s->ry_max = rx->Ry_max;
+  s->snr    = rx->snr_est_dB;
+  s->foff   = rx->freq_offset;
+  s->data   = s->valid ? rade_rx_v2_get_data_symbol(rx) : 0.0f;
+  /*
+   * The receiver runs FrameSyncNet on every symbol's latents to choose
+   * the frame parity, and keeps only a slow average of it. Run it again
+   * on the latents that were just decoded: it is stateless, and it is
+   * the receiver's own learned judgement of whether those latents look
+   * like a RADE frame.
+   */
+  s->fsync  = s->valid ? rade_frame_sync(&rx->sync_model, rx->az_hat, 0) : 0.0f;
+
+  if (has_eoo) { p->n_eoo++; }
+
+  if (got > 0 && p->feat_out != NULL) {
+    fwrite(p->features, sizeof(float), (size_t)got, p->feat_out);
+  }
+
+  if (p->csv_out != NULL) {
+    fprintf(p->csv_out, "%.4f,%d,%d,%d,%d,%.4f,%.2f,%.2f,%.4f,%.4f\n",
+            s->t, s->sync, s->sig, s->valid, s->eoo, s->ry_max, s->snr,
+            s->foff, s->data, s->fsync);
+  }
+}
+
 void v2probe_drain(struct v2probe *p) {
   for (;;) {
-    const int nin = rade_nin(p->r);
+    const int nin = p->x2 ? rx2_nin(p->x2) : rade_nin(p->r);
 
     if (nin <= 0 || p->n < nin) { break; }
 
-    int has_eoo = 0;
-    const int got = rade_rx(p->r, p->features, &has_eoo, NULL, p->buf);
-    const rade_rx_v2_state *rx = &p->r->rx_v2;
-    p->consumed += nin;
+    int has_eoo = 0, got;
 
-    if (p->nsym >= p->symcap) {
-      p->symcap *= 2;
-      p->sym = realloc(p->sym, sizeof(struct v2sym) * (size_t)p->symcap);
-    }
-
-    struct v2sym *s = &p->sym[p->nsym++];
-    s->t      = (double)p->consumed / RADE_MODEM_SAMPLE_RATE;
-    s->sync   = (rx->state == RADE_RX_V2_SYNC);
-    s->sig    = (rx->Ry_max > V2_TSIG) && (rx->Ry_max / (rx->Ry_min + 1e-12f) >= V2_TSIN);
-    s->valid  = (got > 0);
-    s->eoo    = has_eoo;
-    s->ry_max = rx->Ry_max;
-    s->snr    = rx->snr_est_dB;
-    s->foff   = rx->freq_offset;
-    s->data   = s->valid ? rade_rx_get_data_symbol(p->r) : 0.0f;
-    /*
-     * The receiver runs FrameSyncNet on every symbol's latents to choose
-     * the frame parity, and keeps only a slow average of it. Run it again
-     * on the latents that were just decoded: it is stateless, and it is
-     * the receiver's own learned judgement of whether those latents look
-     * like a RADE frame.
-     */
-    s->fsync  = s->valid ? rade_frame_sync(&rx->sync_model, rx->az_hat, 0) : 0.0f;
-
-    if (has_eoo) { p->n_eoo++; }
-
-    if (got > 0 && p->feat_out != NULL) {
-      fwrite(p->features, sizeof(float), (size_t)got, p->feat_out);
-    }
-
-    if (p->csv_out != NULL) {
-      fprintf(p->csv_out, "%.4f,%d,%d,%d,%d,%.4f,%.2f,%.2f,%.4f,%.4f\n",
-              s->t, s->sync, s->sig, s->valid, s->eoo, s->ry_max, s->snr,
-              s->foff, s->data, s->fsync);
+    if (p->x2) {
+      const int fl = rx2_process(p->x2, p->features, p->buf, p->buf1, p->buf2);
+      got = (fl & 1) ? rade_rx_v2_n_features_out() : 0;
+      has_eoo = (fl & 2) != 0;
+      record(p, &p->x2->a, got, has_eoo, nin);
+      memmove(p->buf1, p->buf1 + nin, sizeof(RADE_COMP) * (size_t)(p->n - nin));
+      memmove(p->buf2, p->buf2 + nin, sizeof(RADE_COMP) * (size_t)(p->n - nin));
+    } else {
+      got = rade_rx(p->r, p->features, &has_eoo, NULL, p->buf);
+      record(p, &p->r->rx_v2, got, has_eoo, nin);
     }
 
     memmove(p->buf, p->buf + nin, sizeof(RADE_COMP) * (size_t)(p->n - nin));
@@ -96,8 +109,42 @@ void v2probe_drain(struct v2probe *p) {
   }
 }
 
+int v2probe_open2(struct v2probe *p, const char *name, const struct rx2_cfg *cfg, int agc) {
+  memset(p, 0, sizeof(*p));
+  p->name = name;
+  p->x2 = malloc(sizeof(*p->x2));
+
+  if (p->x2 == NULL || rx2_init(p->x2, cfg, agc) != 0) {
+    fprintf(stderr, "radev2: rx2_init failed for %s\n", name);
+    return 0;
+  }
+
+  p->cap = rade_rx_v2_nin_max() * 8;
+  p->buf = malloc(sizeof(RADE_COMP) * (size_t)p->cap);
+  p->buf1 = malloc(sizeof(RADE_COMP) * (size_t)p->cap);
+  p->buf2 = malloc(sizeof(RADE_COMP) * (size_t)p->cap);
+  p->features = malloc(sizeof(float) * (size_t)RADE_V2_FEATURES_OUT);
+  p->symcap = 4096;
+  p->sym = malloc(sizeof(struct v2sym) * (size_t)p->symcap);
+  p->n_acq0 = p->x2->a.n_acq;
+  return p->buf != NULL && p->buf1 != NULL && p->buf2 != NULL && p->features != NULL && p->sym != NULL;
+}
+
+void v2probe_push2(struct v2probe *p, float re0, float im0, float re1, float im1,
+                   float re2, float im2) {
+  if (p->n >= p->cap) { v2probe_drain(p); }
+
+  p->buf[p->n].real = re0;
+  p->buf[p->n].imag = im0;
+  p->buf1[p->n].real = re1;
+  p->buf1[p->n].imag = im1;
+  p->buf2[p->n].real = re2;
+  p->buf2[p->n].imag = im2;
+  p->n++;
+}
+
 int v2probe_acquisitions(const struct v2probe *p) {
-  return p->r->rx_v2.n_acq - p->n_acq0;
+  return (p->x2 ? p->x2->a.n_acq : p->r->rx_v2.n_acq) - p->n_acq0;
 }
 
 static int cmp_float(const void *a, const void *b) {
@@ -154,6 +201,10 @@ void v2probe_summary(const struct v2probe *p, struct v2summary *s) {
 
 void v2probe_close(struct v2probe *p) {
   if (p->r != NULL) { rade_close(p->r); }
+
+  free(p->x2);
+  free(p->buf1);
+  free(p->buf2);
 
   free(p->buf);
   free(p->features);

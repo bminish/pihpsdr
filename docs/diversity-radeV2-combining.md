@@ -566,3 +566,83 @@ What it says, sized honestly:
   devtools with a second input) because `score_radev2` has the 8 kHz streams but
   not the symbol timing of each arm's receiver. That is the first build that
   needs the two-input receiver.
+
+## 11. The two-input receiver, on the captures
+
+`test/diversity/devtools/radev2_rx2.[ch]`: a copy of `rade_rx_v2.c` (rade_c is not
+modified; its state is embedded and its DFT, FrameSyncNet and decoder are the
+shipping ones) with a second arm and the combiner of sections 8 and 10 between
+the DFT and the decoder. In `score_radev2` as
+`--rx2 NAME=SYNC,COMB[,TAU[,TAUN]]` (SYNC 0 arm 0, 1 both arms' CP
+correlations summed, 2 a combined stream from the first `--blind` stream; COMB 0
+arm 0, 1 diagonal noise, 2 full 2x2 noise, the CP-difference measurement of
+section 10, per symbol). **Gate:** SYNC 0, COMB 0 is the stock receiver and
+reproduces arm 0's figures exactly on every capture (324 frames, SNR 3.10 dB,
+`|aux|` 0.969 on `185337`; the same on the rest).
+
+Decoded `|aux|` against the better antenna, the four captures, same bins as
+section 9 (a difference under about 0.01 is not a ranking):
+
+| stream | T-008 `184835` | `185337` | `185725` | T-009 `192558` |
+|---|---|---|---|---|
+| Window (replay) | +0.019 | +0.005 | +0.009 | +0.030 |
+| time-domain blind scalar, `c`, tau 6 (section 9) | +0.018 | +0.002 | +0.014 | +0.067 |
+| rx2, arm 0 only (the gate) | 0.000 | 0.000 | 0.000 | -0.003 |
+| rx2, sync from both arms summed, no combining | -0.003 | -0.004 | +0.001 | 0.000 |
+| rx2, sync summed, diagonal noise | +0.018 | +0.013 | +0.011 | +0.030 |
+| rx2, sync summed, full 2x2 (MVDR) | 0.000 | +0.012 | +0.010 | +0.038 |
+| rx2, sync from the combined stream, arm 0's latents | 0.000 | -0.010 | +0.005 | +0.011 |
+| rx2, sync from the combined stream, **diagonal** | +0.015 | +0.004 | +0.011 | **+0.070** |
+| rx2, sync from the combined stream, **full 2x2** | +0.019 | +0.006 | +0.007 | +0.056 |
+| the same, tau 9 signal / 6 noise | +0.020 | +0.008 | +0.010 | +0.065 |
+| the same, tau 4 / 3 | +0.017 | +0.005 | +0.006 | +0.049 |
+
+T-009 sync figures: arm 0 alone 52.5% detector, 7 acquisitions, 1135 frames;
+every stream with sync from the combined stream 59.8%, 6 acquisitions, about 1231
+frames, matching the time-domain blind scalar (59.7%, 6, 1232).
+
+What it says, sized honestly:
+
+- **The combining and the sync both matter on the weak capture, and neither does
+  the job alone.** On T-009 combining the latents with arm 0's sync gets +0.030
+  (`c`) and +0.038 (MVDR); the combined stream's sync with arm 0's latents gets
+  +0.011; both together +0.070. About 0.04 of the T-009 gain is the sync: the
+  combined stream detects the signal more of the time (59.8% against 52.5% of
+  symbols) and acquires fewer times.
+- **Summing the arms' CP correlations is not a gain.** Both arms' correlations
+  have the same phase (the frequency offset is common), so they add, but the
+  normalised result is a power-weighted average of the two arms' `rho`, and
+  `sync = 1` syncs like arm 0 (52.5%, 7 acquisitions, 1140 frames, T-009).
+  The correlation SNR rises only if the signal being correlated is itself
+  combined first. I said earlier (section 3) that summing should raise
+  `Ry_max`. It does not.
+- **The in-receiver latent combiner ties the time-domain scalar.** With the same
+  combined stream for sync, diagonal against the time-domain `c` stream:
+  +0.015 / +0.018, +0.004 / +0.002, +0.011 / +0.014, +0.070 / +0.067. So
+  section 8's decoder-only finding holds on air: per-carrier combining after the
+  DFT, with one weight per frame, adds nothing measurable over a scalar weight
+  applied before the receiver.
+- **The full 2x2 noise covariance does not help on these captures.** MVDR
+  against the diagonal with the same sync: 0.019 / 0.015, 0.006 / 0.004, 0.007 /
+  0.011, 0.056 / 0.070. Within 0.01 on T-008 and 0.014 worse on T-009, and the
+  tau 4 / 3 setting that was best on the synthetic interferer (section 10) is
+  the worst here. Section 10 showed a large gain against a stationary, coherent,
+  fading interferer; these captures show none, so either their QRM is not that
+  (SSB speech is keyed and partial-band, and T-009's interferers may not be
+  coherent across the two arms) or the effect is below what 14 to 60 bins resolve.
+  This is the evidence that matters: the cross term has not been seen to pay on
+  air.
+- **What the receiver copy buys, then, is not the combining.** It confirms the
+  decision of section 8 (the scalar weight in front of the receiver is enough) and
+  it shows that the sync stream matters. In the engine, which already produces the
+  time-domain combined stream, that stream is what the receiver should sync on.
+
+**Limits.** The combined stream for sync here is the first `--blind` stream
+(`c`: the noise from the arms' own CP correlation), not something computed inside
+the receiver, so these figures say what a receiver does given that stream; the
+CP-difference noise inside `rx2` is for the latent combiner only. The captures are
+four, one of them weak, with no significance test; the noise mode and the taus were
+chosen from synthetic work and then all variants were scored on all four captures.
+The gate shows the copy reproduces the stock receiver; it does not show the
+combiner is free of mistakes beyond agreeing with the decoder-only Python version
+where they overlap (the formulas are the same, the paths are not shared).

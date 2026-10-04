@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include "rade_api.h"
+#include "radev2_rx2.h"
 
 /* One record per OFDM symbol (160 samples, 20 ms at 8 kHz). */
 struct v2sym {
@@ -47,6 +48,8 @@ struct v2probe {
   FILE        *csv_out;      /* optional: one row per symbol             */
 
   struct v2sym *sym;         /* every symbol, for paired comparison     */
+  rx2_state    *x2;          /* set instead of r for the two-input receiver (radev2_rx2.h) */
+  RADE_COMP    *buf1, *buf2; /* its second arm, and the combined stream for sync_both == 2 */
   long          nsym, symcap;
   int           n_acq0;      /* rx_v2.n_acq at open                     */
   long          n_eoo;
@@ -55,6 +58,11 @@ struct v2probe {
 /* flags: RADE_* bits added to RADE_MODE_V2. agc: 1 (rade's default) or 0. */
 int  v2probe_open(struct v2probe *p, const char *name, int verbose, int agc);
 void v2probe_push(struct v2probe *p, float re, float im);
+
+/* The two-input receiver, same records. One call per sample, both arms. */
+int  v2probe_open2(struct v2probe *p, const char *name, const struct rx2_cfg *cfg, int agc);
+void v2probe_push2(struct v2probe *p, float re0, float im0, float re1, float im1,
+                   float re2, float im2);
 void v2probe_drain(struct v2probe *p);
 void v2probe_close(struct v2probe *p);
 

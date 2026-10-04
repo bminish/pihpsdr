@@ -279,9 +279,15 @@ this is the summary and what is unsettled.
   loss where the antennas read 0.65 to 1.6 and a scalar weight 0.43 to 1.1. The
   cross term between the arms is the whole gain. Noise must be tracked at about 4
   symbols. Not tried on a capture; that needs the two-input receiver.
+- **The two-input receiver copy** (`radev2_rx2.[ch]`, `score_radev2 --rx2`, combining doc
+  section 11), gated against the stock receiver: per-carrier latent combining, with
+  or without the CP-derived full noise covariance, **ties the time-domain scalar** on all
+  four captures; the full 2x2 did not help on air. What the combined stream adds is
+  the *sync*: syncing on it, not on arm 0, is worth about 0.04 of T-009's gain.
+  Summing the arms' CP correlations is not a gain.
 - **Tools** (all in `test/diversity/devtools/`): `score_radev2 --blind`,
   `py/radev2_oracle.py` (oracle ladder and blind estimator, decoder only),
-  `py/radev2_steps.py` (weight-step cost). The gate for the offline path is a
+  `py/radev2_steps.py` (weight-step cost), `radev2_rx2.c` (two-input receiver). The gate for the offline path is a
   clean decode at loss 0.0815.
 - **Unsettled:** V2-F2 as first written ("not the weight steps") against the
   decoder-only finding that holding the weight costs; the oracle's loss to the
