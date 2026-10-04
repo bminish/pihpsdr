@@ -23,6 +23,13 @@ block, as the radio holds its weight):
     fir8/16/32   perc's weights as time-domain filters (one per arm), L taps:
                  what the engine could do without touching the decoder
 
+The b* rungs replace the true channel with a blind estimate from the received
+latents alone (blind_R): b<S>_<mode>_<tau>[_fir<L> | _h<N> | _i<N> | _c<N>]. S is
+scalar, perc or perc3 (a carrier and its neighbours); mode u (C01/C00), k (noise
+power taken off C00) or e (eigenvector); tau the IIR time constant in symbols; the
+suffix applies the weight as a filter pair, held N frames, interpolated, or
+interpolated and a block late (the causal version).
+
 All but the fir rungs combine AFTER each arm's own DFT, which is what a
 two-input rade_rx_v2 would do. The fir rungs combine in the time domain, so
 the combined channel's delay spread is the sum of both arms' and the filter's.
@@ -235,13 +242,17 @@ def fir_combine(r0, r1, H0, H1, L, hold, s0, nfr):
     both are bounded. (One filter on arm 1 alone, conj(R), is not: R blows up
     where arm 0 fades, and the taps with it.) Returns (stream, new s0).
     """
+    return fir_from_R(r0, r1, weights_R(H0, H1, NC), L, hold, s0)
+
+
+def fir_from_R(r0, r1, R, L, hold, s0):
+    """fir_combine with R (one row per block) given, true or estimated."""
     D = L // 2
     E = np.exp(-1j * np.outer(W, np.arange(L)))
     # taps are charged by distance from the centre, so a long filter stays
     # compact where the target does not need it long (minimum-norm does not:
     # it fits the carriers exactly and is wild between them)
     P = np.diag(1e-3 + ((np.arange(L) - D) / max(D, 1)) ** 2)
-    R = weights_R(H0, H1, NC)
     A = 1 / np.sqrt(1 + np.abs(R) ** 2)
     B = np.conj(R) * A
     y = np.zeros(len(r0), complex)
@@ -257,6 +268,57 @@ def fir_combine(r0, r1, H0, H1, L, hold, s0, nfr):
             y[t0:t1] += np.convolve(seg[t0:t1 + L - 1], h, mode='valid')
 
     return y, s0 + D
+
+
+# ---------------------------------------------------------- blind estimator
+
+def blind_R(az0, az1, S, mode, tau, nvar):
+    """
+    R = h1/h0 per carrier from the received latents alone, causally: after
+    each symbol the per-carrier covariance of (y0, y1) is updated (IIR, time
+    constant tau symbols) and R read from it. The transmitted symbol cancels.
+      S     'scalar' (pool all carriers), 'perc' (each), 'perc3' (it and its neighbours)
+      mode  'u' C01/C00 as it stands; 'k' with the noise power (nvar per carrier)
+            taken off C00; 'e' dominant eigenvector of the 2x2 (no noise needed
+            if both arms' noise is equal, which it is here)
+    """
+    y0, y1 = az0.reshape(-1, NC), az1.reshape(-1, NC)
+    a = np.exp(-1.0 / tau)
+    C00 = np.zeros(NC)
+    C11 = np.zeros(NC)
+    C01 = np.zeros(NC, complex)
+    wsum = 0.0
+    R = np.empty((y0.shape[0], NC), complex)
+    k3 = np.ones(3)
+
+    for i in range(y0.shape[0]):
+        wsum = a * wsum + (1 - a)
+        C00 = a * C00 + (1 - a) * np.abs(y0[i]) ** 2
+        C11 = a * C11 + (1 - a) * np.abs(y1[i]) ** 2
+        C01 = a * C01 + (1 - a) * y1[i] * np.conj(y0[i])
+        c00, c11, c01 = C00 / wsum, C11 / wsum, C01 / wsum
+
+        if S == 'scalar':
+            n = NC
+            c00, c11, c01 = (np.full(NC, x.sum()) for x in (c00, c11, c01))
+        elif S == 'perc3':
+            n = np.convolve(np.ones(NC), k3, 'same')
+            c00, c11, c01 = (np.convolve(x, k3, 'same') for x in (c00, c11, c01))
+        else:
+            n = 1
+
+        if mode == 'e':
+            lam = (c00 + c11) / 2 + np.sqrt(((c00 - c11) / 2) ** 2 + np.abs(c01) ** 2)
+            R[i] = (lam - c00) / (np.conj(c01) + 1e-12)
+        else:
+            den = c00 if mode == 'u' else np.maximum(c00 - n * nvar, 0.1 * c00)
+            R[i] = c01 / (den + 1e-12)
+
+    return R.reshape(-1, 2, NC)
+
+
+def combine_R(az0, az1, R):
+    return (az0 + np.conj(R) * az1) / np.sqrt(1 + np.abs(R) ** 2)
 
 
 # ----------------------------------------------------------------- scenario
@@ -289,7 +351,36 @@ def run_scenario(args):
     tag = os.path.join(work, '%s_%d_%d' % (kind, snr, seed))
 
     for name in rungs:
-        if name.startswith('fir'):
+        if name.startswith('b'):                        # b<S>_<mode>_<tau>[_fir<L>]
+            p = name[1:].split('_')
+            Rb = blind_R(az0, az1, p[0], p[1], float(p[2]), g * g * M * sigma2)
+
+            if len(p) > 3 and p[3][0] in 'hic':         # applied as the engine does: h<N> held for N frames,
+                n = int(p[3][1:])                       # i<N> linearly interpolated between every Nth (needs the
+                                                        # next estimate), c<N> the same a block late (causal)
+                k = np.arange(nfr)
+                idx = k // n if p[3][0] == 'h' else None
+                late = p[3][0] == 'c'
+
+                if idx is not None:
+                    Rb = Rb[idx * n]
+                else:
+                    kn = np.arange(0, nfr, n)
+                    Rb = np.stack([np.stack([np.interp(k, kn, Rb[kn, ss, c].real)
+                                             + 1j * np.interp(k, kn, Rb[kn, ss, c].imag)
+                                             for c in range(NC)], -1) for ss in range(2)], 1)
+
+                if late:
+                    Rb = Rb[np.maximum(k - n, 0)]
+
+                az = combine_R(az0, az1, Rb)
+            elif len(p) > 3:                            # the same weights as a filter pair
+                L = int(p[3][3:])
+                y, s0f = fir_from_R(r[0], r[1], Rb[::hold, 0], L, hold, s0)
+                az = demod(y, s0f, nfr)
+            else:
+                az = combine_R(az0, az1, Rb)
+        elif name.startswith('fir'):
             y, s0f = fir_combine(r[0], r[1], H[0], H[1], int(name[3:]), hold, s0, nfr)
             az = demod(y, s0f, nfr)
         else:

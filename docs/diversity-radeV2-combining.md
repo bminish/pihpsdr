@@ -217,7 +217,8 @@ What these say, sized honestly:
   selection `score_radev2` calls "sel", which picks among decodes that were
   never switched. The on-air T-009 finding (selection beat every combiner) is
   about the second kind and is not contradicted.
-- **Combining keeps arm 0's phase and wins at low SNR, loses at high.** `perc`
+- **Combining keeps arm 0's phase and wins at low SNR, loses at high** (with
+  these oracle weights held 160 ms; section 8 revisits it). `perc`
   beats the better antenna by 0.04 to 0.16 up to about +2 dB on mpp, is level
   at +4 to +6 and loses by 0.04 at +12 (0.185 against 0.143). That is V2-F2
   with per-carrier weights: it is not a scalar's limit, and it is not
@@ -265,5 +266,130 @@ What these say, sized honestly:
 - Option 2 (a filter pair in the engine) is not ruled out by the ISI worry,
   so the case for a two-input receiver rests on what it lets the estimator do
   (the EOO pilots, the decoder's own outputs), not on the combining.
-- The next rungs are the blind estimator against these oracle numbers
-  (experiment 2), and a smooth reference phase (the question under `eq`).
+- The blind estimator is section 8. The smooth reference phase (the question
+  under `eq`) is still to do.
+
+## 8. The blind estimator
+
+`blind_R` in `radev2_oracle.py`: per carrier, an IIR average (tau symbols of
+20 ms) of `y0*conj(y0)`, `y1*conj(y1)` and `y1*conj(y0)` over the latents,
+`R = C01 / C00`, causal, no pilot and no knowledge of the channel. Variants:
+`u` as it stands; `k` with the noise power taken off `C00` (the noise is
+known here, which on the engine would be the pre-BPF Rnn measurement);
+`e` the dominant eigenvector of the 2x2, which needs no noise estimate when
+both arms' noise is equal, as it is in these tests; `scalar` pools the
+carriers, `perc` one weight per carrier, `perc3` each carrier with its two
+neighbours. Output is `perc`'s: arm 0's phase, unit noise. Weights update every
+symbol unless a suffix says otherwise. Loss, 6 seeds, 7 SNRs from -2 to +12 dB,
+one speech sample; "wins" is scenarios (of 42) beating the better antenna by
+more than 0.01.
+
+| rung (tau 6 unless shown) | mpp all | mpp <= +2 dB | mpp >= +6 dB | mpp wins | flat all | flat wins |
+|---|---|---|---|---|---|---|
+| better antenna | 0.252 | 0.346 | 0.166 | - | 0.313 | - |
+| oracle scalar (true h, per frame) | 0.217 | 0.271 | 0.165 | 25 | 0.218 | 31 |
+| oracle per carrier (true h, per frame) | 0.203 | 0.245 | 0.169 | 27 | 0.218 | 31 |
+| blind scalar, noise known (`bscalar_k`) | **0.205** | 0.263 | **0.153** | **36** | **0.190** | **39** |
+| blind scalar, noise not removed (`bscalar_u`) | 0.211 | 0.277 | 0.153 | 35 | 0.207 | 40 |
+| blind scalar, tau 12 / tau 25 | 0.213 / 0.226 | 0.277 / 0.301 | 0.156 / 0.160 | 35 / 27 | 0.207 / 0.238 | 41 / 36 |
+| blind per carrier (`bperc_k`) | 0.230 | 0.293 | 0.174 | 21 | 0.239 | 36 |
+| blind per carrier + neighbours (`bperc3_k`) | **0.197** | 0.248 | 0.151 | 34 | 0.199 | 39 |
+| blind `bperc3`, eigenvector (`e`, no noise estimate) | 0.208 | 0.258 | 0.164 | 30 | 0.196 | 38 |
+| `bperc3_k` as a 16-tap filter pair, updated every frame | 0.198 | 0.250 | 0.152 | 33 | 0.198 | 41 |
+| oracle `eq` (phase known; not available) | 0.138 | 0.173 | 0.108 | 42 | 0.145 | 42 |
+
+In AWGN every combining rung, blind or not, is within 0.002 of the oracle
+(0.115 to 0.117 against 0.145 for an antenna).
+
+### V2-F6: a smoothed blind estimate beats the true channel
+
+The blind weights are better than the oracle weights taken from the true
+channel, on both fading channels and at every SNR from 0 dB up, including +12 dB
+on mpp, where the oracle combination loses to the better antenna (0.161 against
+0.143) and the blind one does not (0.136 to 0.140). The oracle per frame is
+the best a weight can do at tracking the channel, so the oracle is not the
+bound, and V2-F4 is the reason to suspect why: the decoder prefers a combined
+channel whose phase moves slowly, and the true `h1/h0` moves fast near a fade
+of arm 0. A power-weighted average (`C01/C00` is dominated by the moments arm 0
+is strong) does not follow it there. That is a hypothesis; I have not isolated
+it. What the data do show:
+
+- there is a best smoothing: tau 6 symbols (120 ms) beats 12 (240 ms) and 25
+  (500 ms) on both channels, so it is not simply "more smoothing is better";
+- holding the oracle weight for longer costs it: flat scalar 0.222 held 1
+  frame, 0.227 held 2, 0.269 held 4;
+- this does not square with V2-F2's "a smooth per-sample weight does no
+  better than one held per block". That was measured on the full receiver
+  with a true-channel weight; this is the decoder alone. Not reconciled.
+
+### How the weight is applied matters as much as how it is estimated
+
+`bscalar_k_6`, loss (all SNRs), mpp / flat; better antenna 0.252 / 0.313:
+
+| applied as | mpp | flat |
+|---|---|---|
+| updated every symbol (20 ms) | 0.205 | 0.190 |
+| held 2 frames (80 ms) | 0.210 | 0.199 |
+| held 4 frames (160 ms) | 0.220 | 0.230 |
+| held 8 frames (320 ms) | 0.253 | 0.283 |
+| interpolated between every 4th (needs the next estimate) | 0.205 | 0.187 |
+| interpolated between every 8th | 0.211 | 0.190 |
+| the same, a block late so it is causal: 2 / 4 / 8 frames | 0.212 / 0.226 / 0.245 | 0.203 / 0.221 / 0.272 |
+
+Interpolation recovers everything a hold loses, but the interpolation that
+does it looks at the next estimate; made causal (one block of delay) it is
+about as bad as holding. So a weight that is updated slowly and late costs
+0.015 to 0.04 against one updated each symbol, and a block of 160 ms or more
+leaves little of the gain at 320 ms (mpp 0.253 against 0.252 for an antenna,
+7 wins of 42 at 8 frames late). The engine's block is 171 ms and, per
+`diversity-rade.md`, about 0.7 correlator updates per block: that is the h4
+to c4 rows, not the first row.
+
+### What the blind estimator says about the options
+
+- **A scalar weight is enough.** Blind scalar (0.205 mpp, 0.190 flat) is
+  within 0.01 of the best per-carrier variant on mpp and better than it on
+  flat. Per-carrier weights need neighbour smoothing to work at all (`bperc_k`
+  0.230 against `bperc3_k` 0.197) and then add 0.01 on mpp. The frequency
+  resolution is not what pays; the smoothing in time is.
+- **A two-input `rade_rx_v2` is not needed for the combining.** The filter
+  pair designed from the blind weights equals the carrier-domain combine when
+  its coefficients are updated every frame (0.198 against 0.197 on mpp, 0.198
+  against 0.199 on flat), and falls behind when they are updated per 160 ms
+  block (mpp 0.217 to 0.224, flat 0.233 to 0.242), for the same reason as the
+  hold above. Neither beat a scalar by more than 0.01 on mpp. If the
+  two-input receiver is built it is for what it can estimate with (EOO pilots,
+  decoder outputs), not for the combining.
+- **Noise knowledge is worth about 0.01 to 0.02.** `k` against `u`: mpp
+  0.205 / 0.211, flat 0.190 / 0.207. The eigenvector form, which needs none,
+  is no better than `u` on mpp. The engine measures the noise from the
+  off-carrier part of the passband (pre-BPF), so `k` is available there.
+- **The phase-reference question stays open.** `eq` (0.138) is still far
+  ahead of every blind rung (0.197 to 0.205) and still needs absolute phase.
+
+### What this does not show
+
+Every rung here is at the oracle's own SNR, in a model where both antennas
+have the same noise and share a clock, one speech sample, one delay spread,
+the decoder without the receiver's sync, and the receiver's own timing and
+frequency tracking out of the loop (V2-F4's steps would pass through them on
+air). The estimator is not the engine's: it averages the latents' covariance,
+where the engine correlates against a reference. No capture has been scored
+this way.
+
+### What this changes in the plan
+
+- The engine's V2 reference should be a **scalar weight, estimated by a
+  power-weighted average of the arm-1/arm-0 cross-spectrum over about 120 ms
+  (6 symbols), with the noise taken off, applied to arm 1 at arm 0's phase,
+  updated each symbol or as near as the correlator allows.** That is a
+  testable specification, not a result: the next step is to implement it as a
+  reference and score it on the four captures against Window.
+- The update rate and latency matter more than anything about the weight's
+  structure: from a block-held weight to one updated each symbol is worth
+  about 0.015 to 0.04 here. Check what the engine's V1 and Window references
+  update at, and whether the audio path can slew or has to hold.
+- Experiment 2 (the blind estimator against the oracle) is done for a scalar
+  and a per-carrier weight in the decoder-only path. Experiments 3 (EOO as
+  on-air truth) and 4 (two-input prototype) are not needed to decide the
+  combining; 3 remains the only on-air check of the relative channel.
