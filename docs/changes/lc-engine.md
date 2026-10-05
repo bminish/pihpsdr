@@ -227,8 +227,9 @@ found by reading the call after `5db64949` began passing an ADC index.
 It was already wrong while LC-022 exchanged the arms.
 
 **Change.** `arm = a ^ div_arm_swapped()`. With RX1 on ADC1 nothing
-changes. One header comment that still said the arms are exchanged is
-corrected with it.
+changes. (The header comment on `div_auto_arm_db` that still said the
+arms are exchanged was corrected in LC-035, where it was written, so
+this commit is the one line.)
 
 **Checks.** Needs LC-022 for `div_arm_swapped()`. The harness does not
 call `diversity_auto_att_changed()`, so nothing in the suite covers it.

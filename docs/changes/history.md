@@ -6,7 +6,12 @@ Newest first.
 
 - 2026-10-05: LC-045, the Min coherence slider's bottom no longer follows
   the occupied span on FSK/Digital (it jumped; LC-012's floor, found in
-  use on the rebased build, not caused by the re-sync).
+  use on the rebased build, not caused by the re-sync). Confirmed cured
+  in use. The same day: the trailers of LC-031 to LC-037 and the tooling
+  commits that shared the fault (15 commits) reworded so git parses
+  them, and the stale "arms are exchanged" comment on `div_auto_arm_db`
+  fixed in LC-035 rather than LC-044. LC-022's unlisted dependency found:
+  LC-013 (textual). The series pushed to `origin/TEST` after the owner's OK.
 - 2026-10-05: **re-synced onto `5db64949`** (dl1ycf's "ADC2 for RX1 as
   the primary receiver"), by rebase; backup tag
   `backup/TEST-pre-rebase-20261005`. One real conflict, in LC-035's
