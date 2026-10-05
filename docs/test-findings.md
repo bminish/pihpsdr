@@ -462,6 +462,99 @@ needs to be taken well away from the tone, which the outside-filter floor
 is (the central 80 % of the DDC span less the filter and 1 kHz either
 side, about 150 kHz at 192 kHz).
 
+## T-019 to T-023: RADE V2 on 7.087 MHz LSB, four captures and a binaural WAV
+
+**Logged, not analysed.** Taken 2026-10-05 on `test/binaural-agc-link`,
+for the work on a diversity-capable RADE V2 receive chain. `TEST` still
+has no V2 reference, so nothing here is replayed yet. The files are in
+`captures/` and `wav/`, which git ignores; this entry is the record.
+
+**Captures.** All four at 7.087 MHz, recorded mode DIGL, 192 kHz,
+16384-point blocks (85 ms), RX filter −2000 to −1000 Hz. Settings read
+from the first block of each file; the later blocks were not checked for
+changes. Each has the ear recorder's pair beside it
+(`ears-<stamp>.wav` / `.csv`, pre-AF, 16-bit, 48 kHz).
+
+| | Capture | Length | Reference recorded |
+|---|---|---|---|
+| T-019 | `divcap-20261005-162647.divc` | 60.0 s (703 blocks) | FSK/Digital |
+| T-020 | `divcap-20261005-162757.divc` | 60.0 s (703 blocks) | FSK/Digital |
+| T-021 | `divcap-20261005-163038.divc` | 33.3 s (390 blocks) | FSK/Digital |
+| T-022 | `divcap-20261005-163117.divc` | 60.0 s (703 blocks) | Window |
+
+Operator's description: RADE V2 signals received on the **lower
+sideband**. The operator did not describe the stations or the
+conditions beyond that; nothing was measured here about decode or SNR.
+Like T-009, a V2 correlator has to un-mirror the signal (or search both
+banks) before these can be used.
+
+**T-022 holds an attenuator step, the first record of Balance ATT.**
+At block 274 (t = 23.4 s, 39 % in) ADC1's attenuator went from 0 to
+14 dB in one step; ADC2 stayed at 0 dB throughout. From the file:
+
+| | before (20 blocks) | after (from 4 blocks on) |
+|---|---|---|
+| arm 0 block power | −44.7 dB | −58.9 dB (−14.2) |
+| arm 1 block power | −61.0 dB | −60.8 dB |
+| arm 0 − arm 1, block power | 16.3 dB | 1.9 dB |
+| arm 0 − arm 1, outside-filter floor\* | 14.4 dB | 0.1 dB |
+
+\* Not the engine's own value, which the file does not record: rebuilt
+here as the 10th percentile of the Hann-windowed power in the bins
+between 3.5 and 70 kHz from the dial, per arm. It reproduces what
+`div_noise_floor_update()` is meant to give closely enough to compare
+before and after, not to quote to a tenth of a dB.
+
+- The floor difference before the step (about 14.1–14.4 dB over the 20
+  blocks) is what a floor-only Balance ATT reads, and 14 dB is what was
+  applied; the residual after is 0.1 dB. Arm 0 fell by the amount of the
+  step, so it was band-noise limited at 14 dB. That the whole-block
+  powers are 16.3 dB apart against a floor 14.4 dB apart says arm 0 also
+  carried more signal.
+- The file does not say who made the step (button or hand); the
+  operator described it as auto attenuation.
+- The engine's weight: in all 703 blocks the loop was **holding** (the
+  recorded holding flag; coherence median 0.02, maximum 0.78) and the
+  weight takes only two values, **+0.46 dB / 76°** before the step and
+  **−13.54 dB / 76°** after. So the loop never moved the weight in this
+  capture, and the 14.00 dB change at block 274 is exactly the rescale
+  in `diversity_auto_att_changed()`. Arm 0 was ADC1 (no swap): arm 0's
+  power fell, so the rescale's sign (weight down when arm 0 is
+  attenuated) agrees with the data for that case. The swapped case
+  (RX1 on ADC2) is still not covered by any capture.
+- Block 274 itself has arm 0 only about 1 dB down: the first block
+  recorded with the new setting is mostly pre-step, as the step lands
+  mid-block. The statistics were reset by the change (coherence 0.00 at
+  274), as `div_context_changed()` is meant to do.
+
+`captures/ears-20261005-161154.{wav,csv}` is also there from earlier the
+same day, with no capture beside it and no description.
+
+**T-023: the binaural WAV.**
+`wav/20261005-162914_7087.000kHz_DIGL_div-per-ear.wav` (and its `.csv`):
+the WAV button's recording, RX1's output as handed to `audio_write()`
+before the AF gain, 16-bit, 48 kHz, 72.2 s, presentation `div-per-ear`
+(Antenna per ear: arm 0 to the left ear, arm 1 to the right). No `.divc`
+was recorded beside it, so it cannot be tied to a capture block for
+block.
+
+Operator's description: binaural RADE V2 on LSB. **After demodulation the
+audio is no longer inverted**, unlike the I/Q (T-009). This is the
+operator's statement; `ears.py` does not test it, and why it is so has not
+been traced.
+
+Measured with `ears.py` on the first 40 s of the printed segments: the
+two ears are aligned (`rx1_cnt` 1024 throughout, 0 of 13539 blocks
+dropped); the left ear sits at about −17.7 dBFS RMS and the right at about
+−33 dBFS, 15 dB apart; the L/R cross-correlation is weak (mostly
+|r| < 0.2) with a scattered lag and both signs, so the two arms' audio does
+not line up in a single segment of this recording. That is a measurement
+of this file, not a finding about the antennas.
+
+**What they offer.** A V2 signal on the sideband that mirrors it, from
+two antennas at once, with a ready-made per-ear audio reference for a
+receiver chain that works after demodulation as well as on the I/Q.
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the

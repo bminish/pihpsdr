@@ -26,6 +26,9 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 | `0fd92651` | PipeWire output declared as FL/FR, not MONO/MONO+1 (upstream bug since `184f780b`; affects every stereo use of PipeWire output) |
 | `854cc90d` | The ears' input blocks are realigned on the receive thread, not the GTK thread |
 | `8fe6222c`, `4ba041c1` | Tooling: the ear recorder and `ears.py` (below) |
+| `92dd3bf5`, `2dd0e077` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC) |
+| `e798f1d1` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
+| `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
 
 ## Debugging and test suite for the ear split
 
@@ -84,6 +87,38 @@ first guessed (2026-10-02/03).
 **Not yet covered:** the I/Q capture and the ear recording are not
 time-aligned to the sample (only by stamp); nothing replays a capture
 through the split offline; TCI's pair is not recorded.
+
+## The AGC link and Balance ATT: state
+
+Built and in use, not registered: no LC numbers yet, by decision (this
+may be a dead end; run it for a while first).
+
+- **Paired AGC.** The state machine runs once per sample on the larger of
+  the two arms' peaks and back-averages, and the one gain goes to both
+  ears. `wcpAGCpair.c` holds a *copy* of `xwcpagc()`'s per-sample
+  arithmetic: if upstream changes it, the copy follows by hand. A linked
+  channel whose partner is not running (off, slewing down, bypassed) runs
+  alone at once; otherwise it would wait out the 100 ms timeout on every
+  block and overflow the input. The ears must be fed in pairs while the
+  AGCs are linked, which is what `rx_link_agc()` orders.
+- **Balance ATT** (Diversity menu, under the ATT sliders). Asks the
+  engine for the noise floor for 4 s, reads it, and puts the difference
+  on the hotter arm's ADC (arm to ADC through `div_arm_swapped()`),
+  capped at 31 dB, then re-reads after 5 s and reports the residual.
+  Floor only: the overload flag is not used, since impulse noise trips it
+  with no effect on reception. The floor exists in the Window, Carrier,
+  CW and FSK/Digital references; **RADE V1 never transforms**, so for it
+  the engine windows and transforms the blocks for the length of the
+  request (`diversity_auto_noise_floor_demand()`), and digital's missing
+  floor update was added.
+- **Checked, and not:** `diversity_auto_att_changed()` chooses the sign of
+  its weight rescale from the ADC index and does not read the arm swap.
+  Capture T-022 (`docs/test-findings.md`) shows it right with RX1 on
+  ADC1: arm 0 attenuated 14 dB, the held weight moved by exactly -14 dB.
+  With RX1 on ADC2 it looks wrong and no capture covers it.
+- **Test captures:** RADE V2 on LSB, four captures and a binaural WAV,
+  recorded in `docs/test-findings.md` T-019 to T-023, for the diversity
+  RADE V2 receive chain.
 
 ## Observations and open items
 
