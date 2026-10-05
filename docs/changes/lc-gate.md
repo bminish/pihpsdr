@@ -243,3 +243,32 @@ What to measure once there is one: split-guard SNR with the notch
 applied to both the weight and the score, notched against un-notched,
 per reference (Window, Carrier, Digital). Also how often the loop acts,
 and whether the weight stops following the interferer.
+
+---
+
+<a id="lc-045"></a>
+
+## LC-045 — The slider's bottom does not follow the occupied span
+
+**Why.** LC-012 puts the bottom of the Min coherence slider on the
+gate's noise floor, from `diversity_auto_coh_floor()`, on every status
+tick. On FSK/Digital that floor came from the occupied span, which the
+engine re-estimates each block and which comes and goes with the signal.
+The floor is steep in the bin count (about 20 % for a 200 Hz span at
+0.2 s, a few percent for the whole region), so the range and the slider
+with it jumped about, and again when the span went invalid and the floor
+fell back to the search width. Reported on FSK/Digital; Carrier, Window
+and CW use a fixed bin count and never showed it. LC-012's scoring used a
+fixed span, which is why nothing caught it. Found from the code, not
+measured on air.
+
+**Change.** On FSK/Digital the function gives the floor for the search
+region (the filter when following it, otherwise the window), as for
+Window. That is the lower floor, so the slider never claims more than the
+gate holds to. The gate is untouched: `div_gate_threshold()` still uses
+each block's own bin count, so on a narrow signal it is stricter than the
+slider shows. The operator's setting is not written.
+
+**Checks.** Needs LC-012. Builds; the suite passes (known gaps
+unchanged). Nothing in the suite moves the span under the menu.
+

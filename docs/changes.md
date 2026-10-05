@@ -123,6 +123,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-032](changes/lc-menu.md#lc-032) | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 | [LC-033](changes/lc-noise-floor.md#lc-033) | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 | [LC-034](changes/lc-menu.md#lc-034) | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when RX1 is on ADC2) | diversity_menu.c | LC-022 | Local |
+| [LC-045](changes/lc-gate.md#lc-045) | Fix       | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | diversity_auto.c | LC-012 | Local |
 | [LC-035](changes/lc-engine.md#lc-035) | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 | [LC-036](changes/lc-noise-floor.md#lc-036) | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
 | [LC-037](changes/lc-engine.md#lc-037) | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
