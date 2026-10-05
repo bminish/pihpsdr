@@ -1050,7 +1050,9 @@ static void div_reset_stats(void) {
 //
 // auto_div_gain is the arm-1 gain in dB relative to arm 0. Attenuating arm 0
 // by delta makes arm 0 smaller, so the correct ratio falls by delta;
-// attenuating arm 1 raises it by delta. Applying that here keeps the
+// attenuating arm 1 raises it by delta. The caller names an ADC, not an
+// arm: arm 0 is the ADC RX1 is set to, so ADC2 is arm 1 only when RX1 is
+// on ADC1. Applying that here keeps the
 // combined audio continuous across the change - and, under Hold or with
 // the loop off, keeps the operator's own manual weight valid, which is
 // the thing tying the two attenuators together used to protect.
@@ -1058,7 +1060,8 @@ static void div_reset_stats(void) {
 void diversity_auto_att_changed(int a, int delta_db) {
   if (radio_is_remote) { return; }
 
-  const double shift = (a == 1) ? (double)delta_db : -(double)delta_db;
+  const int arm = (a == receiver[0]->adc) ? 0 : 1;
+  const double shift = (arm == 1) ? (double)delta_db : -(double)delta_db;
   //
   // Scale what is being applied, then back-compute the readout, which is
   // the same order div_apply_weight() uses. Doing it the other way about
