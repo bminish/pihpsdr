@@ -104,6 +104,8 @@ typedef struct _wcpagc
 } wcpagc, *WCPAGC;
 
 extern void loadWcpAGC (WCPAGC a);
+extern int  xwcpagc_paired (WCPAGC a);	// wcpAGCpair.c: 1 if it did the block
+extern void wcpagc_pair_detach (WCPAGC a);
 
 extern void xwcpagc (WCPAGC a);
 

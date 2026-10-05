@@ -3016,11 +3016,47 @@ void radio_set_af_gain(int id, double value) {
   g_idle_add(sliders_af_gain, GINT_TO_POINTER(100 * suppress_popup_sliders + id));
 }
 
+//
+// The slider can deliver events faster than the DSP can take them (each one
+// waits on the receive blocks). The first goes straight through; while the
+// timer runs, later ones only leave the newest value, which is applied when
+// it fires. Values in between are dropped. The stored gain is already
+// current, so nothing is lost but the intermediate steps.
+//
+#define AGC_GAIN_HOLDOFF_MS 50
+static int agc_gain_pending[2] = { 0, 0 };
+static int agc_gain_timer[2] = { 0, 0 };
+
+static gboolean agc_gain_timeout(gpointer data) {
+  int id = GPOINTER_TO_INT(data);
+  if (agc_gain_pending[id]) {
+    agc_gain_pending[id] = 0;
+    rx_set_agc_gain(receiver[id]);
+    return TRUE;                     // stay armed one more period
+  }
+  agc_gain_timer[id] = 0;
+  return FALSE;
+}
+
+static void agc_gain_apply(int id) {
+  if (radio_is_remote || id > 1) {
+    rx_set_agc(receiver[id]);
+    return;
+  }
+  if (agc_gain_timer[id]) {
+    agc_gain_pending[id] = 1;
+    return;
+  }
+  rx_set_agc_gain(receiver[id]);
+  agc_gain_timer[id] = 1;
+  g_timeout_add(AGC_GAIN_HOLDOFF_MS, agc_gain_timeout, GINT_TO_POINTER(id));
+}
+
 void radio_set_agc_gain(int id, double value) {
   if (id >= receivers) { return; }
   if (receiver[id]->agc_automatic_gain) { return; }
   receiver[id]->agc_gain = value;
-  rx_set_agc(receiver[id]);
+  agc_gain_apply(id);
   g_idle_add(sliders_agc_gain, GINT_TO_POINTER(100 * suppress_popup_sliders + id));
   //
   // If this is RX1, store value "by the band" unless AGC mode is FIXED

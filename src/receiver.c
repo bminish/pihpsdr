@@ -1651,16 +1651,22 @@ static int pend_len[2] = { 0, 0 };
 static int pend_valid[2] = { 0, 0 };
 
 void rx_link_agc(int on) {
+  //
+  // The two must never disagree for long. Ears fed one after the other
+  // (the unpaired path) while WDSP's AGCs are linked makes each ear's AGC
+  // wait out its timeout for a partner that is only fed afterwards, every
+  // block; and the worker takes its channel lock straight back, so the
+  // SetRXAAGCLink() that would end it can starve for good.
+  //
+  // So: feed in pairs first when linking, and unlink in WDSP first when
+  // unlinking. Paired feeding with no link in force is harmless.
+  //
   if (on) {
-    SetRXAAGCLink(0, 1, 1);
     rx_agc_linked = 1;
+    SetRXAAGCLink(0, 1, 1);
   } else {
-    //
-    // The flag first: nothing new is stashed, and the WDSP side lets go
-    // once the pair in flight has finished.
-    //
-    rx_agc_linked = 0;
     SetRXAAGCLink(0, 1, 0);
+    rx_agc_linked = 0;
   }
 }
 
@@ -2437,6 +2443,40 @@ void rx_set_agc(RECEIVER *rx) {
   if (id == 0 && div_split_active()) {
     rx_copy_agc(receiver[1], rx);
     rx_set_agc(receiver[1]);
+  }
+}
+
+//
+// The AGC gain slider's path: the one value that moved, not the whole set.
+// rx_set_agc() makes seven or eight WDSP calls, each of which waits for the
+// channel's csDSP, and with the ear split does it twice; a slider drag then
+// queues behind the receive blocks for far longer than it should. The
+// modes' other parameters have not changed, so only the gain is sent.
+//
+void rx_set_agc_gain(RECEIVER *rx) {
+  if (radio_is_remote) {
+    send_agc(cl_sock_tcp, rx);
+    return;
+  }
+  const int id = rx->id;
+  switch (rx->agc) {
+  case AGC_OFF:
+    break;
+  case AGC_FIXED:
+    SetRXAAGCFixed(id, rx->agc_gain);
+    break;
+  default:
+    SetRXAAGCTop(id, rx->agc_gain);
+    break;
+  }
+  GetRXAAGCHangLevel(id, &rx->agc_hang);
+  GetRXAAGCThresh(id, &rx->agc_thresh, (double)rx->afft_size, (double)rx->sample_rate);
+  if (remoteclient.running && !(id == 1 && div_split_active())) {
+    send_agc(remoteclient.sock_tcp, rx);
+  }
+  if (id == 0 && div_split_active()) {
+    receiver[1]->agc_gain = rx->agc_gain;
+    rx_set_agc_gain(receiver[1]);
   }
 }
 
