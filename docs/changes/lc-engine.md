@@ -206,3 +206,78 @@ weight at 1 + 0j and don't link `radio.c`. Found by reading the code.
 **Checks.** Applies to bare `upstream/TEST` and builds; reverts from the
 tip; the suite passes. For dl1ycf: see
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+---
+
+<a id="lc-041"></a>
+
+## LC-041 — The ear split's two AGCs share one gain, set by the stronger arm
+
+**Branch.** `test/binaural-agc-link` only: it needs the ear split, which is
+not on `TEST`. As landed (trailers to be added at the next rebase, see
+[open-items.md](open-items.md#flagged-for-a-later-patch)): `92dd3bf5`,
+`2dd0e077`, `e798f1d1`.
+
+**Problem.** Under the ear split RX1 and RX2 are two WDSP channels, each
+with its own AGC, so the ears' gains move independently. Per-symbol
+combining of an OFDM mode needs both ears at the same gain at every
+instant, and the stereo image should not move with one ear's fading.
+
+**Change.**
+- **Paired AGC.** The state machine runs once per sample on the *larger*
+  of the two arms' look-ahead peaks and back-averages, and the one gain
+  is applied to both delayed samples. The stronger arm sets the gain and
+  is held at the output target, so it does not clip; the weaker ear comes
+  out lower by the difference. (The first version drove it from the
+  average, which let the stronger arm run up to 6 dB over target.)
+- **Additive in WDSP.** `wdsp/wcpAGCpair.c` is new and holds all of it,
+  including `SetRXAAGCLink()`. `wcpAGC.c` is the original single AGC plus
+  two one-line hooks (`xwcpagc()`, `destroy_wcpagc()`); `wcpAGC.h` gains
+  the `pair`/`slot` fields. `iobuffs.c` gains `fexchange0_submit()` and
+  `fexchange0_collect()` as new functions, so both channels can be inside
+  the AGC at once. The per-sample arithmetic in `wcpAGCpair.c` is a
+  **copy** of `xwcpagc()`'s: if upstream changes it, the copy follows by
+  hand.
+- **Feeding.** With the link up the ear that fills first stashes its
+  block; the second submits both, collects and processes RX1 then RX2.
+  `rx_link_agc()` orders its two steps so that the feeding mode and the
+  WDSP link never disagree: pair-feed first when linking, unlink in WDSP
+  first when unlinking.
+- **A partner that is not running.** A linked channel whose partner is
+  off, slewing down or bypassed runs alone at once. The rendezvous also
+  has a 100 ms timeout, for a partner that stops in that instant.
+- **Menu.** A "Link AGC" tick (LC-042 puts it on its row), default on,
+  saved as `diversity_agc_link`, greyed when Audio is Summed or on a
+  client. Taking effect at once.
+
+**What went wrong on the radio, and was fixed.** Leaving binaural hung:
+the input overflowed and the GTK thread never returned. A stack dump
+showed the GTK thread in `SetRXAAGCLink()` waiting for a channel lock, one
+worker in the AGC rendezvous holding it, and the DDC thread feeding the
+ears one after the other. The old order stopped pair-feeding first, so
+each ear's AGC waited out its timeout for a partner fed only afterwards,
+every block, and the worker retook the lock before the unlink could.
+Fixed by the ordering above. Related: a worker waiting on a partner that
+was off cost the 100 ms on every block; the running check removes it.
+
+**Also in the commit (to split at the rebase).** `e798f1d1` carries the
+AGC slider's fast path too: `rx_set_agc_gain()` sends only the gain (the
+slider had made 7-8 `csDSP` waits per event, twice under the split), and
+`radio_set_agc_gain()` applies the first event at once and then only the
+newest value every 50 ms. Smooth with the link off and laggy with it on
+was the report. It is a separate change and should be its own LC.
+
+**Evidence, and what is not shown.**
+- `T-023`, `T-026`, `T-027` (`docs/test-findings.md`): in the per-ear
+  WAVs the louder ear holds near one level while the quieter ear moves
+  more. That is what a shared gain driven by the stronger arm gives, and
+  not what two independent AGCs give, but **the file does not record the
+  link** and it is not proof.
+- Not shown: a WAV recorded beside a capture, where the ear-level ratio
+  would follow the arms' power ratio with a shared gain.
+- Tested in a two-thread harness (linked gains identical under a one-arm
+  burst, diverging unlinked) before it ran on a radio; the harness is not
+  kept in the repository.
+- Settled decision 1 (no timeout) is about the diversity engine's hold; the
+  100 ms here is a safety in a rendezvous between two audio threads, and is
+  not something a measurement chose.

@@ -171,3 +171,58 @@ findings' open list.
   `TEST`; the last two also fail with the constant alone.
 - Replays of the committed code match the scored variant on 45 of 45
   captures.
+
+
+---
+
+<a id="lc-043"></a>
+
+## LC-043 — Balance ATT: the hotter arm's attenuator from the noise floor
+
+**Branch.** `test/binaural-agc-link` only. As landed: `e9630a2a`,
+`054813d8`. Depends on LC-025 (the floor); [LC-022] for arm to ADC.
+
+**What it is for.** One press, once, never continuously. The AGC link
+(LC-041) and the combiner's weight (clamped at +20 dB, `DIV_MAX_WEIGHT`)
+both work better when the arms' levels are not far apart. It is *not* an
+SNR optimisation: matching the arms is explicitly not a goal of
+[feature-att-calibration.md](../feature-att-calibration.md), whose sweep
+this is not (that stays "designed, not built").
+
+**Change.**
+- **The button** ("Balance ATT", Diversity menu, under the ATT sliders)
+  asks the engine for the floor for 4 s, waits 4.5 s, reads both arms'
+  floors, and puts `round(10 log10(ratio))` dB on the hotter arm's ADC
+  through `radio_set_adc_attenuation()` (so the weight is rescaled and the
+  context restarts as for the operator's own move). Arm to ADC through
+  `div_arm_swapped()`. Capped at 31 dB, and says so. Under 1 dB apart:
+  does nothing. After 5 s it reads again and shows the residual. It refuses
+  while transmitting or with diversity off, stops if the operator
+  transmits, and is cancelled when the menu closes.
+- **Floor only.** The overload flag is not consulted: impulse noise trips
+  it with no effect on reception.
+- **The floor on every reference.** It was only computed by Window, Carrier
+  and CW. Digital returned before the update (the transform had run): the
+  update now runs there too, as in CW. RADE V1 never transforms, so
+  `diversity_auto_noise_floor_demand(seconds)` makes the engine window and
+  transform the RADE blocks for that long, only to read the floor,
+  seeding it afresh on the first. Two FFTs a block for those seconds, and
+  nothing when nobody asks. (The digital line is a bug fix and separable.)
+
+**Evidence.** `T-022` (`docs/test-findings.md`): ADC1 stepped 0 to 14 dB at
+39 % in. The outside-filter floor, rebuilt from the capture (not the
+engine's own value), was 14.4 dB apart before and 0.1 dB after; arm 0's
+block power fell 14.2 dB, so it was band-noise limited. The loop held for
+all 703 blocks, and the weight moved only by the -14.00 dB rescale in
+`diversity_auto_att_changed()`.
+
+**Not shown.**
+- The digital and RADE V1 floor paths build and run, and the RADE one is
+  the reason the button did not work there; they have not been scored on a
+  capture or checked on air.
+- **The arm-swap case.** `diversity_auto_att_changed()` picks its rescale
+  sign from the ADC index and does not read the swap. T-022 shows it right
+  with RX1 on ADC1. With RX1 on ADC2 it looks wrong, and no capture covers
+  it; the button is the first thing to hit it.
+- No check against the converter's own floor (the doc above's "converter
+  floor" section): a 31 dB cap is the only limit.

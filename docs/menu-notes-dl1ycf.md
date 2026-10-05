@@ -161,3 +161,18 @@ needed. Hold and Invert then move up one row each into the freed cell
 column 8. The engine is untouched: `diversity_auto_reset()` and
 `DIV_ACTION_RESET` remain.
 
+
+---
+
+## Link AGC, Balance ATT, the lower rows (LC-041 to LC-043)
+
+On our binaural branch only. The menu gained a "Link AGC" tick (the ears'
+shared AGC, `diversity_agc_link`, LC-041) on the Level output row, a
+"Balance ATT" button with a status line under the ATT sliders (LC-043),
+and the two control groups became vertical boxes instead of `gtk_fixed`
+so their columns match the main grid's (LC-042). None of it is meant for
+`TEST`; it is written down so a menu rewrite does not lose it. The
+button asks the engine for the noise floor with
+`diversity_auto_noise_floor_demand()` and reads `diversity_auto_noise_floor()`
+after 4.5 s; it writes only the attenuator, through
+`radio_set_adc_attenuation()`.

@@ -128,6 +128,9 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-038](changes/lc-rade.md#lc-038) | Fix       | The RADE V1 overlay covers the outer carriers whole (725-2225 Hz, not 750-2200) | rade_correlator.h, rx_panadapter.c | — | Local |
 | [LC-039](changes/lc-menu.md#lc-039) | UI        | Restart averaging button removed                      | diversity_menu.c                          | —          | Local  |
 | [LC-040](changes/lc-menu.md#lc-040) | UI        | Hold and Invert move up into the freed cell           | diversity_menu.c                          | LC-039     | Local  |
+| [LC-041](changes/lc-engine.md#lc-041) | Behaviour | The ear split's two AGCs share one gain, set by the stronger arm (paired AGC, additive in WDSP) | wdsp/wcpAGCpair.c (new), wcpAGC.c/.h, iobuffs.c/.h, wdsp.h, Makefile; receiver.c/.h, radio.c/.h, diversity_menu.c | binaural ear split (not on `TEST`) | Local |
+| [LC-042](changes/lc-menu.md#lc-042) | UI        | Link AGC beside Level output; the rows below align with the top | diversity_menu.c                  | LC-039, LC-040, LC-041 | Local  |
+| [LC-043](changes/lc-noise-floor.md#lc-043) | Behaviour | Balance ATT: one press sets the hotter arm's attenuator from the noise floor; the floor on Digital and RADE V1 | diversity_menu.c, diversity_auto.c/.h | LC-025, [LC-022] | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -149,6 +152,8 @@ and which changes must travel together:
 8. LC-006 last: it needs the measurement data behind it.
 
 Not yet placed in a group: LC-023, LC-031, LC-037 and LC-038 stand alone;
+LC-041 to LC-043 are on the binaural branch only (`test/binaural-agc-link`, not
+`TEST`) and wait on the ear split reaching `TEST`;
 LC-022 (with LC-034) once its unlisted textual dependency is found;
 LC-024 goes with CW, LC-032 with LC-009, and LC-035 after the changes
 whose comments it rewords. The "Measure on" order (LC-015, open as #150)
@@ -182,6 +187,6 @@ All of it: [changes/open-items.md](changes/open-items.md).
 
 ## History
 
-Latest: 2026-10-02, LC-038 (the RADE V1 overlay covers the outer
-carriers whole, confirmed on air); this register split into an index and
-per-topic files. Full log: [changes/history.md](changes/history.md).
+Latest: 2026-10-05, LC-041 to LC-043 (the ears' shared AGC, the UI tidy,
+Balance ATT), on the binaural branch; before that 2026-10-02, LC-038 and
+the split of this register into an index and per-topic files. Full log: [changes/history.md](changes/history.md).

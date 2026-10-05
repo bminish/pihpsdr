@@ -242,3 +242,30 @@ from row 5 to row 4, both column 8. No behaviour change. This is our own
 layout choice, not something agreed with upstream, and is not meant for
 a PR: if the menu is taken from upstream at a re-sync, LC-039 and this
 go together or not at all. Depends on LC-039.
+
+
+<a id="lc-042"></a>
+
+## LC-042 — Link AGC beside Level output; the rows below align with the top
+
+**Branch.** `test/binaural-agc-link` only. As landed: `063e30ff`.
+
+**Why.** LC-041's tick had a row to itself under Audio, which cost a row
+and read "AGC: Linked across ears". Beside Level output, on the first row,
+it is where the other output options are. Separately, the rows below the
+top ones sat to the left of them, by more the further right the cell.
+
+**Change.** `diversity_menu.c`:
+- The tick is "Link AGC" in columns 9-10 of the Level output row; Level
+  output narrows to columns 7-8. Its tooltip says the stronger antenna sets
+  the gain (it said the average). It is still created only with two
+  receivers and two ADCs, and greyed with Balance when Audio is Summed.
+- `mcontainer` and `acontainer` are vertical boxes, not `gtk_fixed`. A
+  fixed gives its child its natural width, so the nested grids' columns
+  were narrower than the main grid's. A box stretches the child over all
+  11 columns, and two homogeneous 11-column grids with the same spacing
+  have the same columns. The lower rows widen to the top rows' column
+  positions; the dialog's width is not meant to change.
+
+Checked by eye by the operator: the layout looks right. Not for upstream (our layout, on a menu that is dl1ycf's): depends
+on LC-039 and LC-040, and on LC-041 for the tick.

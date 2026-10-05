@@ -39,6 +39,14 @@ changes it, we take upstream.
   [git-workflow.md](git-workflow.md#commands)). LC-038 onwards are
   written correctly.
 
+- **LC-041 to LC-043 have no `Local-Change:` trailers, and LC-041's commit
+  holds a second change.** Registered 2026-10-05 after the commits were
+  pushed to `test/binaural-agc-link`. Reword them at the next rebase:
+  `92dd3bf5`, `2dd0e077`, `e798f1d1` (LC-041), `063e30ff` (LC-042),
+  `e9630a2a`, `054813d8` (LC-043). `e798f1d1` also carries the AGC slider's
+  fast path and should be split so that the slider fix is its own LC
+  ([lc-engine.md](lc-engine.md#lc-041)).
+
 - **LC-022 does not apply to bare upstream.** It conflicts in
   `diversity_auto.c` on `890ed310`, and also on `f5a0ce9c`, so it
   predates this re-sync. The register lists no dependency, so there is

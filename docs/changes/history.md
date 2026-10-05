@@ -4,6 +4,15 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-05: **LC-041 to LC-043 registered**, on `test/binaural-agc-link`
+  (not `TEST`): the ears' shared AGC with the stronger arm setting the gain,
+  the Link AGC placement and menu alignment, and Balance ATT. Their commits
+  carry no trailers yet and one of them (`e798f1d1`) also holds the AGC
+  slider's fast path: both to be put right at the next rebase. T-019 to
+  T-027 (RADE V2 on 7.087 MHz, LSB and USB, and binaural WAVs) in
+  `docs/test-findings.md`. LC-039 and LC-040 taken from `TEST` by
+  cherry-pick.
+
 - 2026-10-03: **branches tidied.** Branches that were finished,
   contained elsewhere or idle were removed or moved under `history/`;
   pre-rebase backups became tags. Nothing was lost: each old name below
