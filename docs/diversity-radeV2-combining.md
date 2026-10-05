@@ -619,9 +619,12 @@ What it says, sized honestly:
 - **The in-receiver latent combiner ties the time-domain scalar.** With the same
   combined stream for sync, diagonal against the time-domain `c` stream:
   +0.015 / +0.018, +0.004 / +0.002, +0.011 / +0.014, +0.070 / +0.067. So
-  section 8's decoder-only finding holds on air: per-carrier combining after the
-  DFT, with one weight per frame, adds nothing measurable over a scalar weight
-  applied before the receiver.
+  section 8's decoder-only finding holds on air: a scalar weight applied to the
+  latents ties a scalar weight applied before the receiver. **Correction
+  (2026-10-06):** `rx2`'s combiner sums its covariance over all carriers, so it
+  has one R for the band; it was never per-carrier, and this bullet and the
+  one in `diversity-radeV2.md` said so wrongly. Per-carrier weights on air are
+  section 12.
 - **The full 2x2 noise covariance does not help on these captures.** MVDR
   against the diagonal with the same sync: 0.019 / 0.015, 0.006 / 0.004, 0.007 /
   0.011, 0.056 / 0.070. Within 0.01 on T-008 and 0.014 worse on T-009, and the
@@ -646,3 +649,86 @@ chosen from synthetic work and then all variants were scored on all four capture
 The gate shows the copy reproduces the stock receiver; it does not show the
 combiner is free of mistakes beyond agreeing with the decoder-only Python version
 where they overlap (the formulas are the same, the paths are not shared).
+
+## 12. Per-carrier weights, on air
+
+`radev2_rx2.c` comb 3 and 4: the section 11 combiner with one R per carrier,
+formed from the carrier and `nb` neighbours each side (the oracle's `perc3`
+at `nb` 1), the same tau-symbol IIR, the same CP-derived noise (one value per
+DFT bin for the whole band, white across it). Comb 3 takes the noise as
+diagonal, comb 4 with the 2x2 cross term. `--rx2 NAME=SYNC,COMB,TAU,TAUN,NB`.
+The gate is unchanged: the stock receiver still reproduces arm 0 exactly, and
+the refactor of `score_radev2` that added the input below reproduced the
+capture figures to the digit.
+
+The recordings are the ten binaural WAVs and ears files with a V2 signal in
+them, scored through `score_radev2 --iq2` (`py/wav2iq.py`: 48 kHz audio to
+8 kHz, then the analytic signal, as rade_c's real2iq; the V2 carriers are in
+the audio, so nothing is mixed and the sense is as recorded, which was checked
+by decoding arm 0 both ways), and the three 160 m captures T-028 to T-030
+through the usual path. T-035 is the ears file beside T-029: the same
+recording by both paths, 0.019 against 0.018 for `pf1`, so the audio path
+loses nothing measurable. Sync is from the combined stream (the first `--blind`
+stream, mode `c`, tau 6), as in section 11, tau 6 and tau_n 4 throughout.
+
+Decoded |aux| against the better antenna, which is arm 0 in every row:
+
+| recording | bins | arm0 / arm1 \|aux\| | `sumlr` (L+R) | scalar diag `sc` | scalar full `sf` | per-carrier diag `pc1` | per-carrier full `pf0` (nb 0) | `pf1` (nb 1) | `pf2` (nb 2) |
+|---|---|---|---|---|---|---|---|---|
+| T-028 160 m | 59 | 0.894 / 0.797 | - | +0.004 | +0.010 | +0.016 | +0.025 | +0.022 | +0.021 |
+| T-029 160 m | 60 | 0.950 / 0.709 | - | -0.018 | +0.016 | -0.008 | +0.021 | +0.019 | +0.015 |
+| T-030 160 m | 60 | 0.983 / 0.801 | - | -0.023 | -0.005 | -0.020 | -0.007 | -0.006 | -0.005 |
+| T-031 160 m | 240 | 0.933 / 0.889 | +0.002 | -0.002 | -0.002 | +0.004 | -0.001 | -0.002 | +0.001 |
+| T-032 160 m | 193 | 0.927 / 0.768 | -0.123 | -0.008 | +0.008 | +0.000 | +0.010 | +0.015 | +0.014 |
+| T-033 160 m | 178 | 0.911 / 0.750 | -0.094 | -0.002 | -0.012 | +0.015 | +0.008 | +0.011 | -0.001 |
+| T-034 160 m | 188 | 0.876 / 0.776 | -0.057 | -0.005 | -0.007 | +0.002 | +0.013 | +0.008 | +0.004 |
+| T-035 (beside T-029) | 61 | 0.952 / 0.711 | -0.027 | -0.008 | +0.015 | +0.002 | +0.019 | +0.018 | +0.016 |
+| T-026 40 m USB | 227 | 0.988 / 0.982 | +0.003 | +0.009 | +0.011 | +0.007 | +0.004 | +0.010 | +0.012 |
+| T-027 40 m USB | 118 | 1.000 / 0.974 | -0.010 | 0.000 | -0.001 | 0.000 | -0.001 | -0.001 | 0.000 |
+| T-023 40 m LSB, weak | 7 | 0.773 / 0.180 | +0.036 | +0.018 | +0.017 | -0.023 | +0.020 | +0.006 | -0.015 |
+| `ears-163038` (the 16:30 ears file), weak | 4 | 0.657 / 0.217 | -0.194 | +0.029 | -0.046 | +0.009 | -0.007 | -0.065 | -0.046 |
+| `ears-163117`, weak | 18 | 0.767 / 0.122 | -0.141 | +0.005 | -0.015 | +0.007 | +0.013 | -0.011 | -0.020 |
+
+`ears-20261005-161154` has no V2 signal in its first 32 s (the part with the
+per-ear presentation) and decodes nothing on any stream. T-028 to T-030 are
+captures, the rest WAVs. The three weak WAVs have 4 to 18 usable bins and say
+nothing.
+
+What it says, sized honestly:
+
+- **Per-carrier beats scalar by about 0.01 on the 160 m recordings, and with
+  diagonal noise the sign is the same on all seven** (T-028 to T-034; T-035 is T-029 again).
+  Diagonal noise, per-carrier against scalar: +0.012, +0.010, +0.003, +0.006,
+  +0.008, +0.017, +0.007, mean +0.009. Full 2x2 noise, `pf1` against `sf`:
+  +0.012, +0.003, -0.001, 0.000, +0.007, +0.023, +0.015, mean +0.008. That is
+  what the oracle ladder said (0.01 to 0.03 on mpp), now seen on air. On the
+  two strong 40 m recordings there is nothing to see (arm 0 is at 0.99 to
+  1.00 and the measure is flat there).
+- **The full 2x2 noise term adds about another 0.008** over diagonal at the
+  same per-carrier structure (`pf1` against `pc1`: +0.006, +0.027, +0.014,
+  -0.006, +0.015, -0.004, +0.006, mean +0.008), where the arms' noise is
+  coherent (T-029: 0.35 to 0.63, test-findings). The best row over the seven is
+  `pf0` and `pf1`, both +0.010 against arm 0 on average, with `pf0` ahead on
+  T-028 and T-029 and `pf1` on T-032; they are not separable.
+- **Against arm 0 alone it is a small win and not a sure one.** `pf0`/`pf1`
+  beat arm 0 on five of seven 160 m recordings, by up to +0.025, and lose on
+  T-030 (-0.007) and T-031 (-0.001 to -0.002), where arm 1 is 11.6 dB and 1.9
+  dB worse in CP SNR. Neighbours (`nb` 0, 1, 2) do not separate, unlike the
+  decoder-only finding that per-carrier weights need smoothing to work at all;
+  here the full noise term does the work and nb 0 is as good.
+- **The plain L+R sum is the floor to beat and is not a safe one**: +0.003 on
+  T-026 (two similar arms) and -0.057 to -0.123 on T-032 to T-034 (arm 1
+  3 to 5 dB worse in CP SNR). A listener's mono mix is not a diversity
+  combiner.
+- **What this does not show.** No significance test: 60 to 240 bins per
+  recording, and 0.01 is about what the measure resolves. The seven recordings
+  are one band, one pair of antennas, on one evening with two stations, and
+  tau, the noise mode and nb were chosen on the synthetic work and the earlier
+  40 m captures, not on these. The audio path has the
+  receiver's AGC and filtering in front of the decoder; the T-035 check
+  suggests it does not matter, on one recording. Sync is taken from the
+  time-domain blind stream, not from inside the receiver.
+- **Against the equaliser question.** This is `perc3`, still arm 0's phase.
+  The `eq` rung, which halves the loss on synthetic channels, needs the
+  absolute phase and is not tested here. Per-carrier weights recover about
+  0.01 of what is on the table.

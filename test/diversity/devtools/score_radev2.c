@@ -464,17 +464,108 @@ static void paired(const char *what, const char *unit, struct bins *b,
 #undef V
 }
 
+/* What one pair of 8 kHz samples is fed to: every stream. */
+struct feed {
+  struct stream   *st;
+  int              nst, nbl;
+  struct blindst  *bst;
+  struct blindfe  *bfe;
+  struct rx2_cfg  *xcfg;
+  struct wseq     *wseq;
+  double           gain, sgn, live_cos, live_sin;
+  int              mirror;
+  long             blocks;
+  int              iqmode;       /* --iq2: stream 2 is the plain sum of the arms, not the radio's weight */
+};
+
+static void feed_sample(const struct feed *F, cplx z0, cplx z1) {
+  struct stream *st = F->st;
+  struct blindst *bst = F->bst;
+  struct blindfe *bfe = F->bfe;
+  struct rx2_cfg *xcfg = F->xcfg;
+  struct wseq *wseq = F->wseq;
+  const int nst = F->nst, nbl = F->nbl, mirror = F->mirror;
+  const double gain = F->gain, sgn = F->sgn;
+  const long blocks = F->blocks;
+  if (nbl > 0) {                    /* the V2 domain: conjugated on the mirrored bank */
+    const double xr[2] = { z0.re, z1.re }, xi[2] = { sgn * z0.im, sgn * z1.im };
+    blindfe_step(bfe, xr, xi);
+
+    for (int j = 0; j < nbl; j++) { blind_step(&bst[j], bfe); }
+  }
+
+  for (int i = 0; i < nst; i++) {
+    double ar, ai, nrm = 1.0;
+
+    if (st[i].src >= 2000) {        /* the two-input receiver: both arms, no weight */
+      /* sync == 2: the third stream is the first --blind stream's output, the engine's own
+         time-domain combination, in the V2 domain */
+      double cr = 0.0, ci = 0.0;
+
+      if (xcfg[st[i].src - 2000].sync_both == 2 && nbl > 0) {
+        const struct blindst *q = &bst[0];
+        const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
+        const double k = q->c.hold ? q->lnrm : q->nrm;
+        const double x0r = z0.re, x0i = sgn * z0.im, x1r = z1.re, x1i = sgn * z1.im;
+        cr = k * x0r + k * (wr * x1r - wi * x1i);
+        ci = k * x0i + k * (wr * x1i + wi * x1r);
+      }
+
+      v2probe_push2(&st[i].p, (float)(gain * z0.re), (float)(gain * sgn * z0.im),
+                    (float)(gain * z1.re), (float)(gain * sgn * z1.im),
+                    (float)(gain * cr), (float)(gain * ci));
+      continue;
+    }
+
+    if (st[i].src == -1) {
+      ar = z0.re;
+      ai = z0.im;
+    } else if (st[i].src == -2) {
+      ar = z1.re;
+      ai = z1.im;
+    } else {
+      double ur, ui;
+
+      if (st[i].src == -3) {
+        ur = F->live_cos;
+        ui = F->live_sin;
+      } else if (st[i].src >= 1000) {
+        const struct blindst *q = &bst[st[i].src - 1000];
+        const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
+        const double k = q->c.hold ? q->lnrm : q->nrm;
+        /* the weight is in the V2 domain; the sum below is not */
+        ur = k * wr;
+        ui = k * (mirror ? -wi : wi);
+        nrm = k;
+      } else {
+        const struct wseq *q = &wseq[st[i].src];
+        const int k = (blocks < q->n) ? (int)blocks : (q->n - 1);
+        ur = (k >= 0) ? q->wr[k] : 0.0;
+        ui = (k >= 0) ? q->wi[k] : 0.0;
+      }
+
+      ar = nrm * z0.re + (ur * z1.re - ui * z1.im);
+      ai = nrm * z0.im + (ur * z1.im + ui * z1.re);
+    }
+
+    const float o[2] = { (float)(gain * ar), (float)(gain * sgn * ai) };
+    v2probe_push(&st[i].p, o[0], o[1]);
+
+    if (st[i].iq != NULL) { fwrite(o, sizeof(float), 2, st[i].iq); }
+  }
+}
+
 static void usage(const char *me) {
   fprintf(stderr,
           "usage: %s FILE.divc [--weights NAME=FILE]... [--blind NAME=TAU,k|c|u[,hold]]...\n"
-          "          [--rx2 NAME=SYNC,COMB[,TAU[,TAUN]]]...\n"
+          "          [--rx2 NAME=SYNC,COMB[,TAU[,TAUN[,NB]]]]...\n"
           "          [--flip] [--no-agc] [--gain G]\n"
           "          [--noise SIGMA] [--seed N] [--bin SECONDS]\n"
           "          [--csv-dir DIR] [--iq-dir DIR] [-v]\n", me);
 }
 
 int main(int argc, char **argv) {
-  const char *path = NULL, *csv_dir = NULL, *iq_dir = NULL;
+  const char *path = NULL, *csv_dir = NULL, *iq_dir = NULL, *iq2[2] = { NULL, NULL };
   double noise = 0.0, bin_s = 1.0, gain = 0.0;
   unsigned seed = 0;
   int flip = 0, agc = 1;
@@ -500,6 +591,9 @@ int main(int argc, char **argv) {
       seed = (unsigned)atoi(argv[++i]);
     } else if (!strcmp(argv[i], "--bin") && i + 1 < argc) {
       bin_s = atof(argv[++i]);
+    } else if (!strcmp(argv[i], "--iq2") && i + 2 < argc) {
+      iq2[0] = argv[++i];
+      iq2[1] = argv[++i];
     } else if (!strcmp(argv[i], "--csv-dir") && i + 1 < argc) {
       csv_dir = argv[++i];
     } else if (!strcmp(argv[i], "--iq-dir") && i + 1 < argc) {
@@ -542,10 +636,11 @@ int main(int argc, char **argv) {
       char *eq = strchr(a, '=');
       int sy = 1, co = 2;
       double tau = 6.0, taun = 4.0;
+      int nbr = 1;
 
       if (eq == NULL || nx2 >= MAX_RX2 ||
-          sscanf(eq + 1, "%d,%d,%lf,%lf", &sy, &co, &tau, &taun) < 2) {
-        fprintf(stderr, "score_radev2: --rx2 wants NAME=SYNC,COMB[,TAU[,TAUN]]\n");
+          sscanf(eq + 1, "%d,%d,%lf,%lf,%d", &sy, &co, &tau, &taun, &nbr) < 2) {
+        fprintf(stderr, "score_radev2: --rx2 wants NAME=SYNC,COMB[,TAU[,TAUN[,NB]]]\n");
         return 2;
       }
 
@@ -555,6 +650,7 @@ int main(int argc, char **argv) {
       xcfg[nx2].comb = co;
       xcfg[nx2].tau = (float)tau;
       xcfg[nx2].tau_n = (float)taun;
+      xcfg[nx2].nb = nbr;
       nx2++;
     } else if (argv[i][0] == '-') {
       usage(argv[0]);
@@ -564,18 +660,25 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (path == NULL || bin_s <= 0.0) { usage(argv[0]); return 2; }
+  const int iqmode = (iq2[0] != NULL);
+
+  if ((path == NULL && !iqmode) || bin_s <= 0.0) { usage(argv[0]); return 2; }
 
   struct divcap_header h;
   long data_start = 0;
-  FILE *f = divcap_open(path, &h, &data_start);
+  FILE *f = NULL;
+  memset(&h, 0, sizeof(h));
 
-  if (f == NULL) { return 1; }
+  if (!iqmode) {
+    f = divcap_open(path, &h, &data_start);
+
+    if (f == NULL) { return 1; }
+  }
 
   rade_initialize();
   struct stream st[MAX_STREAM];
   const int nst = 3 + nw + nbl + nx2;
-  const char *base[3] = { "arm0", "arm1", "radio" };
+  const char *base[3] = { "arm0", "arm1", iqmode ? "sumlr" : "radio" };
   struct blindst bst[MAX_BLIND];
   struct blindfe bfe;
   blindfe_init(&bfe);
@@ -628,211 +731,221 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (!rade_corr_start((int)h.sample_rate)) {
-    fprintf(stderr, "score_radev2: the front end will not run at %u Hz\n", h.sample_rate);
-    return 1;
-  }
-
-  rade_corr_freq_off = 0.0;
-  rade_corr_mirrored = 0;
-  const int nfft = (int)h.nfft;
-  const size_t half = (size_t)nfft * 2u * sizeof(float);
-  float *arm0 = malloc(half), *arm1 = malloc(half);
-  struct divcap_block m, prev, first;
-  int have_prev = 0, mirror_used = -1, mirror_changes = 0;
+  struct divcap_block first;
   long blocks = 0;
+  int mirror_used = 0, mirror_changes = 0, have_prev = 0;
+  memset(&first, 0, sizeof(first));
+  float *iqd[2] = { NULL, NULL };
 
-  /*
-   * Input level. The decimated stream sits wherever the radio's DDC
-   * scaling puts it - about 6e-4 RMS on the first captures, some 40 dB
-   * below the ~0.7 rade_c's V2 receiver expects. Its input AGC can make
-   * up only 20 dB, and the cyclic-prefix sync is normalised and does not
-   * care, so a stream that low syncs perfectly while the decoder is fed
-   * near-zero latents: frame-sync confidence pinned at 0.49 and the aux
-   * bit at -0.30 whatever the signal. So, unless --gain says otherwise,
-   * a pre-pass over the first ten seconds measures the louder arm and one
-   * fixed gain puts it at 0.5 RMS. The same gain goes to every stream,
-   * so their relative levels are untouched; the AGC does the rest.
-   */
-  if (gain <= 0.0) {
-    const long npre = (long)(10.0 * h.sample_rate / nfft) + 1;
-    double p0 = 0.0, p1 = 0.0;
-    long np = 0;
+  if (iqmode) {
+    /*
+     * Two 8 kHz complex files (py/wav2iq.py: a binaural WAV's two ears), fed to the same streams as
+     * a capture's arms, with no V1 front end and no mirroring: the V2 carriers are in the audio.
+     * The level pre-pass is the same: the louder arm's first ten seconds at 0.5 RMS.
+     */
+    long n[2];
+
+    for (int k = 0; k < 2; k++) {
+      FILE *q = fopen(iq2[k], "rb");
+
+      if (q == NULL) { perror(iq2[k]); return 1; }
+
+      fseek(q, 0, SEEK_END);
+      n[k] = ftell(q) / (long)(2 * sizeof(float));
+      fseek(q, 0, SEEK_SET);
+      iqd[k] = malloc((size_t)n[k] * 2 * sizeof(float));
+
+      if (fread(iqd[k], 2 * sizeof(float), (size_t)n[k], q) != (size_t)n[k]) { return 1; }
+
+      fclose(q);
+    }
+
+    const long nn = (n[0] < n[1]) ? n[0] : n[1];
+
+    if (gain <= 0.0) {
+      const long npre = (nn < 80000) ? nn : 80000;
+      double p0 = 0.0, p1 = 0.0;
+
+      for (long i = 0; i < 2 * npre; i++) { p0 += iqd[0][i] * iqd[0][i]; p1 += iqd[1][i] * iqd[1][i]; }
+
+      const double rms = sqrt(((p0 > p1) ? p0 : p1) / (double)npre);
+      gain = (rms > 0.0) ? 0.5 / rms : 1.0;
+    }
+
+    const long chunk = 683;             /* one capture block's worth, 16384 samples at 192 kHz */
+    struct feed F = { st, nst, nbl, bst, &bfe, xcfg, wseq, gain, 1.0, 1.0, 0.0, 0, 0, 1 };
+
+    for (long i0 = 0; i0 < nn; i0 += chunk) {
+      for (int k = 0; k < 2; k++) {
+        double r = st[k].p.r->rx_v2.Ry_max;
+        bfe.cp[k] = (r < 0.0) ? 0.0 : (r > 0.98) ? 0.98 : r;
+      }
+
+      for (int j = 0; j < nbl; j++) {
+        bst[j].lwr = bst[j].wr;
+        bst[j].lwi = bst[j].wi;
+        bst[j].lnrm = bst[j].nrm;
+      }
+
+      F.blocks = blocks;
+      const long i1 = (i0 + chunk < nn) ? i0 + chunk : nn;
+
+      for (long i = i0; i < i1; i++) {
+        const cplx z0 = { iqd[0][2 * i], iqd[0][2 * i + 1] }, z1 = { iqd[1][2 * i], iqd[1][2 * i + 1] };
+        feed_sample(&F, z0, z1);
+      }
+
+      for (int i = 0; i < nst; i++) { v2probe_drain(&st[i].p); }
+
+      blocks++;
+    }
+
+    have_prev = 1;
+  } else {
+    if (!rade_corr_start((int)h.sample_rate)) {
+      fprintf(stderr, "score_radev2: the front end will not run at %u Hz\n", h.sample_rate);
+      return 1;
+    }
+
+    rade_corr_freq_off = 0.0;
+    rade_corr_mirrored = 0;
+    const int nfft = (int)h.nfft;
+    const size_t half = (size_t)nfft * 2u * sizeof(float);
+    float *arm0 = malloc(half), *arm1 = malloc(half);
+    struct divcap_block m, prev;
+    mirror_used = -1;
+
+    /*
+     * Input level. The decimated stream sits wherever the radio's DDC
+     * scaling puts it - about 6e-4 RMS on the first captures, some 40 dB
+     * below the ~0.7 rade_c's V2 receiver expects. Its input AGC can make
+     * up only 20 dB, and the cyclic-prefix sync is normalised and does not
+     * care, so a stream that low syncs perfectly while the decoder is fed
+     * near-zero latents: frame-sync confidence pinned at 0.49 and the aux
+     * bit at -0.30 whatever the signal. So, unless --gain says otherwise,
+     * a pre-pass over the first ten seconds measures the louder arm and one
+     * fixed gain puts it at 0.5 RMS. The same gain goes to every stream,
+     * so their relative levels are untouched; the AGC does the rest.
+     */
+    if (gain <= 0.0) {
+      const long npre = (long)(10.0 * h.sample_rate / nfft) + 1;
+      double p0 = 0.0, p1 = 0.0;
+      long np = 0;
+      divcap_noise_seed(seed);
+      fseek(f, data_start, SEEK_SET);
+
+      for (long k = 0; k < npre; k++) {
+        if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) { break; }
+
+        if (fread(arm0, 1, half, f) != half || fread(arm1, 1, half, f) != half) { break; }
+
+        divcap_add_noise(arm0, arm1, nfft, noise);
+        const int64_t before = ringtotal;
+        double nwr, nwi;
+        (void)rade_corr_process(arm0, arm1, nfft, m.expect_bank,
+                                m.frame_off, m.tau, &nwr, &nwi);
+
+        for (int64_t a = before; a < ringtotal; a++) {
+          const cplx z0 = ring_get(ring0, a), z1 = ring_get(ring1, a);
+          p0 += z0.re * z0.re + z0.im * z0.im;
+          p1 += z1.re * z1.re + z1.im * z1.im;
+          np++;
+        }
+      }
+
+      const double rms = np ? sqrt(((p0 > p1) ? p0 : p1) / np) : 0.0;
+      gain = (rms > 0.0) ? 0.5 / rms : 1.0;
+      rade_corr_stop();
+
+      if (!rade_corr_start((int)h.sample_rate)) { return 1; }
+
+      rade_corr_freq_off = 0.0;
+      rade_corr_mirrored = 0;
+    }
+
     divcap_noise_seed(seed);
     fseek(f, data_start, SEEK_SET);
 
-    for (long k = 0; k < npre; k++) {
+    for (;;) {
       if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) { break; }
 
-      if (fread(arm0, 1, half, f) != half || fread(arm1, 1, half, f) != half) { break; }
+      if (fread(arm0, 1, half, f) != half) { break; }
+
+      if (fread(arm1, 1, half, f) != half) { break; }
+
+      if (!have_prev) { first = m; }
 
       divcap_add_noise(arm0, arm1, nfft, noise);
+
+      if (have_prev && ctx_changed(&m, &prev)) { rade_corr_reset(); }
+
+      if (m.dropped > 0) { rade_corr_reset(); }
+
       const int64_t before = ringtotal;
       double nwr, nwi;
       (void)rade_corr_process(arm0, arm1, nfft, m.expect_bank,
                               m.frame_off, m.tau, &nwr, &nwi);
+      /*
+       * RADE V2 is transmitted upright on USB. Bank 1 is the USB bank and
+       * arrives mirrored in the decimated stream, so conjugate it - the same
+       * rule score_rade uses for V1. A passband that straddles the carrier
+       * says nothing, and is taken as unmirrored. --flip inverts the rule,
+       * for a station received on the other sideband from the one it
+       * transmitted for.
+       */
+      int mirror = (m.expect_bank == 1);
+
+      if (flip) { mirror = !mirror; }
+
+      if (mirror_used >= 0 && mirror != mirror_used) { mirror_changes++; }
+
+      mirror_used = mirror;
+      const double sgn = mirror ? -1.0 : 1.0;
+
+      for (int k = 0; k < 2; k++) {       /* each arm's CP correlation, from the receivers just run */
+        double r = st[k].p.r->rx_v2.Ry_max;
+        bfe.cp[k] = (r < 0.0) ? 0.0 : (r > 0.98) ? 0.98 : r;
+      }
+
+      for (int j = 0; j < nbl; j++) {      /* the hold variants take last block's answer */
+        bst[j].lwr = bst[j].wr;
+        bst[j].lwi = bst[j].wi;
+        bst[j].lnrm = bst[j].nrm;
+      }
+
+      struct feed F = { st, nst, nbl, bst, &bfe, xcfg, wseq, gain, sgn, m.live_cos, m.live_sin, mirror, blocks, 0 };
 
       for (int64_t a = before; a < ringtotal; a++) {
-        const cplx z0 = ring_get(ring0, a), z1 = ring_get(ring1, a);
-        p0 += z0.re * z0.re + z0.im * z0.im;
-        p1 += z1.re * z1.re + z1.im * z1.im;
-        np++;
+        feed_sample(&F, ring_get(ring0, a), ring_get(ring1, a));
       }
+
+      for (int i = 0; i < nst; i++) { v2probe_drain(&st[i].p); }
+
+      prev = m;
+      have_prev = 1;
+      blocks++;
     }
 
-    const double rms = np ? sqrt(((p0 > p1) ? p0 : p1) / np) : 0.0;
-    gain = (rms > 0.0) ? 0.5 / rms : 1.0;
     rade_corr_stop();
-
-    if (!rade_corr_start((int)h.sample_rate)) { return 1; }
-
-    rade_corr_freq_off = 0.0;
-    rade_corr_mirrored = 0;
+    fclose(f);
+    free(arm0);
+    free(arm1);
   }
-
-  divcap_noise_seed(seed);
-  fseek(f, data_start, SEEK_SET);
-
-  for (;;) {
-    if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) { break; }
-
-    if (fread(arm0, 1, half, f) != half) { break; }
-
-    if (fread(arm1, 1, half, f) != half) { break; }
-
-    if (!have_prev) { first = m; }
-
-    divcap_add_noise(arm0, arm1, nfft, noise);
-
-    if (have_prev && ctx_changed(&m, &prev)) { rade_corr_reset(); }
-
-    if (m.dropped > 0) { rade_corr_reset(); }
-
-    const int64_t before = ringtotal;
-    double nwr, nwi;
-    (void)rade_corr_process(arm0, arm1, nfft, m.expect_bank,
-                            m.frame_off, m.tau, &nwr, &nwi);
-    /*
-     * RADE V2 is transmitted upright on USB. Bank 1 is the USB bank and
-     * arrives mirrored in the decimated stream, so conjugate it - the same
-     * rule score_rade uses for V1. A passband that straddles the carrier
-     * says nothing, and is taken as unmirrored. --flip inverts the rule,
-     * for a station received on the other sideband from the one it
-     * transmitted for.
-     */
-    int mirror = (m.expect_bank == 1);
-
-    if (flip) { mirror = !mirror; }
-
-    if (mirror_used >= 0 && mirror != mirror_used) { mirror_changes++; }
-
-    mirror_used = mirror;
-    const double sgn = mirror ? -1.0 : 1.0;
-
-    for (int k = 0; k < 2; k++) {       /* each arm's CP correlation, from the receivers just run */
-      double r = st[k].p.r->rx_v2.Ry_max;
-      bfe.cp[k] = (r < 0.0) ? 0.0 : (r > 0.98) ? 0.98 : r;
-    }
-
-    for (int j = 0; j < nbl; j++) {      /* the hold variants take last block's answer */
-      bst[j].lwr = bst[j].wr;
-      bst[j].lwi = bst[j].wi;
-      bst[j].lnrm = bst[j].nrm;
-    }
-
-    for (int64_t a = before; a < ringtotal; a++) {
-      const cplx z0 = ring_get(ring0, a);
-      const cplx z1 = ring_get(ring1, a);
-
-      if (nbl > 0) {                    /* the V2 domain: conjugated on the mirrored bank */
-        const double xr[2] = { z0.re, z1.re }, xi[2] = { sgn * z0.im, sgn * z1.im };
-        blindfe_step(&bfe, xr, xi);
-
-        for (int j = 0; j < nbl; j++) { blind_step(&bst[j], &bfe); }
-      }
-
-      for (int i = 0; i < nst; i++) {
-        double ar, ai, nrm = 1.0;
-
-        if (st[i].src >= 2000) {        /* the two-input receiver: both arms, no weight */
-          /* sync == 2: the third stream is the first --blind stream's output, the engine's own
-             time-domain combination, in the V2 domain */
-          double cr = 0.0, ci = 0.0;
-
-          if (xcfg[st[i].src - 2000].sync_both == 2 && nbl > 0) {
-            const struct blindst *q = &bst[0];
-            const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
-            const double k = q->c.hold ? q->lnrm : q->nrm;
-            const double x0r = z0.re, x0i = sgn * z0.im, x1r = z1.re, x1i = sgn * z1.im;
-            cr = k * x0r + k * (wr * x1r - wi * x1i);
-            ci = k * x0i + k * (wr * x1i + wi * x1r);
-          }
-
-          v2probe_push2(&st[i].p, (float)(gain * z0.re), (float)(gain * sgn * z0.im),
-                        (float)(gain * z1.re), (float)(gain * sgn * z1.im),
-                        (float)(gain * cr), (float)(gain * ci));
-          continue;
-        }
-
-        if (st[i].src == -1) {
-          ar = z0.re;
-          ai = z0.im;
-        } else if (st[i].src == -2) {
-          ar = z1.re;
-          ai = z1.im;
-        } else {
-          double ur, ui;
-
-          if (st[i].src == -3) {
-            ur = m.live_cos;
-            ui = m.live_sin;
-          } else if (st[i].src >= 1000) {
-            const struct blindst *q = &bst[st[i].src - 1000];
-            const double wr = q->c.hold ? q->lwr : q->wr, wi = q->c.hold ? q->lwi : q->wi;
-            const double k = q->c.hold ? q->lnrm : q->nrm;
-            /* the weight is in the V2 domain; the sum below is not */
-            ur = k * wr;
-            ui = k * (mirror ? -wi : wi);
-            nrm = k;
-          } else {
-            const struct wseq *q = &wseq[st[i].src];
-            const int k = (blocks < q->n) ? (int)blocks : (q->n - 1);
-            ur = (k >= 0) ? q->wr[k] : 0.0;
-            ui = (k >= 0) ? q->wi[k] : 0.0;
-          }
-
-          ar = nrm * z0.re + (ur * z1.re - ui * z1.im);
-          ai = nrm * z0.im + (ur * z1.im + ui * z1.re);
-        }
-
-        const float o[2] = { (float)(gain * ar), (float)(gain * sgn * ai) };
-        v2probe_push(&st[i].p, o[0], o[1]);
-
-        if (st[i].iq != NULL) { fwrite(o, sizeof(float), 2, st[i].iq); }
-      }
-    }
-
-    for (int i = 0; i < nst; i++) { v2probe_drain(&st[i].p); }
-
-    prev = m;
-    have_prev = 1;
-    blocks++;
-  }
-
-  rade_corr_stop();
-  fclose(f);
-  free(arm0);
-  free(arm1);
 
   if (!have_prev) {
     fprintf(stderr, "score_radev2: no blocks in %s\n", path);
     return 1;
   }
 
-  printf("# %s\n# rate %u Hz, nfft %u, %ld blocks, mode %d, filter %d..%d Hz,"
-         " dial %.6f MHz\n",
-         path, h.sample_rate, h.nfft, blocks, first.mode, first.filter_low,
-         first.filter_high, first.frequency * 1e-6);
+  if (iqmode) {
+    printf("# %s + %s\n# 8 kHz complex, %ld chunks of 683 samples\n", iq2[0], iq2[1], blocks);
+  } else {
+    printf("# %s\n# rate %u Hz, nfft %u, %ld blocks, mode %d, filter %d..%d Hz,"
+           " dial %.6f MHz\n",
+           path, h.sample_rate, h.nfft, blocks, first.mode, first.filter_low,
+           first.filter_high, first.frequency * 1e-6);
+  }
+
   printf("# input gain %.1f dB\n", 20.0 * log10(gain));
 
   if (nbl > 0) {                        /* what the blind estimator ended on: is its noise measurement sane? */
@@ -842,7 +955,7 @@ int main(int argc, char **argv) {
            100.0 * bfe.n[0] / (bst[0].p0 / bst[0].wsum), 100.0 * bfe.n[1] / (bst[0].p1 / bst[0].wsum),
            sqrt(bst[0].cr * bst[0].cr + bst[0].ci * bst[0].ci) / (bst[0].p0 + 1e-30) / 1.0);
   }
-  printf("# sense: %s%s%s\n", mirror_used ? "conjugated (USB bank)" : "as tapped (LSB bank)",
+  printf("# sense: %s%s%s\n", iqmode ? "as given (audio domain)" : mirror_used ? "conjugated (USB bank)" : "as tapped (LSB bank)",
          flip ? ", --flip" : "", mirror_changes ? ", CHANGED during the capture" : "");
   printf("\n%-10s %7s %6s %6s %7s %4s %4s %8s %8s %7s %7s\n",
          "stream", "seconds", "sync%", "sig%", "frames", "acq", "eoo",

@@ -130,6 +130,85 @@ static void extract_symbol(rx2_state *x) {
 
 /* ------------------------------------------------------------------ NEW: the combiner */
 
+
+/*
+ * comb 3, 4: one R per carrier. R[c] = (C01 - m n01) / (C00 - m n00), the sums taken over carrier c
+ * and nb neighbours each side (m of them, fewer at the edges) and tau symbols, the noise per DFT bin
+ * as measured for the band (white across it, as the oracle's perc3 takes it). Then the same MVDR
+ * output as the band version, per carrier, so each carrier has its own gain and its own arm-1 phase
+ * relative to arm 0's; arm 0's phase is kept.
+ */
+static void combine_pc(rx2_state *x, const float *z0, const float *z1,
+                       double nn00, double nn11, double nn01r, double nn01i) {
+  rade_rx_v2_state *rx = &x->a;
+  const int s1 = NC * 2;
+  const int nb = x->cfg.nb;
+  double f0r[NC], f0i[NC], f1r[NC], f1i[NC], kk[NC];
+  const double load = 1e-3 * 0.5 * (nn00 + nn11);
+  const double p00 = nn00 + load, p11 = nn11 + load;
+  const double det = p00 * p11 - (nn01r * nn01r + nn01i * nn01i);
+
+  if (!(det > 0.0)) {
+    memcpy(rx->az_hat, z0, sizeof(float) * RADE_V2_LATENT_DIM);
+    return;
+  }
+
+  const double i00 = p11 / det, i11 = p00 / det;
+  const double i01r = -nn01r / det, i01i = nn01i / det;
+  const double i10r = -nn01r / det, i10i = -nn01i / det;
+
+  for (int c = 0; c < NC; c++) {
+    double a00 = 0, a01r = 0, a01i = 0;
+    int m = 0;
+
+    for (int j = c - nb; j <= c + nb; j++) {
+      if (j < 0 || j >= NC) { continue; }
+
+      a00 += x->pc00[j] / x->w;
+      a01r += x->pc01r[j] / x->w;
+      a01i += x->pc01i[j] / x->w;
+      m++;
+    }
+
+    double den = a00 - m * nn00;
+
+    if (den < 0.1 * a00) { den = 0.1 * a00; }
+
+    const double Rr = (a01r - m * nn01r) / den, Ri = (a01i - m * nn01i) / den;
+    f0r[c] = i00 + (Rr * i10r + Ri * i10i);
+    f0i[c] = Rr * i10i - Ri * i10r;
+    f1r[c] = i01r + Rr * i11;
+    f1i[c] = i01i - Ri * i11;
+    const double q = f0r[c] + (f1r[c] * Rr - f1i[c] * Ri);
+
+    if (!(q > 0.0)) {                           /* this carrier: arm 0 through */
+      f0r[c] = 1.0; f0i[c] = 0.0; f1r[c] = 0.0; f1i[c] = 0.0; kk[c] = 1.0;
+    } else {
+      kk[c] = sqrt(nn00) / sqrt(q);
+    }
+  }
+
+  float out[RADE_V2_LATENT_DIM];
+  double ec = 0.0;
+
+  for (int i = 0; i < RADE_V2_LATENT_DIM / 2; i++) {
+    const int c = i % NC;
+    const double y0r = z0[2 * i], y0i = z0[2 * i + 1], y1r = z1[2 * i], y1i = z1[2 * i + 1];
+    const double re = f0r[c] * y0r - f0i[c] * y0i + f1r[c] * y1r - f1i[c] * y1i;
+    const double im = f0r[c] * y0i + f0i[c] * y0r + f1r[c] * y1i + f1i[c] * y1r;
+    out[2 * i] = (float)(kk[c] * re);
+    out[2 * i + 1] = (float)(kk[c] * im);
+
+    if (i >= NC) { ec += kk[c] * kk[c] * (re * re + im * im) / NC; }
+  }
+
+  (void)s1;
+  x->ec = exp(-1.0 / 12.0) * x->ec + (1 - exp(-1.0 / 12.0)) * ec;
+  const double sc = (x->ec > 0.0 && x->we > 0.0) ? sqrt((x->e0 / x->we) / (x->ec / x->we)) : 1.0;
+
+  for (int i = 0; i < RADE_V2_LATENT_DIM; i++) { rx->az_hat[i] = (float)(sc * out[i]); }
+}
+
 /*
  * z0, z1: the two arms' latents for the frame (2 symbols x NC x re/im), the
  * newest symbol last. Writes rx->az_hat.
@@ -179,6 +258,17 @@ static void combine(rx2_state *x, const float *z0, const float *z1) {
   x->e0 = ae * x->e0 + (1 - ae) * c00 / NC;
   x->nacc++;
 
+  if (x->cfg.comb >= 3) {
+    for (int c = 0; c < NC; c++) {
+      const double y0r = z0[s1 + 2 * c], y0i = z0[s1 + 2 * c + 1];
+      const double y1r = z1[s1 + 2 * c], y1i = z1[s1 + 2 * c + 1];
+      x->pc00[c] = as * x->pc00[c] + (1 - as) * (y0r * y0r + y0i * y0i);
+      x->pc11[c] = as * x->pc11[c] + (1 - as) * (y1r * y1r + y1i * y1i);
+      x->pc01r[c] = as * x->pc01r[c] + (1 - as) * (y1r * y0r + y1i * y0i);
+      x->pc01i[c] = as * x->pc01i[c] + (1 - as) * (y1i * y0r - y1r * y0i);
+    }
+  }
+
   if (x->cfg.comb == 0 || x->nacc < 3) {      /* arm 0 through */
     memcpy(rx->az_hat, z0, sizeof(float) * RADE_V2_LATENT_DIM);
     x->R_re = x->R_im = 0.0;
@@ -188,8 +278,15 @@ static void combine(rx2_state *x, const float *z0, const float *z1) {
 
   const double cc00 = x->c00 / x->w, cc01r = x->c01r / x->w, cc01i = x->c01i / x->w;
   const double nn00 = x->n00 / x->wn, nn11 = x->n11 / x->wn;
-  const double nn01r = (x->cfg.comb == 2) ? x->n01r / x->wn : 0.0;     /* n01 = E[d1 conj(d0)] */
-  const double nn01i = (x->cfg.comb == 2) ? x->n01i / x->wn : 0.0;
+  const int full = (x->cfg.comb == 2 || x->cfg.comb == 4);
+  const double nn01r = full ? x->n01r / x->wn : 0.0;     /* n01 = E[d1 conj(d0)] */
+  const double nn01i = full ? x->n01i / x->wn : 0.0;
+
+  if (x->cfg.comb >= 3) {
+    combine_pc(x, z0, z1, nn00, nn11, nn01r, nn01i);
+    return;
+  }
+
   double den = cc00 - NC * nn00;
 
   if (den < 0.1 * cc00) { den = 0.1 * cc00; }
@@ -382,6 +479,8 @@ int rx2_process(rx2_state *x, float *features_out, const RADE_COMP *in0, const R
       next_state = RADE_RX_V2_SYNC;
       /* NEW: a new signal, a new channel */
       x->c00 = x->c11 = x->c01r = x->c01i = x->w = 0;
+      memset(x->pc00, 0, sizeof(x->pc00)); memset(x->pc11, 0, sizeof(x->pc11));
+      memset(x->pc01r, 0, sizeof(x->pc01r)); memset(x->pc01i, 0, sizeof(x->pc01i));
       x->n00 = x->n11 = x->n01r = x->n01i = x->wn = 0;
       x->e0 = x->ec = x->we = 0;
       x->nacc = 0;
