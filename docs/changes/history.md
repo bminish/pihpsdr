@@ -4,6 +4,22 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-05: **re-synced onto `5db64949`** (dl1ycf's "ADC2 for RX1 as
+  the primary receiver"), by rebase; backup tag
+  `backup/TEST-pre-rebase-20261005`. One real conflict, in LC-035's
+  comments (upstream removed `indep_att`). Upstream's commit took the
+  routing half of LC-022: DDC0 is RX1's ADC, so our exchange in
+  `rx_add_div_iq_samples()` and the protocols would have swapped twice.
+  LC-022 is reduced to the context restart; LC-034 stands. LC-044 added:
+  `diversity_auto_att_changed()` took ADC index 1 for arm 1. Upstream's
+  removal of `radio_div_auto_owns_weight()` taken, logged in open-items.
+  Also in `5db64949`: `indep_att` removed from the wire
+  (`CLIENT_SERVER_VERSION` 0x01310001), sliders indexed by ADC, the menu's
+  ATT row now "RX1 ATT" / "ADC2" (which names the wrong converter when
+  RX1 is on ADC2; for dl1ycf). `upstream/master` is 72 commits ahead of
+  TEST (the 3.1 update, `Test-3.1`) and rewrites most of our files: the
+  next resync that brings it in will be large.
+
 - 2026-10-03: **branches tidied.** Branches that were finished,
   contained elsewhere or idle were removed or moved under `history/`;
   pre-rebase backups became tags. Nothing was lost: each old name below

@@ -40,30 +40,34 @@ objection.
 
 <a id="lc-022"></a>
 
-## LC-022 — Arm 0 follows the ADC the operator set RX1 to
+## LC-022 — Moving RX1's ADC restarts the statistics
 
 Ported from `4299eb6d` (`feature/auto-diversity`); its capture-format
-part is LT-011.
+part is LT-011. **Re-expressed 2026-10-05** on upstream `5db64949`.
 
 **Problem.** The combiner forms z = z0 + w·z1 with arm 0 at unit gain,
 and every way the loop gives up resolves to w = 0: arm 0 alone. Both
-protocols force ADC1 to DDC0 and ADC2 to DDC1 while diversity runs, so
+protocols forced ADC1 to DDC0 and ADC2 to DDC1 while diversity runs, so
 arm 0 was always ADC1. An operator on ADC2 with nothing on ADC1 got a
 dead arm 0 when they enabled diversity: 8.79 s of a minute at 26.4 dB
 below the live antenna on capture `112712` (Finding 56).
 
-**Change.** `div_arm_swapped()` reads `receiver[0]->adc`, which the
-forced mapping otherwise leaves inert, and `rx_add_div_iq_samples()`
-exchanges the pair on the way in, ahead of the analysis and of both the
-manual and the automatic combine. Each protocol's raw feed to RX2 swaps
-too, so RX2 still shows the other antenna. Read live; a move is in the
-analysis context and restarts the statistics.
+**What upstream took.** `5db64949` maps DDC0 to the ADC RX1 is set to
+and DDC1 to the other one, in both protocols, and RX2 takes DDC1. That is
+the same cure, done at the source. Our original change exchanged the
+pair in `rx_add_div_iq_samples()` and in each protocol's feed to RX2;
+kept, it would exchange them a second time and put arm 0 back on ADC1.
+Those hunks are dropped.
 
-**Note.** With RX1 on ADC1 nothing changes. With RX1 on ADC2, the RX
-menu's ADC control now has an effect while diversity is on, including on
-which antenna the manual weight applies to. It decides which port the
-loop fails towards; it does not stop it failing deaf (Finding 56's
-guard is not ported).
+**What is left.** `div_arm_swapped()` (1 when RX1 is on ADC2, so arm 0
+is ADC2) and its place in the analysis context: moving RX1's ADC while
+diversity runs makes the accumulated statistics describe a different pair
+of antennas, so they are thrown away. Upstream does not do that. The
+menu readout (LC-034), LC-044 and the capture format (LT-011) read it.
+
+**Note.** With RX1 on ADC2, the RX menu's ADC control has an effect
+while diversity is on: it decides which port the loop fails towards. It
+does not stop the loop failing deaf (Finding 56's guard is not ported).
 
 ---
 
@@ -206,3 +210,26 @@ weight at 1 + 0j and don't link `radio.c`. Found by reading the code.
 **Checks.** Applies to bare `upstream/TEST` and builds; reverts from the
 tip; the suite passes. For dl1ycf: see
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+---
+
+<a id="lc-044"></a>
+
+## LC-044 — An attenuator step moves the weight by the right arm
+
+**Why.** `diversity_auto_att_changed(a, delta)` feeds a step of one
+step attenuator forward into the weight, so the combined audio does not
+step. `a` is an ADC index, and the function took index 1 to be arm 1.
+Arm 0 is the ADC RX1 is set to, so with RX1 on ADC2 it had it the wrong
+way round: the weight moved by delta in the wrong direction and the loop
+(or Hold, or the manual weight) started 2 x delta dB out. Not measured;
+found by reading the call after `5db64949` began passing an ADC index.
+It was already wrong while LC-022 exchanged the arms.
+
+**Change.** `arm = a ^ div_arm_swapped()`. With RX1 on ADC1 nothing
+changes. One header comment that still said the arms are exchanged is
+corrected with it.
+
+**Checks.** Needs LC-022 for `div_arm_swapped()`. The harness does not
+call `diversity_auto_att_changed()`, so nothing in the suite covers it.
+
