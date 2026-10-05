@@ -4,6 +4,9 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-05: LC-045, the Min coherence slider's bottom no longer follows
+  the occupied span on FSK/Digital (it jumped; LC-012's floor, found in
+  use on the rebased build, not caused by the re-sync).
 - 2026-10-05: **re-synced onto `5db64949`** (dl1ycf's "ADC2 for RX1 as
   the primary receiver"), by rebase; backup tag
   `backup/TEST-pre-rebase-20261005`. One real conflict, in LC-035's
