@@ -212,3 +212,37 @@ set to (`5db64949`; LC-022), which is ADC2.
 **Change.** The line shows `(arm ^ div_arm_swapped()) + 1`, at the same
 width. This is in dl1ycf's file, so it is written up for him in
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+<a id="lc-039"></a>
+
+## LC-039 — The Restart averaging button is removed
+
+**Why.** Averaging forgets by itself (settled decision 4: averages age
+at the Averaging time whether or not a gate accepts the block), and a
+reference or follow change already restarts the estimate. A control
+that throws the statistics away by hand is not needed, and the Menu is
+better with one button fewer. The menu is dl1ycf's file; this is a UI
+removal that upstream may or may not want, tracked here so it is not
+mistaken for an accident at a re-sync.
+
+**Change.** `diversity_menu.c` loses the button and its `reset_cb()`.
+The engine is untouched: `diversity_auto_reset()` and
+`DIV_ACTION_RESET` stay, as the client/server path and LC-027 still use
+them, and the grid cell beside Hold is left empty. Written up for him in
+[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+
+<a id="lc-040"></a>
+
+## LC-040 — Hold and Invert move up into the freed cell
+
+**Why.** With the Restart averaging button gone (LC-039) the column
+beside the sliders had a hole at the top: an empty cell over Hold and
+Invert. Moving the two up one row each closes it, and leaves the row
+under them free.
+
+**Change.** `diversity_menu.c`: Hold goes from row 4 to row 3, Invert
+from row 5 to row 4, both column 8. No behaviour change. This is our own
+layout choice, not something agreed with upstream, and is not meant for
+a PR: if the menu is taken from upstream at a re-sync, LC-039 and this
+go together or not at all. Depends on LC-039.
