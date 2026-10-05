@@ -71,6 +71,9 @@ static GtkWidget *wav_b = NULL;
 #endif
 static GtkWidget *balance_scale = NULL;
 static GtkWidget *agc_link_check = NULL;
+static GtkWidget *att_scale[2] = { NULL, NULL };
+static GtkWidget *att_cal_status = NULL;
+static guint      att_cal_timer = 0;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -228,6 +231,12 @@ static void cleanup(void) {
     split_combo = NULL;
     balance_scale = NULL;
     agc_link_check = NULL;
+    if (att_cal_timer != 0) {
+      g_source_remove(att_cal_timer);
+      att_cal_timer = 0;
+    }
+    att_scale[0] = att_scale[1] = NULL;
+    att_cal_status = NULL;
     //
     // A WAV recording ends with the dialog, by request. (A capture does
     // not: see below.)
@@ -396,6 +405,93 @@ static void enable_cb(GtkWidget *widget, gpointer data) {
 static void att_cb(GtkWidget *widget, gpointer data) {
   radio_set_adc_attenuation(GPOINTER_TO_INT(data),
                             (int) (0.5+gtk_range_get_value(GTK_RANGE(widget))));
+}
+
+//
+// Balance the arms' noise floors by attenuating the hotter one. Runs when
+// the button is pressed, once, and never again by itself.
+//
+// The floor is div_nf0/div_nf1 from the engine: the band noise outside the
+// RX filter, per arm, as an absolute level, so the ratio of the two is the
+// difference between the arms with the attenuators as they stand. While the
+// band noise is above the converter's own, a dB of attenuation takes a dB
+// off that arm's floor, so the hotter arm needs its excess in attenuation.
+// Only the floor is used: the overload flag trips on impulse noise that does
+// not touch reception, and is not consulted.
+//
+// Arm 0 is RX0's ADC (ADC2 when RX1 is on it, see div_arm_swapped()).
+//
+// Step 1 reads the floors and sets the attenuation. Step 2, a few seconds
+// later, reads them again (an attenuator change restarts them) and reports
+// what is left. It runs on the GTK thread by timeout and never waits.
+//
+#define ATT_CAL_SETTLE_MS 5000
+
+static void att_cal_say(const char *fmt, ...) {
+  if (att_cal_status == NULL) { return; }
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  gtk_label_set_text(GTK_LABEL(att_cal_status), buf);
+}
+
+static gboolean att_cal_check(gpointer data) {
+  att_cal_timer = 0;
+  double n0, n1;
+  if (radio_is_transmitting()) {
+    att_cal_say("Stopped: transmitting.");
+    return FALSE;
+  }
+  if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
+    att_cal_say("Set. No floor to check it against yet.");
+    return FALSE;
+  }
+  const double d = 10.0 * log10(n0 / n1);
+  att_cal_say("Done. Arm 0 is %+.1f dB from arm 1 (ADC1 %d dB, ADC2 %d dB).",
+              d, adc[0].attenuation, adc[1].attenuation);
+  return FALSE;
+}
+
+static void att_cal_cb(GtkWidget *widget, gpointer data) {
+  double n0, n1;
+  if (att_cal_timer != 0) { return; }                  // one run at a time
+  if (radio_is_transmitting()) {
+    att_cal_say("Not while transmitting.");
+    return;
+  }
+  if (!diversity_enabled) {
+    att_cal_say("Diversity is off: there is no floor to measure.");
+    return;
+  }
+  if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
+    att_cal_say("No noise floor yet. Wait a few seconds with diversity running.");
+    return;
+  }
+  const double d = 10.0 * log10(n0 / n1);              // + : arm 0 is hotter
+  const int hot_arm = (d > 0.0) ? 0 : 1;
+  const int hot_adc = div_arm_swapped() ? 1 - hot_arm : hot_arm;
+  const int excess = (int)lround(fabs(d));
+  if (excess < 1) {
+    att_cal_say("Already balanced: arms within %.1f dB.", fabs(d));
+    return;
+  }
+  const int old_att = adc[hot_adc].attenuation;
+  int new_att = old_att + excess;
+  const int capped = (new_att > 31);
+  if (capped) { new_att = 31; }
+  if (new_att == old_att) {
+    att_cal_say("ADC%d is %.1f dB hotter but is already at 31 dB.", hot_adc + 1, fabs(d));
+    return;
+  }
+  radio_set_adc_attenuation(hot_adc, new_att);
+  if (att_scale[hot_adc] != NULL) {
+    gtk_range_set_value(GTK_RANGE(att_scale[hot_adc]), adc[hot_adc].attenuation);
+  }
+  att_cal_say("ADC%d was %.1f dB hotter: %d -> %d dB%s. Checking...", hot_adc + 1, fabs(d),
+              old_att, new_att, capped ? " (limit)" : "");
+  att_cal_timer = g_timeout_add(ATT_CAL_SETTLE_MS, att_cal_check, NULL);
 }
 
 static void gain_coarse_changed_cb(GtkWidget *widget, gpointer data) {
@@ -1329,6 +1425,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
     btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 31.0, 1.0);
     gtk_range_set_value(GTK_RANGE(btn), adc[0].attenuation);
+    att_scale[0] = btn;
     g_signal_connect(btn, "value_changed", G_CALLBACK(att_cb), GINT_TO_POINTER(0));
     gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 4, 1);
     lbl = gtk_label_new("ADC2:");
@@ -1337,8 +1434,24 @@ void diversity_menu(GtkWidget *parent) {
     gtk_grid_attach(GTK_GRID(grid), lbl, 6, row, 1, 1);
     btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 31.0, 1.0);
     gtk_range_set_value(GTK_RANGE(btn), adc[1].attenuation);
+    att_scale[1] = btn;
     g_signal_connect(btn, "value_changed", G_CALLBACK(att_cb), GINT_TO_POINTER(1));
     gtk_grid_attach(GTK_GRID(grid), btn, 7, row, 4, 1);
+    row++;
+    btn = gtk_button_new_with_label("Balance ATT");
+    gtk_widget_set_tooltip_text(btn,
+                                "One press, once: reads each antenna's noise floor and "
+                                "puts the difference on the hotter antenna's attenuator "
+                                "so the two floors match. Brings the arms to similar "
+                                "levels for the shared AGC and the weight; it is not an "
+                                "SNR optimisation. Needs diversity running and a few "
+                                "seconds on the frequency first. Uses the noise floor "
+                                "only, never the overload flag.");
+    gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 2, 1);
+    g_signal_connect(btn, "clicked", G_CALLBACK(att_cal_cb), NULL);
+    att_cal_status = gtk_label_new("");
+    gtk_widget_set_halign(att_cal_status, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), att_cal_status, 4, row, 7, 1);
   }
   if (RECEIVERS > 1 && n_adc > 1) {
     row++;
