@@ -4,6 +4,17 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-06: **the binaural branch rebased onto the re-synced `TEST`** (5db64949, LC-044, LC-045), as `feature/diversity-binaural-3-rebase`; backup tag `backup/binaural-2-pre-rebase-20261006`. Skipped as already on `TEST`: the arm-0 exchange (old LC-022, now reduced), the ADC naming commits, and the Restart / Hold and Invert menu commits (LC-039, LC-040). The ear split's protocol feed relies on upstream's DDC0 = RX1's ADC ordering, so it no longer swaps. LC-041 to LC-043 still have no trailers (see open-items).
+
+- 2026-10-05: **LC-041 to LC-043 registered**, on `test/binaural-agc-link`
+  (not `TEST`): the ears' shared AGC with the stronger arm setting the gain,
+  the Link AGC placement and menu alignment, and Balance ATT. Their commits
+  carry no trailers yet and one of them (`e798f1d1`) also holds the AGC
+  slider's fast path: both to be put right at the next rebase. T-019 to
+  T-027 (RADE V2 on 7.087 MHz, LSB and USB, and binaural WAVs) in
+  `docs/test-findings.md`. LC-039 and LC-040 taken from `TEST` by
+  cherry-pick.
+
 - 2026-10-05: LC-045, the Min coherence slider's bottom no longer follows
   the occupied span on FSK/Digital (it jumped; LC-012's floor, found in
   use on the rebased build, not caused by the re-sync). Confirmed cured
