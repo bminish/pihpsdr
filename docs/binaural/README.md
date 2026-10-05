@@ -90,8 +90,9 @@ through the split offline; TCI's pair is not recorded.
 
 ## The AGC link and Balance ATT: state
 
-Built and in use, not registered: no LC numbers yet, by decision (this
-may be a dead end; run it for a while first).
+Registered 2026-10-05 as LC-041 (the paired AGC), LC-042 (the menu
+placement and alignment) and LC-043 (Balance ATT); see the register. The
+commits carry no trailers yet (open-items.md).
 
 - **Paired AGC.** The state machine runs once per sample on the larger of
   the two arms' peaks and back-averages, and the one gain goes to both

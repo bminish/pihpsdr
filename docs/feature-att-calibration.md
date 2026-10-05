@@ -1,6 +1,6 @@
 # Feature to test later: attenuator calibration from the per-arm noise floor
 
-**Status: designed, not built.** Written 2026-10-01 on
+**Status: designed, not built.** (A one-press subset, which balances the hotter arm from the floor without a sweep and without the converter floor, is built on the binaural branch as LC-043.) Written 2026-10-01 on
 `test/noise-floor`, and on `TEST` with the noise floor it builds on
 (LC-025). Only the read-only accessor it needs,
 `diversity_auto_noise_floor()`, exists in the code.
