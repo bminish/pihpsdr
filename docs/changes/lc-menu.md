@@ -213,6 +213,8 @@ set to (`5db64949`; LC-022), which is ADC2.
 width. This is in dl1ycf's file, so it is written up for him in
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
 
+<a id="lc-039"></a>
+
 ## LC-039 — The Restart averaging button is removed
 
 **Why.** Averaging forgets by itself (settled decision 4: averages age
@@ -229,6 +231,8 @@ The engine is untouched: `diversity_auto_reset()` and
 them, and the grid cell beside Hold is left empty. Written up for him in
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
 
+
+<a id="lc-040"></a>
 
 ## LC-040 — Hold and Invert move up into the freed cell
 

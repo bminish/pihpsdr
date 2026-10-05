@@ -73,7 +73,8 @@ the time over the bins and blocks actually in that estimate:
 So the floor follows the reference, window or filter, bin width and
 averaging time. RADE V1 gates on its pilot and is unaffected. The Min
 coherence slider now steps in half percent, and its bottom follows the
-floor on the menu's status tick. The operator's own setting is never
+floor on the menu's status tick (on FSK/Digital, from the search region
+rather than the occupied span, since LC-045). The operator's own setting is never
 overwritten: when the floor falls again, their value reappears.
 
 **Validated** by Monte Carlo (`docs/tools/coh_floor_mc.py`): two
@@ -268,6 +269,8 @@ Window. That is the lower floor, so the slider never claims more than the
 gate holds to. The gate is untouched: `div_gate_threshold()` still uses
 each block's own bin count, so on a narrow signal it is stricter than the
 slider shows. The operator's setting is not written.
+
+**Confirmed in use, 2026-10-05:** on FSK/Digital the slider stays put.
 
 **Checks.** Needs LC-012. Builds; the suite passes (known gaps
 unchanged). Nothing in the suite moves the span under the menu.

@@ -29,35 +29,6 @@ changes it, we take upstream.
 
 ## Flagged for a later patch
 
-- **LC-031 to LC-037 have trailers git cannot parse.** Their
-  `Local-Change:` line is a paragraph of its own, before the
-  `Co-Authored-By:` paragraph, and git reads only the last paragraph as
-  trailers. So `--format=%(trailers:key=Local-Change)` misses all seven,
-  and so would any tool built on it. Fixing it means rewording those
-  commits, which rewrites `TEST`: do it at the next re-sync (a rebase
-  anyway). Until then, list the series with `--grep` (see
-  [git-workflow.md](git-workflow.md#commands)). LC-038 onwards are
-  written correctly.
-
-- **LC-022 does not apply to bare upstream.** (Reduced to the engine
-  half on 2026-10-05; not re-tested against bare `upstream/TEST`.) It conflicted in
-  `diversity_auto.c` on `890ed310`, and also on `f5a0ce9c`, so it
-  predates this re-sync. The register lists no dependency, so there is
-  an unlisted textual one on an earlier LC. Find it and list it
-  (bracketed), or move LC-022's lines ([rule 4](rules.md)). LC-034 depends on
-  LC-022 for `div_arm_swapped()`.
-
-- **Upstream removed the weight guard (taken, 2026-10-05).**
-  `radio_div_auto_owns_weight()` made `radio_set_diversity_gain()` and
-  `_phase()` refuse a manual set while the loop owned the weight (running,
-  not Manual, not Hold). `5db64949` deleted it. The menu still greys its
-  four sliders, but an encoder, a popup slider or a remote client can now
-  set the weight under a running loop; the loop overwrites it within one
-  analysis block (about 85 ms), after the combined audio has stepped on
-  the way past. Not measured. Taken from upstream (decided 2026-10-05):
-  Hold is the way to take the weight over. Revisit only if it is seen on
-  air or dl1ycf asks.
-
 - **Upstream text still says ADC0/ADC1** (for dl1ycf, not changed
   here):
   - `rx_panadapter.c`'s overload warnings ("ADC0 overload", "ADC1

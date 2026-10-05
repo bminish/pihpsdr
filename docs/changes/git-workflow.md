@@ -14,14 +14,11 @@ git log --reverse --no-merges upstream/TEST..TEST \
 
 The same with `key=Local-Tooling` lists the tooling commits.
 
-Until the next re-sync, LC-031 to LC-037 carry trailers git cannot parse
-(see [open-items.md](open-items.md#flagged-for-a-later-patch)), so the
-command above misses them. This finds every change by its line instead:
-
-```sh
-git log --reverse --no-merges upstream/TEST..TEST --format='%h %s' \
-    --grep='^Local-Change: LC-'
-```
+Every commit's trailer parses (LC-031 to LC-037 and the tooling commits
+that had it in a paragraph of its own were reworded at the 2026-10-05
+re-sync), so the command above lists the whole series. The two trailer
+lines must stay in the same paragraph as `Co-Authored-By:`, or git does
+not read them.
 
 See which local changes upstream has already taken, in any form (a `-`
 means upstream has an equivalent patch):
@@ -109,6 +106,16 @@ it, but it does not use anything LC-008 adds.
   and LC-030 apply to bare `TEST` alone, LC-028 and LC-029 onto `TEST` +
   LC-025, and each reverts from the tip (LC-025 after LC-029 and LC-028)
   and builds.
+- LC-022 does not apply to bare `upstream/TEST` without LC-013: its
+  `swap` field in `struct div_context` and `div_get_context()` sits next
+  to LC-013's notch fields, so the dependency is textual, "[LC-013]".
+  (Found 2026-10-05; it had been an unlisted dependency since the
+  2026-10-01 re-sync.)
+- LC-034 and LC-044 apply to bare `upstream/TEST` alone, but call
+  `div_arm_swapped()`, which LC-022 adds, so they do not build without
+  it. LC-045 needs LC-012 (and so LC-008, with its fixups). Applied
+  2026-10-05, with fixups; the chain LC-013, LC-022, LC-034, LC-044 was
+  applied, not built.
 - Reverting from the tip: a change goes with its fixups and everything
   that depends on it, newest first. Checked 2026-09-30: only LC-001,
   LC-003, LC-005, LC-007, LC-014 and LC-019 revert cleanly on their own.
