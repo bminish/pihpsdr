@@ -555,6 +555,54 @@ of this file, not a finding about the antennas.
 two antennas at once, with a ready-made per-ear audio reference for a
 receiver chain that works after demodulation as well as on the I/Q.
 
+## T-024 to T-027: RADE V2 on 7.0879 MHz USB, two captures and two binaural WAVs
+
+**Logged, not analysed.** Taken 2026-10-05 (17:04-17:26) on
+`test/binaural-agc-link`; like T-019 to T-023, for the diversity RADE V2
+receive chain, and in `captures/` and `wav/` (git ignores both).
+Unlike those, **upper sideband**: recorded mode DIGU, so the I/Q is not
+mirrored.
+
+| | File | Length | Recorded |
+|---|---|---|---|
+| T-024 | `divcap-20261005-170413.divc` | 60.0 s (703 blocks) | Window, filter +1000 to +2000 Hz |
+| T-025 | `divcap-20261005-171800.divc` | 60.0 s (703 blocks) | Window, filter +1000 to +2000 Hz |
+| T-026 | `wav/20261005-171023_7087.900kHz_DIGU_div-per-ear.wav` | 235.0 s | per-ear |
+| T-027 | `wav/20261005-172359_7087.900kHz_DIGU_div-per-ear.wav` | 127.4 s | per-ear |
+
+The captures: 192 kHz, 16384-point blocks, settings from the first block
+only. **ADC1's attenuator reads 15 dB and ADC2's 0 dB at the start of both**,
+i.e. the arms were already attenuated when recording began. No operator
+description beyond RADE V2.
+
+The WAVs are the WAV button's recording (pre-AF, 16-bit stereo, 48 kHz,
+presentation `div-per-ear`, CSV mode 1 on both receivers throughout).
+Level over 0.5 s segments:
+
+| | L mean | R mean | L − R mean (sd) | range of L − R |
+|---|---|---|---|---|
+| T-026 | −15.5 dBFS | −16.9 | +1.3 (3.2) | −5.1 to +9.7 |
+| T-027 | −14.8 dBFS | −18.3 | +3.5 (3.0) | −2.5 to +10.0 |
+| T-023 (for comparison) | −17.7 | −32.8 | +15.1 (0.8) | +13.8 to +17.8 |
+
+**Is the AGC linked in them? Consistent with it, not shown.** The file
+does not record the link. In all three per-ear WAVs the louder ear holds
+near one level (spread 0.6-2 dB over 0.5 s segments) while the quieter ear
+moves more (1-3 dB), which is what a shared gain driven by the stronger arm
+gives and not what two independent AGCs give. In T-026 and T-027 the two
+ears also swap which is louder (L > R in 58 % and 87 % of the segments).
+Two independent AGCs could produce something like it if one arm sat below
+its threshold, so this is evidence from the level pattern only. A WAV
+beside a capture would settle it: the ear level ratio would follow the
+arms' power ratio with a shared gain and sit near 0 dB without.
+
+**Discarded.** Three files taken in the same session were not binaural and
+were deleted on 2026-10-05, with their CSVs: `wav/20261005-170548_7087.900kHz_DIGU_div-sum.wav`
+(presentation `div-sum`: summed, left identical to right) and
+`captures/ears-20261005-170413.wav` and `ears-20261005-171800.wav` (the ear
+recorder's files beside T-024 and T-025: CSV mode 0, summed, left
+identical to right). The two `.divc` captures were kept.
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
