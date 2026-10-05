@@ -1423,8 +1423,24 @@ void diversity_menu(GtkWidget *parent) {
   //
   level_b = gtk_check_button_new_with_label("Level output");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(level_b), div_auto_normalise);
-  gtk_grid_attach(GTK_GRID(grid), level_b, 7, row, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), level_b, 7, row, 2, 1);
   g_signal_connect(level_b, "toggled", G_CALLBACK(normalise_cb), NULL);
+  if (RECEIVERS > 1 && n_adc > 1) {
+    //
+    // The ears' shared AGC: only means anything where there are two ears,
+    // and greyed by div_split_sensitive() when Audio is Summed.
+    //
+    agc_link_check = gtk_check_button_new_with_label("Link AGC");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(agc_link_check), div_agc_link);
+    gtk_widget_set_tooltip_text(agc_link_check,
+                                "Both ears take one AGC gain, set by the stronger "
+                                "antenna, so the gains move together at every "
+                                "instant and the stronger ear does not clip. Off: "
+                                "each ear has its own AGC. Applies while a per-ear "
+                                "Audio mode is running.");
+    gtk_grid_attach(GTK_GRID(grid), agc_link_check, 9, row, 2, 1);
+    g_signal_connect(agc_link_check, "toggled", G_CALLBACK(agc_link_cb), NULL);
+  }
   //gtk_widget_set_tooltip_text(auto_combo,
   //                          "Sum combines both antennas. Best measures the "
   //                          "signal-to-noise ratio on each and hands the "
@@ -1516,21 +1532,6 @@ void diversity_menu(GtkWidget *parent) {
                                 "never asks for level the AF gain has not got.");
     gtk_grid_attach(GTK_GRID(grid), balance_scale, 7, row, 4, 1);
     g_signal_connect(balance_scale, "value_changed", G_CALLBACK(balance_cb), NULL);
-    row++;
-    lbl = gtk_label_new("AGC:");
-    gtk_widget_set_name(lbl, "boldlabel");
-    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 2, 1);
-    agc_link_check = gtk_check_button_new_with_label("Linked across ears");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(agc_link_check), div_agc_link);
-    gtk_widget_set_tooltip_text(agc_link_check,
-                                "Both ears take one AGC gain, driven by the average "
-                                "of the two antennas' levels, so the gains move "
-                                "together at every instant. Off: each ear has its own "
-                                "AGC, as before. Applies while a per-ear Audio mode "
-                                "is running.");
-    gtk_grid_attach(GTK_GRID(grid), agc_link_check, 2, row, 4, 1);
-    g_signal_connect(agc_link_check, "toggled", G_CALLBACK(agc_link_cb), NULL);
     div_split_sensitive();
   }
 #ifdef DIVERSITY_CAPTURE
@@ -1586,7 +1587,14 @@ void diversity_menu(GtkWidget *parent) {
   //
   // Container for the "manual" controls
   //
-  mcontainer = gtk_fixed_new();
+  //
+  // A box, not a fixed: a fixed gives its child only its natural width, so the
+  // nested grids' columns came out narrower than this grid's and every row
+  // below the top ones sat further left, by more the further right the cell.
+  // A box stretches the child across all 11 columns, and two homogeneous
+  // grids of 11 columns with the same spacing have the same columns.
+  //
+  mcontainer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_grid_attach(GTK_GRID(grid), mcontainer, 0, row, 11, 1);
   GtkWidget *mgrid = gtk_grid_new();
   gtk_grid_set_column_homogeneous(GTK_GRID(mgrid), TRUE);
@@ -1633,7 +1641,7 @@ void diversity_menu(GtkWidget *parent) {
   //
   // Container for the "automatic" case
   //
-  acontainer = gtk_fixed_new();
+  acontainer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_grid_attach(GTK_GRID(grid), acontainer, 0, row, 11, 1);
   GtkWidget *agrid = gtk_grid_new();
   gtk_grid_set_column_homogeneous(GTK_GRID(agrid), TRUE);
