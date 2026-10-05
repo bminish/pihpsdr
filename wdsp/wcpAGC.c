@@ -32,17 +32,6 @@ Santa Cruz, CA  95060
 
 #include "comm.h"
 
-#define AGCPAIR_TIMEOUT_MS 100
-
-typedef struct _agcpair
-{
-	WCPAGC m[2];
-	volatile long arrived;
-	HANDLE done[2];
-} agcpair;
-
-static agcpair agc_pair;
-
 void calc_wcpagc (WCPAGC a)
 {
 	//assign constants
@@ -158,15 +147,7 @@ void loadWcpAGC (WCPAGC a)
 
 void destroy_wcpagc (WCPAGC a)
 {
-	if (a->pair != NULL)
-	{
-		// the link goes with either end
-		WCPAGC o = ((struct _agcpair *)a->pair)->m[1 - a->slot];
-		if (o != NULL) o->pair = NULL;
-		((struct _agcpair *)a->pair)->m[0] = NULL;
-		((struct _agcpair *)a->pair)->m[1] = NULL;
-		a->pair = NULL;
-	}
+	wcpagc_pair_detach (a);
 	decalc_wcpagc (a);
 	_aligned_free (a);
 }
@@ -178,199 +159,12 @@ void flush_wcpagc (WCPAGC a)
 	memset ((void *)a->abs_ring, 0, sizeof(double)* RB_SIZE);
 }
 
-//
-// The AGC is split into three per-sample steps so that the paired AGC below
-// (the diversity ear split) can run the same arithmetic as the single one.
-//
-// 1. wcpagc_detect(): put the input sample in the look-ahead ring, take the
-//    delayed sample out, and update the peak (ring_max) and the two
-//    back-averages. Everything here belongs to one arm.
-// 2. wcpagc_state(): the attack / decay / hang state machine. It takes the
-//    three detector values as arguments rather than reading them from a, so
-//    that a pair can feed it the average of its two arms.
-// 3. wcpagc_output(): volts to gain, gain to the delayed sample.
-//
-static void wcpagc_detect (WCPAGC a, int i)
+void xwcpagc (WCPAGC a)
 {
-	int j, k;
-	if (++a->out_index >= a->ring_buffsize)
-		a->out_index -= a->ring_buffsize;
-	if (++a->in_index >= a->ring_buffsize)
-		a->in_index -= a->ring_buffsize;
-
-	a->out_sample[0] = a->ring[2 * a->out_index + 0];
-	a->out_sample[1] = a->ring[2 * a->out_index + 1];
-	a->abs_out_sample = a->abs_ring[a->out_index];
-	a->ring[2 * a->in_index + 0] = a->in[2 * i + 0];
-	a->ring[2 * a->in_index + 1] = a->in[2 * i + 1];
-	if (a->pmode == 0)
-		a->abs_ring[a->in_index] = max(fabs(a->ring[2 * a->in_index + 0]), fabs(a->ring[2 * a->in_index + 1]));
-	else
-		a->abs_ring[a->in_index] = sqrt(a->ring[2 * a->in_index + 0] * a->ring[2 * a->in_index + 0] + a->ring[2 * a->in_index + 1] * a->ring[2 * a->in_index + 1]);
-
-	a->fast_backaverage = a->fast_backmult * a->abs_out_sample + a->onemfast_backmult * a->fast_backaverage;
-	a->hang_backaverage = a->hang_backmult * a->abs_out_sample + a->onemhang_backmult * a->hang_backaverage;
-
-	if ((a->abs_out_sample >= a->ring_max) && (a->abs_out_sample > 0.0))
-	{
-		a->ring_max = 0.0;
-		k = a->out_index;
-		for (j = 0; j < a->attack_buffsize; j++)
-		{
-			if (++k == a->ring_buffsize)
-				k = 0;
-			if (a->abs_ring[k] > a->ring_max)
-				a->ring_max = a->abs_ring[k];
-		}
-	}
-	if (a->abs_ring[a->in_index] > a->ring_max)
-		a->ring_max = a->abs_ring[a->in_index];
-}
-
-static void wcpagc_state (WCPAGC a, double ring_max, double fast_backaverage, double hang_backaverage)
-{
-	if (a->hang_counter > 0)
-		--a->hang_counter;
-
-	switch (a->state)
-	{
-	case 0:
-		{
-			if (ring_max >= a->volts)
-			{
-				a->volts += (ring_max - a->volts) * a->attack_mult;
-			}
-			else
-			{
-				if (a->volts > a->pop_ratio * fast_backaverage)
-				{
-					a->state = 1;
-					a->volts += (ring_max - a->volts) * a->fast_decay_mult;
-				}
-				else
-				{
-					if (a->hang_enable && (hang_backaverage > a->hang_level))
-					{
-						a->state = 2;
-						a->hang_counter = (int)(a->hangtime * a->sample_rate);
-						a->decay_type = 1;
-					}
-					else
-					{
-						a->state = 3;
-						a->volts += (ring_max - a->volts) * a->decay_mult;
-						a->decay_type = 0;
-					}
-				}
-			}
-			break;
-		}
-	case 1:
-		{
-			if (ring_max >= a->volts)
-			{
-				a->state = 0;
-				a->volts += (ring_max - a->volts) * a->attack_mult;
-			}
-			else
-			{
-				if (a->volts > a->save_volts)
-				{
-					a->volts += (ring_max - a->volts) * a->fast_decay_mult;
-				}
-				else
-				{
-					if (a->hang_counter > 0)
-					{
-						a->state = 2;
-					}
-					else
-					{
-						if (a->decay_type == 0)
-						{
-							a->state = 3;
-							a->volts += (ring_max - a->volts) * a->decay_mult;
-						}
-						else
-						{
-							a->state = 4;
-							a->volts += (ring_max - a->volts) * a->hang_decay_mult;
-						}
-					}
-				}
-			}
-			break;
-		}
-	case 2:
-		{
-			if (ring_max >= a->volts)
-			{
-				a->state = 0;
-				a->save_volts = a->volts;
-				a->volts += (ring_max - a->volts) * a->attack_mult;
-			}
-			else
-			{
-				if (a->hang_counter == 0)
-				{
-					a->state = 4;
-					a->volts += (ring_max - a->volts) * a->hang_decay_mult;
-				}
-			}
-			break;
-		}
-	case 3:
-		{
-			if (ring_max >= a->volts)
-			{
-				a->state = 0;
-				a->save_volts = a->volts;
-				a->volts += (ring_max - a->volts) * a->attack_mult;
-			}
-			else
-			{
-				a->volts += (ring_max - a->volts) * a->decay_mult;
-			}
-			break;
-		}
-	case 4:
-		{
-			if (ring_max >= a->volts)
-			{
-				a->state = 0;
-				a->save_volts = a->volts;
-				a->volts += (ring_max - a->volts) * a->attack_mult;
-			}
-			else
-			{
-				a->volts += (ring_max - a->volts) * a->hang_decay_mult;
-			}
-			break;
-		}
-	default:
-		{
-			a->state = 0;
-		}
-	}
-}
-
-static void wcpagc_output (WCPAGC a, int i)
-{
+	int i, j, k;
 	double mult;
-	if (a->volts < a->min_volts)
-		a->volts = a->min_volts;
-	a->gain = a->volts * a->inv_out_target;
-	mult = (a->out_target - a->slope_constant * min (0.0, log10(a->inv_max_input * a->volts))) / a->volts;
-	a->out[2 * i + 0] = a->out_sample[0] * mult;
-	a->out[2 * i + 1] = a->out_sample[1] * mult;
-}
-
-//
-// One AGC on its own: the original WDSP behaviour.
-//
-static void xwcpagc_single (WCPAGC a)
-{
-	int i;
+	if (a->pair != NULL && xwcpagc_paired (a))	// linked to the other ear (wcpAGCpair.c)
+		return;
 	if (a->run)
 	{
 		if (a->mode == 0)
@@ -382,105 +176,176 @@ static void xwcpagc_single (WCPAGC a)
 			}
 			return;
 		}
-
+	
 		for (i = 0; i < a->io_buffsize; i++)
 		{
-			wcpagc_detect (a, i);
-			wcpagc_state (a, a->ring_max, a->fast_backaverage, a->hang_backaverage);
-			wcpagc_output (a, i);
+			if (++a->out_index >= a->ring_buffsize)
+				a->out_index -= a->ring_buffsize;
+			if (++a->in_index >= a->ring_buffsize)
+				a->in_index -= a->ring_buffsize;
+	
+			a->out_sample[0] = a->ring[2 * a->out_index + 0];
+			a->out_sample[1] = a->ring[2 * a->out_index + 1];
+			a->abs_out_sample = a->abs_ring[a->out_index];
+			a->ring[2 * a->in_index + 0] = a->in[2 * i + 0];
+			a->ring[2 * a->in_index + 1] = a->in[2 * i + 1];
+			if (a->pmode == 0)
+				a->abs_ring[a->in_index] = max(fabs(a->ring[2 * a->in_index + 0]), fabs(a->ring[2 * a->in_index + 1]));
+			else
+				a->abs_ring[a->in_index] = sqrt(a->ring[2 * a->in_index + 0] * a->ring[2 * a->in_index + 0] + a->ring[2 * a->in_index + 1] * a->ring[2 * a->in_index + 1]);
+
+			a->fast_backaverage = a->fast_backmult * a->abs_out_sample + a->onemfast_backmult * a->fast_backaverage;
+			a->hang_backaverage = a->hang_backmult * a->abs_out_sample + a->onemhang_backmult * a->hang_backaverage;
+
+			if ((a->abs_out_sample >= a->ring_max) && (a->abs_out_sample > 0.0))
+			{
+				a->ring_max = 0.0;
+				k = a->out_index;
+				for (j = 0; j < a->attack_buffsize; j++)
+				{
+					if (++k == a->ring_buffsize)
+						k = 0;
+					if (a->abs_ring[k] > a->ring_max)
+						a->ring_max = a->abs_ring[k];
+				}
+			}
+			if (a->abs_ring[a->in_index] > a->ring_max)
+				a->ring_max = a->abs_ring[a->in_index];
+
+			if (a->hang_counter > 0)
+				--a->hang_counter;
+
+			switch (a->state)
+			{
+			case 0:
+				{
+					if (a->ring_max >= a->volts)
+					{
+						a->volts += (a->ring_max - a->volts) * a->attack_mult;
+					}
+					else
+					{
+						if (a->volts > a->pop_ratio * a->fast_backaverage)
+						{
+							a->state = 1;
+							a->volts += (a->ring_max - a->volts) * a->fast_decay_mult;
+						}
+						else
+						{
+							if (a->hang_enable && (a->hang_backaverage > a->hang_level))
+							{
+								a->state = 2;
+								a->hang_counter = (int)(a->hangtime * a->sample_rate);
+								a->decay_type = 1;
+							}
+							else
+							{
+								a->state = 3;
+								a->volts += (a->ring_max - a->volts) * a->decay_mult;
+								a->decay_type = 0;
+							}
+						}
+					}
+					break;
+				}
+			case 1:
+				{
+					if (a->ring_max >= a->volts)
+					{
+						a->state = 0;
+						a->volts += (a->ring_max - a->volts) * a->attack_mult;
+					}
+					else
+					{
+						if (a->volts > a->save_volts)
+						{
+							a->volts += (a->ring_max - a->volts) * a->fast_decay_mult;
+						}
+						else
+						{
+							if (a->hang_counter > 0)
+							{
+								a->state = 2;
+							}
+							else
+							{
+								if (a->decay_type == 0)
+								{
+									a->state = 3;
+									a->volts += (a->ring_max - a->volts) * a->decay_mult;
+								}
+								else
+								{
+									a->state = 4;
+									a->volts += (a->ring_max - a->volts) * a->hang_decay_mult;
+								}
+							}
+						}
+					}
+					break;
+				}
+			case 2:
+				{
+					if (a->ring_max >= a->volts)
+					{
+						a->state = 0;
+						a->save_volts = a->volts;
+						a->volts += (a->ring_max - a->volts) * a->attack_mult;
+					}
+					else
+					{
+						if (a->hang_counter == 0)
+						{
+							a->state = 4;
+							a->volts += (a->ring_max - a->volts) * a->hang_decay_mult;
+						}
+					}
+					break;
+				}
+			case 3:
+				{
+					if (a->ring_max >= a->volts)
+					{
+						a->state = 0;
+						a->save_volts = a->volts;
+						a->volts += (a->ring_max - a->volts) * a->attack_mult;
+					}
+					else
+					{
+						a->volts += (a->ring_max - a->volts) * a->decay_mult;
+					}
+					break;
+				}
+			case 4:
+				{
+					if (a->ring_max >= a->volts)
+					{
+						a->state = 0;
+						a->save_volts = a->volts;
+						a->volts += (a->ring_max - a->volts) * a->attack_mult;
+					}
+					else
+					{
+						a->volts += (a->ring_max - a->volts) * a->hang_decay_mult;
+					}
+					break;
+				}
+			default:
+				{
+					a->state = 0;
+				}
+			}
+
+			if (a->volts < a->min_volts)
+				a->volts = a->min_volts;
+			a->gain = a->volts * a->inv_out_target;
+			mult = (a->out_target - a->slope_constant * min (0.0, log10(a->inv_max_input * a->volts))) / a->volts;
+			a->out[2 * i + 0] = a->out_sample[0] * mult;
+			a->out[2 * i + 1] = a->out_sample[1] * mult;
 		}
 	}
 	else if (a->out != a->in)
 		memcpy(a->out, a->in, a->io_buffsize * sizeof (complex));
-}
-
-/********************************************************************************************************
-*																										*
-*							Paired AGC (diversity ear split, one gain for both ears)					*
-*																										*
-********************************************************************************************************/
-
-//
-// Two receive channels, the two ears, share one AGC gain.
-//
-// Each arm keeps its own look-ahead ring and its own detector. What is
-// shared is the drive: the state machine runs ONCE per sample, on the
-// average of the two arms' peaks (ring_max) and of their two back-averages,
-// and the one resulting gain is applied to both delayed samples. The
-// louder arm therefore moves the gain by half what it would alone, and a
-// fade on one arm moves it by half as much the other way, at the same
-// sample in both ears. Linear average, not an average of dB.
-//
-// The channels run on two threads, so the pair meets here: whichever
-// arrives first waits, whichever arrives second runs the whole block for
-// both and lets the first go. Both buffers are valid at that moment, and
-// both channels' results are ready when either returns.
-//
-// If the partner does not come within AGCPAIR_TIMEOUT_MS the waiter runs
-// alone: a stalled or switched-off partner must not stall this channel for
-// good. That costs the timeout on every block until SetRXAAGCLink(.., 0)
-// takes the link away, so the caller removes the link before it stops
-// feeding either channel.
-//
-
-
-static void xwcpagc_pair (WCPAGC a, WCPAGC b)
-{
-	int i;
-	if (!a->run || !b->run || a->mode == 0 || b->mode == 0 || a->io_buffsize != b->io_buffsize)
-	{
-		xwcpagc_single (a);
-		xwcpagc_single (b);
-		return;
-	}
-	for (i = 0; i < a->io_buffsize; i++)
-	{
-		wcpagc_detect (a, i);
-		wcpagc_detect (b, i);
-		wcpagc_state (a, 0.5 * (a->ring_max + b->ring_max),
-		                 0.5 * (a->fast_backaverage + b->fast_backaverage),
-		                 0.5 * (a->hang_backaverage + b->hang_backaverage));
-		//
-		// b follows a's state, so that taking the link away leaves both
-		// where they were instead of one of them stale.
-		//
-		b->volts = a->volts;
-		b->save_volts = a->save_volts;
-		b->state = a->state;
-		b->hang_counter = a->hang_counter;
-		b->decay_type = a->decay_type;
-		wcpagc_output (a, i);
-		wcpagc_output (b, i);
-	}
-}
-
-void xwcpagc (WCPAGC a)
-{
-	agcpair *p = a->pair;
-	if (p == NULL)
-	{
-		xwcpagc_single (a);
-		return;
-	}
-	int slot = a->slot;
-	if (InterlockedIncrement (&p->arrived) == 1)
-	{
-		// first here: wait for the partner
-		if (WaitForSingleObject (p->done[slot], AGCPAIR_TIMEOUT_MS) == WAIT_OBJECT_0)
-			return;
-		if (__sync_bool_compare_and_swap (&p->arrived, 1, 0))
-		{
-			xwcpagc_single (a);			// nobody came
-			return;
-		}
-		// the partner arrived at this moment and is running both
-		WaitForSingleObject (p->done[slot], INFINITE);
-		return;
-	}
-	// second here: run both
-	xwcpagc_pair (p->m[0], p->m[1]);
-	p->arrived = 0;
-	ReleaseSemaphore (p->done[1 - slot], 1, 0);
 }
 
 void setBuffers_wcpagc (WCPAGC a, double* in, double* out)
@@ -501,55 +366,6 @@ void setSize_wcpagc (WCPAGC a, int size)
 	decalc_wcpagc (a);
 	a->io_buffsize = size;
 	calc_wcpagc (a);
-}
-
-//
-// Link the AGCs of two receive channels (the diversity ear split) so they
-// share one gain, or take the link away. Unlinked is the ordinary AGC.
-//
-// Both channels' csDSP are held, so neither is inside xwcpagc() while the
-// pointers change. A channel waiting there for a partner holds its csDSP,
-// so this may wait up to AGCPAIR_TIMEOUT_MS for it.
-//
-PORT void
-SetRXAAGCLink (int channel_a, int channel_b, int on)
-{
-	WCPAGC a, b;
-	if (channel_a == channel_b) return;
-	EnterCriticalSection (&ch[channel_a].csDSP);
-	EnterCriticalSection (&ch[channel_b].csDSP);
-	a = rxa[channel_a].agc.p;
-	b = rxa[channel_b].agc.p;
-	if (on)
-	{
-		if (agc_pair.done[0] == NULL)
-		{
-			agc_pair.done[0] = CreateSemaphore (0, 0, 1000, 0);
-			agc_pair.done[1] = CreateSemaphore (0, 0, 1000, 0);
-		}
-		agc_pair.arrived = 0;
-		agc_pair.m[0] = a;
-		agc_pair.m[1] = b;
-		a->slot = 0;
-		b->slot = 1;
-		// b starts from a's state, as it does after every paired sample
-		b->volts = a->volts;
-		b->save_volts = a->save_volts;
-		b->state = a->state;
-		b->hang_counter = a->hang_counter;
-		b->decay_type = a->decay_type;
-		a->pair = &agc_pair;
-		b->pair = &agc_pair;
-	}
-	else
-	{
-		a->pair = NULL;
-		b->pair = NULL;
-		agc_pair.m[0] = NULL;
-		agc_pair.m[1] = NULL;
-	}
-	LeaveCriticalSection (&ch[channel_b].csDSP);
-	LeaveCriticalSection (&ch[channel_a].csDSP);
 }
 
 /********************************************************************************************************

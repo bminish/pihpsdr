@@ -90,6 +90,7 @@ version.o \
 varsamp.o \
 wbfm.o \
 wcpAGC.o \
+wcpAGCpair.o \
 wisdom.o \
 zetaHat.o
 
@@ -945,6 +946,17 @@ wcpAGC.o: main.h matchedCW.h meter.h meterlog10.h nbp.h nnr.h nnrbypass.h
 wcpAGC.o: nob.h nobII.h osctrl.h patchpanel.h phrot.h resample.h reshb.h
 wcpAGC.o: rmatch.h varsamp.h RXA.h sender.h shift.h siphon.h slew.h snb.h
 wcpAGC.o: ssql.h syncbuffs.h TXA.h utilities.h wbfm.h wcpAGC.h wdsp_align.h
+wcpAGCpair.o: comm.h linux_port.h amd.h ammod.h amsq.h analyzer.h anf.h anr.h
+wcpAGCpair.o: apfshadow.h bandpass.h firmin.h fir.h calcc.h cblock.h cfcomp.h
+wcpAGCpair.o: nurbs.h cfir.h channel.h cmath.h compress.h delay.h dexp.h div.h
+wcpAGCpair.o: doublepole.h eer.h emnr.h sbnr.h
+wcpAGCpair.o: ../libspecbleach/include/specbleach_adenoiser.h emph.h eq.h
+wcpAGCpair.o: fcurve.h fmd.h fmmod.h fmsq.h gain.h gaussian.h gen.h icfir.h iir.h
+wcpAGCpair.o: impulse_cache.h iobuffs.h iqc.h nurbs_spline.h nurbs_fit.h lmath.h
+wcpAGCpair.o: main.h matchedCW.h meter.h meterlog10.h nbp.h nnr.h nnrbypass.h
+wcpAGCpair.o: nob.h nobII.h osctrl.h patchpanel.h phrot.h resample.h reshb.h
+wcpAGCpair.o: rmatch.h varsamp.h RXA.h sender.h shift.h siphon.h slew.h snb.h
+wcpAGCpair.o: ssql.h syncbuffs.h TXA.h utilities.h wbfm.h wcpAGC.h wdsp_align.h
 wisdom.o: comm.h linux_port.h amd.h ammod.h amsq.h analyzer.h anf.h anr.h
 wisdom.o: apfshadow.h bandpass.h firmin.h fir.h calcc.h cblock.h cfcomp.h
 wisdom.o: nurbs.h cfir.h channel.h cmath.h compress.h delay.h dexp.h div.h
