@@ -224,6 +224,12 @@ extern int div_arm_swapped(void);
 extern int diversity_auto_noise_floor(double *n0, double *n1);
 
 //
+// Ask for the floor for the next few seconds from references that do not
+// compute one (RADE V1). A no-op for the others, which keep it current.
+//
+extern void diversity_auto_noise_floor_demand(double seconds);
+
+//
 // MVDR for a two-element array: w = R^-1 h, normalised so arm 0 carries
 // unity and expressed as the weight the combiner applies to arm 1.
 //

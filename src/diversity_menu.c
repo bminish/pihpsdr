@@ -454,8 +454,54 @@ static gboolean att_cal_check(gpointer data) {
   return FALSE;
 }
 
-static void att_cal_cb(GtkWidget *widget, gpointer data) {
+//
+// Stage 2, after the wait: the floors have been measured fresh for the
+// last few seconds, whichever reference is running. See att_cal_cb().
+//
+static gboolean att_cal_apply(gpointer data) {
   double n0, n1;
+  att_cal_timer = 0;
+  if (radio_is_transmitting()) {
+    att_cal_say("Stopped: transmitting.");
+    return FALSE;
+  }
+  if (!diversity_enabled) {
+    att_cal_say("Diversity is off: there is no floor to measure.");
+    return FALSE;
+  }
+  if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
+    att_cal_say("No noise floor. Needs a clear spot outside the filter, with diversity running.");
+    return FALSE;
+  }
+  const double d = 10.0 * log10(n0 / n1);              // + : arm 0 is hotter
+  const int hot_arm = (d > 0.0) ? 0 : 1;
+  const int hot_adc = div_arm_swapped() ? 1 - hot_arm : hot_arm;
+  const int excess = (int)lround(fabs(d));
+  if (excess < 1) {
+    att_cal_say("Already balanced: arms within %.1f dB.", fabs(d));
+    return FALSE;
+  }
+  const int old_att = adc[hot_adc].attenuation;
+  int new_att = old_att + excess;
+  const int capped = (new_att > 31);
+  if (capped) { new_att = 31; }
+  if (new_att == old_att) {
+    att_cal_say("ADC%d is %.1f dB hotter but is already at 31 dB.", hot_adc + 1, fabs(d));
+    return FALSE;
+  }
+  radio_set_adc_attenuation(hot_adc, new_att);
+  if (att_scale[hot_adc] != NULL) {
+    gtk_range_set_value(GTK_RANGE(att_scale[hot_adc]), adc[hot_adc].attenuation);
+  }
+  att_cal_say("ADC%d was %.1f dB hotter: %d -> %d dB%s. Checking...", hot_adc + 1, fabs(d),
+              old_att, new_att, capped ? " (limit)" : "");
+  att_cal_timer = g_timeout_add(ATT_CAL_SETTLE_MS, att_cal_check, NULL);
+  return FALSE;
+}
+
+#define ATT_CAL_MEASURE_S 4.0
+
+static void att_cal_cb(GtkWidget *widget, gpointer data) {
   if (att_cal_timer != 0) { return; }                  // one run at a time
   if (radio_is_transmitting()) {
     att_cal_say("Not while transmitting.");
@@ -465,33 +511,14 @@ static void att_cal_cb(GtkWidget *widget, gpointer data) {
     att_cal_say("Diversity is off: there is no floor to measure.");
     return;
   }
-  if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
-    att_cal_say("No noise floor yet. Wait a few seconds with diversity running.");
-    return;
-  }
-  const double d = 10.0 * log10(n0 / n1);              // + : arm 0 is hotter
-  const int hot_arm = (d > 0.0) ? 0 : 1;
-  const int hot_adc = div_arm_swapped() ? 1 - hot_arm : hot_arm;
-  const int excess = (int)lround(fabs(d));
-  if (excess < 1) {
-    att_cal_say("Already balanced: arms within %.1f dB.", fabs(d));
-    return;
-  }
-  const int old_att = adc[hot_adc].attenuation;
-  int new_att = old_att + excess;
-  const int capped = (new_att > 31);
-  if (capped) { new_att = 31; }
-  if (new_att == old_att) {
-    att_cal_say("ADC%d is %.1f dB hotter but is already at 31 dB.", hot_adc + 1, fabs(d));
-    return;
-  }
-  radio_set_adc_attenuation(hot_adc, new_att);
-  if (att_scale[hot_adc] != NULL) {
-    gtk_range_set_value(GTK_RANGE(att_scale[hot_adc]), adc[hot_adc].attenuation);
-  }
-  att_cal_say("ADC%d was %.1f dB hotter: %d -> %d dB%s. Checking...", hot_adc + 1, fabs(d),
-              old_att, new_att, capped ? " (limit)" : "");
-  att_cal_timer = g_timeout_add(ATT_CAL_SETTLE_MS, att_cal_check, NULL);
+  //
+  // RADE V1 does not transform, so has no floor of its own: it makes one
+  // for this window only. The other references keep theirs current and
+  // simply have it settle. Either way the reading is a few seconds old.
+  //
+  diversity_auto_noise_floor_demand(ATT_CAL_MEASURE_S);
+  att_cal_say("Measuring the noise floor...");
+  att_cal_timer = g_timeout_add((guint)(1000.0 * (ATT_CAL_MEASURE_S + 0.5)), att_cal_apply, NULL);
 }
 
 static void gain_coarse_changed_cb(GtkWidget *widget, gpointer data) {

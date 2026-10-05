@@ -1825,6 +1825,54 @@ int diversity_auto_noise_floor(double *n0, double *n1) {
 }
 
 //
+// The floor on demand, for the references that do not make it themselves.
+// RADE V1 correlates in the time domain and never transforms, so it has
+// no spectrum and no floor; the attenuator calibration asks for one here.
+// While the demand lasts (seconds, counted down in block times) the RADE
+// blocks are also windowed and transformed, only to read the floor, and
+// the first of them seeds it afresh: what is left from before a mode
+// change is not the band as it is now. Nothing else uses the spectrum
+// from these blocks. Costs two FFTs per block for the few seconds asked,
+// and nothing when nobody asks.
+//
+static volatile double div_nf_demand_s = 0.0;
+static int             div_nf_demand_on = 0;
+
+void diversity_auto_noise_floor_demand(double seconds) {
+  div_nf_demand_s = seconds;
+}
+
+static void div_floor_on_demand(const struct div_context *ctx, const float *w0, const float *w1) {
+  if (div_nf_demand_s <= 0.0) {
+    div_nf_demand_on = 0;
+    return;
+  }
+
+  if (fftout0 == NULL || fftin0 == NULL || window == NULL || nfft <= 0) { return; }
+
+  int klo, khi;
+
+  if (!div_bin_range(ctx, &klo, &khi)) { return; }
+
+  if (!div_nf_demand_on) {
+    div_nf_demand_on = 1;
+    div_nf_valid = 0;
+  }
+
+  for (int i = 0; i < nfft; i++) {
+    fftin0[i][0] = w0[2 * i    ] * window[i];
+    fftin0[i][1] = w0[2 * i + 1] * window[i];
+    fftin1[i][0] = w1[2 * i    ] * window[i];
+    fftin1[i][1] = w1[2 * i + 1] * window[i];
+  }
+
+  fftwf_execute(plan0);
+  fftwf_execute(plan1);
+  div_noise_floor_update(ctx, klo, khi);
+  div_nf_demand_s -= blocktime;
+}
+
+//
 // ------------------------------------------------------------------
 // Which antenna is better
 // ------------------------------------------------------------------
@@ -3408,6 +3456,7 @@ static void div_process_block(void) {
     // given the block in the time domain, so div_bin_notched() has nothing
     // to act on here. See the note there.
     //
+    div_floor_on_demand(&ctx, work0, work1);
     int ok = rade_corr_process(work0, work1, nfft, bank,
                                div_frame_off(&ctx), div_auto_tau, &wr, &wi);
     //
@@ -3731,6 +3780,11 @@ static void div_process_block(void) {
   // why this cannot happen in div_bin_range() with the rest.
   //
   if (ctx.ref == DIV_REF_DIGITAL_IQ) {
+    //
+    // Digital returns before the update below, so the floor is taken here, as
+    // CW does: the transform is done.
+    //
+    div_noise_floor_update(&ctx, klo, khi);
     div_digital_solve(&ctx, klo, khi);
     return;
   }
