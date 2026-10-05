@@ -76,7 +76,8 @@ written by the menu instead of the engine.
 Your `890ed310` relabelled the attenuators ADC1 and ADC2. The antenna
 line above them still printed the arm index ("ADC0 better by ...",
 "using ADC1"). It was also wrong with RX1 set to the second ADC, because
-the arms are then exchanged (`div_arm_swapped()`, LC-022). Our
+arm 0 is then the ADC RX1 is set to, which is ADC2 (`div_arm_swapped()`,
+LC-022). Our
 `div_arm_status_set()` now does:
 
 ```c
