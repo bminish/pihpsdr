@@ -2352,7 +2352,9 @@ static int div_occ_cmp(const void *a, const void *b) {
 // whatever the slider says. N depends on everything the operator can set:
 //
 // - bins: the window width (or the carrier tracker's five bins, or the
-//   occupied span on FSK/Digital) divided by the bin width. Neighbouring
+//   occupied span on FSK/Digital) divided by the bin width. (The menu's
+//   slider bottom uses the whole search region on FSK/Digital instead;
+//   see diversity_auto_coh_floor().) Neighbouring
 //   bins of the 4-term Blackman-Harris window are not independent - 82 %
 //   correlated one bin apart, 44 % two apart, 15 % three apart - so they
 //   are counted as n^2 / sum_jk |rho(j-k)|^2, which is about n/2.76 on a
@@ -2437,6 +2439,15 @@ static double div_gate_threshold(int nbins) {
 //
 // Returns 0 for RADE V1, which gates on the pilot, not on a coherence.
 //
+// On FSK/Digital this is the floor for the whole search region, not for
+// the occupied span the gate uses block by block. The span is
+// re-estimated every block and comes and goes with the signal, and the
+// floor is steep in it, so a slider bottom that followed it jumped about
+// under the operator's hand. The region's floor is the lower one, so the
+// slider never claims more than the gate holds to; where the occupied span
+// is narrower the gate is stricter than the slider shows. See
+// div_gate_threshold().
+//
 double diversity_auto_coh_floor(int ref) {
   if (ref == DIV_REF_RADE_V1) { return 0.0; }
 
@@ -2457,8 +2468,6 @@ double diversity_auto_coh_floor(int ref) {
 
   if (ref == DIV_REF_CARRIER) {
     width = (2.0 * DIV_CARRIER_BINS + 1.0) * bhz;
-  } else if (ref == DIV_REF_DIGITAL_IQ && div_auto_occ_valid) {
-    width = div_auto_occ_hi - div_auto_occ_lo;
   } else if (div_auto_follow_filter && receivers > 0 && receiver[0] != NULL) {
     width = (double)receiver[0]->filter_high - (double)receiver[0]->filter_low;
   } else {
