@@ -603,6 +603,153 @@ were deleted on 2026-10-05, with their CSVs: `wav/20261005-170548_7087.900kHz_DI
 recorder's files beside T-024 and T-025: CSV mode 0, summed, left
 identical to right). The two `.divc` captures were kept.
 
+## T-028 to T-035: RADE V2 on 160 m (1.984 MHz USB), three captures and five binaural WAVs
+
+Taken 2026-10-05 (22:30-23:19) on `test/binaural-agc-link`, for the diversity
+RADE V2 receive chain and for later dual-channel equalisation work. Recorded
+mode DIGU; the I/Q is mirrored as on the other USB captures, and
+`score_radev2` decodes it with the passband's rule. Operator's description:
+two stations on a noisy, difficult 160 m path with significant multipath. The
+captures do not say which station is which.
+
+| | File | Length | Recorded |
+|---|---|---|---|
+| T-028 | `divcap-20261005-224721.divc` | 60.0 s (703 blocks) | Best, Band ref, filter +1000 to +2000 Hz; ADC1 ATT 20, ADC2 ATT 1 |
+| T-029 | `divcap-20261005-230621.divc` | 60.0 s | Sum, Digital ref, +750 to +2250 Hz; ADC1 ATT 16 (steps to 14, 0, 19 at 14.9, 15.0 and 28.0 s), ADC2 ATT 0 |
+| T-030 | `divcap-20261005-231840.divc` | 60.0 s | Sum, Digital ref, +750 to +2250 Hz; ADC1 ATT 19, ADC2 ATT 0 |
+| T-031 | `wav/20261005-223054_1984.000kHz_DIGU_div-per-ear.wav` | 259.9 s | per-ear |
+| T-032 | `wav/20261005-224247_1984.000kHz_DIGU_div-per-ear.wav` | 233.0 s | per-ear |
+| T-033 | `wav/20261005-225440_1984.000kHz_DIGU_div-per-ear.wav` | 184.8 s | per-ear |
+| T-034 | `wav/20261005-230729_1984.000kHz_DIGU_div-per-ear.wav` | 193.6 s | per-ear |
+| T-035 | `captures/ears-20261005-230621.{wav,csv}` | 60.1 s | per-ear, **beside T-029** |
+
+**Discarded, not binaural** (deleted 2026-10-05 with their CSVs):
+`wav/20261005-230604_1984.000kHz_DIGU_div-sum-diff.wav` (presentation
+`div-sum-diff`: a sum and a difference, not an ear per arm) and
+`captures/ears-20261005-224721.wav` and `ears-20261005-231840.wav` (the
+ear recorder's files beside T-028 and T-030: CSV mode 0, summed, left
+identical to right). `ears-20261005-174433.{wav,csv}` (1.1 s, digital
+silence, mode 1) went too. Its capture `divcap-20261005-174433.divc` (14
+blocks, CW reference) is a stub and is not RADE; it is left in place.
+
+**Decoded (`score_radev2`, rade_c V2, one fixed input gain 78-81 dB).** Per
+stream over the minute: CP SNR over the detector-on symbols (dB in 3 kHz)
+and mean decoded |aux|. `radio` is what the operator heard, `u6` the blind
+scalar weight with no noise term (`--blind u6=6,u`), `c6` the same with the
+cyclic-prefix noise term.
+
+| | arm0 | arm1 | radio | c6 | u6 | better arm's median \|aux\| |
+|---|---|---|---|---|---|---|
+| T-028 CP SNR / \|aux\| | 0.62 / 0.889 | −1.59 / 0.797 | −1.51 / 0.829 | 0.65 / 0.897 | 0.33 / 0.886 | 0.98 |
+| T-029 | 3.38 / 0.950 | −3.17 / 0.765 | −0.15 / 0.877 | 3.28 / 0.934 | 3.37 / 0.947 | 0.99 |
+| T-030 | 9.30 / 0.983 | −2.28 / 0.818 | 6.28 / 0.968 | 9.79 / 0.979 | 9.80 / 0.983 | 1.00 |
+
+- **Arm 0 is the better arm in all three, and on T-029 and T-030 by a wide
+  margin** (|aux| 0.95 and 0.98 against 0.77 and 0.82; CP SNR 6.5 and 11.6 dB
+  apart; T-028 is closer, 2.2 dB). Per-bin selection with hindsight adds 0.019
+  to arm 0 on T-028, 0.002 on T-029 and 0 on T-030, so on these three there
+  is little for any combiner to take from arm 1.
+- **The radio's combination is worse than arm 0 alone in all three**, by
+  0.032 to 0.073 in |aux| and by about 3 to 4 dB of CP SNR on T-029 and
+  T-030. The blind scalar weight with the noise term is 0.016 (T-029) and
+  0.004 (T-030) below arm 0 on |aux|; without it, 0.003 and 0. On CP SNR the
+  paired comparison puts the noise-term weight 0.63 dB below arm 0 on T-029
+  and 0.18 dB below on T-030, and the one without 0.24 dB below and 0.009
+  above. On T-028 neither beats arm 0 by more than the measures resolve
+  (+0.001 and −0.008 on |aux|). Each is one capture, and the blind weights
+  beat arm 0 on none of them.
+- **What the applied weight was** (`live_cos/sin`, per block). T-029 and
+  T-030: the weight is constant in phase (142.8°, sd 0°) for the whole minute
+  and its magnitude changes only with the ATT steps (T-030 0.62 throughout;
+  T-029 0.88, 1.1, 5.53, 0.62). `live_locked` is 0 in every block of all three.
+  The loop's own answer (`live_track_gain/phase`) did move in T-030 (−5 to +3
+  dB, phase wandering), so what the loop computed was not what was applied.
+  Why is not traced: the recording does not say whether the loop was running
+  or the weight was a manual one. T-028 (Band reference, Best): the track gain
+  is at its +20 dB limit in every block, and the applied weight is 8.3 to 10 in
+  magnitude, i.e. the radio was on arm 1 nearly alone, and arm 1 is the worse
+  decoder (0.797 against 0.889), though its in-band power is higher after
+  the attenuators (4.7 dB over the passband, by `score_radev2`'s blind line).
+  The CP SNR is known to rank multipath wrongly (V2-F2), and a power
+  measure is not a decode measure.
+
+**What the channel looks like, for the equaliser question.** Measured on the
+arms' spectra (4096-point segments, 47 Hz bins, over the V2 carriers
+1062-1875 Hz mirrored), with the ATT steps removed. These describe the
+captures; they are not decoder results.
+
+| | arm0 − arm1 at the antennas (mean, sd) | in-band power spread over a 171 ms block, arm0 / arm1 (sd) | spectral ripple across the carriers, arm0 / arm1 (1.4 s mean, sd of dB) | phase of arm1/arm0 across the band (power-weighted sd) |
+|---|---|---|---|---|
+| T-028 | +15.9 dB (2.4) | 2.4 / 2.1 dB | 3.4 / 3.9 dB | 36° median, 68° at p90 |
+| T-029 | +21.8 dB (2.5) | 2.1 / 2.5 dB | 2.9 / 2.3 dB | 58° median, 89° at p90 |
+| T-030 | +26.8 dB (2.5) | 1.2 / 3.1 dB | 3.5 / 2.8 dB | 42° median, 85° at p90 |
+
+- The arm 0 antenna is 16 to 27 dB stronger than arm 1's at the
+  receiver on this band, in-band, by the recorded ATT values. The
+  two arms' power series correlate weakly to moderately (r +0.40 to
+  +0.63, 85 ms blocks), so most of the 1 to 3 dB block-to-block movement is
+  shared. The phase between the arms is not flat across the V2 band: a single
+  scalar cannot co-phase the whole passband in a window, and that spread (a
+  few tens of degrees in the median window, up to 90° at p90) is what a
+  per-carrier weight could recover. How much of it is the signal's channel
+  and how much estimation noise on a weak arm 1 is not separated.
+- **Correlated noise.** The two arms' noise is partly coherent. Outside the
+  V2 band (−4000 to −2000 Hz and −1000 to 0 Hz in the mirrored spectrum),
+  the coherence over 8-block windows, in 250 Hz bands, has a median of 0.44
+  to 0.70 on T-028, 0.35 to 0.63 on T-029 and 0.27 to 0.73 on T-030, against
+  the roughly 0.1 an estimate of this size gives for independent noise. That
+  could be a second kind of benefit for a dual-channel filter (cancelling
+  what the arms share, as Null does) beside the signal's multipath, if it is
+  noise and not a common spur or a signal. What produces it was not traced.
+- **Fades.** Per-10 s CP SNR on arm 0 moves by 4 to 7 dB inside a minute
+  (T-028: −2.3 to +2.0; T-029: −0.5 to +6.1; T-030: +5.0 to +11.3), and on T-028 at 10-20 s both
+  arms are poor at once (arm 0 −2.3, arm 1 −1.9) and the blind weight gets
+  −1.7, no better: a combiner cannot recover a fade the arms share.
+- **Multipath is suggested here, not isolated.** The inter-arm phase spread,
+  the ripple and the SNR estimate disagreeing with the decode (T-028) all fit
+  it. The captures cannot separate multipath from two stations on the channel
+  or from interference; nothing here measured a delay spread.
+
+**The WAVs (T-031 to T-035).** The WAV button's recording, per-ear (arm 0 to
+the left ear, arm 1 to the right), CSV mode 1 throughout, level over 0.5 s
+segments:
+
+| | Length | L mean | R mean | L − R mean (sd) | range of L − R | louder-ear sd / quieter-ear sd |
+|---|---|---|---|---|---|---|
+| T-031 | 259.9 s | −18.6 dBFS | −22.2 | +3.5 (3.4) | −9.2 to +9.0 | 3.3 / 2.8 |
+| T-032 | 233.0 s | −22.0 | −23.7 | +1.7 (3.4) | −9.6 to +11.3 | 2.9 / 2.3 |
+| T-033 | 184.8 s | −21.4 | −19.8 | −1.6 (4.2) | −10.9 to +7.2 | 2.2 / 2.6 |
+| T-034 | 193.6 s | −21.4 | −19.7 | −1.7 (3.5) | −9.2 to +6.2 | 2.0 / 1.9 |
+| T-035 | 60.1 s | −19.0 | −26.2 | +7.1 (7.2) | −2.1 to +22.8 | 1.6 / 6.1 |
+
+**T-035 settles the shared-AGC question for T-029**, which T-026 could not:
+the ear recorder's file sits beside a capture. The ears' L − R level, taken
+per 85 ms block, against the capture's in-band arm 0 − arm 1 power after
+the attenuators (what the DDC saw), correlates at **r = 0.999** (1 s smoothing, at an
+offset of one block), with a slope of **0.96**, and within each attenuator state
+alone (steps skipped) at r 0.96 to 1.00 with slopes of 0.83 to 0.88 (1 would be one shared gain
+following the arms' ratio, 0 two independent AGCs). By attenuator state: ATT
+0, 13.1 s, arms +21.0 dB and ears +20.1 dB; ATT 16, 14.9 s, +7.2 and +6.6;
+ATT 19, 31.8 s, +2.5 and +2.2. So on this capture the ears' ratio is
+the arms' ratio, to within 1 dB. The recording does not store the link
+setting, so this shows the ears behave as one shared gain and not that the
+button was on. The consequence for listening: with the gain driven by the
+stronger arm the weaker arm keeps its level against the stronger, so in T-029 the
+right ear (arm 1, the poor decoder by 6.5 dB CP SNR) is only 2 to 7 dB below the left for most
+of the minute. T-031 to T-034 have no capture beside them and cannot be
+checked the same way; their L − R sd of 3-4 dB and the ear swap (L > R in 82, 70,
+40 and 35 % of segments) say only that the arms trade places over minutes.
+
+**What they offer.** Three one-minute RADE V2 captures where arm 0 is a
+good receiver and arm 1 a poor one (6.5 and 11.6 dB CP SNR apart on T-029 and T-030), with a Sum that,
+as applied, is worse than arm 0 alone; one capture (T-028) where the radio
+picked the arm that decodes worse; and a per-ear recording tied block for
+block to a capture. For equalisation work: the spread of inter-arm phase
+across the band and the coherent noise are measured above, and a decode-based
+test of a per-carrier weight (the oracle ladder in `radev2_oracle.py` on the
+`test/radeV2-correlator` branch, with a frequency-dependent weight) has not
+been run.
+
 ## Capture practice, from T-001 to T-012
 
 Captures are started from the Capture button, so the note field in the
