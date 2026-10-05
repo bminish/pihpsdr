@@ -206,8 +206,8 @@ written up for dl1ycf in
 **Why.** The menu's antenna line printed the arm index as the ADC
 ("ADC0 better by ...", "using ADC1"). After `890ed310` the attenuator
 row beside it says ADC1 and ADC2, so the two disagreed. The line was
-also wrong with RX1 set to the second ADC: the arms are then exchanged
-(LC-022), and arm 0 is ADC2.
+also wrong with RX1 set to the second ADC: arm 0 is then the ADC RX1 is
+set to (`5db64949`; LC-022), which is ADC2.
 
 **Change.** The line shows `(arm ^ div_arm_swapped()) + 1`, at the same
 width. This is in dl1ycf's file, so it is written up for him in
