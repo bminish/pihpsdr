@@ -6,7 +6,7 @@ Newest first.
 
 - 2026-10-06: LC-046, the Carrier reference follows the RX filter when
   Follow is ticked (400 Hz mid-passband); it had always searched the hand
-  window. Not yet confirmed on air.
+  window. Confirmed in use.
 
 - 2026-10-06: **the binaural branch rebased onto the re-synced `TEST`** (5db64949, LC-044, LC-045), as `feature/diversity-binaural-3-rebase`; backup tag `backup/binaural-2-pre-rebase-20261006`. Skipped as already on `TEST`: the arm-0 exchange (old LC-022, now reduced), the ADC naming commits, and the Restart / Hold and Invert menu commits (LC-039, LC-040). The ear split's protocol feed relies on upstream's DDC0 = RX1's ADC ordering, so it no longer swaps. LC-041 to LC-043 still have no trailers (see open-items).
 
