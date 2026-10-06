@@ -307,5 +307,10 @@ code, not measured on air.
 **Confirmed in use, 2026-10-06:** Carrier follows the filter with Follow
 ticked.
 
-**Checks.** Builds. Not in the suite: the harness does not move the
-Follow flag for Carrier.
+**Checks.** Builds; the suite passes. `test_window`'s Carrier-follow
+check (400 Hz at the passband centre when following; a carrier on the
+centre or in an offset band is tracked, one outside it or on the dial of
+an offset band is not) was written for the feature branch's `41f8700c` and
+now counts. Does not apply to bare `upstream/TEST`: it needs LC-002's
+width constants, LC-009's `diversity_auto_seed_window()` and LC-017's CW
+width default (textual; the set was not minimised).

@@ -151,8 +151,8 @@ steps over 3 dB 1175 → 774. `test_window`: a Sum that raised the level
 ## LC-035 — Comments name the ADCs ADC1 and ADC2, as the hardware does
 
 **Change.** ADC0 → ADC1 and ADC1 → ADC2 in every diversity comment:
-our own files, and the diversity comments of ours in `radio.c`,
-`receiver.c` and `client_server.c`. Two header comments that called
+our own files, and the diversity comments of ours in `radio.c` and
+`client_server.c`. Two header comments that called
 arms ADCs (`div_auto_arm_db`, `_pick`) now say arm 0 / arm 1. Comments
 only. Upstream's own non-diversity text is left alone (see [open-items.md](open-items.md#flagged-for-a-later-patch)). Its line dependencies are textual only: it rewords
 comments other LCs added.
