@@ -26,8 +26,11 @@ block, as the radio holds its weight):
                  IIR over tau symbols; pil causal, pilc centred (forward and backward)
     dd<tau>, ddc<tau>
                  the same with the symbols the decoder returned, put back through the
-                 encoder (rade_enc_v2_test): decision-directed, no pilot. dd delays the
-                 estimate by the frame it waits for; ddb/pilb start from the blind R
+                 encoder (rade_enc_v2_test), turned as the demodulator turns a carrier
+                 (dd_rotation): decision-directed, no pilot. dd delays the estimate by the
+                 frame it waits for; ddb/pilb start from the blind R. dd[<mode><q>_]...[x<n>]:
+                 n passes; a mode (g true frame loss, a |aux|, i idempotence) keeps the best
+                 q % of frames in the estimate
     eq           per carrier MRC, channel phase removed
     strong       per carrier MRC, the stronger arm's phase kept
     eq0, ph0     arm 0 alone with its channel phase removed (ph0: phase only;
@@ -85,6 +88,7 @@ AGC_TARGET2 = 0.5                               # 0.707 ** 2
 RUNGS = ['arm0', 'arm1', 'sel', 'scalar', 'sub3', 'sub4', 'perc', 'perc_raw',
          'eq', 'strong', 'eq0', 'ph0', 'fir8', 'fir16', 'fir32']
 ANTENNAS = ('arm0', 'arm1')
+DD_ROT = None                                   # set in main(): the receiver's fixed rotation of a latent, see dd_rotation()
 
 
 # ------------------------------------------------------------ receiver bits
@@ -136,28 +140,68 @@ def decode(z, path):
     return out.reshape(-1, NUSED)
 
 
+def decode_raw(z, path):
+    """All 21 features of every vector (the last is the aux bit), (nfr, 4, 21)."""
+    z.astype(np.float32).tofile(path + '.z')
+
+    with open(path + '.z', 'rb') as fi, open(path + '.f', 'wb') as fo:
+        subprocess.run([DEC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
+
+    f = np.fromfile(path + '.f', np.float32).reshape(-1, 4, 21)
+    os.remove(path + '.z')
+    os.remove(path + '.f')
+    return f
+
+
+def encode_raw(f, path):
+    """What the transmitter would have sent for features f (nfr, 4, 21): (nfr, 2, NC) complex."""
+    f.astype(np.float32).tofile(path + '.f')
+
+    with open(path + '.f', 'rb') as fi, open(path + '.e', 'wb') as fo:
+        subprocess.run([ENC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
+
+    e = np.fromfile(path + '.e', np.float32)
+    os.remove(path + '.f')
+    os.remove(path + '.e')
+    nfr = len(e) // 56
+    e = e[:nfr * 56].reshape(nfr, 2, NC, 2)
+    return e[..., 0] + 1j * e[..., 1]
+
+
 def reencode(z, path):
     """
     The decoder's own output as symbols: decode the latents z, put all 21 features of each vector
     back through the encoder, and return what the transmitter would have sent for them, (nfr, 2, NC)
     complex. Decision-directed: a reference that needs no pilot, as good as the decode is.
     """
-    z.astype(np.float32).tofile(path + '.z')
+    return encode_raw(decode_raw(z, path), path)
 
-    with open(path + '.z', 'rb') as fi, open(path + '.f', 'wb') as fo:
-        subprocess.run([DEC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
 
-    with open(path + '.f', 'rb') as fi, open(path + '.e', 'wb') as fo:
-        subprocess.run([ENC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
+def dd_rotation(work, az):
+    """
+    The demodulator hands the decoder each carrier turned by a fixed phase (its 16-sample timing
+    offset less the 8 the receiver corrects, so a ramp of about 22 degrees a carrier, and a constant):
+    what the decoder was trained on, and not what the encoder puts out. A re-encoded symbol has to
+    be turned the same way before it is a reference for the received one. Measured once, on the clean
+    transmission, through the same decode and encode as the reference.
+    """
+    a = az * np.sqrt(0.5 * M / np.mean(np.abs(az) ** 2))
+    xh = reencode(latents(a), os.path.join(work, 'rot'))
+    n = min(a.shape[0], xh.shape[0])
+    z = np.sum(a[:n] * np.conj(xh[:n]), axis=0)               # (2, NC)
+    return z / np.abs(z)
 
-    e = np.fromfile(path + '.e', np.float32)
-    nfr = len(e) // 56
 
-    for ext in ('.z', '.f', '.e'):
-        os.remove(path + ext)
+def vec_loss(feat_in, out, shift):
+    """distortion_loss of every output vector against the truth (nan where there is none)."""
+    j0 = max(0, -shift)
+    n = min(out.shape[0] - j0, feat_in.shape[0] - (j0 + shift))
+    l = np.full(out.shape[0], np.nan)
 
-    e = e[:nfr * 56].reshape(nfr, 2, NC, 2)
-    return e[..., 0] + 1j * e[..., 1]
+    if n > 0:
+        l[j0:j0 + n] = distortion_loss(feat_in[j0 + shift:j0 + shift + n], out[j0:j0 + n])
+
+    return l
 
 
 def loss(feat_in, out, shift):
@@ -361,7 +405,7 @@ def blind_R(az0, az1, S, mode, tau, nvar):
     return R.reshape(-1, 2, NC)
 
 
-def derotate(y, x, tau, centred, nb=1, by_frame=False):
+def derotate(y, x, tau, centred, nb=1, by_frame=False, w=None):
     """
     y (nfr, 2, NC): a combined stream. x: the symbols it should hold (known, or decoded and re-encoded).
     The channel phase per carrier is the phase of the IIR mean of y conj(x), over tau symbols and the
@@ -371,6 +415,10 @@ def derotate(y, x, tau, centred, nb=1, by_frame=False):
     """
     nfr = y.shape[0]
     c = (y * np.conj(x)).reshape(nfr * 2, NC)
+
+    if w is not None:                           # confidence per symbol: 0 leaves a symbol out of the estimate
+        c = c * np.repeat(w, 2)[:c.shape[0], None]
+
     a = np.exp(-1.0 / tau)
     n = c.shape[0]
     f, b = np.zeros_like(c), np.zeros_like(c)
@@ -395,7 +443,7 @@ def derotate(y, x, tau, centred, nb=1, by_frame=False):
         k = np.ones(2 * nb + 1)
         est = np.stack([np.convolve(est[i], k, mode='same') for i in range(n)])
 
-    ph = est / (np.abs(est) + 1e-30)
+    ph = np.where(np.abs(est) > 1e-9, est / (np.abs(est) + 1e-30), 1.0)    # nothing to go on: leave the phase
     return (y.reshape(nfr * 2, NC) * np.conj(ph)).reshape(nfr, 2, NC)
 
 
@@ -482,7 +530,7 @@ def energy(az):
 
 
 def run_scenario(args):
-    work, kind, snr, seed, hold, rungs, t0, nfr, s0, shift, tx, feat_in, clean = args
+    work, kind, snr, seed, hold, rungs, t0, nfr, s0, shift, tx, feat_in, clean, dd_rot = args
     rng = np.random.default_rng(1000 * seed + snr + 50)
     S = np.mean(np.abs(tx[np.abs(tx) > 1e-6]) ** 2)
     sigma2 = S * FS / (3000.0 * 10 ** (snr / 10))
@@ -549,9 +597,17 @@ def run_scenario(args):
                 y = combine('perc', az0, az1, H[0], H[1], hold)
 
             az = derotate(y, az_tx, tau, centred)
-        elif name.startswith('dd'):                       # dd[b][c]<tau>: as pil, with the symbols the decoder returned
-            blind = name.startswith('ddb')
-            f_ = name[3 if blind else 2:]
+        elif name.startswith('dd'):                       # dd[b][<mode><q>_][c]<tau>: pil, with the symbols the decoder
+            blind = name.startswith('ddb')                # returned; a mode (g genie, a aux, i idempotence) keeps only
+            f_ = name[3 if blind else 2:]                 # the best q % of frames in the estimate
+            mode, q = '', 100
+
+            if '_' in f_:
+                head, f_ = f_.split('_', 1)
+                mode, q = head[0], int(head[1:])
+
+            f_, _, iters = f_.partition('x')              # ...x<n>: derotate and decode n times, each from the last decode
+            iters = int(iters) if iters else 1
             centred = f_.startswith('c')
             tau = float(f_[1:] if centred else f_)
 
@@ -562,11 +618,34 @@ def run_scenario(args):
                 y = combine('perc', az0, az1, H[0], H[1], hold)
 
             y = y * np.sqrt(ref / energy(y))
-            xh = reencode(latents(y), tag + '_' + name + '_p1')
-            n_ = min(xh.shape[0], y.shape[0])
-            x2 = np.ones_like(y)
-            x2[:n_] = xh[:n_]
-            az = derotate(y, x2, tau, centred, by_frame=True)
+            ycur = y
+
+            for it in range(iters):
+                f1 = decode_raw(latents(ycur), tag + '_' + name + '_p1')
+                xh = encode_raw(f1, tag + '_' + name + '_e1')
+                n_ = min(xh.shape[0], y.shape[0])
+                x2 = np.ones_like(y)
+                x2[:n_] = xh[:n_] * dd_rot
+                w = None
+
+                if mode:
+                    if mode == 'g':                          # the truth: what no receiver knows
+                        v = vec_loss(feat_in, f1[:, :, :NUSED].reshape(-1, NUSED), shift).reshape(-1, 4)
+                        metric = np.nanmean(np.where(np.isnan(v), 9.0, v), 1)
+                    elif mode == 'a':                        # the decoder's own certainty of the aux bit
+                        metric = -np.mean(np.abs(f1[:, :, 20]), 1)
+                    else:                                    # i: decode what it was re-encoded to; a frame
+                        f2 = decode_raw(latents(x2), tag + '_' + name + '_p2')       # that comes back the same is one
+                        m2 = min(f2.shape[0], f1.shape[0])                          # the decoder is sure of
+                        metric = np.full(f1.shape[0], 9.0)
+                        metric[:m2] = np.mean((f1[:m2, :, :NUSED] - f2[:m2, :, :NUSED]) ** 2, (1, 2))
+
+                    thr = np.percentile(metric, q)
+                    w = (metric <= thr).astype(float)[:y.shape[0]]
+
+                ycur = derotate(y, x2, tau, centred, by_frame=True, w=w)
+
+            az = ycur
         elif name.startswith('bref'):                     # bref<p>_<S>_<mode>_<tau>: the blind R, in the reference phase
             p = name[4:].split('_')
             Rb = blind_R(az0, az1, p[1], p[2], float(p[3]), g * g * M * sigma2)
@@ -672,6 +751,10 @@ def main():
     feat_in = load_features(feat_f)
     tx = np.fromfile(tx_f, np.complex64).astype(complex)
     nfr, (l0, s0, shift) = calibrate(a.work, tx, feat_in)
+    global DD_ROT
+    DD_ROT = dd_rotation(a.work, demod(rx_bpf(tx), s0, nfr))
+    print('decision-directed: the demodulator turns each carrier by %.1f deg at carrier 0 and %.1f deg a carrier'
+          % (np.degrees(np.angle(DD_ROT[0, 0])), np.degrees(np.mean(np.angle(DD_ROT[0, 1:] * np.conj(DD_ROT[0, :-1]))))))
     print('gate: clean latents through rade_dec_v2_test: loss %.4f (rade_c publishes 0.080 '
           'for the whole receiver), frame 0 at sample %d, truth shift %d vectors' % (l0, s0, shift))
 
@@ -681,7 +764,7 @@ def main():
     kinds = (a.kinds.split(',') if a.kinds else (['flat', 'mpp'] if a.quick else ['awgn', 'flat', 'mpp']))
     snrs = ([int(s) for s in a.snrs.split(',')] if a.snrs else ([0, 4, 8] if a.quick else [-2, 0, 2, 4, 6, 8, 12]))
     rungs = a.rungs.split(',')
-    jobs = [(a.work, k, s, sd, a.hold, rungs, 0, nfr, s0, shift, tx, feat_in, None)
+    jobs = [(a.work, k, s, sd, a.hold, rungs, 0, nfr, s0, shift, tx, feat_in, None, DD_ROT)
             for k in kinds for s in snrs for sd in range(a.seeds)]
 
     with Pool(min(len(jobs), max(1, (os.cpu_count() or 2) - 2))) as p:

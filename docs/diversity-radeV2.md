@@ -313,7 +313,7 @@ this is the summary and what is unsettled.
 3. **More captures**: a weaker V2 station, where single antennas fail and
    there is headroom for combining; one off a single station without QRM; and
    fast fading, where the update rate should matter.
-4. **Smooth reference phase.** Done on the oracle (combining doc section 13): a reference built from `h1/h0` gives nothing over arm 0's phase; known symbols would close most of the gap to `eq` with a short, centred estimate; the decoder's own re-encoded output is too weak a reference (causal worse than none, centred level). Open: confidence-weighted decisions, iteration, a phase model.
+4. **Smooth reference phase.** Done on the oracle (combining doc section 13): a reference built from `h1/h0` gives nothing over arm 0's phase; known symbols would close most of the gap to `eq` with a short, centred estimate; the decoder's own output, re-encoded and turned as the demodulator turns a carrier, gets about 0.6 of the gap on flat fading and 0.01 to 0.02 on multipath, centred and iterated only (causal is worse than none); confidence weighting (even by the true frame loss) does not help. Open: a phase model, wider pooling, the blind R and the full receiver.
 5. **EOO pilots as on-air truth** for the relative channel, on T-008 and T-009:
    the only on-air check of the estimator.
 6. **V1**, if the opportunity arises. `score_rade` scores V1 on sync and

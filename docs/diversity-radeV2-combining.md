@@ -797,38 +797,78 @@ measure it against, and has to be short.
 
 **Decision-directed.** The decoder's own output, put back through the encoder
 (`rade_enc_v2_test`) as the symbols to measure against: `dd` (the estimate
-waits for the frame it comes from) and `ddc` (centred).
+waits for the frame it comes from), `ddc` (centred), `x<n>` for n passes, each
+derotating perc's output from the last pass's decode.
 
-| channel, SNR | perc | dd3 (causal) | ddc6 (centred) | pilc3 | eq |
-|---|---|---|---|---|---|
-| flat +0 | 0.319 | 0.372 | 0.306 | 0.198 | 0.195 |
-| flat +4 | 0.258 | 0.327 | 0.242 | 0.146 | 0.140 |
-| flat +8 | 0.225 | 0.307 | 0.177 | 0.116 | 0.112 |
-| flat +12 | 0.224 | 0.272 | 0.186 | 0.104 | 0.096 |
-| mpp +0 | 0.291 | 0.379 | 0.286 | 0.206 | 0.177 |
-| mpp +4 | 0.241 | 0.340 | 0.247 | 0.170 | 0.132 |
-| mpp +8 | 0.177 | 0.249 | 0.178 | 0.144 | 0.112 |
-| mpp +12 | 0.190 | 0.247 | 0.204 | 0.136 | 0.103 |
+*Correction, 2026-10-06.* The first version of this section (committed as
+`1569782a` and `ac3e9ec1`) found decision-directed useless, and said the
+round trip correlated at only 0.54. That was a harness fault, not the codec.
+The demodulator hands the decoder each carrier turned by a fixed phase (its
+16-sample timing offset less the 8 the receiver corrects: 22.5 degrees a
+carrier, and a constant 175.5 degrees); the encoder's output carries neither.
+Per carrier the two are coherent at 1.00, and encoder(decoder(z)) against
+encoder(true features) at 0.988. A re-encoded symbol has to be turned the way
+the demodulator turns a received one (`dd_rotation()`, measured once on the
+clean transmission) before it can be a reference. The tables below are with
+that done; the earlier ones are replaced.
 
-**It does not get there.** Causal decision-directed is worse than doing
-nothing at every point (by 0.05 to 0.10). Centred is level with `perc`, and
-better only on flat at +8 and +12 dB (0.177 and 0.186 against 0.225 and 0.224).
-The reason is visible in the round trip: for a clean transmission,
-encoder(decoder(z)) correlates with z at only 0.54 (coherence, frame-aligned;
-it falls to 0.33 one frame off), so each re-encoded symbol is a weak reference
-and an error in the decode becomes an error in the reference.
+| channel, SNR | perc | `dd3` causal | `ddc3` | `ddc3x3` | `pilc3` (known) | eq |
+|---|---|---|---|---|---|---|
+| flat +0 | 0.319 | 0.413 | 0.300 | 0.282 | 0.198 | 0.195 |
+| flat +4 | 0.258 | 0.287 | 0.229 | 0.206 | 0.146 | 0.140 |
+| flat +8 | 0.225 | 0.316 | 0.176 | 0.151 | 0.116 | 0.112 |
+| flat +12 | 0.224 | 0.286 | 0.182 | 0.161 | 0.104 | 0.096 |
+| mpp +0 | 0.291 | 0.374 | 0.269 | 0.264 | 0.206 | 0.177 |
+| mpp +4 | 0.241 | 0.336 | 0.230 | 0.220 | 0.170 | 0.132 |
+| mpp +8 | 0.177 | 0.240 | 0.163 | 0.164 | 0.144 | 0.112 |
+| mpp +12 | 0.190 | 0.243 | 0.177 | 0.179 | 0.136 | 0.103 |
 
-What is not tried, so this is not a ruling out: soft or confidence-weighted
-decisions (only frames the decoder is sure of, by |aux| or frame-sync),
-iterating the derotation and the decode, wider pooling across carriers, a
-phase model (linear in time, or the same across carriers for flat fading) in
-place of an IIR, and the EOO pilots, which give the true phase for one symbol at
-the end of an over.
+**A centred, iterated decision-directed reference gets part of the way on flat
+fading and little on mpp.** Three passes of `ddc3` take flat at +8 and +12 dB
+from 0.225 and 0.224 to 0.151 and 0.161 (`eq` 0.112 and 0.096; about 0.6 of
+the gap), and +4 from 0.258 to 0.206. On mpp it is worth 0.01 to 0.02 at most
+(0.241 to 0.220 at +4, 0.190 to 0.179 at +12). It needs the future (centred
+over 3 symbols, 60 ms): the causal version is worse than doing nothing at
+every point, by 0.03 to 0.13. Longer or shorter windows (`ddc2`, `ddc6`) and
+more passes are within 0.01 of this.
+
+**Confidence weighting does not help.** The estimate keeps only the best q % of
+frames, ranked by (g) the true frame loss, which no receiver has, (a) the
+decoder's own |aux|, or (i) whether a frame decodes back to itself after
+re-encoding. At q 90 and 75, three passes, against unweighted `ddc3x3`:
+
+| channel, SNR | `ddc3x3` | genie q90 | genie q75 | \|aux\| q90 | \|aux\| q75 | idempotence q90 |
+|---|---|---|---|---|---|---|
+| flat +0 | 0.282 | 0.287 | 0.320 | 0.285 | 0.301 | 0.276 |
+| flat +4 | 0.206 | 0.214 | 0.249 | 0.204 | 0.219 | 0.205 |
+| flat +8 | 0.151 | 0.189 | 0.242 | 0.170 | 0.194 | 0.164 |
+| flat +12 | 0.161 | 0.205 | 0.208 | 0.179 | 0.190 | 0.168 |
+| mpp +0 | 0.264 | 0.267 | 0.311 | 0.248 | 0.280 | 0.247 |
+| mpp +4 | 0.220 | 0.208 | 0.234 | 0.204 | 0.268 | 0.226 |
+| mpp +8 | 0.164 | 0.191 | 0.213 | 0.177 | 0.197 | 0.178 |
+| mpp +12 | 0.179 | 0.203 | 0.241 | 0.200 | 0.217 | 0.192 |
+
+No weighting beats the unweighted estimate where it matters (+8 and +12 dB),
+where it loses by 0.01 to 0.06; at 0 and +4 dB it is within 0.02 either way
+(the best, |aux| at q 90 on mpp, +0.016 at +0 and +4, and one point of flat
+at +0). Even the genie, selecting frames by their true loss, is worse than
+using all of them, and the more it drops the worse it gets (q 75 is worse than
+q 90). Throwing frames away takes information from the estimate where the phase
+error is largest, and the decode of those frames is the least certain; the
+confidence that is available does not separate a frame whose symbols are
+wrong from one whose phase is.
+
+What is not tried: wider pooling across carriers, a phase model (linear in time,
+common across carriers on flat fading) in place of the averaging, soft rather
+than hard weights, the frame-sync confidence as the measure, and the EOO
+pilots.
 
 **What it says for the plan.** The gap from `perc` to `eq` is phase
 information the receiver does not have. A smooth reference built from R does
-not supply it; a reference measured against known symbols would, if short and
-centred; the symbols the decoder returns are too poor to measure against with
-this method. The per-carrier weight (section 12) stays the deployable part,
-worth about 0.01 on air. The `eq` rung stays a bound, and the way to it is
-more phase information, not a better blend.
+not supply it. Known symbols would, with a short centred estimate (the bound).
+The decoder's own output, re-encoded and turned as the demodulator turns it,
+supplies about 0.6 of the gap on flat fading and little on multipath, and only
+with a 60 ms look-ahead the receiver would pay for in latency. The per-carrier
+weight (section 12) stays the deployable part, worth about 0.01 on air. This is
+synthetic, decoder only, with the true R in `perc`; the blind R and the full
+receiver are not tried here.
