@@ -131,6 +131,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-040](changes/lc-menu.md#lc-040) | UI        | Hold and Invert move up into the freed cell           | diversity_menu.c                          | LC-039     | Local  |
 | [LC-044](changes/lc-engine.md#lc-044) | Fix       | An attenuator step moves the weight by the right arm (arm = ADC ^ swapped) | diversity_auto.c/.h | LC-022 | Local |
 | [LC-045](changes/lc-gate.md#lc-045) | Fix       | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | diversity_auto.c | LC-012 | Local |
+| [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | — | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -153,7 +154,7 @@ and which changes must travel together:
 
 Not yet placed in a group: LC-023, LC-031, LC-037 and LC-038 stand alone;
 LC-022 (needs LC-013 textually) goes with LC-034 and LC-044 as the
-RX1-on-ADC2 group; LC-045 goes with LC-012;
+RX1-on-ADC2 group; LC-045 and LC-046 go with LC-012;
 LC-024 goes with CW, LC-032 with LC-009, and LC-035 after the changes
 whose comments it rewords. The "Measure on" order (LC-015, open as #150)
 and the CW row are the parts most likely to interest upstream on their

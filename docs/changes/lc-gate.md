@@ -275,3 +275,34 @@ slider shows. The operator's setting is not written.
 **Checks.** Needs LC-012. Builds; the suite passes (known gaps
 unchanged). Nothing in the suite moves the span under the menu.
 
+---
+
+<a id="lc-046"></a>
+
+## LC-046 — The Carrier reference follows the RX filter
+
+**Why.** The carrier tracker (`diversity_auto.c`, the peak search before
+the bin range is re-aimed) always searched the hand-placed window,
+centre and width, and never read the Follow RX Filter flag; the
+panadapter drew the same window for Carrier. With Follow ticked the menu
+greys the centre and width out, yet they still decided where the carrier
+was looked for. Reported on AM/SAM. Not a regression of a recent change:
+the search has used the hand window since the original auto-diversity
+code, while Window, Digital and CW follow the filter. Found from the
+code, not measured on air.
+
+**Change.**
+- With Follow ticked the search region is 400 Hz centred in the passband
+  (the whole passband if narrower), `div_carrier_follow_window()`. Not the
+  whole filter, so that a sideband peak cannot win over the carrier.
+- The Carrier reference's own default width is 400 Hz (was 1000), also
+  where an invalid saved width is reset.
+- Unticking Follow seeds the hand window with that window rather than the
+  whole filter (`diversity_auto_seed_window()`).
+- The panadapter shading uses the same helper, so what is drawn is what
+  is searched.
+- Window, Digital, CW and RADE V1 are unchanged. A saved Carrier width of
+  exactly 1000 Hz stays, since it cannot be told from a deliberate one.
+
+**Checks.** Builds. Not measured on air and not in the suite: the
+harness does not move the Follow flag for Carrier.
