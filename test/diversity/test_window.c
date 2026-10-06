@@ -39,9 +39,7 @@ static const int div_auto_standdown = 0;   /* TEST never stands down */
 #ifdef GAP_LEVEL_OUTPUT
 static int div_auto_normalise = 0;         /* TEST has no Level output */
 #endif
-#ifdef GAP_CARRIER_FOLLOW
-#define DIV_CARRIER_FOLLOW_WIDTH 400.0     /* the value on the feature branch */
-#endif
+#define DIV_CARRIER_FOLLOW_WIDTH 400.0     /* LC-046's search width */
 
 static RECEIVER rx0;
 RECEIVER *receiver[8] = { &rx0 };
@@ -961,9 +959,6 @@ int main(int argc, char **argv) {
   int e = test_cw_follow();
   printf("\n");
   int f = test_carrier_follow();
-#ifdef GAP_CARRIER_FOLLOW
-  f = known_gap(f, GAP_CARRIER_FOLLOW);
-#endif
   printf("\n");
   int g = test_normalise();
 #ifdef GAP_LEVEL_OUTPUT
