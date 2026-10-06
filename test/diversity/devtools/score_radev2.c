@@ -558,14 +558,14 @@ static void feed_sample(const struct feed *F, cplx z0, cplx z1) {
 static void usage(const char *me) {
   fprintf(stderr,
           "usage: %s FILE.divc [--weights NAME=FILE]... [--blind NAME=TAU,k|c|u[,hold]]...\n"
-          "          [--rx2 NAME=SYNC,COMB[,TAU[,TAUN[,NB]]]]...\n"
+          "          [--rx2 NAME=SYNC,COMB[,TAU[,TAUN[,NB]]]]... [--lat-dir DIR]\n"
           "          [--flip] [--no-agc] [--gain G]\n"
           "          [--noise SIGMA] [--seed N] [--bin SECONDS]\n"
           "          [--csv-dir DIR] [--iq-dir DIR] [-v]\n", me);
 }
 
 int main(int argc, char **argv) {
-  const char *path = NULL, *csv_dir = NULL, *iq_dir = NULL, *iq2[2] = { NULL, NULL };
+  const char *path = NULL, *csv_dir = NULL, *iq_dir = NULL, *lat_dir = NULL, *iq2[2] = { NULL, NULL };
   double noise = 0.0, bin_s = 1.0, gain = 0.0;
   unsigned seed = 0;
   int flip = 0, agc = 1;
@@ -596,6 +596,8 @@ int main(int argc, char **argv) {
       iq2[1] = argv[++i];
     } else if (!strcmp(argv[i], "--csv-dir") && i + 1 < argc) {
       csv_dir = argv[++i];
+    } else if (!strcmp(argv[i], "--lat-dir") && i + 1 < argc) {
+      lat_dir = argv[++i];
     } else if (!strcmp(argv[i], "--iq-dir") && i + 1 < argc) {
       iq_dir = argv[++i];
     } else if (!strcmp(argv[i], "--weights") && i + 1 < argc) {
@@ -705,6 +707,20 @@ int main(int argc, char **argv) {
     if (st[i].src >= 2000) {
       if (!v2probe_open2(&st[i].p, nm, &xcfg[st[i].src - 2000], agc)) { return 1; }
     } else if (!v2probe_open(&st[i].p, nm, verbose, agc)) { return 1; }
+  }
+
+  if (lat_dir != NULL) {            /* the two-input receivers' latents, for py/ddscore.py */
+    mkdir(lat_dir, 0755);
+
+    for (int i = 0; i < nst; i++) {
+      char fn[1024];
+
+      if (st[i].src < 2000) { continue; }
+
+      snprintf(fn, sizeof(fn), "%s/%s.lat", lat_dir, st[i].p.name);
+
+      if ((st[i].p.x2->lat_out = fopen(fn, "wb")) == NULL) { perror(fn); return 1; }
+    }
   }
 
   if (csv_dir != NULL || iq_dir != NULL) {
@@ -1032,6 +1048,8 @@ int main(int argc, char **argv) {
     if (st[i].p.csv_out != NULL) { fclose(st[i].p.csv_out); }
 
     if (st[i].iq != NULL) { fclose(st[i].iq); }
+
+    if (st[i].src >= 2000 && st[i].p.x2->lat_out != NULL) { fclose(st[i].p.x2->lat_out); }
 
     v2probe_close(&st[i].p);
 

@@ -528,6 +528,12 @@ int rx2_process(rx2_state *x, float *features_out, const RADE_COMP *in0, const R
     } else {
       valid_output = update_frame_sync_decode(rx, features_out);
 
+      if (valid_output && x->lat_out != NULL) {
+        fwrite(z0, sizeof(float), RADE_V2_LATENT_DIM, x->lat_out);
+        fwrite(z1, sizeof(float), RADE_V2_LATENT_DIM, x->lat_out);
+        fwrite(rx->az_hat, sizeof(float), RADE_V2_LATENT_DIM, x->lat_out);
+      }
+
       if (valid_output) { rx->i++; }
     }
 

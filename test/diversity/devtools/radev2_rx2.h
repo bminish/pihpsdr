@@ -25,6 +25,7 @@
 #ifndef RADEV2_RX2_H
 #define RADEV2_RX2_H
 
+#include <stdio.h>
 #include "rade_rx_v2.h"
 
 struct rx2_cfg {
@@ -47,6 +48,7 @@ typedef struct {
   double c00, c11, c01r, c01i, w;              /* pooled signal covariance (IIR sums) */
   double n00, n11, n01r, n01i, wn;             /* noise covariance, per bin           */
   double pc00[14], pc11[14], pc01r[14], pc01i[14];   /* comb 3, 4: the same sums, per carrier */
+  FILE  *lat_out;                                    /* if set: z0, z1, combined (3 x 56 floats) of every frame decoded */
   double e0, ec, we;                           /* latent energy: arm 0, combined      */
   long   nacc;                                 /* symbols accumulated since acquisition */
   double R_re, R_im, q_last;                   /* the last estimate, for the probe    */

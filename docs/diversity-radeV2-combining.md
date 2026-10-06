@@ -733,6 +733,9 @@ What it says, sized honestly:
   absolute phase and is not tested here. Per-carrier weights recover about
   0.01 of what is on the table.
 
+Section 14 checks the combiner's gain, and section 13's reference, with a measure
+that does not depend on the decoder's own confidence.
+
 ## 13. A smooth reference phase, towards `eq`
 
 Section 7's open question: `eq` (per-carrier MRC with the channel phase
@@ -932,3 +935,79 @@ phase of a two-path channel is not a line across the carriers and the
 decision-directed symbols are not good enough to fit anything richer; a
 two-path model (two complex gains and a delay, fitted by the same search) is the
 obvious next one and is not tried.
+
+## 14. The recordings again: the reference phase, and a check that is not |aux|
+
+`score_radev2 --lat-dir` writes, for each two-input stream, the latents of every
+frame decoded (arm 0's, arm 1's, and the combined ones the decoder was given);
+`py/ddscore.py` then decodes arm 0, arm 1, the combined stream, and the combined
+stream after the decision-directed derotation of section 13 (`ddc3`: the IIR over 3
+symbols, centred, 3 passes; `ddm2_w3`: the phase model, h 3), per run of
+consecutive frames. The stream is `pf1` of section 12, sync from the combined
+`--blind` stream. The comb row reproduces the receiver's own |aux| to 0.005 or
+better. There is no truth on a recording, so first a measure had to be found.
+
+**The aux bits repeat, which gives one.** The stations' aux channel carries a
+message that repeats every 112 frames (112 bits, 4.5 s): the sign of the decoded
+aux bit agrees with itself 112 frames later in 0.97 to 0.99 of frames on the
+strong 40 m recordings, 0.96 on T-029 and T-030, and 0.78 to 0.85 on the 160 m
+ones (against 0.51 for a random period). So the same place in the periods around
+a frame is a reference for its bit: the majority of the copies four periods each
+side, left one out, which does not depend on how sure the decoder was of the frame
+it judges. The count of frames whose decoded sign differs from it is an aux bit
+error rate. It sees only the aux bit, not the speech, and the consensus is taken
+from the combined stream's copies (and, as a check against that favouring it,
+from arm 0's).
+
+**|aux| is not a measure of correctness on air.** On the 160 m recordings 9 to
+17 % of aux bits are wrong against the consensus while the mean |aux| is 0.90 to
+0.93: the decoder is confidently wrong on whole frames. |aux| was calibrated in
+section 7's synthetic work, where the aux bit is a constant; on air it does not
+say how often the bit is right. Every figure in this document that leads with it
+(sections 9, 11, 12) is a statement about the decoder's certainty.
+
+| recording | aux bit errors, % of frames: arm0 | comb (`pf1`) | `ddc3` | `ddm2_w3` | comb against arm 0: fixed / broke | `ddc3` against comb: fixed / broke |
+|---|---|---|---|---|---|---|
+| T-028 | 12.07 | 11.56 | 11.27 | 12.07 | 64 / 57 (p 0.59) | 30 / 26 (0.69) |
+| T-029 | 4.51 | 1.61 | 1.82 | 1.82 | 56 / 13 (p 2e-7) | 6 / 9 (0.61) |
+| T-030 | 1.31 | 0.58 | 0.58 | 0.51 | 11 / 1 (p 0.006) | 1 / 1 |
+| T-026 | 0.69 | 0.18 | 0.11 | 0.38 | 33 / 5 (p 4e-6) | 5 / 1 (0.22) |
+| T-027 | 1.01 | 1.01 | 1.19 | 0.87 | 5 / 5 | 4 / 9 (0.27) |
+| T-031 | 10.96 | 11.03 | 10.71 | 11.56 | 157 / 161 (p 0.87) | 119 / 101 (0.25) |
+| T-032 | 11.13 | 9.36 | 8.73 | 9.16 | 222 / 131 (p 2e-6) | 125 / 93 (0.036) |
+| T-033 | 11.47 | 10.77 | 10.44 | 10.86 | 110 / 80 (p 0.035) | 81 / 67 (0.29) |
+| T-034 | 17.77 | 17.24 | 16.93 | 17.87 | 197 / 175 (p 0.28) | 143 / 130 (0.47) |
+| T-023 weak | 17.40 | 18.58 | 22.12 | 20.06 | 18 / 22 (p 0.64) | 14 / 26 (0.081) |
+
+(p: exact two-sided sign test on the frames that changed. T-035 is T-029 again.
+With the consensus taken from arm 0 instead the comb-against-arm-0 results hold:
+T-029 56 / 13, T-026 33 / 5, T-032 214 / 138 (p 6e-5), T-033 111 / 81 (0.036),
+T-030 11 / 2 (0.022).)
+
+What it says, sized honestly:
+
+- **The per-carrier combiner does cut aux bit errors, independently of |aux|.**
+  Against arm 0 it fixes more frames than it breaks on every recording but
+  T-031 and T-027 (level) and the weak T-023, significantly on T-029, T-030, T-026, T-032 and T-033
+  (T-029: 4.5 to 1.6 %, T-026: 0.69 to 0.18 %, T-032: 11.1 to 9.4 %), and not
+  significantly on T-028, T-034 and the weak T-023. That is the first support for
+  section 12's gain that does not rest on the decoder's certainty. It is the aux
+  bit only, and on the three 160 m recordings with 10 to 17 % errors the gain
+  is 0.5 to 1.8 points.
+- **The decision-directed reference does not show a gain on air.** `ddc3` moves
+  the mean |aux| by -0.001 to +0.017, up on nine of ten, but the aux bit errors
+  move by -0.3 to -0.6 points on the five longer 160 m recordings and the paired tests mostly do not
+  separate it from the combined stream (p 0.25 to 0.69; T-032 is the one at
+  0.036, among ten comparisons, which would give about half a result that size by
+  chance). On the strong recordings it is level and on the weak one worse
+  (14 fixed, 26 broke). `ddm2_w3` is worse than `ddc3` on most and breaks significantly
+  on T-026 (3 fixed, 14 broke, p 0.013). The |aux| rise is what a derotation
+  towards the decoder's own previous decisions would produce whether or not
+  they are right, so it should not be read as improvement; the aux bit errors say
+  nothing has been gained that a test of this size can see. The synthetic gain
+  on flat fading (section 13) is not shown on air, where the channels are
+  multipath and noisy, which is where the oracle also showed little.
+- **Limits.** One bit a frame, not speech. The consensus is from the stream's own
+  copies. Three passes at the settings of section 13, not tuned here. Decoder
+  state restarts at the start of each run. 18 runs on T-034 and 7 to 8 on the other
+  160 m ones. The WAVs have the receiver's AGC and filtering in front.
