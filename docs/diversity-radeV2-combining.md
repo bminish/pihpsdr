@@ -762,9 +762,10 @@ the blind per-carrier R.
 | mpp +8 | 0.177 | 0.217 | 0.236 | 0.255 | 0.370 | 0.112 | 0.147 | 0.193 | 0.187 |
 | mpp +12 | 0.190 | 0.172 | 0.188 | 0.220 | 0.361 | 0.103 | 0.141 | 0.192 | 0.202 |
 
-**No gain.** With the true channel the blends are level with `perc` or worse
-(better at three of eight points, by 0.01 to 0.02; worse at four, by up to
-0.05), and the sharper they are the worse, towards `strong`. From the blind R
+**No gain.** With the true channel `ref1` and `ref2` beat `perc` at two of the eight points
+(flat +4 and mpp +12, by 0.015 to 0.018) and lose at most of the rest (`ref1`
+by up to 0.04); `ref4` loses at all eight, and the sharper the blend the worse,
+towards `strong`. From the blind R
 they lose to `bperc3` everywhere. A reference that moves smoothly between the
 arms does not give the decoder what `eq` gives it. What `eq` removes is the
 phase itself, not only its jumps: the decoder wants a constant channel phase,
@@ -787,9 +788,9 @@ no such symbols; this is the most any estimator of this kind could do.
 | mpp +12 | 0.190 | 0.170 | 0.171 | 0.134 | 0.136 | 0.151 | 0.103 |
 
 With known symbols, a centred estimate over 2 to 3 symbols (40 to 60 ms)
-reaches `eq` on flat fading and closes about 0.6 of the gap on mpp (+4 dB:
+reaches `eq` on flat fading and closes 0.55 to 0.75 of the gap on mpp (+4 dB:
 0.241 to 0.167 against `eq` 0.132). A causal one, which only has the past,
-reaches about 0.7 of it on flat at +4 dB and 0.2 to 0.4 on mpp, and gets
+reaches about 0.7 of it on flat at +4 dB and 0 to 0.4 on mpp, and gets
 worse the longer it averages: the phase moves faster than a long window can
 follow. So a phase reference is worth a great deal if there is something to
 measure it against, and has to be short.
