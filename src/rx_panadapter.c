@@ -344,10 +344,16 @@ void rx_panadapter_update(RECEIVER *rx) {
       //
       // The search region, not the few bins finally accumulated: it is
       // the region the operator sets, and seeing it is how they aim at a
-      // carrier other than the primary.
+      // carrier other than the primary. The default width mid-passband, when
+      // Follow RX Filter is ticked.
       //
-      wlo = wman_lo;
-      whi = wman_hi;
+      if (div_auto_follow_filter) {
+        div_carrier_follow_window(rx->filter_low, rx->filter_high, &wlo, &whi);
+      } else {
+        wlo = wman_lo;
+        whi = wman_hi;
+      }
+
       break;
 
     case DIV_REF_DIGITAL_IQ:
