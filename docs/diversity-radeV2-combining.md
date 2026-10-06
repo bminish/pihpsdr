@@ -732,3 +732,102 @@ What it says, sized honestly:
   The `eq` rung, which halves the loss on synthetic channels, needs the
   absolute phase and is not tested here. Per-carrier weights recover about
   0.01 of what is on the table.
+
+## 13. A smooth reference phase, towards `eq`
+
+Section 7's open question: `eq` (per-carrier MRC with the channel phase
+removed) halves the loss and needs an absolute phase the pilotless receiver
+cannot see. Is there a reference phase, smooth and built from what is
+observable, that gets part of the way from `perc` (arm 0's phase) to `eq`?
+Oracle ladder, synthetic, decoder only, 3 seeds, one speech sample, the same
+caveats as section 7. Mean feature loss, lower is better; clean 0.082.
+`radev2_oracle.py` rungs `ref<p>`, `pil*`, `dd*`.
+
+**The reference built from R.** Only the relative channel R = h1/h0 is
+observable, so the output's phase can be arm 0's, arm 1's, or something between,
+and a smooth blend is `h_ref = sum_k |h_k|^(p-1) h_k`: each arm's phase weighted
+by its amplitude (p 1 equal, 2 amplitude, 4 sharper, towards a hard switch),
+`h_ref/h0 = |h0|^(p-1)(1 + |R|^(p-1) R)` from R alone. `ref<p>` is `eq`'s
+output rotated into that phase, with the true channel; `bref<p>` the same from
+the blind per-carrier R.
+
+| channel, SNR | perc | ref1 | ref2 | ref4 | strong (hard switch) | eq | bperc3 | bref1 | bref2 |
+|---|---|---|---|---|---|---|---|---|---|
+| flat +0 | 0.319 | 0.344 | 0.357 | 0.419 | 0.642 | 0.195 | 0.283 | 0.305 | 0.312 |
+| flat +4 | 0.258 | 0.244 | 0.243 | 0.306 | 0.566 | 0.140 | 0.161 | 0.199 | 0.195 |
+| flat +8 | 0.225 | 0.266 | 0.283 | 0.317 | 0.453 | 0.112 | 0.135 | 0.161 | 0.166 |
+| flat +12 | 0.224 | 0.236 | 0.232 | 0.282 | 0.562 | 0.096 | 0.123 | 0.153 | 0.138 |
+| mpp +0 | 0.291 | 0.298 | 0.336 | 0.377 | 0.543 | 0.177 | 0.243 | 0.258 | 0.264 |
+| mpp +4 | 0.241 | 0.249 | 0.274 | 0.307 | 0.384 | 0.132 | 0.185 | 0.203 | 0.207 |
+| mpp +8 | 0.177 | 0.217 | 0.236 | 0.255 | 0.370 | 0.112 | 0.147 | 0.193 | 0.187 |
+| mpp +12 | 0.190 | 0.172 | 0.188 | 0.220 | 0.361 | 0.103 | 0.141 | 0.192 | 0.202 |
+
+**No gain.** With the true channel the blends are level with `perc` or worse
+(better at three of eight points, by 0.01 to 0.02; worse at four, by up to
+0.05), and the sharper they are the worse, towards `strong`. From the blind R
+they lose to `bperc3` everywhere. A reference that moves smoothly between the
+arms does not give the decoder what `eq` gives it. What `eq` removes is the
+phase itself, not only its jumps: the decoder wants a constant channel phase,
+and no phase built from R is one.
+
+**What a known phase is worth (the pilot bound).** `pil`/`pilc` take perc's
+output and remove the channel phase estimated from the *known* transmitted
+symbols (per carrier with its two neighbours, an IIR over tau symbols). V2 has
+no such symbols; this is the most any estimator of this kind could do.
+
+| channel, SNR | perc | pil1 (causal) | pil2 | pilc2 (centred) | pilc3 | pilc6 | eq |
+|---|---|---|---|---|---|---|---|
+| flat +0 | 0.319 | 0.245 | 0.274 | 0.193 | 0.198 | 0.225 | 0.195 |
+| flat +4 | 0.258 | 0.171 | 0.184 | 0.142 | 0.146 | 0.163 | 0.140 |
+| flat +8 | 0.225 | 0.145 | 0.169 | 0.113 | 0.116 | 0.139 | 0.112 |
+| flat +12 | 0.224 | 0.128 | 0.156 | 0.101 | 0.104 | 0.120 | 0.096 |
+| mpp +0 | 0.291 | 0.252 | 0.252 | 0.204 | 0.206 | 0.222 | 0.177 |
+| mpp +4 | 0.241 | 0.200 | 0.208 | 0.167 | 0.170 | 0.183 | 0.132 |
+| mpp +8 | 0.177 | 0.180 | 0.186 | 0.142 | 0.144 | 0.153 | 0.112 |
+| mpp +12 | 0.190 | 0.170 | 0.171 | 0.134 | 0.136 | 0.151 | 0.103 |
+
+With known symbols, a centred estimate over 2 to 3 symbols (40 to 60 ms)
+reaches `eq` on flat fading and closes about 0.6 of the gap on mpp (+4 dB:
+0.241 to 0.167 against `eq` 0.132). A causal one, which only has the past,
+reaches about 0.7 of it on flat at +4 dB and 0.2 to 0.4 on mpp, and gets
+worse the longer it averages: the phase moves faster than a long window can
+follow. So a phase reference is worth a great deal if there is something to
+measure it against, and has to be short.
+
+**Decision-directed.** The decoder's own output, put back through the encoder
+(`rade_enc_v2_test`) as the symbols to measure against: `dd` (the estimate
+waits for the frame it comes from) and `ddc` (centred).
+
+| channel, SNR | perc | dd3 (causal) | ddc6 (centred) | pilc3 | eq |
+|---|---|---|---|---|---|
+| flat +0 | 0.319 | 0.372 | 0.306 | 0.198 | 0.195 |
+| flat +4 | 0.258 | 0.327 | 0.242 | 0.146 | 0.140 |
+| flat +8 | 0.225 | 0.307 | 0.177 | 0.116 | 0.112 |
+| flat +12 | 0.224 | 0.272 | 0.186 | 0.104 | 0.096 |
+| mpp +0 | 0.291 | 0.379 | 0.286 | 0.206 | 0.177 |
+| mpp +4 | 0.241 | 0.340 | 0.247 | 0.170 | 0.132 |
+| mpp +8 | 0.177 | 0.249 | 0.178 | 0.144 | 0.112 |
+| mpp +12 | 0.190 | 0.247 | 0.204 | 0.136 | 0.103 |
+
+**It does not get there.** Causal decision-directed is worse than doing
+nothing at every point (by 0.05 to 0.10). Centred is level with `perc`, and
+better only on flat at +8 and +12 dB (0.177 and 0.186 against 0.225 and 0.224).
+The reason is visible in the round trip: for a clean transmission,
+encoder(decoder(z)) correlates with z at only 0.54 (coherence, frame-aligned;
+it falls to 0.33 one frame off), so each re-encoded symbol is a weak reference
+and an error in the decode becomes an error in the reference.
+
+What is not tried, so this is not a ruling out: soft or confidence-weighted
+decisions (only frames the decoder is sure of, by |aux| or frame-sync),
+iterating the derotation and the decode, wider pooling across carriers, a
+phase model (linear in time, or the same across carriers for flat fading) in
+place of an IIR, and the EOO pilots, which give the true phase for one symbol at
+the end of an over.
+
+**What it says for the plan.** The gap from `perc` to `eq` is phase
+information the receiver does not have. A smooth reference built from R does
+not supply it; a reference measured against known symbols would, if short and
+centred; the symbols the decoder returns are too poor to measure against with
+this method. The per-carrier weight (section 12) stays the deployable part,
+worth about 0.01 on air. The `eq` rung stays a bound, and the way to it is
+more phase information, not a better blend.

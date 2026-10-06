@@ -16,6 +16,18 @@ block, as the radio holds its weight):
     sub3, sub4   one weight per sub-band
     perc         one weight per carrier, arm 0's phase kept, unit noise
     perc_raw     the same without the noise normalisation
+    ref<p>       eq's output in the phase of a reference channel built from both arms,
+                 sum_k |h_k|^(p-1) h_k (p = 1 equal weights, 2 amplitude, 4 sharper): a
+                 reference that moves smoothly between the arms; bref<p>_<S>_<mode>_<tau>
+                 is the same from the blind R
+    pil<tau>, pilc<tau>
+                 perc's output with the channel phase taken off by an estimate from KNOWN
+                 symbols (the pilot bound: V2 has none), per carrier and its two neighbours,
+                 IIR over tau symbols; pil causal, pilc centred (forward and backward)
+    dd<tau>, ddc<tau>
+                 the same with the symbols the decoder returned, put back through the
+                 encoder (rade_enc_v2_test): decision-directed, no pilot. dd delays the
+                 estimate by the frame it waits for; ddb/pilb start from the blind R
     eq           per carrier MRC, channel phase removed
     strong       per carrier MRC, the stronger arm's phase kept
     eq0, ph0     arm 0 alone with its channel phase removed (ph0: phase only;
@@ -59,6 +71,7 @@ from radev2_calib import (BLD, FS, RADE, NUSED, distortion_loss,  # noqa: E402
                           doppler_fade, load_features, noise)
 
 DEC = os.path.join(BLD, 'rade_dec_v2_test')
+ENC = os.path.join(BLD, 'rade_enc_v2_test')
 
 NC, M, NCP, SYM = 14, 128, 32, 160
 RIDGE = 0.05
@@ -121,6 +134,30 @@ def decode(z, path):
     os.remove(path + '.z')
     os.remove(path + '.f')
     return out.reshape(-1, NUSED)
+
+
+def reencode(z, path):
+    """
+    The decoder's own output as symbols: decode the latents z, put all 21 features of each vector
+    back through the encoder, and return what the transmitter would have sent for them, (nfr, 2, NC)
+    complex. Decision-directed: a reference that needs no pilot, as good as the decode is.
+    """
+    z.astype(np.float32).tofile(path + '.z')
+
+    with open(path + '.z', 'rb') as fi, open(path + '.f', 'wb') as fo:
+        subprocess.run([DEC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
+
+    with open(path + '.f', 'rb') as fi, open(path + '.e', 'wb') as fo:
+        subprocess.run([ENC], stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, check=True)
+
+    e = np.fromfile(path + '.e', np.float32)
+    nfr = len(e) // 56
+
+    for ext in ('.z', '.f', '.e'):
+        os.remove(path + ext)
+
+    e = e[:nfr * 56].reshape(nfr, 2, NC, 2)
+    return e[..., 0] + 1j * e[..., 1]
 
 
 def loss(feat_in, out, shift):
@@ -222,6 +259,13 @@ def combine(name, az0, az1, H0, H1, hold):
         h0 = bx(H0)
         return az0 * np.conj(h0) / (np.abs(h0) + 1e-12) * (np.abs(h0) if name == 'eq0' else 1)
 
+    if name.startswith('ref'):                  # ref<p>: eq's output, in the phase of the reference channel
+        h0, h1 = bx(H0), bx(H1)                 # sum_k |h_k|^(p-1) h_k: one weight per arm, no switch
+        pw = float(name[3:]) - 1
+        href = np.abs(h0) ** pw * h0 + np.abs(h1) ** pw * h1
+        y = (np.conj(h0) * az0 + np.conj(h1) * az1) / np.sqrt(np.abs(h0) ** 2 + np.abs(h1) ** 2 + 1e-12)
+        return y * href / (np.abs(href) + 1e-12)
+
     if name in ('eq', 'strong'):
         h0, h1 = bx(H0), bx(H1)
         y = (np.conj(h0) * az0 + np.conj(h1) * az1) / np.sqrt(np.abs(h0) ** 2 + np.abs(h1) ** 2 + 1e-12)
@@ -315,6 +359,44 @@ def blind_R(az0, az1, S, mode, tau, nvar):
             R[i] = c01 / (den + 1e-12)
 
     return R.reshape(-1, 2, NC)
+
+
+def derotate(y, x, tau, centred, nb=1, by_frame=False):
+    """
+    y (nfr, 2, NC): a combined stream. x: the symbols it should hold (known, or decoded and re-encoded).
+    The channel phase per carrier is the phase of the IIR mean of y conj(x), over tau symbols and the
+    carrier and nb neighbours; y goes out with that phase taken off. causal: from earlier symbols only;
+    centred: forward and backward, the symbol itself counted once (what a decoder-aided estimate with
+    a delay could do). The pilot bound on how far a smooth, estimated reference can get towards eq.
+    """
+    nfr = y.shape[0]
+    c = (y * np.conj(x)).reshape(nfr * 2, NC)
+    a = np.exp(-1.0 / tau)
+    n = c.shape[0]
+    f, b = np.zeros_like(c), np.zeros_like(c)
+    acc = np.zeros(NC, complex)
+
+    for i in range(n):
+        f[i] = acc
+        acc = a * acc + (1 - a) * c[i]
+
+    acc = np.zeros(NC, complex)
+
+    for i in range(n - 1, -1, -1):
+        b[i] = acc
+        acc = a * acc + (1 - a) * c[i]
+
+    if by_frame and not centred:                # a decoded frame is known only when it has gone by
+        f = f[np.arange(n) - (np.arange(n) & 1)]
+
+    est = f + (b + (1 - a) * c if centred else 0)
+
+    if nb:
+        k = np.ones(2 * nb + 1)
+        est = np.stack([np.convolve(est[i], k, mode='same') for i in range(n)])
+
+    ph = est / (np.abs(est) + 1e-30)
+    return (y.reshape(nfr * 2, NC) * np.conj(ph)).reshape(nfr, 2, NC)
 
 
 def combine_R(az0, az1, R):
@@ -438,6 +520,7 @@ def run_scenario(args):
     Rnn_true = g * g * M * (sigma2 * np.eye(2)[None] + sq2 * Gb[:, :, None] * np.conj(Gb)[:, None, :])
     res = {}
     tag = os.path.join(work, '%s_%d_%d' % (kind, snr, seed))
+    az_tx = demod(g * rx_bpf(tx), s0, nfr)           # what the clean transmission demodulates to
 
     for name in rungs:
         if name in ('mvdr_o', 'mvdr_od'):               # true R, true noise + interference covariance
@@ -453,6 +536,43 @@ def run_scenario(args):
             f_ = name.split('_')                         # bcp<d|f>_<tau>[_<tau of the noise>]
             tau = float(f_[1])
             az = blind_mvdr(az0, az1, Ncp, tau, float(f_[2]) if len(f_) > 2 else max(2 * tau, 12.0), name[3] == 'f')
+        elif name.startswith('pil'):                      # pil[b][c]<tau>: perc's output, channel phase from known symbols
+            blind = name.startswith('pilb')
+            f_ = name[4 if blind else 3:]
+            centred = f_.startswith('c')
+            tau = float(f_[1:] if centred else f_)
+
+            if blind:
+                Rb = blind_R(az0, az1, 'perc3', 'k', 6.0, g * g * M * sigma2)
+                y = combine_R(az0, az1, Rb)
+            else:
+                y = combine('perc', az0, az1, H[0], H[1], hold)
+
+            az = derotate(y, az_tx, tau, centred)
+        elif name.startswith('dd'):                       # dd[b][c]<tau>: as pil, with the symbols the decoder returned
+            blind = name.startswith('ddb')
+            f_ = name[3 if blind else 2:]
+            centred = f_.startswith('c')
+            tau = float(f_[1:] if centred else f_)
+
+            if blind:
+                Rb = blind_R(az0, az1, 'perc3', 'k', 6.0, g * g * M * sigma2)
+                y = combine_R(az0, az1, Rb)
+            else:
+                y = combine('perc', az0, az1, H[0], H[1], hold)
+
+            y = y * np.sqrt(ref / energy(y))
+            xh = reencode(latents(y), tag + '_' + name + '_p1')
+            n_ = min(xh.shape[0], y.shape[0])
+            x2 = np.ones_like(y)
+            x2[:n_] = xh[:n_]
+            az = derotate(y, x2, tau, centred, by_frame=True)
+        elif name.startswith('bref'):                     # bref<p>_<S>_<mode>_<tau>: the blind R, in the reference phase
+            p = name[4:].split('_')
+            Rb = blind_R(az0, az1, p[1], p[2], float(p[3]), g * g * M * sigma2)
+            pw = float(p[0]) - 1
+            rot = 1 + np.abs(Rb) ** pw * Rb                # href / h0, from R alone
+            az = combine_R(az0, az1, Rb) * rot / (np.abs(rot) + 1e-12)
         elif name.startswith('b'):                        # b<S>_<mode>_<tau>[_fir<L>]
             p = name[1:].split('_')
             Rb = blind_R(az0, az1, p[0], p[1], float(p[2]), g * g * M * sigma2)
@@ -589,6 +709,9 @@ def report(rows, kinds, snrs, rungs, clean):
             print('| %+d dB | %s |' % (s, ' | '.join('%.3f' % np.nanmean([x[n] for x in sel]) for n in rungs)))
 
         print()
+
+    if not all(n in rungs for n in ANTENNAS):          # nothing to beat without both antennas in the run
+        return
 
     print('### Scenarios in which a rung beats the better antenna by more than 0.01\n')
     print('| channel | ' + ' | '.join(n for n in rungs if n not in ANTENNAS) + ' |')

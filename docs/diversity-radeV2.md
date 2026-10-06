@@ -313,10 +313,7 @@ this is the summary and what is unsettled.
 3. **More captures**: a weaker V2 station, where single antennas fail and
    there is headroom for combining; one off a single station without QRM; and
    fast fading, where the update rate should matter.
-4. **Smooth reference phase.** The oracle with the channel phase removed
-   (`eq`) is far ahead of every blind rung and needs absolute phase, which
-   the pilotless receiver cannot see. Is there a smooth reference built from
-   `h1/h0` that gets part of the way?
+4. **Smooth reference phase.** Done on the oracle (combining doc section 13): a reference built from `h1/h0` gives nothing over arm 0's phase; known symbols would close most of the gap to `eq` with a short, centred estimate; the decoder's own re-encoded output is too weak a reference (causal worse than none, centred level). Open: confidence-weighted decisions, iteration, a phase model.
 5. **EOO pilots as on-air truth** for the relative channel, on T-008 and T-009:
    the only on-air check of the estimator.
 6. **V1**, if the opportunity arises. `score_rade` scores V1 on sync and
