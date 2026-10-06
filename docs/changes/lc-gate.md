@@ -304,5 +304,8 @@ code, not measured on air.
 - Window, Digital, CW and RADE V1 are unchanged. A saved Carrier width of
   exactly 1000 Hz stays, since it cannot be told from a deliberate one.
 
-**Checks.** Builds. Not measured on air and not in the suite: the
-harness does not move the Follow flag for Carrier.
+**Confirmed in use, 2026-10-06:** Carrier follows the filter with Follow
+ticked.
+
+**Checks.** Builds. Not in the suite: the harness does not move the
+Follow flag for Carrier.
