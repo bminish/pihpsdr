@@ -4,6 +4,10 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-06: LC-046, the Carrier reference follows the RX filter when
+  Follow is ticked (400 Hz mid-passband); it had always searched the hand
+  window. Not yet confirmed on air.
+
 - 2026-10-05: LC-045, the Min coherence slider's bottom no longer follows
   the occupied span on FSK/Digital (it jumped; LC-012's floor, found in
   use on the rebased build, not caused by the re-sync). Confirmed cured
