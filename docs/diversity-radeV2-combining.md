@@ -1011,3 +1011,39 @@ What it says, sized honestly:
   copies. Three passes at the settings of section 13, not tuned here. Decoder
   state restarts at the start of each run. 18 runs on T-034 and 7 to 8 on the other
   160 m ones. The WAVs have the receiver's AGC and filtering in front.
+
+### In dB
+
+`py/dbgain.py`: arm 0's aux bit error rate over 10 s blocks against its own CP
+SNR estimate (logistic fit), and the shift in that SNR that would bring arm 0's
+error rate down to the combiner's. 125 blocks over nine recordings (T-023 left
+out); the 90 % interval is a bootstrap over blocks.
+
+| | arm 0 errors | combiner | equivalent gain |
+|---|---|---|---|
+| all nine recordings pooled | 7.4 % | 6.7 % | **0.4 dB** (0.2 to 0.6) |
+| the four 160 m recordings of 180 to 260 s (T-031 to T-034) | 10.8 % | 10.0 % | **0.3 dB** (0.1 to 0.6) |
+| T-032 alone | 8.8 % | 7.0 % | 0.8 dB (0.4 to 1.5) |
+| T-026 alone (two similar arms) | 0.71 % | 0.19 % | 3.2 dB (1.3 to 7.4) |
+
+The same with the consensus taken from arm 0 instead. Per recording the
+figures are poorly determined: T-029 has five blocks and no fit, and T-026's
+figure extrapolates a shallow pooled slope (an e-fold in error rate per 3.4 dB)
+to 0.2 %.
+
+For scale, the most a weight can give by adding arm 1 is set by how much weaker
+it is: `10 log10(1 + 10^(-d/10))` for arm 1 d dB below arm 0 in CP SNR. That is
++2.1 dB on T-031 (d 1.9), +1.2 to +1.8 on T-032 to T-034 (d 3 to 4.9), +1.0 on
+T-029 (d 6.5), +0.3 on T-030 (d 11.6), and +3 on T-026 with two equal arms. The
+combiner's measured 0.3 to 0.4 dB on the 160 m recordings is a fraction of the
+ideal, and T-026 is at it.
+
+**So, in dB:** the per-carrier combiner is worth about **0.3 to 0.5 dB** over
+arm 0 alone on these 160 m recordings, where arm 1 is 2 to 12 dB weaker, and
+about **3 dB** where the two arms are alike (T-026, one recording, wide interval).
+The decision-directed reference, which the oracle says is worth a good deal on
+flat fading, is **not shown to be worth anything** on these recordings (section 14
+above), so no dB is claimed for it. Caveats: the dB is in units of the
+receiver's own CP SNR estimate, which section 7 says ranks multipath
+wrongly; the slope pools two stations and several days' fades; and the aux bit
+is not the speech.
