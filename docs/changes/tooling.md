@@ -32,6 +32,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-018 | The tools name the ADCs ADC1 and ADC2 (follows LC-035) | `test/diversity/` |
 | LT-019 | `test_rates` checks Best's antenna readout against known answers (follows LC-036) | `test/diversity/test_rates.c` |
 | LT-020 | The Pi 5 bundle: `make pi5-bench.tar.gz`, `run_pi5.sh`; `bench_cpu` splits worker from feeder, paces as the radio, adds CW and 768/1536 kHz, and its RADE rows now lock; `pi_bench` adds the FFTW planners with wisdom and the RADE decimator against a vectorised one | `test/diversity/pi5/`, `bench_cpu.c`, `pi_bench.c`, `Makefile`, `docs/bench/` |
+| LT-021 | The Carrier-follow check in `test_window` counts (LC-046); the known gap narrows to the scheme-3 migration | `test/diversity/test_window.c`, `known_gaps.h` |
 
 **LT-020.** One tarball (`make -C test/diversity pi5-bench.tar.gz`) holds
 the engine's own sources (found by the compiler's dependency list),
@@ -115,7 +116,7 @@ becomes its regression test.
 | Gap | Feature branch commit | What the check shows on `TEST` |
 |---|---|---|
 | Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
-| Carrier search follows the filter | `41f8700c` | Two follow cases pick the wrong carrier |
+| Carrier follow flag, scheme-3 migration | `41f8700c` | The search itself is LC-046 and its `test_window` check counts. What is left is the props migration of the follow flag by scheme, which upstream dropped with the schemes (`f5a0ce9c`) |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
 | CW at 1536 kHz, 100 Hz filter | none: an accepted limitation (LC-029) | CW holds; 23.4 Hz bins leave too few for the region |
 | Reference scheme migration | upstream `f5a0ce9c` removed it | A scheme-1 props file loads its old reference numbers as they are (2 → RADE V1, 3 → FSK/Digital, 4 → CW). Taken from upstream and tracked, not restored |

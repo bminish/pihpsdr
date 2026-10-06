@@ -123,7 +123,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-032](changes/lc-menu.md#lc-032) | Fix       | The seeded window is returned to the menu, not written by the engine | diversity_auto.c/.h, diversity_menu.c | LC-009 | Local |
 | [LC-033](changes/lc-noise-floor.md#lc-033) | Behaviour | The noise floor selects its percentile band instead of sorting (same result, about 4.6x cheaper) | diversity_auto.c | LC-025 | Local |
 | [LC-034](changes/lc-menu.md#lc-034) | Fix       | The antenna readout names the converter, ADC1 or ADC2 (right when RX1 is on ADC2) | diversity_menu.c | LC-022 | Local |
-| [LC-035](changes/lc-engine.md#lc-035) | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, receiver.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
+| [LC-035](changes/lc-engine.md#lc-035) | Comments  | Comments name the ADCs ADC1 and ADC2, as the hardware does | diversity_auto.c/.h, diversity_capture.h, radio.c, client_server.c | [LC-022, LC-023, LC-025, LC-028] | Local |
 | [LC-036](changes/lc-noise-floor.md#lc-036) | Fix       | Best's per-arm SNR from the mean noise (percentile floor scaled), and one arm clear is enough | diversity_auto.c | LC-025, LC-028 | Local |
 | [LC-037](changes/lc-engine.md#lc-037) | Fix       | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | radio.c | — | Local |
 | [LC-038](changes/lc-rade.md#lc-038) | Fix       | The RADE V1 overlay covers the outer carriers whole (725-2225 Hz, not 750-2200) | rade_correlator.h, rx_panadapter.c | — | Local |
@@ -131,7 +131,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-040](changes/lc-menu.md#lc-040) | UI        | Hold and Invert move up into the freed cell           | diversity_menu.c                          | LC-039     | Local  |
 | [LC-044](changes/lc-engine.md#lc-044) | Fix       | An attenuator step moves the weight by the right arm (arm = ADC ^ swapped) | diversity_auto.c/.h | LC-022 | Local |
 | [LC-045](changes/lc-gate.md#lc-045) | Fix       | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | diversity_auto.c | LC-012 | Local |
-| [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | — | Local |
+| [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | LC-002, LC-009, LC-017 (textual; not minimised) | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -154,7 +154,8 @@ and which changes must travel together:
 
 Not yet placed in a group: LC-023, LC-031, LC-037 and LC-038 stand alone;
 LC-022 (needs LC-013 textually) goes with LC-034 and LC-044 as the
-RX1-on-ADC2 group; LC-045 and LC-046 go with LC-012;
+RX1-on-ADC2 group; LC-045 goes with LC-012, LC-046 with the CW group (it needs the width
+defaults of LC-002, LC-009 and LC-017);
 LC-024 goes with CW, LC-032 with LC-009, and LC-035 after the changes
 whose comments it rewords. The "Measure on" order (LC-015, open as #150)
 and the CW row are the parts most likely to interest upstream on their
@@ -188,7 +189,7 @@ All of it: [changes/open-items.md](changes/open-items.md).
 
 ## History
 
-Latest: 2026-10-05, re-synced onto `5db64949` (LC-022 reduced, LC-044
-and LC-045 added, upstream's removal of the weight guard taken, the
-LC-031 to LC-037 trailers reworded); before that 2026-10-02, LC-038 and
-the register split into an index and per-topic files. Full log: [changes/history.md](changes/history.md).
+Latest: 2026-10-06, re-synced onto `c60db7b4` (upstream's TCI audio
+corrections; nothing of ours touched) and the register audited against the
+code; before that 2026-10-05, onto `5db64949` (LC-022 reduced, LC-044
+and LC-045 added, the LC-031 to LC-037 trailers reworded). Full log: [changes/history.md](changes/history.md).
