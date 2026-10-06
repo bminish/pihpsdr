@@ -583,6 +583,7 @@ double div_auto_resolution     = DIV_TARGET_BIN_HZ;
 #define DIV_WIDTH_DEFAULT          1000.0
 #define DIV_DIGITAL_WIDTH_DEFAULT  2600.0
 #define DIV_CW_WIDTH_DEFAULT        600.0
+#define DIV_CARRIER_WIDTH_DEFAULT   400.0
 
 //
 // A reference's built-in window width, for the places that need to know
@@ -594,6 +595,8 @@ static double div_width_default(int ref) {
 
   case DIV_REF_CW:         return DIV_CW_WIDTH_DEFAULT;
 
+  case DIV_REF_CARRIER:    return DIV_CARRIER_WIDTH_DEFAULT;
+
   default:                 return DIV_WIDTH_DEFAULT;
   }
 }
@@ -601,7 +604,7 @@ static double div_width_default(int ref) {
 double div_band_centre         = 0.0;
 double div_band_width          = DIV_WIDTH_DEFAULT;
 double div_carrier_centre      = 0.0;
-double div_carrier_width       = DIV_WIDTH_DEFAULT;
+double div_carrier_width       = DIV_CARRIER_WIDTH_DEFAULT;
 //
 // The digital default is the whole SSB audio passband rather than a
 // narrow slice: occupancy narrows it from there, so the operator does not
@@ -1215,6 +1218,23 @@ double div_window_zero(int mode, int sidetone) {
   if (mode == modeCWL) { return -(double)sidetone; }
 
   return 0.0;
+}
+
+//
+// The Carrier reference's search region when it follows the RX filter: the
+// default width, centred in the passband - the carrier of AM and SAM sits
+// at the middle of the filter, and searching the whole passband would let
+// a sideband peak win. A passband narrower than that is used whole.
+// Edges in the shifted frame.
+//
+void div_carrier_follow_window(double filter_low, double filter_high, double *lo, double *hi) {
+  const double mid = 0.5 * (filter_low + filter_high);
+  double w = DIV_CARRIER_WIDTH_DEFAULT;
+
+  if (w > filter_high - filter_low) { w = filter_high - filter_low; }
+
+  *lo = mid - 0.5 * w;
+  *hi = mid + 0.5 * w;
 }
 
 //
@@ -3507,8 +3527,17 @@ static void div_process_block(void) {
     // is then outside the search entirely. The selection has no memory
     // between blocks, so restricting the region is the whole mechanism.
     //
+    // With Follow RX Filter ticked the region is the default width in the
+    // middle of the filter; the operator's window is for when it is not.
+    //
     double wlo, whi;
-    div_manual_window(&ctx, &wlo, &whi);
+
+    if (ctx.follow) {
+      div_carrier_follow_window(ctx.filter_low, ctx.filter_high, &wlo, &whi);
+    } else {
+      div_manual_window(&ctx, &wlo, &whi);
+    }
+
     const double a = div_shift_to_bin(&ctx, wlo);
     const double b = div_shift_to_bin(&ctx, whi);
     double slo = (a < b) ? a : b;
@@ -4232,6 +4261,14 @@ int diversity_auto_seed_window(double *centre, double *width) {
 
   if (hi - lo < 20.0) { return 0; }
 
+  if (div_auto_ref == DIV_REF_CARRIER) {
+    double clo, chi;
+    div_carrier_follow_window(lo, hi, &clo, &chi);
+    *centre = 0.5 * (clo + chi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
+    *width  = chi - clo;
+    return 1;
+  }
+
   *centre = 0.5 * (lo + hi) - div_window_zero(vfo[0].mode, cw_keyer_sidetone_frequency);
   *width  = hi - lo;
   return 1;
@@ -4722,7 +4759,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   double *centres[] = { &s->centre, &s->band_centre, &s->carrier_centre, &s->digital_centre,
                         &s->cw_centre
                       };
-  const double defaults[] = { div_width_default(s->ref), DIV_WIDTH_DEFAULT, DIV_WIDTH_DEFAULT,
+  const double defaults[] = { div_width_default(s->ref), DIV_WIDTH_DEFAULT, DIV_CARRIER_WIDTH_DEFAULT,
                               DIV_DIGITAL_WIDTH_DEFAULT, DIV_CW_WIDTH_DEFAULT
                             };
 

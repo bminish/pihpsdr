@@ -168,6 +168,7 @@ extern int  div_rade_side_get(void);
 // The panadapter overlay places the drawn window with it.
 //
 extern double div_window_zero(int mode, int sidetone);
+extern void   div_carrier_follow_window(double filter_low, double filter_high, double *lo, double *hi);
 
 //
 // Called when "Follow RX Filter" is unticked: if the selected
