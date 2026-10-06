@@ -116,6 +116,12 @@ it, but it does not use anything LC-008 adds.
   it. LC-045 needs LC-012 (and so LC-008, with its fixups). Applied
   2026-10-05, with fixups; the chain LC-013, LC-022, LC-034, LC-044 was
   applied, not built.
+- LC-046 does not apply to bare `upstream/TEST` (checked 2026-10-06): it
+  conflicts with LC-002's `DIV_*_WIDTH_DEFAULT` constants, LC-009's
+  `diversity_auto_seed_window()` and LC-017's CW width default and
+  `div_width_default()` case. The smallest set was not worked out; the
+  CW group's prerequisites (LC-012, LC-013, LC-015) are probably not
+  needed, and LC-017 itself needs more than it looks.
 - Reverting from the tip: a change goes with its fixups and everything
   that depends on it, newest first. Checked 2026-09-30: only LC-001,
   LC-003, LC-005, LC-007, LC-014 and LC-019 revert cleanly on their own.

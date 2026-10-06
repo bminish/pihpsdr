@@ -4,6 +4,17 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-06: **re-synced onto `c60db7b4`** ("Corrections to TCI audio",
+  `tci.c` and `tci_audio.c` only), by rebase, no conflicts; backup tag
+  `backup/TEST-pre-rebase-20261006`. The register and its write-ups were
+  then audited against the code. Corrected: LC-046's dependencies (it
+  does not apply to bare `upstream/TEST`: it needs LC-002's width
+  constants, LC-009's seed function and LC-017's CW width) and its
+  "not in the suite" note (`test_window`'s Carrier-follow check covers it
+  and passes); the Carrier follow known gap (that check now counts; the
+  line stays for `test_props`' scheme-3 migration only); LC-035's file
+  list (no `receiver.c`); the menu-side list in `ownership.md`.
+
 - 2026-10-06: LC-046, the Carrier reference follows the RX filter when
   Follow is ticked (400 Hz mid-passband); it had always searched the hand
   window. Confirmed in use.

@@ -99,7 +99,7 @@ Against these rules, 2026-10-01, `TEST` at `4f79c0be`. Status updated as items a
 
 **Menu-side LCs.** These touch `diversity_menu.c`, so they now overlap
 with dl1ycf's work: LC-006, LC-007, LC-008, LC-009, LC-011, LC-012,
-LC-014, LC-015, LC-016, LC-017, LC-020, LC-024 and LC-030, plus the
-capture tooling. At the next re-sync, expect his rewrite of the menu to
+LC-014, LC-015, LC-016, LC-017, LC-020, LC-024, LC-030, LC-032, LC-034,
+LC-039 and LC-040, plus the capture tooling. At the next re-sync, expect his rewrite of the menu to
 replace their menu halves. Each LC's engine half should keep working
 against whatever globals the menu sets.
