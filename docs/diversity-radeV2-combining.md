@@ -872,3 +872,63 @@ with a 60 ms look-ahead the receiver would pay for in latency. The per-carrier
 weight (section 12) stays the deployable part, worth about 0.01 on air. This is
 synthetic, decoder only, with the true R in `perc`; the blind R and the full
 receiver are not tried here.
+
+### A phase model in place of the average
+
+The IIR estimate pools one carrier and its two neighbours over a few symbols. A
+model uses all 14 carriers at once: over a window of 2h+1 symbols, centred, the
+channel phase is `phi + k c + r (t - t0)` (c the carrier, t the symbol), fitted
+by grid search for the `k` (to 0.8 rad a carrier, a delay to about 2 ms) and `r`
+(to 0.5 rad a symbol, about 3 Hz) that maximise `|sum y conj(x) e^(-j(kc + rt))|`;
+`phi` is its angle. Model 0 is `phi` alone (flat fading), 1 adds `k`, 2 adds
+`r`. `derotate_model()`, rungs `pilm<model>w<h>` and `ddm<model>w<h>x<n>`.
+
+With **known symbols** (3 seeds), against the IIR `pilc3`:
+
+| channel, SNR | perc | `pilc3` | model 0, h 2 | model 1 | model 2 | eq |
+|---|---|---|---|---|---|---|
+| flat +0 | 0.319 | 0.198 | 0.192 | 0.193 | 0.197 | 0.195 |
+| flat +4 | 0.258 | 0.146 | 0.141 | 0.141 | 0.144 | 0.140 |
+| flat +8 | 0.225 | 0.116 | 0.112 | 0.112 | 0.114 | 0.112 |
+| flat +12 | 0.224 | 0.104 | 0.098 | 0.098 | 0.102 | 0.096 |
+| mpp +0 | 0.291 | 0.206 | 0.362 | 0.220 | 0.223 | 0.177 |
+| mpp +4 | 0.241 | 0.170 | 0.282 | 0.173 | 0.172 | 0.132 |
+| mpp +8 | 0.177 | 0.144 | 0.273 | 0.155 | 0.156 | 0.112 |
+| mpp +12 | 0.190 | 0.136 | 0.238 | 0.147 | 0.148 | 0.103 |
+
+On flat fading one phase for the whole band is as good as `eq` (within 0.003,
+so the pilot bound on flat is `eq`). On mpp model 0 is far worse than the
+average (one phase cannot follow two paths) and models 1 and 2 are 0.003 to 0.014
+behind it: a slope across the carriers is not the phase of a two-path channel,
+and the per-carrier average follows it where the model cannot.
+
+**Decision-directed**, 8 seeds, three passes, centred, against the IIR version:
+
+| channel, SNR | perc | `ddc3x3` (IIR) | model 2, h 3 | model 2, h 4 | model beats IIR in |
+|---|---|---|---|---|---|
+| flat +0 | 0.309 | 0.274 | 0.249 | 0.251 | 7 of 8 seeds |
+| flat +4 | 0.265 | 0.230 | 0.200 | 0.207 | 7 of 8 |
+| flat +8 | 0.210 | 0.160 | 0.161 | 0.169 | 4 of 8 |
+| flat +12 | 0.217 | 0.165 | 0.135 | 0.158 | 8 of 8 |
+| mpp +0 | 0.274 | 0.257 | 0.254 | 0.261 | 4 of 8 |
+| mpp +4 | 0.225 | 0.205 | 0.197 | 0.202 | 7 of 8 |
+| mpp +8 | 0.181 | 0.167 | 0.171 | 0.175 | 2 of 8 |
+| mpp +12 | 0.183 | 0.169 | 0.171 | 0.173 | 4 of 8 |
+
+**The model helps on flat fading and is level on multipath.** On flat fading it
+beats the IIR version by 0.024 to 0.030 at 0, +4 and +12 dB and by nothing at
++8. As a share of the `perc`-to-`eq` gap (`eq` from the 3-seed run) that is 0.5
+to 0.7 at 0, +4 and +12 dB for the model (flat +12: 0.135 against `perc` 0.217
+and `eq` 0.096), against 0.3 to 0.45 for the IIR over the same seeds. On multipath it is within 0.01 of the IIR either way, which is 0.01 to 0.02
+better than `perc` at 0 to +4 dB and nothing at +8 and +12. Model 0 alone does
+as well as model 2 on flat and is much worse on mpp, so the extra parameters
+buy robustness to the channel being something else, not accuracy where it is
+flat. Seed scatter is about 0.01 to 0.02, one speech sample.
+
+**What it does not do.** It does not reach the known-symbol bound on either
+(flat +8: 0.161 against 0.112), and it is still centred (a 60 to 80 ms
+look-ahead) and iterated. The gap that remains on multipath is that the true
+phase of a two-path channel is not a line across the carriers and the
+decision-directed symbols are not good enough to fit anything richer; a
+two-path model (two complex gains and a delay, fitted by the same search) is the
+obvious next one and is not tried.

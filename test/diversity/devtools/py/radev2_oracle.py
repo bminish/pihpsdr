@@ -29,7 +29,9 @@ block, as the radio holds its weight):
                  encoder (rade_enc_v2_test), turned as the demodulator turns a carrier
                  (dd_rotation): decision-directed, no pilot. dd delays the estimate by the
                  frame it waits for; ddb/pilb start from the blind R. dd[<mode><q>_]...[x<n>]:
-                 n passes; a mode (g true frame loss, a |aux|, i idempotence) keeps the best
+                 n passes; pil/dd m<model>w<h> in place of c<tau>: a phase model over 2h+1
+                 symbols (0 one phase for all carriers, 1 and a slope across them, 2 and a
+                 rate in time) fitted by grid search (derotate_model); a mode (g true frame loss, a |aux|, i idempotence) keeps the best
                  q % of frames in the estimate
     eq           per carrier MRC, channel phase removed
     strong       per carrier MRC, the stronger arm's phase kept
@@ -447,6 +449,41 @@ def derotate(y, x, tau, centred, nb=1, by_frame=False, w=None):
     return (y.reshape(nfr * 2, NC) * np.conj(ph)).reshape(nfr, 2, NC)
 
 
+K_GRID = np.arange(-0.8, 0.81, 0.1)           # rad per carrier: a delay of up to about 2 ms
+R_GRID = np.arange(-0.5, 0.51, 0.125)          # rad per symbol: a Doppler of up to about 3 Hz
+
+
+def derotate_model(y, x, model, h):
+    """
+    The channel phase as a model fitted over a window of 2h+1 symbols, centred, instead of an average:
+    phase(t, c) = phi + k c + r (t - t0), and by model
+        0   phi                 one phase for all carriers (flat fading)
+        1   phi, k              and a slope across the carriers (a delay: two paths)
+        2   phi, k, r           and a rate of change in time
+    Found by grid search for the k and r that maximise |sum y conj(x) e^{-j(k c + r t)}| over the
+    window, phi its angle; y goes out turned by phi + k c at the window's centre. The carriers share
+    the fit, so each phase estimate has 14 times the data an IIR over one carrier and its neighbours has.
+    """
+    nfr = y.shape[0]
+    c = (y * np.conj(x)).reshape(nfr * 2, NC)
+    n = c.shape[0]
+    kk = K_GRID if model >= 1 else np.zeros(1)
+    rr = R_GRID if model >= 2 else np.zeros(1)
+    t = np.arange(-h, h + 1)
+    E = np.exp(-1j * (kk[:, None, None, None] * np.arange(NC)[None, None, None, :]
+                      + rr[None, :, None, None] * t[None, None, :, None]))        # (nk, nr, 2h+1, NC)
+    E = E.reshape(len(kk) * len(rr), -1)
+    pad = np.concatenate([np.zeros((h, NC), complex), c, np.zeros((h, NC), complex)])
+    win = np.stack([pad[i:i + 2 * h + 1].reshape(-1) for i in range(n)])           # (n, (2h+1) NC)
+    S = win @ E.T                                                                    # (n, nk nr)
+    best = np.argmax(np.abs(S), axis=1)
+    sb = S[np.arange(n), best]
+    kb = kk[best // len(rr)]
+    ph = (sb / (np.abs(sb) + 1e-30))[:, None] * np.exp(1j * kb[:, None] * np.arange(NC)[None, :])
+    ph = np.where(np.abs(sb)[:, None] > 1e-9, ph, 1.0)
+    return (y.reshape(n, NC) * np.conj(ph)).reshape(nfr, 2, NC)
+
+
 def combine_R(az0, az1, R):
     return (az0 + np.conj(R) * az1) / np.sqrt(1 + np.abs(R) ** 2)
 
@@ -587,8 +624,9 @@ def run_scenario(args):
         elif name.startswith('pil'):                      # pil[b][c]<tau>: perc's output, channel phase from known symbols
             blind = name.startswith('pilb')
             f_ = name[4 if blind else 3:]
+            pm = f_.startswith('m')                       # m<model>w<h>: a phase model over 2h+1 symbols
             centred = f_.startswith('c')
-            tau = float(f_[1:] if centred else f_)
+            tau = 0.0 if pm else float(f_[1:] if centred else f_)
 
             if blind:
                 Rb = blind_R(az0, az1, 'perc3', 'k', 6.0, g * g * M * sigma2)
@@ -596,7 +634,10 @@ def run_scenario(args):
             else:
                 y = combine('perc', az0, az1, H[0], H[1], hold)
 
-            az = derotate(y, az_tx, tau, centred)
+            if pm:
+                az = derotate_model(y, az_tx, int(f_[1]), int(f_.split('w')[1]))
+            else:
+                az = derotate(y, az_tx, tau, centred)
         elif name.startswith('dd'):                       # dd[b][<mode><q>_][c]<tau>: pil, with the symbols the decoder
             blind = name.startswith('ddb')                # returned; a mode (g genie, a aux, i idempotence) keeps only
             f_ = name[3 if blind else 2:]                 # the best q % of frames in the estimate
@@ -608,8 +649,9 @@ def run_scenario(args):
 
             f_, _, iters = f_.partition('x')              # ...x<n>: derotate and decode n times, each from the last decode
             iters = int(iters) if iters else 1
+            pm = f_.startswith('m')
             centred = f_.startswith('c')
-            tau = float(f_[1:] if centred else f_)
+            tau = 0.0 if pm else float(f_[1:] if centred else f_)
 
             if blind:
                 Rb = blind_R(az0, az1, 'perc3', 'k', 6.0, g * g * M * sigma2)
@@ -643,7 +685,10 @@ def run_scenario(args):
                     thr = np.percentile(metric, q)
                     w = (metric <= thr).astype(float)[:y.shape[0]]
 
-                ycur = derotate(y, x2, tau, centred, by_frame=True, w=w)
+                if pm:
+                    ycur = derotate_model(y, x2, int(f_[1]), int(f_.split('w')[1]))
+                else:
+                    ycur = derotate(y, x2, tau, centred, by_frame=True, w=w)
 
             az = ycur
         elif name.startswith('bref'):                     # bref<p>_<S>_<mode>_<tau>: the blind R, in the reference phase
