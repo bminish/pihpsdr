@@ -1133,20 +1133,6 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
-static void res_changed_cb(GtkWidget *widget, gpointer data) {
-  static const double res[] = { DIV_RES_AUTO, 24.0, 12.0, 6.0 };
-  int i = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-
-  if (i < 0 || i > 3) { i = 2; }
-
-  div_auto_resolution = res[i];
-  //
-  // The transform length changes, so the engine has to be rebuilt.
-  //
-  diversity_auto_restart();
-  div_send_settings(DIV_ACTION_NONE);
-}
-
 void diversity_menu(GtkWidget *parent) {
   GtkWidget *btn, *lbl;
   dialog = gtk_dialog_new();
@@ -1331,25 +1317,6 @@ void diversity_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(win_width_btn), div_auto_width);
   gtk_grid_attach(GTK_GRID(agrid), win_width_btn, 7, 1, 4, 1);
   g_signal_connect(win_width_btn, "value_changed", G_CALLBACK(width_cb), NULL);
-  lbl = gtk_label_new("Resolution");
-  gtk_widget_set_name(lbl, "boldlabel");
-  gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 2, 2, 1);
-  btn = gtk_combo_box_text_new();
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Auto (from Averaging)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "24 Hz bins (43 ms)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "12 Hz bins (85 ms)");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "6 Hz bins (171 ms)");
-  gtk_combo_box_set_active(GTK_COMBO_BOX(btn),
-                           div_auto_resolution <= 0.0 ? 0
-                           : (div_auto_resolution > 18.0 ? 1 : (div_auto_resolution > 9.0 ? 2 : 3)));
-  //gtk_widget_set_tooltip_text(res_combo,
-  //                            "Finer bins lift a weak carrier further out of the noise, "
-  //                            "but each step doubles the block period and so halves the "
-  //                            "update rate. The bin width actually achieved is shown in "
-  //                            "the status line.");
-  gtk_grid_attach(GTK_GRID(agrid), btn, 2, 2, 4, 1);
-  g_signal_connect(btn, "changed", G_CALLBACK(res_changed_cb), NULL);
   lbl = gtk_label_new("Averaging (s)");
   //gtk_widget_set_tooltip_text(tau_label,
   //                            "Time constant for the gain/phase estimate. "

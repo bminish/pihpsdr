@@ -150,16 +150,15 @@
 //
 
 //
-// Tunables. Target bin width, in Hz. The FFT length is chosen per sample
-// rate to land near this, so the frequency resolution and the block
-// duration are the same whatever the radio is running at.
+// Tunables. The FFT length is chosen per sample rate to land near the
+// target bin width, so the frequency resolution and the block duration
+// are the same whatever the radio is running at. The target is the
+// engine's own choice, diversity_auto_bin_policy(); see div_auto_resolution.
 //
-// The default target; the operator can choose 24, 12 or 6 Hz - see
-// div_auto_resolution. The floor of 2048 lets every rate from 48 kHz up
-// reach 24 Hz (23.44 Hz, a 42.7 ms block); at 4096 a 24 Hz request at
-// 48 kHz was silently granted as 11.72 Hz (Finding 43).
+// The floor of 2048 lets every rate from 48 kHz up reach 24 Hz (23.44 Hz,
+// a 42.7 ms block); at 4096 a 24 Hz request at 48 kHz was silently granted
+// as 11.72 Hz (Finding 43).
 //
-#define DIV_TARGET_BIN_HZ   12.0
 #define DIV_MIN_NFFT        2048
 #define DIV_MAX_NFFT        65536
 
@@ -573,7 +572,7 @@ double div_auto_tau            = 2.0;
 double div_auto_hang           = 10.0;
 double div_auto_coherence_min  = 0.20;
 int    div_auto_weighting      = DIV_WEIGHT_FLAT;
-double div_auto_resolution     = DIV_TARGET_BIN_HZ;
+double div_auto_resolution     = DIV_RES_AUTO;
 
 //
 // The window controls are modal: DIV_REF_BAND, DIV_REF_CARRIER and
@@ -4372,7 +4371,7 @@ static void div_settings_load(const DIV_SETTINGS *s) {
   div_auto_width         = s->width;
   div_auto_tau           = s->tau;
   div_auto_hang          = s->hang;
-  div_auto_resolution    = s->resolution;
+  div_auto_resolution    = DIV_RES_AUTO;   // pinned, whatever the block says - see div_settings_validate()
   div_band_cohmin        = s->band_cohmin;
   div_carrier_cohmin     = s->carrier_cohmin;
   div_digital_cohmin     = s->digital_cohmin;
@@ -4774,14 +4773,6 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   if (!(s->tau > 0.0))        { s->tau = 2.0; }
 
   //
-  // Zero or not a number is missing; below zero is DIV_RES_AUTO, which is
-  // what the menu stores for Auto.
-  //
-  if (s->resolution == 0.0 || s->resolution != s->resolution) { s->resolution = DIV_TARGET_BIN_HZ; }
-
-  if (s->resolution < 0.0) { s->resolution = DIV_RES_AUTO; }
-
-  //
   // 0.2, not 0.1, to match the slider's minimum.
   //
   if (s->tau < 0.2)  { s->tau = 0.2; }
@@ -4802,15 +4793,13 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   s->hang = DIV_HANG_DEFAULT;
 
   //
-  // The Resolution control offers 24, 12 and 6 Hz. 3 Hz is retired: it
-  // trailed 12 Hz on Sum and Null on five captures of six (Findings 42,
-  // 43; T-020), and above 192 kHz it was not a distinct setting. A saved
-  // or received 3 Hz becomes 6 Hz, the nearest entry, which is a shorter
-  // block than it asked for.
+  // Pinned to Auto, like the Hang above: there is no control for the bin
+  // width any more (the engine takes it from Averaging and the reference,
+  // diversity_auto_bin_policy()), so a 12, 6 or 3 Hz left in a props file
+  // by an older build, or sent by an older client, is replaced rather than
+  // honoured. The field stays on the wire and in the file.
   //
-  if (s->resolution > 0.0 && s->resolution < 6.0)  { s->resolution = 6.0; }
-
-  if (s->resolution > 24.0) { s->resolution = 24.0; }
+  s->resolution = DIV_RES_AUTO;
 
   //
   // The widths: 20.0, not 10.0, because the spin button's minimum is 20

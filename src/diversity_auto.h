@@ -64,7 +64,8 @@ extern double div_auto_hang;            // unused: kept for the wire and props f
                                         // (no RADE lock timeout - see DIV_HANG_DEFAULT)
 extern double div_auto_coherence_min;   // hold below this coherence
 extern int    div_auto_weighting;       // always DIV_WEIGHT_FLAT (see .c)
-extern double div_auto_resolution;      // requested bin width, Hz, or DIV_RES_AUTO
+extern double div_auto_resolution;      // DIV_RES_AUTO; a fixed width in Hz only from the
+                                        // test tools (pinned by div_settings_validate())
 extern int    div_auto_normalise;       // "Level output": hold the combined
                                         // output at arm 0's level (see
                                         // div_norm_refresh())
