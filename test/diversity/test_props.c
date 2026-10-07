@@ -343,20 +343,20 @@ static int test_rade_client_pinned(void) {
 }
 
 /*
- * LC-048, LC-049, LC-050: the Averaging cap, the Resolution range, Auto,
+ * LC-048, LC-050, LC-051: the Averaging cap, the bin width pinned to Auto,
  * and the table Auto reads. The values come through the props file, which
  * is where div_settings_validate() runs.
  */
 static int test_averaging_and_bins(void) {
   int bad = 0;
   static const struct { double tau, res, want_tau, want_res; const char *what; } c[] = {
-    { 20.0, 3.0,   6.0, 6.0,          "tau 20 -> 6 s (the cap), 3 Hz -> 6 Hz" },
-    {  7.0, 40.0,  6.0, 24.0,         "tau 7 -> 6 s, 40 Hz -> 24 Hz" },
-    {  2.0, 0.0,   2.0, 12.0,         "resolution 0 is missing -> 12 Hz" },
+    { 20.0, 3.0,   6.0, DIV_RES_AUTO, "tau 20 -> 6 s (the cap); 3 Hz -> Auto" },
+    {  7.0, 40.0,  6.0, DIV_RES_AUTO, "tau 7 -> 6 s; 40 Hz -> Auto" },
+    {  2.0, 12.0,  2.0, DIV_RES_AUTO, "a stored 12 Hz (an older file) -> Auto" },
+    {  2.0, 0.0,   2.0, DIV_RES_AUTO, "resolution 0 -> Auto" },
     {  2.0, -1.0,  2.0, DIV_RES_AUTO, "resolution -1 stays Auto" },
-    {  2.0, -7.5,  2.0, DIV_RES_AUTO, "any negative resolution is Auto" },
-    {  5.9, 24.0,  5.9, 24.0,         "5.9 s and 24 Hz are left alone" },
-    {  0.2, 6.0,   0.2, 6.0,          "0.2 s and 6 Hz are left alone" },
+    {  5.9, 24.0,  5.9, DIV_RES_AUTO, "5.9 s is left alone; 24 Hz -> Auto" },
+    {  0.2, 6.0,   0.2, DIV_RES_AUTO, "0.2 s is left alone; 6 Hz -> Auto" },
   };
 
   for (size_t i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
@@ -394,7 +394,7 @@ static int test_averaging_and_bins(void) {
 
   printf("  Auto's table: %zu cases, %d wrong   %s\n", sizeof(p) / sizeof(p[0]), pol, pol ? "FAIL" : "OK");
   have_tau = have_res = 0;
-  div_auto_resolution = 12.0;
+  div_auto_resolution = DIV_RES_AUTO;
   div_auto_tau = 2.0;
   return bad + pol == 0;
 }
@@ -439,7 +439,7 @@ int main(void) {
   printf("\nretired controls are pinned, not ranged\n");
   ok &= test_retired_pinned();
   ok &= test_rade_client_pinned();
-  printf("\nAveraging cap, Resolution range, Auto\n");
+  printf("\nAveraging cap, bin width pinned to Auto\n");
   ok &= test_averaging_and_bins();
   printf("\n%s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
