@@ -161,3 +161,18 @@ needed. Hold and Invert then move up one row each into the freed cell
 column 8. The engine is untouched: `diversity_auto_reset()` and
 `DIV_ACTION_RESET` remain.
 
+---
+
+## The second attenuator slider's label (LC-047)
+
+The right-hand attenuator slider is the ADC RX1 is *not* on, but its label
+was the fixed text "ADC2:". With RX1 on ADC2 it is ADC1's slider. We
+build the label from the same `otheradc` the slider uses:
+
+```c
+char otherlbl[16];
+snprintf(otherlbl, sizeof(otherlbl), "ADC%d:", otheradc + 1);
+lbl = gtk_label_new(otherlbl);
+```
+
+The left slider's "RX1 ATT:" is already right.

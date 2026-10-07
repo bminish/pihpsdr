@@ -246,3 +246,21 @@ from row 5 to row 4, both column 8. No behaviour change. This is our own
 layout choice, not something agreed with upstream, and is not meant for
 a PR: if the menu is taken from upstream at a re-sync, LC-039 and this
 go together or not at all. Depends on LC-039.
+
+
+<a id="lc-047"></a>
+
+## LC-047 — The second attenuator slider is labelled with its own ADC
+
+**Why.** The attenuator row at the top of the menu has two sliders: the
+left, "RX1 ATT:", is the ADC RX1 is set to; the right is the other one.
+The right was labelled "ADC2:" whatever RX1 was set to. With RX1 on ADC2
+the right slider is ADC1's (the attenuator it moves already follows RX1's
+ADC, as it should), so the label named the wrong converter. Seen in use.
+
+**Change.** The label is `ADC%d:` with `otheradc + 1`, the same variable
+the slider is wired with. The labels keep the hardware names (ADC1, ADC2),
+not "Other"; "other" stays internal. The left label is unchanged. The
+menu is built when it opens, so a change of RX1's ADC with the menu open
+shows on the next open, like the sliders' own values. No dependencies.
+Written up for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).

@@ -132,6 +132,7 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-044](changes/lc-engine.md#lc-044) | Fix       | An attenuator step moves the weight by the right arm (arm 0 is RX1's ADC) | diversity_auto.c | — | Local |
 | [LC-045](changes/lc-gate.md#lc-045) | Fix       | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | diversity_auto.c | LC-012 | Local |
 | [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | LC-002, LC-009, LC-017 (textual; not minimised) | Local |
+| [LC-047](changes/lc-menu.md#lc-047) | UI        | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | diversity_menu.c | — | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -153,7 +154,7 @@ and which changes must travel together:
 8. LC-006 last: it needs the measurement data behind it.
 
 Not yet placed in a group: LC-023, LC-031, LC-037 and LC-038 stand alone;
-LC-034 and LC-044 (both stand alone) are the RX1-on-ADC2 group; LC-045 goes with LC-012, LC-046 with the CW group (it needs the width
+LC-034, LC-044 and LC-047 (all stand alone) are the RX1-on-ADC2 group; LC-045 goes with LC-012, LC-046 with the CW group (it needs the width
 defaults of LC-002, LC-009 and LC-017);
 LC-024 goes with CW, LC-032 with LC-009, and LC-035 after the changes
 whose comments it rewords. The "Measure on" order (LC-015, open as #150)
