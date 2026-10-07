@@ -59,8 +59,8 @@ port from `feature/auto-diversity`, done on `TEST`'s menu.
 ## LC-050 — Resolution gains Auto, which sets the bin width from Averaging
 
 **Why.** The block period is 1 / bin width. On a short average a long
-block is not honoured (at 0.2 s a 6 Hz block of 171 ms is shorter than one
-averaging time, so alpha is 0.57), and on a long one finer bins cost
+block is not honoured (at 0.2 s a 6 Hz block of 171 ms is most of one averaging
+time, alpha 0.57, and a 3 Hz block is longer than it), and on a long one finer bins cost
 nothing, so the operator should not have to pick. The sweep (T-020)
 shows no measurable SNR from the mapping itself, +0.08 dB at 0.5 s and
 +0.02 dB at 6 s, so Auto is justified by timing and by resolution for the
