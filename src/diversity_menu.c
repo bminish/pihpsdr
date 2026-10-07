@@ -68,22 +68,24 @@ static void hold_cb(GtkWidget *widget, gpointer data);
 //
 // The Averaging slider is geometric, not linear.
 //
-// The control spans 0.2 to 30 s and the interesting part of it is the
+// The control spans 0.2 to 6 s and the interesting part of it is the
 // short end: Null wants the shortest average that still passes the
 // coherence gate, and the difference between 0.2 and 0.5 s is worth more
-// than the difference between 20 and 30 s. Laid out linearly, everything
-// below five seconds sits in the first sixth of the travel and cannot be
-// set accurately; laid out geometrically - equal ratio per pixel, which
-// is the natural spacing for a time constant - 0.2 to 5 s occupies 64 %
-// of it. See Findings 18 and 21 in docs/diversity-measurements.md.
+// than the difference between 4 and 6 s. It stops at 6 s because nothing
+// measured gains from more: over 70 wideband captures the best fixed
+// value up to 10 s is worth +0.04 dB over capping at 6 s, and the RADE
+// decode scores show no trend (docs/test-findings.md, T-019). Laid out
+// geometrically - equal ratio per pixel, which is the natural spacing for
+// a time constant - the short end gets the travel. See Findings 18 and 21
+// in docs/diversity-measurements.md.
 //
 // The widget therefore carries a position, 0 to DIV_TAU_STEPS, and the
-// two functions below convert. A thousand steps over a 150:1 range is
-// half a percent a step, so a round trip through the widget moves tau by
-// less than a quarter of a percent.
+// two functions below convert. A thousand steps over a 30:1 range is
+// a third of a percent a step, so a round trip through the widget moves tau
+// by less than a fifth of a percent.
 //
 #define DIV_TAU_MIN     0.2
-#define DIV_TAU_MAX    30.0
+#define DIV_TAU_MAX     6.0
 #define DIV_TAU_STEPS  1000.0
 
 static double div_tau_from_pos(double pos) {
