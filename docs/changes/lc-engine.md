@@ -69,6 +69,29 @@ menu readout (LC-034), LC-044 and the capture format (LT-011) read it.
 while diversity is on: it decides which port the loop fails towards. It
 does not stop the loop failing deaf (Finding 56's guard is not ported).
 
+**To reconsider: is the restart worth a change of its own?** (Raised
+2026-10-07; not decided, nothing changed.) The change is small: about six
+lines of code, the rest comment (+58 −1 in `diversity_auto.c/.h`). They
+are the `swap` field in `struct div_context`, its assignment in
+`div_get_context()`, its compare in the two context-compare functions, and
+`div_arm_swapped()` with its declaration.
+- **The restart is the weak half.** Moving RX1's ADC while diversity runs
+  is rare, and the averages turn over at the Averaging time (seconds), so
+  without the restart a stale weight would stand for a few seconds and
+  correct itself. The restart is correct, since the statistics do
+  describe another pair of antennas, but it is not worth much.
+- **`div_arm_swapped()` has to stay.** LC-034 (the antenna readout) and
+  LC-044 (the attenuator step, `arm = a ^ div_arm_swapped()`) call it, and
+  so does the capture flag (`DIVCAP_FLAG_ARM_SWAP`, LT-011). Without it
+  LC-044 is wrong when RX1 is on ADC2.
+- **If revisited:** drop the field and the two compares (three lines),
+  fold `div_arm_swapped()` into LC-034 or make it the first commit of the
+  RX1-on-ADC2 group (LC-034, LC-044), and cut the long comment above it:
+  most of it describes what upstream's `5db64949` now does. That removes
+  LC-022 as a change of its own, so the dependencies that name it (LC-034,
+  LC-044, LC-035) and the register change, and it costs another rebase and
+  force-push.
+
 ---
 
 <a id="lc-023"></a>
