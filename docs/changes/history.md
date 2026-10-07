@@ -4,6 +4,19 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-07: **LC-022 dropped.** Its only code left after `5db64949` was
+  a context field that restarted the statistics when RX1's ADC moved, plus
+  `div_arm_swapped()`. The restart was not worth a change (the move is
+  rare, the averages turn over in seconds), and LC-034 and LC-044 only
+  needed "is this ADC RX1's?", which is `receiver[0]->adc`. Both rewritten
+  to use it, so neither depends on anything; LT-011's capture flag likewise,
+  and it no longer marks a context change (`test_capture` now expects one
+  step and one reset, not two). Prompted by dl1ycf's remark that the ADC
+  number does not say which IQ pair a thing belongs to (his warning about
+  `diversity_auto_att_changed()` is the bug LC-044 fixes). Rebased on
+  `TEST-rebase-20261007`; backup tag `backup/TEST-pre-rebase-20261007`.
+  The ADC1/ADC2 labels in the UI stay as they are.
+
 - 2026-10-06: **re-synced onto `c60db7b4`** ("Corrections to TCI audio",
   `tci.c` and `tci_audio.c` only), by rebase, no conflicts; backup tag
   `backup/TEST-pre-rebase-20261006`. The register and its write-ups were

@@ -207,10 +207,10 @@ written up for dl1ycf in
 ("ADC0 better by ...", "using ADC1"). After `890ed310` the attenuator
 row beside it says ADC1 and ADC2, so the two disagreed. The line was
 also wrong with RX1 set to the second ADC: arm 0 is then the ADC RX1 is
-set to (`5db64949`; LC-022), which is ADC2.
+set to (`5db64949`), which is ADC2.
 
-**Change.** The line shows `(arm ^ div_arm_swapped()) + 1`, at the same
-width. This is in dl1ycf's file, so it is written up for him in
+**Change.** The line shows `(arm ^ receiver[0]->adc) + 1`, at the same
+width, finding RX1's ADC as the attenuator sliders above it do. This is in dl1ycf's file, so it is written up for him in
 [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
 
 <a id="lc-039"></a>

@@ -22,7 +22,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-008 | `run_ref --ref cw`, and a `tone` column (the tracker's readout) | `test/diversity/devtools/run_ref.c` |
 | LT-009 | `test_modal` checks the fresh-install CW seed (LC-019) | `test/diversity/test_modal.c` |
 | LT-010 | `test_cw` for `TEST`'s CW reference; its known gap closed | `test/diversity/` |
-| LT-011 | Captures record which ADC arm 0 came from; `run_ref` and `test_capture` follow it (LC-022) | `src/diversity_auto.c` (capture block), `test/diversity/devtools/` |
+| LT-011 | Captures record which ADC arm 0 came from; `run_ref` and `test_capture` follow it; it only describes the recording, the engine does not act on it | `src/diversity_auto.c` (capture block), `test/diversity/devtools/` |
 | LT-012 | Follow `f5a0ce9c`: the tools carry a copy of the menu's slot store/recall; the dropped migration is a known gap | `test/diversity/ref_slots.h`, `test_modal.c`, `test_cw.c`, `test_props.c`, `known_gaps.h`, `devtools/run_ref.c` |
 | LT-013 | LC-025's checks: `test_digital`'s Window case counted, `test_rates` (48 / 192 / 1536 kHz, span limit, fallback, reset storm) | `test/diversity/` |
 | LT-014 | `test_rates`' CW cases, with LC-029; the 1536 kHz / 100 Hz limitation reported | `test/diversity/test_rates.c`, `known_gaps.h` |
