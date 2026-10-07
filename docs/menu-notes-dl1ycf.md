@@ -76,17 +76,16 @@ written by the menu instead of the engine.
 Your `890ed310` relabelled the attenuators ADC1 and ADC2. The antenna
 line above them still printed the arm index ("ADC0 better by ...",
 "using ADC1"). It was also wrong with RX1 set to the second ADC, because
-arm 0 is then the ADC RX1 is set to, which is ADC2 (`div_arm_swapped()`,
-LC-022). Our
+arm 0 is then the ADC RX1 is set to, which is ADC2. Our
 `div_arm_status_set()` now does:
 
 ```c
-const int sw = div_arm_swapped();
+const int rxadc = receiver[0]->adc;
 ...
-snprintf(sel, sizeof(sel), "  using ADC%d", (div_auto_arm_pick ^ sw) + 1);
+snprintf(sel, sizeof(sel), "  using ADC%d", (div_auto_arm_pick ^ rxadc) + 1);
 ...
 snprintf(text, sizeof(text), "Antennas  ADC%d better by %4.1f dB%s",
-         (((div_auto_arm_db > 0.0) ? 1 : 0) ^ sw) + 1, d, sel);
+         (((div_auto_arm_db > 0.0) ? 1 : 0) ^ rxadc) + 1, d, sel);
 ```
 
 Elsewhere, outside the menu, upstream text still says ADC0/ADC1: the

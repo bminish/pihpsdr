@@ -40,10 +40,11 @@ objection.
 
 <a id="lc-022"></a>
 
-## LC-022 — Moving RX1's ADC restarts the statistics
+## LC-022 — Moving RX1's ADC restarts the statistics (dropped)
 
-Ported from `4299eb6d` (`feature/auto-diversity`); its capture-format
-part is LT-011. **Re-expressed 2026-10-05** on upstream `5db64949`.
+**Dropped 2026-10-07.** Ported from `4299eb6d` (`feature/auto-diversity`);
+re-expressed 2026-10-05 on upstream `5db64949`, then dropped as not worth
+a change of its own. Its capture-format part is LT-011, kept.
 
 **Problem.** The combiner forms z = z0 + w·z1 with arm 0 at unit gain,
 and every way the loop gives up resolves to w = 0: arm 0 alone. Both
@@ -57,40 +58,25 @@ and DDC1 to the other one, in both protocols, and RX2 takes DDC1. That is
 the same cure, done at the source. Our original change exchanged the
 pair in `rx_add_div_iq_samples()` and in each protocol's feed to RX2;
 kept, it would exchange them a second time and put arm 0 back on ADC1.
-Those hunks are dropped.
+Those hunks were dropped on 2026-10-05.
 
-**What is left.** `div_arm_swapped()` (1 when RX1 is on ADC2, so arm 0
-is ADC2) and its place in the analysis context: moving RX1's ADC while
-diversity runs makes the accumulated statistics describe a different pair
-of antennas, so they are thrown away. Upstream does not do that. The
-menu readout (LC-034), LC-044 and the capture format (LT-011) read it.
+**What was left, and why it went.** A `swap` field in the analysis
+context and `div_arm_swapped()`, so that moving RX1's ADC while diversity
+runs threw the statistics away. Moving it is rare, and the averages turn
+over at the Averaging time (seconds), so without the restart a stale
+weight stands for a few seconds and corrects itself. The only other users
+of `div_arm_swapped()` were LC-034 and LC-044, which only ever needed
+"is this ADC RX1's?", that is `receiver[0]->adc`, the same idiom as
+upstream's own attenuator sliders. Both now use that, so LC-034 and
+LC-044 apply to bare `upstream/TEST` without this, and LT-011 reads
+`receiver[0]->adc` for its capture flag, which now only describes the
+recording. dl1ycf, on `5db64949`, was wary of the arm handling for the
+same reason: the ADC number does not say which IQ pair a thing belongs to.
 
 **Note.** With RX1 on ADC2, the RX menu's ADC control has an effect
 while diversity is on: it decides which port the loop fails towards. It
 does not stop the loop failing deaf (Finding 56's guard is not ported).
-
-**To reconsider: is the restart worth a change of its own?** (Raised
-2026-10-07; not decided, nothing changed.) The change is small: about six
-lines of code, the rest comment (+58 −1 in `diversity_auto.c/.h`). They
-are the `swap` field in `struct div_context`, its assignment in
-`div_get_context()`, its compare in the two context-compare functions, and
-`div_arm_swapped()` with its declaration.
-- **The restart is the weak half.** Moving RX1's ADC while diversity runs
-  is rare, and the averages turn over at the Averaging time (seconds), so
-  without the restart a stale weight would stand for a few seconds and
-  correct itself. The restart is correct, since the statistics do
-  describe another pair of antennas, but it is not worth much.
-- **`div_arm_swapped()` has to stay.** LC-034 (the antenna readout) and
-  LC-044 (the attenuator step, `arm = a ^ div_arm_swapped()`) call it, and
-  so does the capture flag (`DIVCAP_FLAG_ARM_SWAP`, LT-011). Without it
-  LC-044 is wrong when RX1 is on ADC2.
-- **If revisited:** drop the field and the two compares (three lines),
-  fold `div_arm_swapped()` into LC-034 or make it the first commit of the
-  RX1-on-ADC2 group (LC-034, LC-044), and cut the long comment above it:
-  most of it describes what upstream's `5db64949` now does. That removes
-  LC-022 as a change of its own, so the dependencies that name it (LC-034,
-  LC-044, LC-035) and the register change, and it costs another rebase and
-  force-push.
+Moving it with diversity on does not restart the statistics.
 
 ---
 
@@ -247,13 +233,14 @@ Arm 0 is the ADC RX1 is set to, so with RX1 on ADC2 it had it the wrong
 way round: the weight moved by delta in the wrong direction and the loop
 (or Hold, or the manual weight) started 2 x delta dB out. Not measured;
 found by reading the call after `5db64949` began passing an ADC index.
-It was already wrong while LC-022 exchanged the arms.
+It was already wrong while the arms were exchanged by our own earlier
+code.
 
-**Change.** `arm = a ^ div_arm_swapped()`. With RX1 on ADC1 nothing
+**Change.** `arm = (a == receiver[0]->adc) ? 0 : 1`. With RX1 on ADC1 nothing
 changes. (The header comment on `div_auto_arm_db` that still said the
 arms are exchanged was corrected in LC-035, where it was written, so
 this commit is the one line.)
 
-**Checks.** Needs LC-022 for `div_arm_swapped()`. The harness does not
+**Checks.** Applies to bare `upstream/TEST` alone. The harness does not
 call `diversity_auto_att_changed()`, so nothing in the suite covers it.
 
