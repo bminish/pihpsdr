@@ -4,6 +4,10 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-07: LC-047, the second attenuator slider is labelled with its
+  own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for
+  dl1ycf at the 2026-10-05 re-sync, now fixed locally).
+
 - 2026-10-07: **LC-022 dropped.** Its only code left after `5db64949` was
   a context field that restarted the statistics when RX1's ADC moved, plus
   `div_arm_swapped()`. The restart was not worth a change (the move is
