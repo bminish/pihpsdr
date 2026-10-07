@@ -148,7 +148,7 @@ int main(void) {
   show_block("USB set to  ");
   /* AM: a different reference and a search region of its own */
   diversity_auto_mode_changed(modeAM);
-  set_block(DIV_REF_CARRIER, 5000.0, 1000.0, 10.0);
+  set_block(DIV_REF_CARRIER, 5000.0, 1000.0, 5.0);
   show_block("AM  set to  ");
   /* CW: a narrow window on one note */
   diversity_auto_mode_changed(modeCWU);
@@ -165,7 +165,7 @@ int main(void) {
   check("AM ref", div_auto_ref, DIV_REF_CARRIER);
   check("AM centre", div_auto_centre, 5000.0);
   check("AM width", div_auto_width, 1000.0);
-  check("AM tau", div_auto_tau, 10.0);
+  check("AM tau", div_auto_tau, 5.0);
   diversity_auto_mode_changed(modeCWL);       /* same group as CWU */
   show_block("back on CWL ");
   check("CW centre", div_auto_centre, -700.0);
@@ -183,7 +183,7 @@ int main(void) {
   show_block("AM  after   ");
   check("AM ref", div_auto_ref, DIV_REF_CARRIER);
   check("AM centre", div_auto_centre, 5000.0);
-  check("AM tau", div_auto_tau, 10.0);
+  check("AM tau", div_auto_tau, 5.0);
   /* ---------------------------------------------------------------- */
   printf("\n3. a props file with flat keys only seeds every group\n");
   /*

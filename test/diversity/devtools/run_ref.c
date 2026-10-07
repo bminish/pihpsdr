@@ -130,7 +130,7 @@ static void set_context(const struct divcap_block *m) {
  * the check in main() that compares the answer with the capture's own
  * nfft is what will say so.
  */
-#define RR_MIN_NFFT 4096
+#define RR_MIN_NFFT 2048
 #define RR_MAX_NFFT 65536
 
 static int rr_choose_nfft(int sample_rate, double target_hz) {
