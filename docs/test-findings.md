@@ -475,3 +475,105 @@ here when it's ingested. Beyond that, the measurements are what count.
 - **Start before entering diversity** (as T-001 did), so the replay
   starts cold with the radio and reproduces it exactly.
 
+
+## T-019: the Averaging time, swept over the capture set
+
+**What.** Every wideband capture of 10 s or more (Window, Carrier and
+FSK/Digital by the reference it was recorded on: 75, of which 70 scored)
+through `run_ref` on `TEST` at `8b13f572`, at 0.2, 0.5, 1, 2, 4, 6, 8 and
+10 s: Sum, flat weighting, Min coherence 0.20 (Window) or 0.30 (Carrier,
+Digital), Follow RX Filter, the capture's own transform size, 600 runs.
+Scored by `score_wideband.py`, the split-guard passband SNR against the
+better single antenna ("vs arm"), over the whole capture, cold start
+included (it is the same for every row of a capture). 13 RADE V1 captures
+through the same engine at 0.2 to 10 s (`--pace 20000`, four at a time),
+scored on decode by `score_rade`: synced frames against the better arm.
+Drivers: `test/diversity/devtools/py/sweeps/` (LT-023).
+
+**Why.** The slider ran to 30 s, and the question was whether anything
+above about 6 s is worth having.
+
+### Wideband, Sum: change against 6 s, in dB
+
+| Averaging | Mean | Better by > 0.1 | Worse by > 0.1 |
+|---|---|---|---|
+| 0.2 s | +0.14 | 42 | 17 |
+| 0.5 s | +0.12 | 36 | 17 |
+| 1 s | +0.10 | 35 | 14 |
+| 2 s | +0.12 | 33 | 13 |
+| 4 s | +0.06 | 13 | 9 |
+| **6 s** | 0 | | |
+| 8 s | −0.04 | 7 | 12 |
+| 10 s | −0.05 | 13 | 23 |
+
+By reference (shorter than 6 s against 6 s; 10 s against 6 s):
+
+- **Window, 37 captures:** +0.30 / +0.23 / +0.21 / +0.18 dB at 0.2 / 0.5 /
+  1 / 2 s; 10 s −0.02 (better on 4, worse on 14).
+- **Carrier, 6 captures:** +0.45 / +0.42 / +0.41 / +0.29 dB; 10 s −0.12.
+- **FSK/Digital, 27 captures** is the exception: 0.2 s averages −0.14 dB
+  with a worst case of −3.49 dB (13 better, 10 worse); 2 s is +0.02 (13
+  better, 7 worse); 10 s −0.08. It wants about 2 s or more.
+
+**What a cap at 6 s costs.** Taking each capture's best value up to 10 s
+instead of up to 6 s gains +0.04 dB on average. Three captures gain more
+than 0.3 dB: `122843` (+1.16, 10 s), `231724` (+0.64, FSK/Digital) and
+`122632` (+0.56, 10 s). `122843` and `122632` are the two 17 m captures
+where Finding 42 says Sum should not be running at all.
+
+### RADE V1, decode: synced frames against the better arm
+
+Mean change against 6 s over 13 captures: +1.9, +1.2, +0.3, +2.0, +0.5 and
++0.1 frames at 0.2, 0.5, 1, 2, 4 and 10 s. No trend: the per-capture
+figures move by a few frames either way (`165826` +4 at 0.2 s and −8 from
+4 s; `234624` +13 to +22; `180949` loses at every setting, least at 10 s).
+10 s beats 6 s by more than 5 frames on 2 captures and is worse on 1; the
+best value up to 10 s over the best up to 6 s is worth 1.0 frame.
+
+**What it supports.** The slider's top at 6 s (LC-048). It does not say
+that 6 s beats 10 s, only that nothing measured gains from more.
+
+**Not covered.** Null (Findings 18 and 21 find shorter better), CW, Best.
+One run per cell; RADE replays repeat to a few frames. The sweep is on
+`TEST`'s engine, which has the gate floor (LC-012), flat weighting and the
+noise-floor Sum weight that the feature-branch sweeps lacked.
+
+## T-020: the bin width against the Averaging time
+
+**What.** The 54 scored of the 60 wideband captures of 20 s or more at
+192 kHz, each through `run_ref --resolution` at 24, 12, 6 and 3 Hz and
+0.5, 2 and 6 s (720 runs), same settings as T-019. `run_ref` writes one
+weight per engine block, so the weights are resampled onto the capture's
+block grid before `score_wideband.py` (the latest engine row finished by
+the end of capture block k becomes row k; the scorer applies it one block
+late as usual). That alignment is new in this sweep and was not checked
+against a native-resolution run. Sum only.
+
+**Result: change against 12 Hz at the same averaging, mean dB (captures
+better / worse by more than 0.1 dB).**
+
+| Averaging | 24 Hz | 6 Hz | 3 Hz |
+|---|---|---|---|
+| 0.5 s | +0.07 (17 / 10) | 0.00 (13 / 17) | −0.12 (13 / 28) |
+| 2 s | +0.04 (18 / 9) | +0.03 (15 / 16) | −0.11 (13 / 30) |
+| 6 s | −0.03 (16 / 7) | +0.02 (15 / 12) | −0.21 (11 / 26) |
+
+- **3 Hz is behind 12 Hz at every averaging time**, including 6 s, and on
+  Window by 0.24 to 0.35 dB (worse on about 20 of 30). More averaging does
+  not make narrower bins pay on Window or Carrier.
+- **24 Hz** is +0.08 dB on Window at 0.5 s (9 / 4) and level or slightly
+  behind later. Carrier (4 captures) is +0.39 dB at 2 s, too few to say.
+- **FSK/Digital** (20 captures) is the one reference where finer bins
+  sometimes help: 3 Hz +0.18 dB at 2 s, 6 Hz +0.22 dB at 6 s (9 better,
+  3 worse). That fits its occupancy split needing resolution.
+- **Mapped, "24 Hz at 0.5 s, 12 Hz in between, 6 Hz at 6 s"** against a
+  fixed 12 Hz: +0.08 dB at 0.5 s and +0.02 dB at 6 s. Nothing measurable
+  in SNR; what the mapping buys is the block period matching the average
+  (a 171 ms block is longer than a 0.2 s average) and resolution where a
+  reference tracks a narrow feature, neither of which this scores.
+
+**What it supports.** Retiring 3 Hz and offering 24 Hz (LC-049). Auto
+(LC-050) is a hypothesis built on the timing argument, not on these
+numbers. **Not covered:** Null (Findings 42 and 43: coarse bins win by
+0.4 to 6 dB), CW keying (a long block smears the elements; LC-018's key
+detection compares block peaks), other sample rates.

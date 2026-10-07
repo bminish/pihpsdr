@@ -33,7 +33,8 @@ The write-ups, one file per topic:
 [settings](changes/lc-settings.md), [menu](changes/lc-menu.md),
 [estimate and gate](changes/lc-gate.md), [RADE V1](changes/lc-rade.md),
 [CW](changes/lc-cw.md), [noise floor and Best](changes/lc-noise-floor.md),
-[engine, combiner and threads](changes/lc-engine.md).
+[engine, combiner and threads](changes/lc-engine.md),
+[averaging and bin width](changes/lc-averaging.md).
 
 ## House rules
 
@@ -84,6 +85,7 @@ In series order (LC-003, LC-004, LC-005, LC-021 and LC-022 are out of the
 series, deferred or taken upstream, and are listed where they stood).
 Status: **Local** carried here only; **Proposed** PR
 open; **Upstream** taken upstream (drop at the next re-sync);
+**Branch** on a test branch, not yet in `TEST`;
 **Deferred** out of the series for now, kept on a backup branch;
 **Dropped** abandoned.
 
@@ -133,6 +135,9 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-045](changes/lc-gate.md#lc-045) | Fix       | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | diversity_auto.c | LC-012 | Local |
 | [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | LC-002, LC-009, LC-017 (textual; not minimised) | Local |
 | [LC-047](changes/lc-menu.md#lc-047) | UI        | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | diversity_menu.c | — | Local |
+| [LC-048](changes/lc-averaging.md#lc-048) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Branch `test/auto-bins` |
+| [LC-049](changes/lc-averaging.md#lc-049) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 | diversity_menu.c, diversity_auto.c | — | Branch `test/auto-bins` |
+| [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-048, LC-049 | Branch `test/auto-bins` |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -181,7 +186,8 @@ usage: `test/diversity/devtools/README.md`.
   still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
 - **To port** from `feature/auto-diversity`: stand-down (which conflicts
   with the hold rule and needs a decision), time-based slew, 0.5 s
-  default averaging, the 24/12/6 Hz Resolution menu, the Carrier tooltip.
+  default averaging, the Carrier tooltip (the 24/12/6 Hz Resolution menu
+  is LC-049, on the branch `test/auto-bins`).
 - **Pi CPU: closed.** The Pi 5 copes, with headroom; the one clear win
   left is vectorising RADE V1's decimator (3× on the Pi).
 

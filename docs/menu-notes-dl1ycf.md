@@ -176,3 +176,22 @@ lbl = gtk_label_new(otherlbl);
 ```
 
 The left slider's "RX1 ATT:" is already right.
+
+---
+
+## Averaging to 6 s, Resolution 24 / 12 / 6 Hz and Auto (LC-048 to LC-050; test branch)
+
+On branch `test/auto-bins`, not in `TEST` yet. Three small changes in
+`diversity_menu.c`, for your information:
+
+- **Averaging stops at 6 s.** `DIV_TAU_MAX` 30 → 6 and its comment. Over 70
+  captures nothing measured gains from more (T-019).
+- **Resolution is 24 / 12 / 6 Hz.** The combo entries and the array in
+  `res_changed_cb()` change, and the initial index in `diversity_menu()`.
+  3 Hz is retired (it loses at every averaging time, T-020).
+- **Resolution gains "Auto (from Averaging)"** as the first entry; its
+  value is `DIV_RES_AUTO` (−1) in `div_auto_resolution`. The engine picks
+  the bin width from the reference and the Averaging time and never writes
+  the setting. `tau_cb()` calls `diversity_auto_retarget()` after setting
+  `div_auto_tau`, so the transform is rebuilt only if Auto's width
+  changed. A reference change already restarts the engine.
