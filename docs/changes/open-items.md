@@ -96,7 +96,8 @@ as done in the findings but are on `feature/auto-diversity` only:
 - the empty-band stand-down (`div_window_quiet()`, `DIV_QUIET_DWELL`);
 - the time-based slew (Finding 48);
 - the 0.5 s default averaging;
-- the 24 / 12 / 6 Hz Resolution menu (`DIV_MIN_NFFT` 2048);
+- ~~the 24 / 12 / 6 Hz Resolution menu (`DIV_MIN_NFFT` 2048)~~: done as
+  LC-051 on branch `test/auto-bins`, with Auto (LC-052);
 - the Carrier tooltip.
 
 Features and documentation will be brought in from
