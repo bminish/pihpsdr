@@ -66,7 +66,7 @@ extern double div_auto_hang;            // unused: kept for the wire and props f
                                         // (no RADE lock timeout - see DIV_HANG_DEFAULT)
 extern double div_auto_coherence_min;   // hold below this coherence
 extern int    div_auto_weighting;       // always DIV_WEIGHT_FLAT (see .c)
-extern double div_auto_resolution;      // requested bin width, Hz
+extern double div_auto_resolution;      // requested bin width, Hz, or DIV_RES_AUTO
 extern int    div_auto_normalise;       // "Level output": hold the combined
                                         // output at arm 0's level (see
                                         // div_norm_refresh())
@@ -95,6 +95,26 @@ extern double div_carrier_cohmin;
 extern double div_digital_cohmin;
 extern double div_rade_cohmin;
 extern double div_cw_cohmin;
+
+//
+// div_auto_resolution when the engine is to choose the bin width itself:
+// diversity_auto_bin_policy(), from the reference and the Averaging time.
+// The choice is the engine's own derived value and is never written into
+// div_auto_resolution; the achieved width is div_auto_binhz.
+//
+#define DIV_RES_AUTO  (-1.0)
+
+//
+// The bin width Auto asks for, in Hz. Pure, so the table can be tested.
+//
+extern double diversity_auto_bin_policy(int ref, double tau);
+
+//
+// After a control that Auto depends on moved (Averaging, the reference):
+// restart the transform if Auto now wants a different length. Does nothing
+// otherwise, and nothing for a fixed bin width.
+//
+extern void diversity_auto_retarget(void);
 
 //
 // Status: the window had to be clamped to the Nyquist limit, and the bin
