@@ -1106,6 +1106,11 @@ static gchar *tau_format_cb(GtkScale *scale, gdouble value, gpointer data) {
 
 static void tau_cb(GtkWidget *widget, gpointer data) {
   div_auto_tau = div_tau_from_pos(gtk_range_get_value(GTK_RANGE(widget)));
+  //
+  // Auto's bin width follows Averaging; this restarts only if it moved
+  // the transform length.
+  //
+  diversity_auto_retarget();
   div_send_settings(DIV_ACTION_NONE);
 }
 
@@ -1129,10 +1134,10 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void res_changed_cb(GtkWidget *widget, gpointer data) {
-  static const double res[] = { 24.0, 12.0, 6.0 };
+  static const double res[] = { DIV_RES_AUTO, 24.0, 12.0, 6.0 };
   int i = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
 
-  if (i < 0 || i > 2) { i = 1; }
+  if (i < 0 || i > 3) { i = 2; }
 
   div_auto_resolution = res[i];
   //
@@ -1331,11 +1336,13 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_set_halign(lbl, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(agrid), lbl, 0, 2, 2, 1);
   btn = gtk_combo_box_text_new();
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "Auto (from Averaging)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "24 Hz bins (43 ms)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "12 Hz bins (85 ms)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), "6 Hz bins (171 ms)");
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn),
-                           div_auto_resolution > 18.0 ? 0 : (div_auto_resolution > 9.0 ? 1 : 2));
+                           div_auto_resolution <= 0.0 ? 0
+                           : (div_auto_resolution > 18.0 ? 1 : (div_auto_resolution > 9.0 ? 2 : 3)));
   //gtk_widget_set_tooltip_text(res_combo,
   //                            "Finer bins lift a weak carrier further out of the noise, "
   //                            "but each step doubles the block period and so halves the "
