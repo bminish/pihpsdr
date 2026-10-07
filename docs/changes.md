@@ -43,7 +43,8 @@ The write-ups, one file per topic:
 [settings](changes/lc-settings.md), [menu](changes/lc-menu.md),
 [estimate and gate](changes/lc-gate.md), [RADE V1](changes/lc-rade.md),
 [CW](changes/lc-cw.md), [noise floor and Best](changes/lc-noise-floor.md),
-[engine, combiner and threads](changes/lc-engine.md).
+[engine, combiner and threads](changes/lc-engine.md),
+[averaging and bin width](changes/lc-averaging.md).
 
 ## House rules
 
@@ -149,6 +150,9 @@ open; **Upstream** taken upstream (`f05546e3` unless said otherwise);
 | [LC-047](changes/lc-menu.md#lc-047) | UI        | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | diversity_menu.c | — | Upstream (`f05546e3`) |
 | [LC-048](changes/lc-engine.md#lc-048) | Comments  | Two stale comments: the arms are RX1's ADC and the other (not ADC0/ADC1), and the restore does not depend on call order | diversity_auto.c/.h | — | Local |
 | [LC-049](changes/lc-gate.md#lc-049) | Cleanup   | The reference-only code cut: Coherence-weighted accumulation, and RADE V1's pinned Min coherence comparison | diversity_auto.c | LC-006, LC-016 (upstream) | Local |
+| [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Local |
+| [LC-051](changes/lc-averaging.md#lc-051) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 | diversity_menu.c, diversity_auto.c | — | Local |
+| [LC-052](changes/lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-050, LC-051 | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -207,7 +211,8 @@ Register and notes: [changes/tooling.md](changes/tooling.md); usage:
   still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
 - **To port** from `feature/auto-diversity`: stand-down (which conflicts
   with the hold rule and needs a decision), time-based slew, 0.5 s
-  default averaging, the 24/12/6 Hz Resolution menu, the Carrier tooltip.
+  default averaging, the Carrier tooltip (the 24/12/6 Hz Resolution menu
+  is LC-051, on the branch `test/auto-bins`).
 - **Pi CPU: closed.** The Pi 5 copes, with headroom; the one clear win
   left is vectorising RADE V1's decimator (3× on the Pi).
 
