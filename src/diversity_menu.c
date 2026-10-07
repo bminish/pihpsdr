@@ -1206,7 +1206,13 @@ void diversity_menu(GtkWidget *parent) {
     gtk_range_set_value(GTK_RANGE(btn), adc[rxadc].attenuation);
     g_signal_connect(btn, "value_changed", G_CALLBACK(att_cb), GINT_TO_POINTER(rxadc));
     gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 4, 1);
-    lbl = gtk_label_new("ADC2:");
+    //
+    // The other slider belongs to the converter RX1 is not on, so it is
+    // ADC2 only while RX1 is on ADC1.
+    //
+    char otherlbl[16];
+    snprintf(otherlbl, sizeof(otherlbl), "ADC%d:", otheradc + 1);
+    lbl = gtk_label_new(otherlbl);
     gtk_widget_set_name(lbl, "boldlabel");
     gtk_widget_set_halign(lbl, GTK_ALIGN_END);
     gtk_grid_attach(GTK_GRID(grid), lbl, 6, row, 1, 1);
