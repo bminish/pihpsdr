@@ -136,8 +136,9 @@ open; **Upstream** taken upstream (drop at the next re-sync);
 | [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | LC-002, LC-009, LC-017 (textual; not minimised) | Local |
 | [LC-047](changes/lc-menu.md#lc-047) | UI        | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | diversity_menu.c | — | Local |
 | [LC-048](changes/lc-averaging.md#lc-048) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Branch `test/auto-bins` |
-| [LC-049](changes/lc-averaging.md#lc-049) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 | diversity_menu.c, diversity_auto.c | — | Branch `test/auto-bins` |
+| [LC-049](changes/lc-averaging.md#lc-049) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 (the entries go with LC-051) | diversity_menu.c, diversity_auto.c | — | Branch `test/auto-bins` |
 | [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-048, LC-049 | Branch `test/auto-bins` |
+| [LC-051](changes/lc-averaging.md#lc-051) | UI        | Auto is the only bin width; the Resolution control is removed (pinned like Hang) | diversity_menu.c, diversity_auto.c | LC-050 | Branch `test/auto-bins` |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,

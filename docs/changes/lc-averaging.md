@@ -1,6 +1,6 @@
 # Averaging and bin width
 
-The Averaging slider's range, the Resolution control, and Auto, which sets the bin width from the Averaging time. Evidence: T-019 and T-020 in [test-findings.md](../test-findings.md); the older findings are 18, 21, 40, 42 and 43 in [diversity-measurements.md](../diversity-measurements.md). All three are on the branch `test/auto-bins` for testing, not yet in `TEST`.
+The Averaging slider's range, the bin width, and Auto, which sets the bin width from the Averaging time and the reference, with no control of its own. Evidence: T-019 and T-020 in [test-findings.md](../test-findings.md); the older findings are 18, 21, 40, 42 and 43 in [diversity-measurements.md](../diversity-measurements.md). All three are on the branch `test/auto-bins` for testing, not yet in `TEST`.
 
 Part of the local-change register: [changes.md](../changes.md).
 
@@ -35,6 +35,11 @@ better for Null).
 
 ## LC-049 — The Resolution menu offers 24, 12 and 6 Hz; 3 Hz is retired
 
+**Superseded in part by LC-051:** the control is gone, so the menu entries
+and the 6 to 24 Hz range this change set no longer exist. What stays is
+`DIV_MIN_NFFT` 2048, which Auto needs for 24 Hz at 48 kHz, and the
+evidence below.
+
 **Why.** 3 Hz was labelled for weak signals and loses: it trailed 12 Hz on
 Sum by 0.27 to 1.22 dB and on Null by 1.7 to 5.5 dB on five of six
 captures (Finding 42), and on 54 captures through the current engine it
@@ -67,8 +72,10 @@ shows no measurable SNR from the mapping itself, +0.08 dB at 0.5 s and
 references that track a narrow feature, not by the numbers. **The
 thresholds are a hypothesis to test.**
 
-**Change.** "Auto (from Averaging)" is the first entry; 24, 12 and 6 Hz
-stay. `diversity_auto_bin_policy(ref, tau)`:
+**Change.** "Auto (from Averaging)" is added to the Resolution combo as
+its first entry, beside 24, 12 and 6 Hz (LC-051 then removes the combo, so
+Auto is the only way the bin width is chosen).
+`diversity_auto_bin_policy(ref, tau)`:
 
 | | up to 0.5 s | up to 5 s | above 5 s |
 |---|---|---|---|
@@ -87,8 +94,8 @@ before. The transform is rebuilt only when the length Auto wants changes:
 `diversity_auto_retarget()` is called from the Averaging slider; a
 reference change already restarts; a settings block or a mode-group load
 compares the width before and after. `div_settings_validate()` keeps a
-negative as Auto and zero or NaN as missing (12 Hz). The default for a
-fresh install is still 12 Hz.
+negative as Auto and zero or NaN as missing (12 Hz); LC-051 pins every
+value to Auto.
 
 **Depends on** LC-049 (the 24 Hz entry, `DIV_MIN_NFFT`) and LC-048 (the
 5 s tier sits under the 6 s cap).
@@ -96,3 +103,31 @@ fresh install is still 12 Hz.
 **Open.** CW keying: a 171 ms block spans several dits, which LC-018's key
 detection might smear. Auto never gives CW more than 6 Hz, and only above
 5 s, but it has not been tried on air.
+
+---
+
+<a id="lc-051"></a>
+
+## LC-051 — Auto is the only bin width; the Resolution control is removed
+
+**Why.** With Auto in place the choice of 24, 12 or 6 Hz is not one an
+operator can improve on without knowing the block period and the
+averaging time, which is what Auto reads. T-020 shows the fixed choices
+within a few tenths of a dB of one another, and 3 Hz behind at every
+averaging time. One less control, and nothing to set wrong.
+
+**Change.** The Resolution label, combo and `res_changed_cb()` come out of
+`diversity_menu.c` (the grid row stays empty and takes no space, so Hold,
+Invert and the rows below keep their places). `div_auto_resolution` starts
+at `DIV_RES_AUTO`, and `div_settings_validate()` and `div_settings_load()`
+pin it there, like Hang (LC-011): a 12, 6 or 3 Hz left in a props file by
+an older build, or sent by an older client, becomes Auto. The field stays
+on the wire and in the file so neither changes shape. The achieved width
+still shows in the status line.
+
+**Kept for the tools.** `div_target_hz()` still honours a fixed width,
+because `run_ref --resolution` and the unit tests set one directly (a
+sweep needs it). It is unreachable from the radio; it is deleted when a PR
+branch is cut (see [git-workflow.md](git-workflow.md#cutting-a-pr-branch)).
+
+**Depends on** LC-050.

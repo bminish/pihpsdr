@@ -572,8 +572,8 @@ better / worse by more than 0.1 dB).**
   (a 171 ms block is longer than a 0.2 s average) and resolution where a
   reference tracks a narrow feature, neither of which this scores.
 
-**What it supports.** Retiring 3 Hz and offering 24 Hz (LC-049). Auto
-(LC-050) is a hypothesis built on the timing argument, not on these
-numbers. **Not covered:** Null (Findings 42 and 43: coarse bins win by
+**What it supports.** Retiring 3 Hz and the 24 Hz bins (LC-049, now
+reached only through Auto). Auto (LC-050, LC-051) is a hypothesis built on
+the timing argument, not on these numbers. **Not covered:** Null (Findings 42 and 43: coarse bins win by
 0.4 to 6 dB), CW keying (a long block smears the elements; LC-018's key
 detection compares block peaks), other sample rates.

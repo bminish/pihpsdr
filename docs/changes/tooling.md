@@ -33,7 +33,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-019 | `test_rates` checks Best's antenna readout against known answers (follows LC-036) | `test/diversity/test_rates.c` |
 | LT-020 | The Pi 5 bundle: `make pi5-bench.tar.gz`, `run_pi5.sh`; `bench_cpu` splits worker from feeder, paces as the radio, adds CW and 768/1536 kHz, and its RADE rows now lock; `pi_bench` adds the FFTW planners with wisdom and the RADE decimator against a vectorised one | `test/diversity/pi5/`, `bench_cpu.c`, `pi_bench.c`, `Makefile`, `docs/bench/` |
 | LT-021 | The Carrier-follow check in `test_window` counts (LC-046); the known gap narrows to the scheme-3 migration | `test/diversity/test_window.c`, `known_gaps.h` |
-| LT-022 | Follow LC-048 to LC-050: `test_props` checks the 6 s cap, the 24 / 6 Hz range and Auto, and Auto's table; `test_rates` checks the transform follows Averaging; `run_ref`'s transform floor is 2048 | `test/diversity/` |
+| LT-022 | Follow LC-048 to LC-050: `test_props` checks the 6 s cap, the bin width pinned to Auto, and Auto's table; `test_rates` checks the transform follows Averaging; `run_ref`'s transform floor is 2048 | `test/diversity/` |
 | LT-023 | The sweep drivers behind T-019 and T-020: catalogue, averaging and bin-width sweeps, RADE decode sweep, and their scorers | `test/diversity/devtools/py/sweeps/` |
 
 **LT-020.** One tarball (`make -C test/diversity pi5-bench.tar.gz`) holds
