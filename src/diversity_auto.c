@@ -1161,6 +1161,60 @@ static int div_choose_nfft(int sample_rate, double target_hz) {
 }
 
 //
+// The bin width Auto asks for, from the reference and the Averaging time.
+//
+// Two things pull against each other. The block period is 1 / bin width,
+// and an average of only a few blocks is hardly an average: at 0.2 s a
+// 6 Hz block (171 ms) is most of one averaging time (alpha 0.57) and a
+// 3 Hz block is longer than it. And finer bins resolve a narrow carrier, tone or
+// occupancy edge better, which only costs anything while the block is
+// long against the average. So:
+//
+//   - up to 0.5 s: 24 Hz (43 ms, at least 4 blocks to the average down to
+//     0.2 s) on Window, which has plenty of bins. Carrier, CW and
+//     FSK/Digital stay at 12 Hz: they track a narrow feature (five bins,
+//     the tone's three, the occupancy edges) and 24 Hz is not measured to
+//     help them (T-020);
+//   - up to 5 s: 12 Hz, the default;
+//   - above 5 s the block is under 1/30 of the average and the resolution
+//     is free: 6 Hz.
+//
+// RADE V1 works in the time domain, so the bin width only sets the chunk
+// the samples arrive in: it keeps 12 Hz.
+//
+// The thresholds are a hypothesis to be tested, not a measurement: the
+// sweep (T-020) shows 24 Hz about +0.08 dB at 0.5 s, 6 Hz level at 6 s on
+// Window and +0.22 dB on FSK/Digital, and nothing beyond a few tenths of a
+// dB anywhere.
+//
+double diversity_auto_bin_policy(int ref, double tau) {
+  if (ref == DIV_REF_RADE_V1) { return 12.0; }
+
+  if (tau > 5.0) { return 6.0; }
+
+  if (tau <= 0.5 && ref == DIV_REF_BAND) { return 24.0; }
+
+  return 12.0;
+}
+
+//
+// The bin width the engine runs at: the operator's, or Auto's.
+//
+static double div_target_hz(void) {
+  return (div_auto_resolution > 0.0)
+         ? div_auto_resolution
+         : diversity_auto_bin_policy(div_auto_ref, div_auto_tau);
+}
+
+void diversity_auto_retarget(void) {
+  if (!div_auto_running || radio_is_remote || receiver[0] == NULL) { return; }
+
+  if (div_choose_nfft(receiver[0]->sample_rate, div_target_hz()) != nfft) {
+    diversity_auto_restart();
+  }
+}
+
+//
 // 4-term Blackman-Harris. The whole point of the analysis window is to
 // look at one narrow slice of spectrum and ignore everything else, so the
 // -92 dB sidelobes are worth having over the -31 dB of a Hann.
@@ -2473,7 +2527,7 @@ static double div_gate_threshold(int nbins) {
 double diversity_auto_coh_floor(int ref) {
   if (ref == DIV_REF_RADE_V1) { return 0.0; }
 
-  const double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_auto_resolution;
+  const double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_target_hz();
 
   if (!(bhz > 0.0)) { return 0.0; }
 
@@ -4073,7 +4127,7 @@ void diversity_auto_start(void) {
   //
   if (radio_is_remote) { return; }
 
-  nfft = div_choose_nfft(receiver[0]->sample_rate, div_auto_resolution);
+  nfft = div_choose_nfft(receiver[0]->sample_rate, div_target_hz());
   binhz = (double)receiver[0]->sample_rate / (double)nfft;
   div_auto_binhz = binhz;
   blocktime = (double)nfft / (double)receiver[0]->sample_rate;
@@ -4378,7 +4432,7 @@ void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action) {
   const int    old_weight = div_auto_weighting;
   const double old_centre = div_auto_centre;
   const double old_width  = div_auto_width;
-  const double old_res    = div_auto_resolution;
+  const double old_res    = div_target_hz();
   div_settings_load(s);
 
   //
@@ -4414,7 +4468,7 @@ void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action) {
   // reference is selected or left.
   //
   if ((old_mode == DIV_MANUAL) != (s->mode == DIV_MANUAL) ||
-      old_res != s->resolution ||
+      old_res != div_target_hz() ||
       (old_ref != s->ref && (old_ref == DIV_REF_RADE_V1 || s->ref == DIV_REF_RADE_V1))) {
     diversity_auto_restart();
   }
@@ -4600,7 +4654,7 @@ void diversity_auto_mode_changed(int mode) {
   div_group_current = g;
   const int    was_off = (div_auto_mode == DIV_MANUAL);
   const int    old_ref = div_auto_ref;
-  const double old_res = div_auto_resolution;
+  const double old_res = div_target_hz();
   div_settings_load(&div_group_set[g]);
 
   //
@@ -4611,7 +4665,7 @@ void diversity_auto_mode_changed(int mode) {
   // taken up or left.
   //
   if (was_off != (div_auto_mode == DIV_MANUAL) ||
-      old_res != div_auto_resolution ||
+      old_res != div_target_hz() ||
       (old_ref != div_auto_ref &&
        (old_ref == DIV_REF_RADE_V1 || div_auto_ref == DIV_REF_RADE_V1))) {
     diversity_auto_restart();
@@ -4719,7 +4773,13 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   if (!(s->tau > 0.0))        { s->tau = 2.0; }
 
-  if (!(s->resolution > 0.0)) { s->resolution = DIV_TARGET_BIN_HZ; }
+  //
+  // Zero or not a number is missing; below zero is DIV_RES_AUTO, which is
+  // what the menu stores for Auto.
+  //
+  if (s->resolution == 0.0 || s->resolution != s->resolution) { s->resolution = DIV_TARGET_BIN_HZ; }
+
+  if (s->resolution < 0.0) { s->resolution = DIV_RES_AUTO; }
 
   //
   // 0.2, not 0.1, to match the slider's minimum.
@@ -4748,7 +4808,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // or received 3 Hz becomes 6 Hz, the nearest entry, which is a shorter
   // block than it asked for.
   //
-  if (s->resolution < 6.0)  { s->resolution = 6.0; }
+  if (s->resolution > 0.0 && s->resolution < 6.0)  { s->resolution = 6.0; }
 
   if (s->resolution > 24.0) { s->resolution = 24.0; }
 
