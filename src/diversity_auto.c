@@ -4669,7 +4669,11 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   if (s->tau < 0.2)  { s->tau = 0.2; }
 
-  if (s->tau > 30.0) { s->tau = 30.0; }
+  //
+  // 6 s is the slider's top (DIV_TAU_MAX in diversity_menu.c). A props file
+  // or client from before the cap is brought down to it.
+  //
+  if (s->tau > 6.0)  { s->tau = 6.0; }
 
   //
   // Pinned, not ranged. There is no control for it any more and it is not
