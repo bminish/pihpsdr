@@ -155,11 +155,13 @@
 // rate to land near this, so the frequency resolution and the block
 // duration are the same whatever the radio is running at.
 //
-// The default target; the operator can ask for finer bins - see
-// div_auto_resolution.
+// The default target; the operator can choose 24, 12 or 6 Hz - see
+// div_auto_resolution. The floor of 2048 lets every rate from 48 kHz up
+// reach 24 Hz (23.44 Hz, a 42.7 ms block); at 4096 a 24 Hz request at
+// 48 kHz was silently granted as 11.72 Hz (Finding 43).
 //
 #define DIV_TARGET_BIN_HZ   12.0
-#define DIV_MIN_NFFT        4096
+#define DIV_MIN_NFFT        2048
 #define DIV_MAX_NFFT        65536
 
 //
@@ -4684,9 +4686,16 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   //
   s->hang = DIV_HANG_DEFAULT;
 
-  if (s->resolution < 3.0)  { s->resolution = 3.0; }
+  //
+  // The Resolution control offers 24, 12 and 6 Hz. 3 Hz is retired: it
+  // trailed 12 Hz on Sum and Null on five captures of six (Findings 42,
+  // 43; T-020), and above 192 kHz it was not a distinct setting. A saved
+  // or received 3 Hz becomes 6 Hz, the nearest entry, which is a shorter
+  // block than it asked for.
+  //
+  if (s->resolution < 6.0)  { s->resolution = 6.0; }
 
-  if (s->resolution > 12.0) { s->resolution = 12.0; }
+  if (s->resolution > 24.0) { s->resolution = 24.0; }
 
   //
   // The widths: 20.0, not 10.0, because the spin button's minimum is 20
