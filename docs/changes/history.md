@@ -18,7 +18,9 @@ Newest first.
   Averaging time and the bin width, swept over the capture set), LC-050
   (the slider stops at 6 s), LC-051 (Resolution 24 / 12 / 6 Hz, 3 Hz
   retired) and LC-052 (Auto bin width from Averaging), with LT-022 and
-  LT-023. For testing; `TEST` is unchanged.
+  LT-023. Then LC-053: Auto made the only bin width, the Resolution
+  control removed, the stored value pinned like Hang. For testing; `TEST`
+  is unchanged.
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for
