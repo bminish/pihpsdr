@@ -106,16 +106,11 @@ it, but it does not use anything LC-008 adds.
   and LC-030 apply to bare `TEST` alone, LC-028 and LC-029 onto `TEST` +
   LC-025, and each reverts from the tip (LC-025 after LC-029 and LC-028)
   and builds.
-- LC-022 does not apply to bare `upstream/TEST` without LC-013: its
-  `swap` field in `struct div_context` and `div_get_context()` sits next
-  to LC-013's notch fields, so the dependency is textual, "[LC-013]".
-  (Found 2026-10-05; it had been an unlisted dependency since the
-  2026-10-01 re-sync.)
-- LC-034 and LC-044 apply to bare `upstream/TEST` alone, but call
-  `div_arm_swapped()`, which LC-022 adds, so they do not build without
-  it. LC-045 needs LC-012 (and so LC-008, with its fixups). Applied
-  2026-10-05, with fixups; the chain LC-013, LC-022, LC-034, LC-044 was
-  applied, not built.
+- LC-022 is dropped (2026-10-07), and with it the helper
+  `div_arm_swapped()`: LC-034 and LC-044 find RX1's ADC from
+  `receiver[0]->adc`, so neither needs anything else. Both apply to bare
+  `upstream/TEST` (by construction; not cherry-picked there). LC-045
+  needs LC-012 (and so LC-008, with its fixups).
 - LC-046 does not apply to bare `upstream/TEST` (checked 2026-10-06): it
   conflicts with LC-002's `DIV_*_WIDTH_DEFAULT` constants, LC-009's
   `diversity_auto_seed_window()` and LC-017's CW width default and

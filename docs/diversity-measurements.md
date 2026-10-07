@@ -8730,7 +8730,7 @@ item is checked against `TEST`'s code below, in the order it appears.
 
 | # | Item | On `TEST` |
 |---|---|---|
-| 1 | Disconnected port makes the feature deaf (F56) | **Open.** LC-022 lets the operator put the live ADC on arm 0 (set RX1 to it), which mitigates it. No spectral-flatness guard. Issue 1 above is this item's `div_arm_from_floor()` half, now on `TEST`. |
+| 1 | Disconnected port makes the feature deaf (F56) | **Open.** Upstream's `5db64949` (once our LC-022) lets the operator put the live ADC on arm 0 (set RX1 to it), which mitigates it. No spectral-flatness guard. Issue 1 above is this item's `div_arm_from_floor()` half, now on `TEST`. |
 | 2 | RADE V1 has no fallback (F49) | **Open.** The loop's weight is no longer persisted between sessions (only the manual one is). The stale weight is now issue 2's 1 + 1j at start, or the previous band's within a session. `div_write_weight()` does not exist on `TEST`. |
 | 3 | `score_rade` streams not interchangeable | **Open** (tooling). |
 | 4 | Gate holds concentrated in fades (F47) | **Open.** LC-025's across-frequency floor is now on `TEST`: it is the measurement that could tell a fade (floor unchanged) from a signal that has gone. |

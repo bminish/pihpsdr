@@ -47,7 +47,7 @@ How a local change is cut, named and kept so that it can go upstream later as a 
       ADC2. `att0`/`att1` and the capture fields stay as they are.
     - "Arm 0" and "arm 1" are the combiner's inputs, not converters. Arm
       0 is the ADC RX1 is set to: ADC1 unless RX1 is on ADC2
-      (`5db64949`, LC-022). Say "arm" when the arm is meant, and name the ADC only
+      (`5db64949`). Say "arm" when the arm is meant, and name the ADC only
       when the converter is meant.
     - Everything written before 2026-10-02 was converted at the
       re-sync (LC-035, LT-018 and the docs). Findings that quote a
