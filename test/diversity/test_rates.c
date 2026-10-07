@@ -491,6 +491,59 @@ static void check_reset_race(void) {
   diversity_auto_stop();
 }
 
+/*
+ * LC-050: with Resolution on Auto the transform follows Averaging, and is
+ * rebuilt only when the length Auto wants changes. Window at 192 kHz: 24 Hz
+ * (nfft 8192) up to 0.5 s, 12 Hz (16384) to 5 s, 6 Hz (32768) above. At
+ * 48 kHz 24 Hz is reachable too (nfft 2048, LC-049).
+ */
+static void check_auto_bins(void) {
+  static const struct { int rate; double tau; int want; } c[] = {
+    { 192000, 0.2, 8192 }, { 192000, 2.0, 16384 }, { 192000, 6.0, 32768 },
+    {  48000, 0.2, 2048 }, {  48000, 2.0,  4096 }, {  48000, 6.0,  8192 },
+  };
+  setup(192000, modeLSB, -2800, -200, DIV_REF_BAND);
+  div_auto_resolution = DIV_RES_AUTO;
+  div_auto_tau = 0.2;
+  srand(11);
+  diversity_auto_start();
+  int cur_rate = 192000;
+  char what[160];
+
+  for (size_t i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
+    if (c[i].rate != cur_rate) {
+      diversity_auto_stop();
+      setup(c[i].rate, modeLSB, -2800, -200, DIV_REF_BAND);
+      div_auto_resolution = DIV_RES_AUTO;
+      div_auto_tau = c[i].tau;
+      diversity_auto_start();
+      cur_rate = c[i].rate;
+    } else {
+      div_auto_tau = c[i].tau;
+      diversity_auto_retarget();
+    }
+
+    const int got = (int)((double)cur_rate / div_auto_binhz + 0.5);
+    snprintf(what, sizeof(what), "Auto, %d Hz, Averaging %.1f s: nfft %d (%.2f Hz bins), want %d",
+             c[i].rate, c[i].tau, got, div_auto_binhz, c[i].want);
+    expect(got == c[i].want, what);
+  }
+
+  /* a retarget that changes nothing must not rebuild the transform */
+  const double before = div_auto_binhz;
+  div_auto_tau = 5.5;
+  diversity_auto_retarget();
+  expect(div_auto_binhz == before, "Averaging moved inside a tier: the transform is left alone");
+  /* a fixed bin width ignores Averaging */
+  div_auto_resolution = 12.0;
+  diversity_auto_restart();
+  const double fixed = div_auto_binhz;
+  div_auto_tau = 0.2;
+  diversity_auto_retarget();
+  expect(div_auto_binhz == fixed, "a fixed 12 Hz is not moved by Averaging");
+  diversity_auto_stop();
+}
+
 int main(int argc, char **argv) {
   verbose = (argc > 1);
   printf("The across-frequency noise floor at 48, 192 and 1536 kHz\n\n");
@@ -509,6 +562,8 @@ int main(int argc, char **argv) {
   check_best_snr();
   printf("\n");
   check_reset_race();
+  printf("\nAuto bin width follows Averaging (LC-050)\n");
+  check_auto_bins();
   printf("\n%s\n", fails ? "FAIL" : "PASS");
   return fails ? 1 : 0;
 }

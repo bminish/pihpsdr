@@ -60,6 +60,8 @@ static int  have_radecoh;
 static char radecohval[32];
 static int  have_follow;
 static char followval[32];
+static int  have_tau, have_res;
+static char tauval[32], resval[32];
 /*
  * One group block, the AM one, for the scheme 3 check. The live keys
  * alone cannot show it: a group with a block of its own in the file is
@@ -78,6 +80,10 @@ const char *getProperty(const char *n) {
   if (!strcmp(n, "diversity_rade_cohmin")) { return have_radecoh ? radecohval : NULL; }
 
   if (!strcmp(n, "diversity_auto_follow_filter")) { return have_follow ? followval : NULL; }
+
+  if (!strcmp(n, "diversity_auto_tau")) { return have_tau ? tauval : NULL; }
+
+  if (!strcmp(n, "diversity_auto_resolution")) { return have_res ? resval : NULL; }
 
   if (!strcmp(n, "diversity_group[3].ref")) { return have_group ? groupref : NULL; }
 
@@ -203,8 +209,8 @@ static int test_wire_round_trip(void) {
   a.hold = 1;
   a.normalise = 1;
   a.centre = -1234.0;   a.width = 2345.0;
-  a.tau = 7.25;         a.hang = 11.5;
-  a.coherence_min = 0.41;  a.resolution = 6.0;
+  a.tau = 5.25;         a.hang = 11.5;
+  a.coherence_min = 0.41;  a.resolution = DIV_RES_AUTO;
   a.band_centre = 101.0;    a.band_width = 202.0;
   a.carrier_centre = 303.0; a.carrier_width = 404.0;
   a.digital_centre = 505.0; a.digital_width = 606.0;
@@ -336,6 +342,63 @@ static int test_rade_client_pinned(void) {
   return ok;
 }
 
+/*
+ * LC-048, LC-049, LC-050: the Averaging cap, the Resolution range, Auto,
+ * and the table Auto reads. The values come through the props file, which
+ * is where div_settings_validate() runs.
+ */
+static int test_averaging_and_bins(void) {
+  int bad = 0;
+  static const struct { double tau, res, want_tau, want_res; const char *what; } c[] = {
+    { 20.0, 3.0,   6.0, 6.0,          "tau 20 -> 6 s (the cap), 3 Hz -> 6 Hz" },
+    {  7.0, 40.0,  6.0, 24.0,         "tau 7 -> 6 s, 40 Hz -> 24 Hz" },
+    {  2.0, 0.0,   2.0, 12.0,         "resolution 0 is missing -> 12 Hz" },
+    {  2.0, -1.0,  2.0, DIV_RES_AUTO, "resolution -1 stays Auto" },
+    {  2.0, -7.5,  2.0, DIV_RES_AUTO, "any negative resolution is Auto" },
+    {  5.9, 24.0,  5.9, 24.0,         "5.9 s and 24 Hz are left alone" },
+    {  0.2, 6.0,   0.2, 6.0,          "0.2 s and 6 Hz are left alone" },
+  };
+
+  for (size_t i = 0; i < sizeof(c) / sizeof(c[0]); i++) {
+    have_tau = have_res = 1;
+    snprintf(tauval, sizeof(tauval), "%.6f", c[i].tau);
+    snprintf(resval, sizeof(resval), "%.6f", c[i].res);
+    diversity_auto_restore_state();
+    const int ok = fabs(div_auto_tau - c[i].want_tau) < 1.0e-9 &&
+                   fabs(div_auto_resolution - c[i].want_res) < 1.0e-9;
+    printf("  %-44s -> %.1f s, %.1f Hz   %s\n", c[i].what, div_auto_tau, div_auto_resolution,
+           ok ? "OK" : "FAIL");
+    bad += !ok;
+  }
+
+  /* diversity_auto_bin_policy(): reference, then the Averaging time */
+  static const struct { int ref; double tau, want; } p[] = {
+    { DIV_REF_BAND, 0.2, 24 }, { DIV_REF_BAND, 0.5, 24 }, { DIV_REF_BAND, 0.51, 12 },
+    { DIV_REF_BAND, 2.0, 12 }, { DIV_REF_BAND, 5.0, 12 }, { DIV_REF_BAND, 5.01, 6 },
+    { DIV_REF_BAND, 6.0, 6 },
+    { DIV_REF_CARRIER, 0.2, 12 }, { DIV_REF_CARRIER, 2.0, 12 }, { DIV_REF_CARRIER, 6.0, 6 },
+    { DIV_REF_DIGITAL_IQ, 0.2, 12 }, { DIV_REF_DIGITAL_IQ, 6.0, 6 },
+    { DIV_REF_CW, 0.2, 12 }, { DIV_REF_CW, 6.0, 6 },
+    { DIV_REF_RADE_V1, 0.2, 12 }, { DIV_REF_RADE_V1, 2.0, 12 }, { DIV_REF_RADE_V1, 6.0, 12 },
+  };
+  int pol = 0;
+
+  for (size_t i = 0; i < sizeof(p) / sizeof(p[0]); i++) {
+    const double got = diversity_auto_bin_policy(p[i].ref, p[i].tau);
+
+    if (got != p[i].want) {
+      printf("    FAIL policy ref %d tau %.2f -> %.0f Hz, want %.0f\n", p[i].ref, p[i].tau, got, p[i].want);
+      pol++;
+    }
+  }
+
+  printf("  Auto's table: %zu cases, %d wrong   %s\n", sizeof(p) / sizeof(p[0]), pol, pol ? "FAIL" : "OK");
+  have_tau = have_res = 0;
+  div_auto_resolution = 12.0;
+  div_auto_tau = 2.0;
+  return bad + pol == 0;
+}
+
 int main(void) {
   memset(&rx0, 0, sizeof(rx0));
   memset(vfo, 0, sizeof(vfo));
@@ -376,6 +439,8 @@ int main(void) {
   printf("\nretired controls are pinned, not ranged\n");
   ok &= test_retired_pinned();
   ok &= test_rade_client_pinned();
+  printf("\nAveraging cap, Resolution range, Auto\n");
+  ok &= test_averaging_and_bins();
   printf("\n%s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }
