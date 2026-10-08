@@ -378,8 +378,7 @@ static int test_averaging_and_bins(void) {
     { DIV_REF_BAND, 6.0, 12 },
     { DIV_REF_CARRIER, 0.2, 24 }, { DIV_REF_CARRIER, 1.0, 24 }, { DIV_REF_CARRIER, 1.5, 12 },
     { DIV_REF_CARRIER, 6.0, 12 },
-    { DIV_REF_DIGITAL_IQ, 0.2, 24 }, { DIV_REF_DIGITAL_IQ, 1.0, 24 }, { DIV_REF_DIGITAL_IQ, 1.01, 12 },
-    { DIV_REF_DIGITAL_IQ, 6.0, 12 },
+    { DIV_REF_DIGITAL_IQ, 0.2, 12 }, { DIV_REF_DIGITAL_IQ, 1.0, 12 }, { DIV_REF_DIGITAL_IQ, 6.0, 12 },
     { DIV_REF_CW, 0.2, 12 }, { DIV_REF_CW, 1.0, 12 }, { DIV_REF_CW, 6.0, 12 },
     { DIV_REF_RADE_V1, 0.2, 12 }, { DIV_REF_RADE_V1, 2.0, 12 }, { DIV_REF_RADE_V1, 6.0, 12 },
   };

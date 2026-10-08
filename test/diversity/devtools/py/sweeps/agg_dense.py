@@ -9,9 +9,7 @@ d = json.load(open(f'{SP}/score4.json'))
 rng = np.random.default_rng(1)
 
 def policy(ref, tau):          # diversity_auto_bin_policy()
-    if tau > 5.0: return 6
-    if tau <= 0.5 and ref == 'band': return 24
-    return 12
+    return 24 if (tau <= 1.0 and ref in ('band', 'carrier')) else 12
 
 def ci(x):
     x = np.array(x, float)
@@ -56,7 +54,7 @@ SUM_T = [0.2, 0.3, 0.5, 0.7, 1, 3, 5, 5.5, 6]
 NULL_T = [0.2, 0.5, 1, 3, 6]
 for mode, taus in (('sum', SUM_T), ('null', NULL_T)):
     table(mode, taus, lambda v: True, 'all')
-    for ref in ('band', 'carrier', 'digital'):
+    for ref in ('band', 'carrier'):
         table(mode, taus, lambda v, r=ref: v['ref'] == r, ref)
     for s in ('fast', 'mid', 'slow'):
         table(mode, taus, lambda v, s=s: stratum(v) == s, f'fade {s} (rho at 1 s: <{t1:.2f} / <{t2:.2f} / more)')

@@ -6,7 +6,7 @@ SP = sys.argv[1]
 d = json.load(open(f'{SP}/score4.json'))
 rng = np.random.default_rng(3)
 def policy(ref, tau):          # diversity_auto_bin_policy()
-    return 24 if (tau <= 1.0 and ref in ('band', 'carrier', 'digital')) else 12
+    return 24 if (tau <= 1.0 and ref in ('band', 'carrier')) else 12
 def ci(x):
     x = np.array(x); m = [rng.choice(x, len(x)).mean() for _ in range(4000)]; return np.percentile(m, [2.5, 97.5])
 for mode, taus in (('sum', [0.2, 0.3, 0.5, 0.7, 1, 3, 5, 5.5, 6]), ('null', [0.2, 0.5, 1, 3, 6])):
