@@ -1209,6 +1209,18 @@ static double div_target_hz(void) {
 void diversity_auto_retarget(void) {
   if (!div_auto_running || radio_is_remote || receiver[0] == NULL) { return; }
 
+#ifdef DIVERSITY_CAPTURE
+
+  //
+  // DEVELOPMENT TOOL. A capture file has one transform size, and a restart
+  // closes it, so Averaging crossing one of Auto's edges would end the
+  // recording. Hold the transform while one is running; the next call
+  // after it ends (the menu's status tick makes one) catches up.
+  //
+  if (div_capture_active) { return; }
+
+#endif
+
   if (div_choose_nfft(receiver[0]->sample_rate, div_target_hz()) != nfft) {
     diversity_auto_restart();
   }
