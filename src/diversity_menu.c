@@ -506,6 +506,12 @@ static int status_update_cb(gpointer data) {
 
   div_coh_range_update();
   //
+  // Auto's bin width follows Averaging and the reference; this restarts only
+  // if it now wants a different transform, which also catches up after a
+  // capture (held the transform while it ran).
+  //
+  diversity_auto_retarget();
+  //
   // On the tick as well as in the callbacks below: Enable can change from
   // outside the menu.
   //
