@@ -57,7 +57,6 @@ static GtkWidget *win_centre_btn = NULL;
 static GtkWidget *coh_scale = NULL;
 static GtkWidget *mcontainer = NULL;
 static GtkWidget *acontainer = NULL;
-static GtkWidget *status_label = NULL;
 static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
@@ -348,50 +347,54 @@ static const char *div_rade_side_text(void) {
 //
 // The status line.
 //
-// It is the widest thing in the dialog, so it sets the minimum window
-// width, and it must not grow. Every line is therefore built to exactly
-// DIV_STATUS_CHARS characters out of four fixed fields - what is being
-// measured, what the loop is doing, one detail belonging to the mode, and
-// the weight - each printed with a precision that truncates as well as a
-// width that pads. Nothing that arrives at run time can widen it.
+// Five columns, each its own label with a minimum width, side by side:
+// what is being measured, what the loop is doing, the coherence the gate
+// is comparing with Min coherence (blank on RADE V1, which has none), one
+// detail belonging to the mode, and the weight. A column is as wide as the
+// widest thing it can show, so a state going from "track" to "wait" cannot
+// move the coherence beside it, and the whole line stays about as wide as
+// it was as a single label. They are in the dialog's own font, like every
+// other label in it; the font size is fixed at 15 px by css.c, so the
+// widths are in pixels.
 //
-// It is set in a monospace face for the same reason: fixed character
-// counts only line up in a fixed-width font, and a status line whose
-// columns wander is harder to read at a glance than an unaligned one.
+// The widths, in pixels, with a few to spare each:
+//   tag     "Win 24Hz*"
+//   state   "search"
+//   coh     "coh 100%"
+//   detail  "+1234.5 Hz"
 //
-// The predecessor was a printf per mode, the longest around a hundred
-// characters, and it dictated a dialog half again as wide as the controls
-// needed.
-//
-#define DIV_STATUS_TAG    9
-#define DIV_STATUS_STATE  6
-#define DIV_STATUS_DETAIL 10
-//
-// Three fields, three separating spaces, and a 16-character weight:
-//   "%+6.1f dB %+5.0f°"
-//
-// The degree sign is one character but two bytes, so this is a count of
-// *characters* - which is what gtk_label_set_width_chars() wants, and
-// what the fields are padded to. It is not strlen().
-//
-#define DIV_STATUS_CHARS  (DIV_STATUS_TAG + DIV_STATUS_STATE + DIV_STATUS_DETAIL + 3 + 16)
+#define DIV_STATUS_W_TAG     88
+#define DIV_STATUS_W_STATE   60
+#define DIV_STATUS_W_COH     80
+#define DIV_STATUS_W_DETAIL  98
+
+enum { DIV_COL_TAG, DIV_COL_STATE, DIV_COL_COH, DIV_COL_DETAIL, DIV_COL_WEIGHT, DIV_COLS };
+static GtkWidget *status_col[DIV_COLS];
+static const int status_w[DIV_COLS] = {
+  DIV_STATUS_W_TAG, DIV_STATUS_W_STATE, DIV_STATUS_W_COH, DIV_STATUS_W_DETAIL, -1
+};
 
 //
-// A small breathing space at each end. The label is the widest thing in
-// the dialog, so this is the only reason it is not hard against both
-// window edges.
+// A status label: the dialog's usual one, left-justified, with a minimum
+// width in pixels (-1 for none).
 //
-#define DIV_STATUS_MARGIN 6
+static GtkWidget *div_status_label(int width_px) {
+  GtkWidget *l = gtk_label_new("");
+  gtk_widget_set_name(l, "boldlabel");
+  gtk_label_set_xalign(GTK_LABEL(l), 0.0);
+  gtk_widget_set_size_request(l, width_px, -1);
+  return l;
+}
 
-static void div_status_set(const char *tag, const char *state, const char *detail,
-                           double g, double p) {
-  char text[128];
-  snprintf(text, sizeof(text), "%-*.*s %-*.*s %-*.*s %+6.1f dB %+5.0f°",
-           DIV_STATUS_TAG, DIV_STATUS_TAG, tag,
-           DIV_STATUS_STATE, DIV_STATUS_STATE, state,
-           DIV_STATUS_DETAIL, DIV_STATUS_DETAIL, detail,
-           g, p);
-  gtk_label_set_text(GTK_LABEL(status_label), text);
+static void div_status_set(const char *tag, const char *state, const char *coh,
+                           const char *detail, double g, double p) {
+  char wt[48];
+  snprintf(wt, sizeof(wt), "%+5.1f dB %+4.0f°", g, p);
+  gtk_label_set_text(GTK_LABEL(status_col[DIV_COL_TAG]), tag);
+  gtk_label_set_text(GTK_LABEL(status_col[DIV_COL_STATE]), state);
+  gtk_label_set_text(GTK_LABEL(status_col[DIV_COL_COH]), coh);
+  gtk_label_set_text(GTK_LABEL(status_col[DIV_COL_DETAIL]), detail);
+  gtk_label_set_text(GTK_LABEL(status_col[DIV_COL_WEIGHT]), wt);
 }
 
 //
@@ -409,8 +412,7 @@ static void div_status_set(const char *tag, const char *state, const char *detai
 // weights - which is the case the 60 m captures turned up. See Finding 13
 // in docs/diversity-measurements.md.
 //
-// Held to DIV_STATUS_CHARS by construction, like the line above it: the
-// longest string this can produce is exactly that wide.
+// From the same left edge as the line above it.
 //
 static void div_arm_status_set(void) {
   char text[96];
@@ -542,7 +544,7 @@ static int status_update_cb(gpointer data) {
 
   //
   // DEVELOPMENT TOOL. The block count goes on the button rather than into
-  // the status line, which is held to exactly DIV_STATUS_CHARS.
+  // the status line.
   //
   if (divcap_b != NULL) {
     char cap[48];
@@ -571,11 +573,11 @@ static int status_update_cb(gpointer data) {
   }
 
   if (!div_auto_running) {
-    div_status_set("Auto off", "", "", auto_div_gain, auto_div_phase);
+    div_status_set("Auto off", "", "", "", auto_div_gain, auto_div_phase);
     return G_SOURCE_CONTINUE;
   }
 
-  char tag[32], detail[32];
+  char tag[32], detail[32], coh[16];
   const char *state;
   //
   // Under Hold the weight shown is the one the loop has tracked to, not
@@ -590,6 +592,16 @@ static int status_update_cb(gpointer data) {
   //
   const char *clamp = div_auto_clamped ? "*" : "";
   detail[0] = 0;
+  //
+  // The coherence the gate compares with Min coherence, on every reference
+  // that has that setting. RADE V1 has none (the pilot gates), so its field
+  // stays blank.
+  //
+  if (div_auto_ref == DIV_REF_RADE_V1) {
+    coh[0] = 0;
+  } else {
+    snprintf(coh, sizeof(coh), "coh %3.0f%%", 100.0 * div_auto_coherence);
+  }
 
   switch (div_auto_ref) {
   case DIV_REF_CARRIER:
@@ -662,9 +674,8 @@ static int status_update_cb(gpointer data) {
     } else {
       state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
       //
-      // The occupied width rather than the coherence: it is what the
-      // occupancy split decided, and it is checkable against the darker
-      // band on the panadapter.
+      // The occupied width: it is what the occupancy split decided, and it
+      // is checkable against the darker band on the panadapter.
       //
       snprintf(detail, sizeof(detail), "occ %4.0fHz",
                div_auto_occ_hi - div_auto_occ_lo);
@@ -675,11 +686,10 @@ static int status_update_cb(gpointer data) {
   default:
     snprintf(tag, sizeof(tag), "Win %.0fHz%s", div_auto_binhz, clamp);
     state = div_auto_hold ? "HOLD" : (div_auto_holding ? "wait" : "track");
-    snprintf(detail, sizeof(detail), "coh %3.0f%%", 100.0 * div_auto_coherence);
     break;
   }
 
-  div_status_set(tag, state, detail, g, p);
+  div_status_set(tag, state, coh, detail, g, p);
   return G_SOURCE_CONTINUE;
 }
 
@@ -1402,31 +1412,22 @@ void diversity_menu(GtkWidget *parent) {
 
 #endif
   //
-  // The status line spans both columns and is held to exactly
-  // DIV_STATUS_CHARS characters, so it fits inside the width the controls
-  // already need and cannot push the dialog wider whatever it has to say.
+  // The status line: five columns side by side. See the note above
+  // div_status_set().
   //
-  status_label = gtk_label_new("");
-  gtk_widget_set_name(status_label, "boldlabel");
-  gtk_widget_set_halign(status_label, GTK_ALIGN_FILL);
-  gtk_label_set_xalign(GTK_LABEL(status_label), 0.0);
-  gtk_widget_set_margin_start(status_label, DIV_STATUS_MARGIN);
-  gtk_widget_set_margin_end(status_label, DIV_STATUS_MARGIN);
-  gtk_label_set_width_chars(GTK_LABEL(status_label), DIV_STATUS_CHARS);
-  gtk_label_set_max_width_chars(GTK_LABEL(status_label), DIV_STATUS_CHARS);
-  gtk_grid_attach(GTK_GRID(agrid), status_label, 0, 8,10, 1);
+  GtkWidget *sgrid = gtk_grid_new();
+  gtk_widget_set_halign(sgrid, GTK_ALIGN_START);
+
+  for (int i = 0; i < DIV_COLS; i++) {
+    status_col[i] = div_status_label(status_w[i]);
+    gtk_grid_attach(GTK_GRID(sgrid), status_col[i], i, 0, 1, 1);
+  }
+
+  gtk_grid_attach(GTK_GRID(agrid), sgrid, 0, 8, 10, 1);
   //
-  // Second line, same treatment: monospace, the same fixed width, so the
-  // two line up and neither can widen the dialog.
+  // Second line, from the left edge.
   //
-  arm_label = gtk_label_new("");
-  gtk_widget_set_name(arm_label, "boldlabel");
-  gtk_widget_set_halign(arm_label, GTK_ALIGN_FILL);
-  gtk_label_set_xalign(GTK_LABEL(arm_label), 0.0);
-  gtk_widget_set_margin_start(arm_label, DIV_STATUS_MARGIN);
-  gtk_widget_set_margin_end(arm_label, DIV_STATUS_MARGIN);
-  gtk_label_set_width_chars(GTK_LABEL(arm_label), DIV_STATUS_CHARS);
-  gtk_label_set_max_width_chars(GTK_LABEL(arm_label), DIV_STATUS_CHARS);
+  arm_label = div_status_label(-1);
   gtk_grid_attach(GTK_GRID(agrid), arm_label, 0, 9, 10, 1);
   gtk_container_add(GTK_CONTAINER(acontainer), agrid);
   //
