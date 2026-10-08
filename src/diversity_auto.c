@@ -3415,26 +3415,9 @@ static void div_process_block(void) {
     div_arm_publish(rade_corr_arm_valid, rade_corr_arm_db);
 
     //
-    // The coherence gate reaches this mode too.
+    // No Min coherence gate here: the pilot already gates (see
+    // div_band_cohmin, and LC-016/LC-049 in docs/changes/lc-rade.md).
     //
-    // It did not before: div_auto_coherence was set to rade_corr_quality
-    // and then never compared with anything, so the Min coherence control
-    // was inert in RADE V1 - the one reference where the operator is most
-    // likely to be watching a marginal signal and wondering why the loop
-    // is acting on it. The quantity is not a coherence but a signal
-    // fraction, acc_sig/(acc_sig + acc_r00), which is why it has its own
-    // threshold: at the same slider position a gamma^2 gate and a quality
-    // gate ask for per-arm SNRs four and a half decibels apart. See
-    // div_band_cohmin.
-    //
-    // Default zero, which is the behaviour this replaces exactly.
-    //
-    if (ok && rade_corr_quality < div_auto_coherence_min) {
-      div_auto_coherence = rade_corr_quality;
-      div_auto_holding = 1;
-      return;
-    }
-
     if (ok) {
       div_auto_coherence = rade_corr_quality;
       div_auto_holding = 0;
@@ -3657,11 +3640,6 @@ static void div_process_block(void) {
   }
 
   //
-  // See below: weighting applies to the wideband window only.
-  //
-  const int coherence_weighted = (ctx.weighting == DIV_WEIGHT_COHERENCE)
-                                 && (ctx.ref == DIV_REF_BAND);
-  //
   // Exponential forgetting across blocks, applied per bin.
   //
   double alpha = 1.0 - exp(-blocktime / div_auto_tau);
@@ -3688,9 +3666,8 @@ static void div_process_block(void) {
   int used_bins = 0;
 
   //
-  // Per-bin running spectra. Keeping these per bin rather than as four
-  // scalars is what allows the bins to be weighted by how well the two
-  // antennas agree in each - see below.
+  // Per-bin running spectra, kept per bin so that a bin can be left out
+  // (a notch, a bin outside the signal) without disturbing the rest.
   //
   for (int k = klo; k <= khi; k++) {
     if (div_bin_notched(&ctx, k)) { continue; }
@@ -3732,25 +3709,19 @@ static void div_process_block(void) {
   //
   // Combine the bins.
   //
-  // Flat reproduces the original behaviour: sum everything and divide,
-  // which is a power-weighted average of h(f). It is dominated by the
-  // loudest bins whether or not the antennas agree there, and noise-only
-  // bins dilute it by adding to the denominator but not the numerator.
-  //
-  // Coherence weights each bin by its own magnitude-squared coherence, so
-  // bins carrying a signal both antennas hear dominate and noise-only
-  // bins fall out. That is what makes a wide window work on SSB voice,
-  // where the energy moves about constantly and there is no carrier to
-  // sit on: the window can span the whole passband and the estimator
-  // picks the bins worth using, following the voice as it moves.
+  // Flat: sum everything and divide, which is a power-weighted average of
+  // h(f). It is dominated by the loudest bins whether or not the antennas
+  // agree there, and noise-only bins dilute it by adding to the
+  // denominator but not the numerator. (An earlier Coherence weighting,
+  // each bin by its own coherence, was retired: see docs/changes/lc-gate.md,
+  // LC-006 and LC-049.)
   //
   acc_xy_re = acc_xy_im = acc_xx = acc_yy = 0.0;
-  double wsum = 0.0;
   int nacc = 0;
   //
-  // This block's power against the smoothed power, over the same bins and
-  // with the same weights, so the staleness test below asks about exactly
-  // what the estimate is being made from. See DIV_STALE_DB.
+  // This block's power against the smoothed power, over the same bins, so
+  // the staleness test below asks about exactly what the estimate is being
+  // made from. See DIV_STALE_DB.
   //
   double cur_p = 0.0, acc_p = 0.0;
 
@@ -3762,40 +3733,16 @@ static void div_process_block(void) {
     if (idx < 0) { idx += nfft; }
 
     double xx = bin_xx[idx], yy = bin_yy[idx];
-    double w = 1.0;
 
-    //
-    // Only where there is a window of bins to choose between. The carrier
-    // reference accumulates a handful either side of one peak, all of them
-    // the same signal, so weighting them against each other does nothing -
-    // and the menu hides the control there, which would otherwise leave
-    // whichever setting was last chosen in Window mode silently in force.
-    //
-    if (coherence_weighted) {
-      double den = xx * yy;
-
-      if (den <= 0.0) { continue; }
-
-      double g2 = (bin_xy_re[idx] * bin_xy_re[idx]
-                   + bin_xy_im[idx] * bin_xy_im[idx]) / den;
-
-      if (g2 > 1.0) { g2 = 1.0; }
-
-      w = g2;
-
-      if (w <= 0.0) { continue; }
-    }
-
-    acc_xy_re += w * bin_xy_re[idx];
-    acc_xy_im += w * bin_xy_im[idx];
-    acc_xx    += w * xx;
-    acc_yy    += w * yy;
-    cur_p     += w * ((double)fftout0[idx][0] * fftout0[idx][0]
-                      + (double)fftout0[idx][1] * fftout0[idx][1]
-                      + (double)fftout1[idx][0] * fftout1[idx][0]
-                      + (double)fftout1[idx][1] * fftout1[idx][1]);
-    acc_p     += w * (xx + yy);
-    wsum      += w;
+    acc_xy_re += bin_xy_re[idx];
+    acc_xy_im += bin_xy_im[idx];
+    acc_xx    += xx;
+    acc_yy    += yy;
+    cur_p     += (double)fftout0[idx][0] * fftout0[idx][0]
+                 + (double)fftout0[idx][1] * fftout0[idx][1]
+                 + (double)fftout1[idx][0] * fftout1[idx][0]
+                 + (double)fftout1[idx][1] * fftout1[idx][1];
+    acc_p     += xx + yy;
     nacc++;
   }
 
@@ -3847,7 +3794,7 @@ static void div_process_block(void) {
   }
   div_arm_nratio_update(cur_xx, cur_yy, arm_pw0, arm_pw1);
 
-  if (acc_xx <= 0.0 || acc_yy <= 0.0 || wsum <= 0.0) {
+  if (acc_xx <= 0.0 || acc_yy <= 0.0 || nacc == 0) {
     div_auto_coherence = 0.0;
     div_auto_holding = 1;
     return;
@@ -3856,10 +3803,7 @@ static void div_process_block(void) {
   //
   // Is what these statistics describe still on the air?
   //
-  // Under Coherence weighting the comparison is weighted too, so it
-  // follows the bins the estimate actually rests on rather than the whole
-  // window - which is what makes it sensitive to a narrow signal, a CW
-  // carrier included, stopping inside a wide filter.
+  // The comparison runs over the bins the estimate rests on.
   //
   if (acc_p > 0.0 && cur_p * pow(10.0, DIV_STALE_DB / 10.0) < acc_p) {
     div_auto_holding = 1;
