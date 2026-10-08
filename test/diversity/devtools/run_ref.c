@@ -1,0 +1,475 @@
+/*
+ * DEVELOPMENT TOOL. Not part of piHPSDR - see README.md.
+ *
+ * Replays a .divc through the *whole* auto-phasing engine, with a
+ * reference of your choosing, and writes out the weight it applies.
+ *
+ * replay_rade calls rade_corr_process() directly, which is right for
+ * sweeping the correlator but reaches only one of the four references.
+ * The Digital I/Q solve lives in div_digital_solve(), which is static and
+ * driven from div_process_block() off the analysis thread, so the only
+ * honest way to run it over a recording is to feed the samples back in
+ * through diversity_auto_sample() exactly as the radio does. That is what
+ * this does - the shipping code, unmodified, on recorded input.
+ *
+ *   ./run_ref cap.divc --ref rade    --out w_rade.csv
+ *   ./run_ref cap.divc --ref digital --out w_digital.csv --noise 8.5e-5
+ *
+ * The output has the same columns replay_rade --weights writes, so
+ * score_rade will take either.
+ *
+ * The pacing is the price. The worker thread has to be given room to
+ * drain between blocks or the queue overruns and the drop path resets the
+ * correlator - the same trap test_rade.c works around - so a 60 s capture
+ * takes about ten seconds of wall clock. The weight is read one block
+ * after the samples that produced it, which is the same one-block lag the
+ * capture instrument records.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <stdarg.h>
+#include <gtk/gtk.h>
+
+#include "mode.h"
+#include "discovered.h"
+#include "receiver.h"
+#include "vfo.h"
+#include "adc.h"
+#include "diversity_auto.h"
+#include "../ref_slots.h"
+#include "rade_correlator.h"
+#include "rade_tuning.h"
+#include "diversity_capture.h"
+#include "divcap_replay.h"
+#include "radio.h"
+
+static RECEIVER rx0;
+RECEIVER *receiver[8] = { &rx0 };
+int receivers = 2;
+int diversity_enabled = 1;
+int div_auto_mode = DIV_MANUAL;   /* TEST keeps these in radio.c */
+ADC adc[3];
+int radio_is_remote = 0;
+int cw_keyer_sidetone_frequency = 800;
+double auto_div_cos = 1.0, auto_div_sin = 0.0, auto_div_gain = 0.0, auto_div_phase = 0.0;
+double div_norm = 1.0;   /* the output-level normaliser; receiver.c applies it */
+//
+// The engine reads the two step attenuators as part of its analysis
+// context, so a change of either restarts the statistics.
+//
+ADC adc[3];
+int div_indep_att = 0;
+//
+// The engine tells the menu when a mode change swapped one block of
+// modal settings for another. There is no menu here.
+//
+gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
+struct _vfo vfo[MAX_VFOS];
+DISCOVERED *radio = NULL;
+
+static int verbose = 0;
+void t_print(const char *fmt, ...) {
+  if (!verbose) { return; }
+
+  va_list a;
+  va_start(a, fmt);
+  vprintf(fmt, a);
+  va_end(a);
+}
+void t_perror(const char *s) { perror(s); }
+const char *getProperty(const char *n) { (void)n; return NULL; }
+void setProperty(const char *n, const char *v) { (void)n; (void)v; }
+double myatof(const char *s) { return atof(s); }
+
+/*
+ * Everything div_get_context() reads, from a recorded block. The sample
+ * rate is deliberately left alone: it sizes the transform, it never
+ * changes inside a capture, and writing it here would only invite a
+ * mid-run reallocation that the radio never performs.
+ */
+static int have_att = 0;
+
+static void set_context(const struct divcap_block *m) {
+  rx0.filter_low  = m->filter_low;
+  rx0.filter_high = m->filter_high;
+  vfo[0].mode           = m->mode;
+  vfo[0].frequency      = m->frequency;
+  vfo[0].ctun_frequency = m->ctun_frequency;
+  vfo[0].offset         = m->offset;
+  cw_keyer_sidetone_frequency = m->sidetone;
+
+  /*
+   * The step attenuators, on a capture that recorded them.
+   * div_context_changed() compares both, so following them is what makes
+   * an attenuator change during a capture reset the statistics in the
+   * replay as it did on the radio. A v1 file has no values to follow and
+   * both are left at zero for the whole run, which is what the replay
+   * did before they were recorded.
+   */
+  if (have_att) {
+    adc[0].attenuation = m->att0;
+    adc[1].attenuation = m->att1;
+  }
+
+  /*
+   * Which converter RX1 was on. The samples are recorded already in arm
+   * order, so this only restores what the radio had set; the engine does
+   * not act on it. Clear on any file older than the flag.
+   */
+  rx0.adc = (m->rec_flags & DIVCAP_FLAG_ARM_SWAP) ? 1 : 0;
+}
+
+/*
+ * The engine's own rule for turning a requested bin width into a
+ * transform size - div_choose_nfft() in diversity_auto.c, which is
+ * static. Duplicated rather than exported because src/ must not grow a
+ * symbol for the benefit of this tool; if the rule there ever changes,
+ * the check in main() that compares the answer with the capture's own
+ * nfft is what will say so.
+ */
+#define RR_MIN_NFFT 2048
+#define RR_MAX_NFFT 65536
+
+static int rr_choose_nfft(int sample_rate, double target_hz) {
+  int n = RR_MIN_NFFT;
+
+  if (target_hz < 0.5) { target_hz = 0.5; }
+
+  while (n < RR_MAX_NFFT && (double)sample_rate / (double)n > target_hz) {
+    n <<= 1;
+  }
+
+  return n;
+}
+
+int main(int argc, char **argv) {
+  const char *path = NULL, *outp = NULL, *refname = "rade";
+  double noise = 0.0, tau = 0.0, cohmin = -1.0;
+  int auto_res = 0;
+  double centre = 0.0, width = 0.0;
+  double resolution = 0.0;
+  int    follow = -1;
+  unsigned seed = 0;
+  int usleep_us = 12000;
+  int weighting = -1;
+  int mode = -1;
+  const char *sets[16];
+  int nset = 0;
+  int nnotch = 0;
+
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "-v")) { verbose = 1; }
+    else if (!strcmp(argv[i], "--ref")   && i + 1 < argc) { refname = argv[++i]; }
+    else if (!strcmp(argv[i], "--out")   && i + 1 < argc) { outp    = argv[++i]; }
+    else if (!strcmp(argv[i], "--noise") && i + 1 < argc) { noise   = atof(argv[++i]); }
+    else if (!strcmp(argv[i], "--seed")  && i + 1 < argc) { seed    = (unsigned)atoi(argv[++i]); }
+    else if (!strcmp(argv[i], "--tau")   && i + 1 < argc) { tau     = atof(argv[++i]); }
+    /* the coherence gate, which is per reference now - see div_band_cohmin */
+    else if (!strcmp(argv[i], "--cohmin") && i + 1 < argc) { cohmin  = atof(argv[++i]); }
+    /*
+     * Hand-placing the analysis window. --centre/--width imply follow=0,
+     * because a window that follows the filter ignores both; --follow puts
+     * it back. All three are in the shifted frame the operator's controls
+     * use, so they read the same as the menu.
+     */
+    else if (!strcmp(argv[i], "--centre") && i + 1 < argc) { centre  = atof(argv[++i]); follow = 0; }
+    else if (!strcmp(argv[i], "--width")  && i + 1 < argc) { width   = atof(argv[++i]); follow = 0; }
+    else if (!strcmp(argv[i], "--follow") && i + 1 < argc) { follow  = atoi(argv[++i]); }
+    else if (!strcmp(argv[i], "--hang")) {
+      /* LC-014: a RADE lock has no timeout any more, so there is nothing to sweep */
+      fprintf(stderr, "%s: --hang is gone - a RADE lock is held until a new one "
+              "replaces it (LC-014 in docs/changes.md)\n", argv[0]);
+      return 2;
+    }
+    /*
+     * A manual notch, CENTRE:WIDTH in Hz, up to three. The values are the
+     * ones the radio's notch menu stores in multi_notch_center/_width, so
+     * a notch set on air is reproduced exactly. The notch acts downstream
+     * of the capture tap, so the recorded samples are what they would have
+     * been without it, and a replay with it set is what the radio would
+     * have done. The engine maps a centre C to bin frequency -C; see
+     * div_bin_notched().
+     */
+    else if (!strcmp(argv[i], "--notch") && i + 1 < argc) {
+      double c = 0.0, w = 0.0;
+
+      if (nnotch >= 3 || sscanf(argv[++i], "%lf:%lf", &c, &w) != 2 || !(w > 0.0)) {
+        fprintf(stderr, "%s: --notch wants CENTRE:WIDTH in Hz, at most three\n", argv[0]);
+        return 2;
+      }
+
+      rx0.multi_notch_enable[nnotch] = 1;
+      rx0.multi_notch_center[nnotch] = c;
+      rx0.multi_notch_width[nnotch]  = w;
+      nnotch++;
+    }
+    else if (!strcmp(argv[i], "--pace")  && i + 1 < argc) { usleep_us = atoi(argv[++i]); }
+    /*
+     * Bin width in Hz, i.e. the Resolution control. Defaults to whatever
+     * the capture was taken at, which is the only setting that reproduces
+     * the recorded run; give it a value to sweep the control instead.
+     */
+    else if (!strcmp(argv[i], "--resolution") && i + 1 < argc) {
+      /* "auto" is what the radio runs: the engine's own diversity_auto_bin_policy() */
+      if (!strcmp(argv[i + 1], "auto")) { auto_res = 1; i++; } else { resolution = atof(argv[++i]); }
+    }
+    /*
+     * A correlator constant, as replay_rade takes it. The tunable copy is
+     * linked here too, and without this the only way to sweep one of them
+     * was through replay_rade - which applies the correlator's answer
+     * directly, with no slew, no Hold and no objective. Those three turn
+     * out to matter more than most of the constants, so a sweep that
+     * cannot be run through the whole engine is a sweep of the wrong
+     * thing. Collected into a list and applied after
+     * rade_tuning_defaults(), which would otherwise undo them.
+     */
+    else if (!strcmp(argv[i], "--set") && i + 1 < argc) {
+      if (nset >= (int)(sizeof(sets) / sizeof(sets[0]))) {
+        fprintf(stderr, "%s: too many --set options\n", argv[0]);
+        return 2;
+      }
+
+      sets[nset++] = argv[++i];
+    }
+    else if (!strcmp(argv[i], "--mode") && i + 1 < argc) {
+      /* null|sum|best, overriding the objective the capture recorded */
+      const char *a = argv[++i];
+      mode = !strcmp(a, "null") ? DIV_AUTO_NULL
+             : !strcmp(a, "sum") ? DIV_AUTO_SUM
+             : !strcmp(a, "best") ? DIV_AUTO_BEST : -2;
+
+      if (mode == -2) {
+        fprintf(stderr, "%s: --mode wants null, sum or best\n", argv[0]);
+        return 2;
+      }
+    }
+    else if (!strcmp(argv[i], "--weighting") && i + 1 < argc) {
+      /* flat only: Coherence weighting was cut from the engine (LC-049) */
+      const char *a = argv[++i];
+
+      if (strcmp(a, "flat")) {
+        fprintf(stderr, "%s: --weighting wants flat (Coherence weighting was removed, LC-049)\n", argv[0]);
+        return 2;
+      }
+
+      weighting = DIV_WEIGHT_FLAT;
+    }
+    else if (argv[i][0] == '-') {
+      fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
+              "       [--mode null|sum|best] [--weighting flat]\n"
+              "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
+              "       [--noise RMS] [--seed N] [--resolution HZ|auto] [--notch C:W]...\n"
+              "       [--set name=value]... [--tau S] [--pace US] [-v]\n",
+              argv[0]);
+      return 2;
+    } else { path = argv[i]; }
+  }
+
+  if (path == NULL || outp == NULL) {
+    fprintf(stderr, "%s: need a capture and --out\n", argv[0]);
+    return 2;
+  }
+
+  int ref;
+
+  if (!strcmp(refname, "band"))         { ref = DIV_REF_BAND; }
+  else if (!strcmp(refname, "carrier")) { ref = DIV_REF_CARRIER; }
+  else if (!strcmp(refname, "rade"))    { ref = DIV_REF_RADE_V1; }
+  else if (!strcmp(refname, "digital")) { ref = DIV_REF_DIGITAL_IQ; }
+  else if (!strcmp(refname, "cw"))      { ref = DIV_REF_CW; }
+  else { fprintf(stderr, "%s: unknown reference \"%s\"\n", argv[0], refname); return 2; }
+
+  struct divcap_header h;
+  long data_start = 0;
+  FILE *f = divcap_open(path, &h, &data_start);
+
+  if (f == NULL) { return 1; }
+
+  const int nfft = (int)h.nfft;
+  const size_t half = (size_t)nfft * 2u * sizeof(float);
+  float *arm0 = malloc(half), *arm1 = malloc(half);
+  struct divcap_block m;
+
+  /*
+   * The operator's settings, taken from the first block so that the run
+   * reproduces the radio's context - it is what div_get_context() reads,
+   * and getting it wrong moves the analysis window.
+   */
+  if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) {
+    fprintf(stderr, "%s: no blocks\n", path);
+    return 1;
+  }
+
+  rx0.sample_rate = m.ctx_sample_rate;
+  have_att = (h.version >= 2u);
+  set_context(&m);
+  div_auto_ref  = ref;
+  /*
+   * The threshold is stored per reference, and the radio takes it from
+   * the selected one's slot whenever the reference changes or the
+   * settings are loaded. Nothing here goes through either path, so do it
+   * explicitly - otherwise a replay gates on whatever the compiled
+   * default happened to be rather than on this reference's own value.
+   */
+  tool_ref_recall(ref);
+
+  /*
+   * ...and then override it, if asked. Set after the recall because that
+   * is what the radio does last, and sweeping the gate is the whole point
+   * of the option.
+   */
+  if (cohmin >= 0.0) { div_auto_coherence_min = cohmin; }
+  div_auto_mode = (mode >= 0) ? mode : m.auto_mode;
+  div_auto_follow_filter = (follow >= 0) ? follow : m.follow;
+  div_auto_weighting     = (weighting >= 0) ? weighting : m.weighting;
+  div_auto_centre = (width > 0.0) ? centre : m.centre;
+  div_auto_width  = (width > 0.0) ? width  : m.width;
+  div_auto_tau  = (tau  > 0.0) ? tau  : m.tau;
+
+  /*
+   * The Resolution control, which nothing here used to set.
+   *
+   * Everything else about the operator's context comes out of the block
+   * records; div_auto_resolution does not, so the engine ran at its
+   * compiled default of 12 Hz bins - nfft 16384 at 192 kHz - no matter
+   * what the radio was using. Two things followed, and both were silent:
+   * the analysis window was two to four times shorter than the recorded
+   * one on every capture taken at a finer setting, and a whole recorded
+   * block then decomposed into two or four engine blocks pushed back to
+   * back, which overran the four-deep queue. The drop path calls
+   * rade_corr_reset(), so on an nfft 65536 capture "--ref rade" never
+   * acquired at all.
+   *
+   * Deriving the target from the capture puts the engine on the recorded
+   * transform size, which makes it one engine block per recorded block
+   * and the pacing below sufficient again.
+   */
+  div_auto_resolution = auto_res ? DIV_RES_AUTO
+                        : ((resolution > 0.0)
+                           ? resolution
+                           : (double)h.sample_rate / (double)h.nfft);
+  const int eng_nfft = rr_choose_nfft(h.sample_rate,
+                                      auto_res ? diversity_auto_bin_policy(div_auto_ref, div_auto_tau)
+                                      : div_auto_resolution);
+
+  if (resolution <= 0.0 && !auto_res && eng_nfft != (int)h.nfft) {
+    /*
+     * Only reachable if div_choose_nfft()'s rule has moved away from the
+     * copy above, or if the capture was taken outside the engine's own
+     * nfft range. Either way the run will not reproduce the recording,
+     * and saying so is the whole point of checking.
+     */
+    fprintf(stderr, "%s: WARNING capture nfft %u, engine will use %d - "
+            "this run does not reproduce the recorded resolution\n",
+            path, h.nfft, eng_nfft);
+  }
+
+  printf("%s: %u Hz, capture nfft %u, engine nfft %d (%.2f Hz bins, %.1f ms)\n",
+         path, h.sample_rate, h.nfft, eng_nfft,
+         (double)h.sample_rate / (double)eng_nfft,
+         1000.0 * eng_nfft / (double)h.sample_rate);
+  rade_tuning_defaults();
+
+  for (int i = 0; i < nset; i++) {
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%s", sets[i]);
+    char *eq = strchr(buf, '=');
+
+    if (eq == NULL) {
+      fprintf(stderr, "%s: --set wants name=value\n", argv[0]);
+      return 2;
+    }
+
+    *eq = '\0';
+
+    if (!rade_tuning_set(buf, atof(eq + 1))) {
+      fprintf(stderr, "%s: unknown setting \"%s\"\n", argv[0], buf);
+      return 2;
+    }
+
+    printf("  set %s = %s\n", buf, eq + 1);
+  }
+  FILE *out = fopen(outp, "w");
+
+  if (out == NULL) { perror(outp); return 1; }
+
+  fprintf(out, "block,t,locked,confirming,quality,snr,freq_off,ok,wr,wi,"
+          "arm_valid,arm_db,arm_pick,tone,norm\n");
+  divcap_noise_seed(seed);
+  diversity_auto_start();
+  fseek(f, data_start, SEEK_SET);
+  long nb = 0;
+  int  fed = 0;      /* samples pushed since the last pause */
+
+  for (;;) {
+    if (fread(&m, sizeof(m), 1, f) != 1 || m.rec_magic != DIVCAP_REC_MAGIC) { break; }
+
+    if (fread(arm0, 1, half, f) != half) { break; }
+
+    if (fread(arm1, 1, half, f) != half) { break; }
+
+    divcap_add_noise(arm0, arm1, nfft, noise);
+    /*
+     * Follow the recorded context block by block, not just at the start.
+     * The radio moves under the engine while a capture runs - the
+     * operator tunes, changes filter - and div_context_changed() is what
+     * decides whether that invalidates the estimate, so a replay that
+     * pins the context to block 0 cannot exercise it at all.
+     */
+    set_context(&m);
+
+    /*
+     * Paced per *engine* block, not per recorded block, and only when one
+     * has actually been handed over. With the resolution taken from the
+     * capture the two are the same size and this is the loop it always
+     * was - one pause per recorded block, at the end of it. Under
+     * --resolution they need not be, and a recorded block that decomposes
+     * into several engine blocks has to give the worker room between each
+     * of them or the queue overruns; a partial one has been buffered
+     * rather than enqueued and needs no pause at all.
+     */
+    for (int i = 0; i < nfft; i++) {
+      diversity_auto_sample(arm0[2 * i], arm0[2 * i + 1],
+                            arm1[2 * i], arm1[2 * i + 1]);
+
+      if (++fed == eng_nfft) {
+        fed = 0;
+        g_usleep(usleep_us);
+      }
+    }
+    /*
+     * auto_div_cos/auto_div_sin rather than the correlator's raw answer: this is
+     * what the radio applies, slew and Hold and objective included, which
+     * is the thing to score when two references are being compared.
+     */
+    /*
+     * tone: the carrier or CW tracker's readout (Hz, shifted frame, as
+     * the status line shows it), empty when it has none.
+     */
+    char tone[32] = "";
+
+    if (div_auto_carrier_valid) { snprintf(tone, sizeof(tone), "%.1f", div_auto_carrier); }
+
+    fprintf(out, "%ld,%.4f,%d,%d,%.6g,%.4f,%.4f,%d,%.9g,%.9g,%d,%.3f,%d,%s,%.6g\n",
+            nb, (double)nb * nfft / h.sample_rate,
+            rade_corr_locked, rade_corr_confirming, div_auto_coherence,
+            rade_corr_snr, rade_corr_freq_off, !div_auto_holding,
+            auto_div_cos, auto_div_sin,
+            div_auto_arm_valid, div_auto_arm_db, div_auto_arm_pick, tone, div_norm);
+    nb++;
+  }
+
+  g_usleep(200000);
+  diversity_auto_stop();
+  fclose(out);
+  fclose(f);
+  printf("%s: %ld block(s) through the %s reference -> %s\n", path, nb, refname, outp);
+  printf("  final weight %+.4f %+.4f  (%.1f dB %+.0f deg), holding=%d coherence=%.3f\n",
+         auto_div_cos, auto_div_sin, auto_div_gain, auto_div_phase, div_auto_holding, div_auto_coherence);
+  free(arm0);
+  free(arm1);
+  return 0;
+}
