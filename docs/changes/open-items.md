@@ -54,10 +54,10 @@ changes it, we take upstream.
   declares `diversity_auto_ref_store()` / `_recall()` and mentions
   `DIV_REF_SCHEME`, neither of which exists any more.
 
-## Undecided after the 2026-10-08 reconcile
+## After the 2026-10-08 reconcile
 
-Only the force-push of the rebuilt `TEST` (the capture hooks, the reference-only code and PR #150 are settled):
-[upstream-reconcile.md](upstream-reconcile.md#decisions).
+Only the force-push of the rebuilt `TEST` waits on the owner; the rest is
+settled: [upstream-reconcile.md](upstream-reconcile.md#decisions).
 
 ## Not carried
 
