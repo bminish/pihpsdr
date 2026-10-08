@@ -800,3 +800,99 @@ lowest lower bound −0.03.
 **What is still open.** Carrier (no new AM captures, six in the set), fast
 fades, Null against a real interferer, 96, 384 and 768 kHz, and finer bins for
 narrow-tone digital modes (FT8, Olivia, PSK at several signals).
+
+## T-022: interferers - local noise on the MW band, an EMC source, and an AM station beside another
+
+**Captures** (2026-10-08, 14:21 to 14:44; the capture notes were empty and
+these are read from the recorded settings and the operator's description):
+
+| Time | Signal | Recorded as |
+|---|---|---|
+| 142805, 142917 | local noise on the MW band, 698.6 kHz, USB, close AM broadcast | Null, 150 to 3050 Hz, Follow ticked (digital and window references) |
+| 143059 | 693 kHz, SAM, wide filter | Sum, Carrier |
+| 143304, 143345, 143402, 143436 | the same, EMC source nulled with a window offset (centre +6500 Hz, 3 kHz wide) | Null, FSK/Digital reference, Follow off; the slider moved through 0.2 to 6 s, and **crossing 1 s ends the capture** (143402 starts above it, nfft 16384) |
+| 143613, 143739 | the same at 96 kHz and 768 kHz, 1.19 s | Null |
+| 144115, 144142 | AM 6130 kHz with local interference on 6135 | Sum, Carrier |
+| 144318 | AM 6130 kHz, the 6135 interferer nulled by a window | Null, window centre +6500 Hz, 3.3 kHz wide |
+| 144446 | AM 6140 kHz, the 6135 interferer nulled | Null, window centre −5200 Hz, 3.3 kHz wide |
+| 142118 | USB, 1.15 kHz filter, FSK/Digital | Sum (a digital capture, not a Null one) |
+
+**The capture stopping at 1 s was Auto.** A capture file has one transform
+size, and `diversity_auto_stop()` closes it, so Averaging crossing 1 s (24 Hz
+on Window and Carrier, 12 Hz above) restarted the engine and ended the file.
+(The same would have happened to a change of the old Resolution control.)
+Fixed on the branch: while a capture is recording `diversity_auto_retarget()`
+leaves the transform alone, and the menu's status tick catches up afterwards.
+The files themselves are fine; they are what a crossing produces.
+
+**Method.** Each capture through `run_ref` with the operator's own window and
+Follow setting and objective (not forced as in T-019 to T-021), at 24, 12, 6
+Hz and the engine's Auto, at 0.2, 0.5, 1, 1.2, 3 and 6 s (336 runs). Scored
+(`sweeps/score_interf.py`) on the **second half of each capture**, where the
+loop has settled: the depth in the operator's window (the interferer: the
+output's power against arm 0 alone, in dB, more negative is deeper), the
+change in the rest of the passband (the wanted signal), and, for the Sum
+captures, the Sum SNR against the better antenna. **The first half is thrown
+away because `run_ref` starts at w = 1 and the radio had already settled;**
+on an interferer 25 dB hotter on one arm the cold start alone dominates the
+power and made every cell read +3 to +9 dB until it was excluded.
+
+**The replay reproduces the radio.** The weight the radio actually applied
+(recorded in each block) and the engine's own settle to the same magnitude
+and phase, and the depth over the second half agrees to 0.06 dB or better
+on the six cleanest captures (698.6 kHz −5.52 against −5.52, 6130 kHz −9.65
+against −9.65, 6140 kHz −8.58 against −8.58).
+
+### Null depth on a stationary interferer does not depend on the bins or on Averaging
+
+| Capture | depth, 12 Hz | 24 and 6 Hz and Auto minus 12 Hz, 0.2 to 6 s | wanted signal |
+|---|---|---|---|
+| 698.6 kHz local noise (digital ref) | −5.52 dB | within ±0.01 | 0.00 |
+| 698.6 kHz local noise (window ref) | −5.01 | within ±0.01 | 0.00 |
+| 693 kHz EMC, four captures | −1.56 to −3.44 | within ±0.01 | +0.5 to +0.6 |
+| 693 kHz EMC at 96 kHz | −2.75 | within 0.01 | +0.46 |
+| 693 kHz EMC at 768 kHz | −4.30 | within 0.01 | +0.47 |
+| 6130 kHz AM, window on 6135 | −9.65 | within ±0.15 | +0.52 |
+| 6140 kHz AM, window on 6135 | −8.58 | within ±0.05 | +1.53 |
+
+For every one of these the loop converges to the same weight whatever the
+bin width and averaging time, so **Auto costs nothing here and a fixed width
+would have gained nothing**: no capture is more than 0.15 dB from the best.
+The +0.2 dB that 24 Hz gave Null in T-021 is tracking of a moving wanted
+signal, not interferer suppression. At 768 kHz a 6 Hz request is 11.72 Hz,
+the same as 12 Hz, as T-021's table said, and nothing else changes at 96 or
+768 kHz at 1.19 s: this closes the sample-rate item for this signal.
+
+**The depth is the physics, not the bins.** On the MW captures arm 1 is 22 to
+26 dB hotter in the window, and the best single complex weight (computed
+directly from the data) is |w| = −27 dB and gives the same depth as the radio
+did: −5.5, −5.0, −1.7 and −4.3 dB, not a deeper null that a better setting
+would find. The noise is only partly correlated between the arms. The HF AM
+captures null the 6135 interferer by −9 dB with |w| = 0.98, at +0.5 to
++1.5 dB on the wanted signal.
+
+### Sum on the three Carrier captures
+
+| Capture | 12 Hz vs better arm | 24 Hz, 6 Hz, Auto minus 12 Hz at 0.2 / 1.2 / 6 s |
+|---|---|---|
+| 693 kHz SAM, carrier | −3.6 dB | 24 Hz **+0.74 / +0.76 / +0.76**; 6 Hz −0.36 / −0.35 / −0.35; Auto +0.74 / 0 / 0 |
+| 6130 kHz AM (a) | +1.3 / +1.1 / +0.9 | 24 Hz 0.00 / +0.04 / +0.04 |
+| 6130 kHz AM (b) | +1.4 / +1.5 / +1.5 | 24 Hz −0.03 / −0.01 / −0.01 |
+
+**This says Carrier wants 24 Hz at every averaging time, not only up to 1 s.**
+It is also T-021's Carrier result (+0.36 to +0.38 dB at 3 to 6 s over six
+captures, interval above zero): with these three, nine captures, a mean of
+about +0.3 dB at 3 to 6 s, and none of the three new ones worse than
+−0.03 dB. Auto stops
+at 1 s on Carrier and gives that up (the 693 kHz capture would gain +0.76 dB
+at 1.2 s and at 6 s). Candidate, not adopted: Carrier at 24 Hz at any
+averaging time.
+
+**Digital, the 142118 capture:** 24 Hz +0.14 / +0.37 / +1.26 dB and 6 Hz
++0.73 / −0.21 / −0.61 dB at 0.2 / 1.2 / 6 s, with no pattern; it keeps
+FSK/Digital at 12 Hz, T-021's finding on narrow modes standing.
+
+**Not covered.** The operator's perception: "nulls very well" is the audio,
+and the depth above is the window power, which for the MW noise is −5 dB
+against arm 0 alone. The wanted signal in the MW noise captures is not
+separated from the noise by anything this measures.

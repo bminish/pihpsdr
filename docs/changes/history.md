@@ -4,6 +4,15 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: T-022, captures with interferers (local noise on the MW band,
+  an EMC source nulled by a window offset, an AM station beside another, at
+  96, 192 and 768 kHz). On a stationary interferer Null depth does not depend
+  on the bin width or on Averaging, so Auto costs nothing there; Carrier
+  Sum wants 24 Hz at every averaging time (candidate, not adopted). The
+  captures stopping when Averaging crossed 1 s was Auto restarting the
+  engine; the recorder now holds the transform while it records (LC-050
+  fixup). LT-025.
+
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-048
   (the slider stops at 6 s), LC-049 (Resolution 24 / 12 / 6 Hz, 3 Hz
