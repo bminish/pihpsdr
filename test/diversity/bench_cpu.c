@@ -31,9 +31,10 @@
  *
  * RADE V1 is reported in two states. Searching for a pilot is the most
  * expensive thing the engine does; tracking one is much cheaper. Both are
- * scored on a single-sideband passband, which is the only case RADE V1 is
- * valid in (an AM passband, which straddled the carrier and searched both
- * banks, was dropped from the rows on 2026-10-08). The search case is fed
+ * scored on a single-sideband passband, which is the ordinary case: the
+ * search follows the passband, one pilot bank unless it straddles the
+ * carrier. An AM passband, which searched both banks, would be a real
+ * outlier and was dropped from the rows on 2026-10-08. The search case is fed
  * noise so it can never lock; the locked case is given enough blocks to
  * acquire first, and says whether it did.
  *
