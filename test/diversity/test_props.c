@@ -373,12 +373,14 @@ static int test_averaging_and_bins(void) {
 
   /* diversity_auto_bin_policy(): reference, then the Averaging time */
   static const struct { int ref; double tau, want; } p[] = {
-    { DIV_REF_BAND, 0.2, 24 }, { DIV_REF_BAND, 0.5, 24 }, { DIV_REF_BAND, 0.51, 12 },
-    { DIV_REF_BAND, 2.0, 12 }, { DIV_REF_BAND, 5.0, 12 }, { DIV_REF_BAND, 5.01, 6 },
-    { DIV_REF_BAND, 6.0, 6 },
-    { DIV_REF_CARRIER, 0.2, 12 }, { DIV_REF_CARRIER, 2.0, 12 }, { DIV_REF_CARRIER, 6.0, 6 },
-    { DIV_REF_DIGITAL_IQ, 0.2, 12 }, { DIV_REF_DIGITAL_IQ, 6.0, 6 },
-    { DIV_REF_CW, 0.2, 12 }, { DIV_REF_CW, 6.0, 6 },
+    { DIV_REF_BAND, 0.2, 24 }, { DIV_REF_BAND, 0.5, 24 }, { DIV_REF_BAND, 1.0, 24 },
+    { DIV_REF_BAND, 1.01, 12 }, { DIV_REF_BAND, 2.0, 12 }, { DIV_REF_BAND, 5.01, 12 },
+    { DIV_REF_BAND, 6.0, 12 },
+    { DIV_REF_CARRIER, 0.2, 24 }, { DIV_REF_CARRIER, 1.0, 24 }, { DIV_REF_CARRIER, 1.5, 12 },
+    { DIV_REF_CARRIER, 6.0, 12 },
+    { DIV_REF_DIGITAL_IQ, 0.2, 24 }, { DIV_REF_DIGITAL_IQ, 1.0, 24 }, { DIV_REF_DIGITAL_IQ, 1.01, 12 },
+    { DIV_REF_DIGITAL_IQ, 6.0, 12 },
+    { DIV_REF_CW, 0.2, 12 }, { DIV_REF_CW, 1.0, 12 }, { DIV_REF_CW, 6.0, 12 },
     { DIV_REF_RADE_V1, 0.2, 12 }, { DIV_REF_RADE_V1, 2.0, 12 }, { DIV_REF_RADE_V1, 6.0, 12 },
   };
   int pol = 0;

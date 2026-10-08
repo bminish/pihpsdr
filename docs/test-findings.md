@@ -663,3 +663,69 @@ at 96, 384 or 768 kHz.
 
 **Not covered.** CW (not swept: nobody runs CW at a 6 s average), RADE V1
 (Auto leaves it at 12 Hz), Best, and a held-out set.
+
+### T-021, adopted: the policy as now in LC-050
+
+The candidate above is `diversity_auto_bin_policy()` on `test/auto-bins`
+(24 Hz up to 1 s on Window, Carrier and FSK/Digital; 12 Hz otherwise; no
+6 Hz tier). The same 72 captures through the engine as the radio runs it
+(`run_ref --resolution auto`, 1008 runs) give the numbers predicted from
+the fixed-width cells, and **exactly** them: the largest difference between
+the engine's Auto and the cell the policy names is 0.00 dB. Against fixed
+12 Hz, mean gain with the 95 % interval, and the worst capture:
+
+| Averaging | Sum | worst | Null | worst |
+|---|---|---|---|---|
+| 0.2 s | +0.09 [−0.03, +0.21] | −0.93 | +0.25 [+0.14, +0.38] | −0.99 |
+| 0.5 s | +0.06 [−0.03, +0.16] | −0.91 | +0.19 [+0.11, +0.28] | −1.02 |
+| 1 s | +0.10 [+0.01, +0.21] | −0.89 | +0.20 [+0.10, +0.30] | −1.25 |
+| 3 s and up | 0.00 (it is 12 Hz) | 0 | 0.00 | 0 |
+
+The criterion (Auto no worse than 0.25 dB below fixed 12 Hz) holds with
+room: the lowest lower bound is −0.06 dB. Individually, 6 to 11 captures of
+72 are worse than 0.25 dB at the 24 Hz averaging times (3 to 5 on Null).
+This is not a held-out result: the policy was chosen on these captures.
+
+### T-021, what is still needed
+
+Captures taken for the purpose, 192 kHz, two antennas, with the operator's
+description of the conditions in the findings (the recorder writes the
+settings):
+
+1. **Mid-fade SSB, Window, 0.2 to 1 s: 10 captures** (40 m and 20 m evening
+   QSOs through multipath; inter-arm ratio correlation at 1 s of 0.66 to
+   0.95). This is where 24 Hz gained most (+0.2 to +0.25 dB Sum, +0.3 Null).
+   Expect Sum +0.1 to +0.25 dB and Null +0.2 to +0.35 dB over 12 Hz. It
+   closes the main claim.
+2. **Fast-fade SSB, Window: 8 captures** (20 m near the MUF, 17 m and 15 m;
+   correlation under 0.66). 24 Hz gave nothing on Sum here (−0.05 dB) and
+   +0.34 dB on Null at 0.2 s only. Expect Sum −0.1 to +0.1 dB and Null 0 to
+   +0.3 dB, never worse than −0.25 on the mean. It closes the risk that the
+   gain is only on the captures that happened to be mid-fade.
+3. **AM broadcast, Carrier: 12 more captures** (49, 31 and 25 m in the
+   evening, strong and weak, with selective fading). There are 6; 24 Hz was
+   +0.18 dB on Sum at 0.7 to 1 s, about 0 on Null, intervals across zero.
+   Expect +0.1 to +0.2 dB Sum, 0 on Null. Also record the carrier readout
+   against the known station frequency, because five bins at 24 Hz is
+   120 Hz and SNR does not show a tracking error.
+4. **Narrow digital modes, FSK/Digital: 8 captures** (PSK31, RTTY 45 baud,
+   FT8 and FT4 on a busy band, Olivia). This is the highest risk: PSK31 is
+   31 Hz wide, 1.3 bins at 24 Hz, and the occupancy split may miss it. The
+   existing 26 cover wider signals. Expect 0 to +0.15 dB on Sum and a
+   no-worse-than −0.25 dB result; a loss on PSK31 or RTTY would move
+   FSK/Digital back to 12 Hz.
+5. **Null against a real interferer: 4 captures.** Every Null figure so far
+   is the depth on the wanted signal, because the set has no known
+   interferer, and Findings 43's one local-interference capture is
+   incoherent between the arms. Take a station and a second rig on the
+   same band into both antennas (a low-power carrier or SSB tone), once
+   with the interferer coherent between the arms. Expect Null 24 Hz
+   +0.2 dB deeper than 12 Hz or more; this is the use Null exists for.
+6. **Sample rates: one capture each at 96, 384 and 768 kHz** (Window, mid
+   fade). Finding 42 says the block period and not the rate sets the result;
+   expect within 0.1 dB of the same signal at 192 kHz at equal bin width. At
+   768 kHz 24 Hz exists at 23.44 Hz and 12 Hz at 11.72 Hz, as expected, with
+   no 6 Hz; it also tells the Pi 5 what a 32768-point block costs at 43 ms.
+
+Offline, on the existing captures: the same sweep at 0.8, 0.9, 1.1, 1.2 and
+1.5 s, to see whether 1 s is an edge or the middle of a slope.

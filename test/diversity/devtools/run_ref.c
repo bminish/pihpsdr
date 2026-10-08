@@ -148,6 +148,7 @@ static int rr_choose_nfft(int sample_rate, double target_hz) {
 int main(int argc, char **argv) {
   const char *path = NULL, *outp = NULL, *refname = "rade";
   double noise = 0.0, tau = 0.0, cohmin = -1.0;
+  int auto_res = 0;
   double centre = 0.0, width = 0.0;
   double resolution = 0.0;
   int    follow = -1;
@@ -211,7 +212,10 @@ int main(int argc, char **argv) {
      * the capture was taken at, which is the only setting that reproduces
      * the recorded run; give it a value to sweep the control instead.
      */
-    else if (!strcmp(argv[i], "--resolution") && i + 1 < argc) { resolution = atof(argv[++i]); }
+    else if (!strcmp(argv[i], "--resolution") && i + 1 < argc) {
+      /* "auto" is what the radio runs: the engine's own diversity_auto_bin_policy() */
+      if (!strcmp(argv[i + 1], "auto")) { auto_res = 1; i++; } else { resolution = atof(argv[++i]); }
+    }
     /*
      * A correlator constant, as replay_rade takes it. The tunable copy is
      * linked here too, and without this the only way to sweep one of them
@@ -257,7 +261,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
               "       [--mode null|sum|best] [--weighting flat|coherence]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
-              "       [--noise RMS] [--seed N] [--resolution HZ] [--notch C:W]...\n"
+              "       [--noise RMS] [--seed N] [--resolution HZ|auto] [--notch C:W]...\n"
               "       [--set name=value]... [--tau S] [--pace US] [-v]\n",
               argv[0]);
       return 2;
@@ -343,12 +347,15 @@ int main(int argc, char **argv) {
    * transform size, which makes it one engine block per recorded block
    * and the pacing below sufficient again.
    */
-  div_auto_resolution = (resolution > 0.0)
-                        ? resolution
-                        : (double)h.sample_rate / (double)h.nfft;
-  const int eng_nfft = rr_choose_nfft(h.sample_rate, div_auto_resolution);
+  div_auto_resolution = auto_res ? DIV_RES_AUTO
+                        : ((resolution > 0.0)
+                           ? resolution
+                           : (double)h.sample_rate / (double)h.nfft);
+  const int eng_nfft = rr_choose_nfft(h.sample_rate,
+                                      auto_res ? diversity_auto_bin_policy(div_auto_ref, div_auto_tau)
+                                      : div_auto_resolution);
 
-  if (resolution <= 0.0 && eng_nfft != (int)h.nfft) {
+  if (resolution <= 0.0 && !auto_res && eng_nfft != (int)h.nfft) {
     /*
      * Only reachable if div_choose_nfft()'s rule has moved away from the
      * copy above, or if the capture was taken outside the engine's own

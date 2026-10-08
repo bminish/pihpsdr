@@ -494,13 +494,13 @@ static void check_reset_race(void) {
 /*
  * LC-050: with Resolution on Auto the transform follows Averaging, and is
  * rebuilt only when the length Auto wants changes. Window at 192 kHz: 24 Hz
- * (nfft 8192) up to 0.5 s, 12 Hz (16384) to 5 s, 6 Hz (32768) above. At
- * 48 kHz 24 Hz is reachable too (nfft 2048, LC-049).
+ * (nfft 8192) up to 1 s, 12 Hz (16384) above. At 48 kHz 24 Hz is reachable
+ * too (nfft 2048, LC-049).
  */
 static void check_auto_bins(void) {
   static const struct { int rate; double tau; int want; } c[] = {
-    { 192000, 0.2, 8192 }, { 192000, 2.0, 16384 }, { 192000, 6.0, 32768 },
-    {  48000, 0.2, 2048 }, {  48000, 2.0,  4096 }, {  48000, 6.0,  8192 },
+    { 192000, 0.2, 8192 }, { 192000, 1.0, 8192 }, { 192000, 2.0, 16384 }, { 192000, 6.0, 16384 },
+    {  48000, 0.2, 2048 }, {  48000, 1.0, 2048 }, {  48000, 2.0,  4096 }, {  48000, 6.0,  4096 },
   };
   setup(192000, modeLSB, -2800, -200, DIV_REF_BAND);
   div_auto_resolution = DIV_RES_AUTO;
