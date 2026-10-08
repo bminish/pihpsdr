@@ -34,8 +34,10 @@ lives in them is **in upstream**, including LC-006 to LC-047 as they stood
 at `8b13f572` (LC-001 in his placement). Nothing was found missing.
 
 What upstream does *not* have, because it was never meant to go: the
-capture module (`src/diversity_capture.[ch]`), the `Makefile` DIVCAP
-block, `.gitignore` entries, `test/` and `docs/`.
+capture module (`src/diversity_capture.[ch]`), `.gitignore` entries,
+`test/` and `docs/`. (Two hours later `f9803763` added our `Makefile`
+DIVCAP block to his tree, identical to ours, without the module: see
+"Follow-up commit" below.)
 
 ## Status after the re-sync
 
@@ -68,6 +70,27 @@ block, `.gitignore` entries, `test/` and `docs/`.
   [open-items.md](open-items.md) stand. `client_server.c` is identical
   to ours, so nothing there changed.
 - **Not carried** by anyone: the 6 Hz default bins (dropped earlier).
+
+## Follow-up commit `f9803763` (2026-10-08)
+
+"Updated copyright messages". Taken the same day. It does two things that
+matter here:
+
+- It adds a copyright line for the owner (Brendan Minish, EI6IZ) to
+  `diversity_auto.[ch]` and `rade_correlator.[ch]`, and tidies the header
+  of `pipewire.c` and `store.h`. The `pipewire.c` header had credited an AI
+  coding assistant; it no longer does. **Rule: tools get no copyright and
+  no credit in code.** Nothing of ours in `src/`, `test/` or the
+  `Makefile` does (checked).
+- It adds our `Makefile` DIVCAP block to his tree, byte for byte, but not
+  `src/diversity_capture.[ch]`. So `make DIVCAP=1` fails in his tree for a
+  missing file, and "upstream has the hooks but not the Makefile block"
+  above is no longer true. Open: offer him the module, or ask him to drop
+  the block. Ours is unchanged either way.
+
+Our `TEST` was replayed onto it (114 commits, no conflicts; the only
+change to the tree is his `src/` lines), so this is a rebase, not a
+fast-forward: `origin/TEST` needs a force-push after the earlier one.
 
 ## `test/auto-bins` pulled in (2026-10-08)
 

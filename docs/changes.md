@@ -194,8 +194,8 @@ The capture recorder (`make DIVCAP=1`), the unit tests under
 `replay_rade`, `score_*.py`) are how a change is scored on recorded
 captures before it is kept. They carry `LT-NNN` and no LC depends on
 them. Upstream took the recorder's *hooks* (13 `#ifdef DIVERSITY_CAPTURE`
-blocks in `diversity_auto.c` and `diversity_menu.c`) in `f05546e3`, but
-not the module, the `Makefile` block or the tests, so "never sent
+blocks in `diversity_auto.c` and `diversity_menu.c`) in `f05546e3` and the
+`Makefile` block in `f9803763`, but not the module or the tests, so "never sent
 upstream" is no longer true of the hooks: see
 [changes/upstream-reconcile.md](changes/upstream-reconcile.md). Five known
 gaps (features the harness checks for that `TEST` lacks, stand-down among

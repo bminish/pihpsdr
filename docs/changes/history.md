@@ -4,6 +4,12 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: replayed onto `f9803763` (copyright lines for the owner; our
+  Makefile DIVCAP block added to his tree without the module). Tree change
+  is exactly his `src/` lines; backup tag
+  `backup/TEST-pre-copyright-sync-20261008`. See
+  [upstream-reconcile.md](upstream-reconcile.md#follow-up-commit-f9803763-2026-10-08).
+
 - 2026-10-08: `test/auto-bins` pulled in (LC-050 to LC-054 here, LC-048 to
   LC-052 on the branch, renumbered because LC-048 and LC-049 were taken
   by the reconcile). See [upstream-reconcile.md](upstream-reconcile.md).
