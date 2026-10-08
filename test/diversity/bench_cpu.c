@@ -21,6 +21,7 @@
  *   ./bench_cpu --hot      a block every 15 ms: the core stays at full
  *                          clock; the best case.
  *   ./bench_cpu --quick    48, 192 and 1536 kHz only.
+ *   ./bench_cpu --transitions   only the start / stop / restart timings.
  *
  * Lines starting "TSV" carry the same figures for analysis.
  *
@@ -28,11 +29,28 @@
  * A first version synthesised them inside the timed loop and spent most
  * of its time in cos() - it was measuring the harness, not the engine.
  *
- * RADE V1 is reported in three states. Searching for a pilot is the most
- * expensive thing the engine does; tracking one is much cheaper; and an
- * AM passband straddles the carrier, so the search covers both banks.
- * The search case is fed noise so it can never lock; the locked case is
- * given enough blocks to acquire first, and says whether it did.
+ * RADE V1 is reported in two states. Searching for a pilot is the most
+ * expensive thing the engine does; tracking one is much cheaper. Both are
+ * scored on a single-sideband passband, which is the only case RADE V1 is
+ * valid in (an AM passband, which straddled the carrier and searched both
+ * banks, was dropped from the rows on 2026-10-08). The search case is fed
+ * noise so it can never lock; the locked case is given enough blocks to
+ * acquire first, and says whether it did.
+ *
+ * The transform size is the engine's own: Auto bin width (LC-052, LC-053)
+ * asks for 24 Hz bins on Window and Carrier at an Averaging time of 1 s or
+ * less, and 12 Hz otherwise, and the size is the smallest power of two
+ * from 2048 up to 65536 that gets there. The bench works the same size out
+ * from diversity_auto_bin_policy(), starts the engine, and checks the
+ * achieved width (div_auto_binhz) against it, so a policy that changes
+ * cannot leave this file measuring something else: a mismatch shows as
+ * NFFT-MISMATCH in the state column.
+ *
+ * The first six reference names are the ones the 2026-10-02 Pi 5 run used,
+ * with the same settings, so pi5/compare_pi5.py can line the new figures up
+ * against it. The rest are new: Auto's 24 Hz tier, the other objectives
+ * (Level output rides on Sum and Best, so Sum against Null is its cost),
+ * and the operator's notches.
  *
  * "drops" counts analysis blocks the worker could not keep up with. Any
  * drop means the worker needed more than a block period: that row's
@@ -117,6 +135,8 @@ static double now(void) {
 
 static double frand(void) { return 2.0 * ((double)rand() / RAND_MAX) - 1.0; }
 
+#define BENCH_MIN_NFFT 2048  /* diversity_auto.c DIV_MIN_NFFT */
+#define BENCH_MAX_NFFT 65536 /* diversity_auto.c DIV_MAX_NFFT */
 #define BENCH_FRAMES 40      /* modem frames held in the replay buffer */
 
 /*
@@ -217,18 +237,19 @@ static void feed(const float *buf, long nd, long *pos, int nfft, double period) 
 }
 
 int main(int argc, char **argv) {
-  int quick = 0;
+  int quick = 0, only_tr = 0;
 
   for (int a = 1; a < argc; a++) {
     if (!strcmp(argv[a], "--hot")) { hot = 1; }
     else if (!strcmp(argv[a], "--quick")) { quick = 1; }
-    else { fprintf(stderr, "usage: %s [--hot] [--quick]\n", argv[0]); return 2; }
+    else if (!strcmp(argv[a], "--transitions")) { only_tr = 1; }
+    else { fprintf(stderr, "usage: %s [--hot] [--quick] [--transitions]\n", argv[0]); return 2; }
   }
 
   const int all_rates[] = { 48000, 96000, 192000, 384000, 768000, 1536000 };
   const int quick_rates[] = { 48000, 192000, 1536000 };
   const int *rates = quick ? quick_rates : all_rates;
-  const int nrates = quick ? 3 : 6;
+  const int nrates = only_tr ? 0 : (quick ? 3 : 6);
   //
   // The filter matters for the RADE modes: the pilot search only looks at
   // the bank the operator's passband names, so an SSB passband halves it.
@@ -237,11 +258,12 @@ int main(int argc, char **argv) {
   //
   struct {
     const char *name; int ref; int mode; int carrier; int settle; int flo; int fhi;
+    int obj; double tau; int notches;
   } modes[] = {
-    { "Window",           DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000 },
-    { "Carrier",          DIV_REF_CARRIER,    modeAM,  1,  4, -8000, 8000 },
-    { "Digital I/Q",      DIV_REF_DIGITAL_IQ, modeAM,  1,  4,  -2800, -200 },
-    { "CW",               DIV_REF_CW,         modeCWU, 1,  4,    400, 1000 },
+    { "Window",           DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000, DIV_AUTO_SUM,  2.0, 0 },
+    { "Carrier",          DIV_REF_CARRIER,    modeAM,  1,  4, -8000, 8000, DIV_AUTO_SUM,  2.0, 0 },
+    { "Digital I/Q",      DIV_REF_DIGITAL_IQ, modeAM,  1,  4,  -2800, -200, DIV_AUTO_SUM, 2.0, 0 },
+    { "CW",               DIV_REF_CW,         modeCWU, 1,  4,    400, 1000, DIV_AUTO_SUM, 2.0, 0 },
     //
     // The generator's modem lands below the tuned frequency in the raw
     // sample buffer, whose spectrum is the mirror of the dial's (test_rade
@@ -249,14 +271,22 @@ int main(int argc, char **argv) {
     // finds it. The search row uses the same passband, so it searches the
     // same bank, but is fed noise.
     //
-    { "RADE V1 (search)", DIV_REF_RADE_V1,    modeDIGL, 0,  4, -2800, -200 },
+    { "RADE V1 (search)", DIV_REF_RADE_V1,    modeDIGL, 0,  4, -2800, -200, DIV_AUTO_SUM, 2.0, 0 },
     //
     // Declaring lock needs a grid detection - at 8, 16 or 32 passes of one
     // modem frame, so 1 to 3.8 s - followed by RADE_PROBATION frames of
     // confirmation, about a second. This settle is generous.
     //
-    { "RADE V1 (locked)", DIV_REF_RADE_V1,    modeDIGL, 1, 80, -2800, -200 },
-    { "RADE V1 (AM pb)",  DIV_REF_RADE_V1,    modeAM,  0,  4, -8000, 8000 },
+    { "RADE V1 (locked)", DIV_REF_RADE_V1,    modeDIGL, 1, 80, -2800, -200, DIV_AUTO_SUM, 2.0, 0 },
+    //
+    // New since the 2026-10-02 run.
+    //
+    { "Window 24Hz tier", DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000, DIV_AUTO_SUM,  0.5, 0 },
+    { "Carrier 24Hz tier", DIV_REF_CARRIER,   modeAM,  1,  4, -8000, 8000, DIV_AUTO_SUM,  0.5, 0 },
+    { "Window Best",      DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000, DIV_AUTO_BEST, 2.0, 0 },
+    { "Window Null",      DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000, DIV_AUTO_NULL, 2.0, 0 },
+    { "Window 3 notches", DIV_REF_BAND,       modeAM,  1,  4, -8000, 8000, DIV_AUTO_SUM,  2.0, 3 },
+    { "CW Best",          DIV_REF_CW,         modeCWU, 1,  4,    400, 1000, DIV_AUTO_BEST, 2.0, 0 },
   };
   memset(&rx0, 0, sizeof(rx0));
   rx0.id = 0;
@@ -291,9 +321,18 @@ int main(int argc, char **argv) {
 
   for (unsigned m = 0; m < sizeof(modes) / sizeof(modes[0]); m++) {
     for (int r = 0; r < nrates; r++) {
-      int nfft = 4096;
+      //
+      // Auto's own choice of bin width, and the transform size it leads to.
+      // BENCH_MIN_NFFT / BENCH_MAX_NFFT are diversity_auto.c's DIV_MIN_NFFT /
+      // DIV_MAX_NFFT, which are private to it; the check after the engine
+      // starts is what catches them drifting apart.
+      //
+      div_auto_resolution = DIV_RES_AUTO;
+      div_auto_tau = modes[m].tau;
+      const double target = diversity_auto_bin_policy(modes[m].ref, modes[m].tau);
+      int nfft = BENCH_MIN_NFFT;
 
-      while (nfft < 65536 && (double)rates[r] / nfft > 12.0) { nfft <<= 1; }
+      while (nfft < BENCH_MAX_NFFT && (double)rates[r] / nfft > target) { nfft <<= 1; }
 
       const double period = (double)nfft / rates[r];
       rx0.sample_rate = rates[r];
@@ -301,15 +340,27 @@ int main(int argc, char **argv) {
       rx0.filter_high = modes[m].fhi;
       vfo[0].mode = modes[m].mode;
       div_auto_ref = modes[m].ref;
-      div_auto_mode = DIV_AUTO_SUM;
+      div_auto_mode = modes[m].obj;
       div_auto_follow_filter = 1;
-      div_auto_tau = 2.0;
       div_auto_coherence_min = 0.1;
+      //
+      // The operator's notches: three, across the passband, away from the
+      // wanted signal so the loop is not disturbed, each wide enough to
+      // take out many bins.
+      //
+      for (int i = 0; i < 3; i++) {
+        rx0.multi_notch_enable[i] = (i < modes[m].notches);
+        rx0.multi_notch_center[i] = -2200.0 - 900.0 * i;
+        rx0.multi_notch_width[i]  = 300.0;
+      }
+
       float *buf = NULL;
       long pos = 0;
       srand(4);
       long nd = gen_stream(&buf, rates[r] / RADE_CORR_FS, modes[m].carrier);
       diversity_auto_start();
+      const double achieved = (double)rates[r] / nfft;
+      const int nfft_ok = fabs(div_auto_binhz - achieved) < 0.01 * achieved;
 
       for (int b = 0; b < modes[m].settle; b++) { feed(buf, nd, &pos, nfft, period); }
 
@@ -330,9 +381,11 @@ int main(int argc, char **argv) {
       const double fms = 1000.0 * feeder_cpu / nblk;
       const double wms = 1000.0 * (cpu - feeder_cpu) / (nblk - ndrop > 0 ? nblk - ndrop : 1);
       const double pms = 1000.0 * period;
-      const char *state = "-";
+      const char *state = nfft_ok ? "-" : "NFFT-MISMATCH";
 
-      if (modes[m].ref == DIV_REF_RADE_V1) {
+      if (!nfft_ok) {
+        // keep the mismatch visible whatever else the row is
+      } else if (modes[m].ref == DIV_REF_RADE_V1) {
         state = modes[m].carrier ? (locked ? "locked" : "DID-NOT-LOCK")
                 : (locked ? "UNEXPECTED-LOCK" : "searching");
       }
@@ -343,6 +396,65 @@ int main(int argc, char **argv) {
       printf("TSV\t%s\t%s\t%d\t%d\t%.2f\t%.4f\t%.3f\t%.4f\t%.3f\t%d\t%s\n",
              hot ? "hot" : "paced", modes[m].name, rates[r], nfft, pms, wms,
              100.0 * wms / pms, fms, 100.0 * fms / pms, ndrop, state);
+      fflush(stdout);
+    }
+  }
+
+  //
+  // Transitions: how long the engine takes to start, stop and restart, in
+  // wall-clock milliseconds, because these calls are made from the menu and
+  // from rxtx() and hold the caller until they return. Switching diversity
+  // on or off, changing the reference, and an Averaging move across 1 s
+  // (Auto's 24 -> 12 Hz tier, which changes the transform) all come down to
+  // them. The first start of the process allocates the buffers at the
+  // largest size and is reported on its own, as "first"; the rest are the
+  // steady-state ones, at every transform size Auto can pick.
+  //
+  printf("\nTransitions, wall-clock ms (the caller waits for these)\n");
+  printf("%-8s %6s %6s %6s %10s %10s %12s\n", "when", "rate", "tau", "nfft", "start ms", "stop ms", "restart ms");
+  printf("TSV\ttransition\twhen\trate\ttau\tnfft\tstart_ms\tstop_ms\trestart_ms\n");
+  {
+    const struct { int rate; double tau; } tr[] = {
+      { 1536000, 2.0 }, { 48000, 0.5 }, { 48000, 2.0 }, { 96000, 0.5 }, { 96000, 2.0 },
+      { 192000, 0.5 }, { 192000, 2.0 }, { 384000, 0.5 }, { 384000, 2.0 },
+      { 768000, 0.5 }, { 768000, 2.0 }, { 1536000, 0.5 },
+    };
+
+    for (unsigned t = 0; t < sizeof(tr) / sizeof(tr[0]); t++) {
+      rx0.sample_rate = tr[t].rate;
+      rx0.filter_low = -8000;
+      rx0.filter_high = 8000;
+      vfo[0].mode = modeAM;
+      div_auto_ref = DIV_REF_BAND;
+      div_auto_mode = DIV_AUTO_SUM;
+      div_auto_resolution = DIV_RES_AUTO;
+      div_auto_tau = tr[t].tau;
+      const double target = diversity_auto_bin_policy(DIV_REF_BAND, tr[t].tau);
+      int nfft = BENCH_MIN_NFFT;
+
+      while (nfft < BENCH_MAX_NFFT && (double)tr[t].rate / nfft > target) { nfft <<= 1; }
+
+      double t0 = now();
+      diversity_auto_start();
+      const double start_ms = 1000.0 * (now() - t0);
+
+      for (int n = 0; n < 2 * nfft; n++) {
+        diversity_auto_sample(frand(), frand(), frand(), frand());
+      }
+
+      g_usleep(300000);
+      t0 = now();
+      diversity_auto_restart();
+      const double restart_ms = 1000.0 * (now() - t0);
+      g_usleep(100000);
+      t0 = now();
+      diversity_auto_stop();
+      const double stop_ms = 1000.0 * (now() - t0);
+      const char *when = (t == 0) ? "first" : "steady";
+      printf("%-8s %5dk %6.1f %6d %10.2f %10.2f %12.2f\n", when, tr[t].rate / 1000, tr[t].tau, nfft,
+             start_ms, stop_ms, restart_ms);
+      printf("TSV\ttransition\t%s\t%d\t%.1f\t%d\t%.3f\t%.3f\t%.3f\n", when, tr[t].rate, tr[t].tau, nfft,
+             start_ms, stop_ms, restart_ms);
       fflush(stdout);
     }
   }

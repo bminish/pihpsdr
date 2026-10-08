@@ -76,18 +76,25 @@ pi_bench_standalone.c: pi_bench.c nf_select.inc
 	sed -e '/^#include "nf_select.inc"/{r nf_select.inc' -e 'd}' pi_bench.c > $@
 
 #
-# The Pi 5 bundle: the engine's sources, bench_cpu, pi_bench and the run
-# script, in one tarball to copy to the Pi. The sources are found by the
-# compiler's own dependency list, so the bundle follows the engine.
+# The Pi 5 bundle: the engine's sources, bench_cpu, pi_bench, the whole
+# functional suite (test/diversity, so it runs on the Pi's compiler and
+# NEON too), the 2026-10-02 Pi 5 baseline and compare_pi5.py, which says
+# whether anything regressed, and the run script, in one tarball to copy
+# to the Pi. The sources are found by the compiler's own dependency list,
+# so the bundle follows the engine.
 #
 #   make -C test/diversity pi5-bench.tar.gz
 #   scp test/diversity/pi5-bench.tar.gz pi@<your-pi>:
 #
-pi5-bench.tar.gz: bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh $(SRC)
-	rm -rf pi5-bench && mkdir -p pi5-bench/src
-	cp bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh pi5-bench/
-	$(CC) $(CFLAGS) -MM bench_cpu.c $(SRC) | tr ' \\' '\n\n' | grep '^$(TOP)/src/' | sort -u \
-	  | xargs -I{} cp {} pi5-bench/src/
+pi5-bench.tar.gz: bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh pi5/compare_pi5.py $(wildcard test_*.c) $(SRC)
+	rm -rf pi5-bench && mkdir -p pi5-bench/test/diversity pi5-bench/baseline
+	cp bench_cpu.c pi_bench_standalone.c pi5/run_pi5.sh pi5/compare_pi5.py pi5-bench/
+	cp Makefile test_*.c bench_nf.c bench_cpu.c pi_bench.c known_gaps.h ref_slots.h pi5-bench/test/diversity/
+	$(CC) $(CFLAGS) `pkg-config --cflags fftw3` -MM bench_cpu.c test_*.c $(SRC) | tr ' \\' '\n\n' \
+	  | grep '^$(TOP)/' | sort -u | sed 's|^$(TOP)/||' \
+	  | (cd $(TOP) && xargs cp --parents -t $(CURDIR)/pi5-bench)
+	cp $(TOP)/docs/bench/pi5-bundle-cm5/bench_cpu-paced.txt $(TOP)/docs/bench/pi5-bundle-cm5/bench_cpu-hot.txt \
+	   $(TOP)/docs/bench/pi5-bundle-cm5/pi_bench.txt pi5-bench/baseline/
 	git -C $(TOP) describe --always --dirty > pi5-bench/VERSION
 	tar czf $@ pi5-bench
 	rm -rf pi5-bench

@@ -911,6 +911,63 @@ static void decimators(void) {
   printf("\n");
 }
 
+/*
+ * 8. The receive thread's share: rx_add_div_iq_samples() forms
+ *    z0 + w*z1 once per sample pair, then scales it by the level
+ *    normaliser (LC-030, always on from LC-055) and stores it. The weight,
+ *    the scale and the output buffer are globals that the radio reads on
+ *    every sample, so they are volatile here: the compiler may not hoist
+ *    them. diversity_auto_sample(), the other half of what the receive
+ *    thread does per sample, is measured in bench_cpu ("feeder").
+ */
+static volatile double cb_cos = 0.62, cb_sin = -0.48, cb_norm = 0.8;
+
+static void combiner(void) {
+  printf("\nThe per-sample combine on the receive thread (rx_add_div_iq_samples):\n");
+  printf("  %-8s %10s %8s\n", "rate", "ns/sample", "% core");
+  enum { N = 1 << 20 };
+  double *in = malloc(sizeof(double) * 4 * N);
+  double *out = malloc(sizeof(double) * 2 * N);
+
+  for (int i = 0; i < 4 * N; i++) { in[i] = urand() - 0.5; }
+
+  double best = 1e9;
+
+  for (int rep = 0; rep < 7; rep++) {
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    for (int n = 0; n < N; n++) {
+      const double i0 = in[4 * n], q0 = in[4 * n + 1], i1 = in[4 * n + 2], q1 = in[4 * n + 3];
+      double i_sample = i0 + (cb_cos * i1 - cb_sin * q1);
+      double q_sample = q0 + (cb_sin * i1 + cb_cos * q1);
+      i_sample *= cb_norm;
+      q_sample *= cb_norm;
+      out[2 * n] = i_sample;
+      out[2 * n + 1] = q_sample;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const double ns = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / N;
+
+    if (ns < best) { best = ns; }
+  }
+
+  const int rates[] = { 48000, 96000, 192000, 384000, 768000, 1536000 };
+
+  for (int r = 0; r < 6; r++) {
+    const double pct = 100.0 * best * 1e-9 * rates[r];
+    printf("  %5dk  %10.2f %7.3f%%\n", rates[r] / 1000, best, pct);
+    printf("TSV\tcombine\t%d\t%.3f\t%.4f\n", rates[r], best, pct);
+  }
+
+  /* keep the stores live */
+  if (out[7] == 12345.678) { printf("\n"); }
+
+  free(in);
+  free(out);
+}
+
 int main(void) {
   srand(12345);
   printf("pi_bench - diversity engine hot spots\n\n");
@@ -924,6 +981,7 @@ int main(void) {
   planners();
 #endif
   decimators();
+  combiner();
 
   if (!lean_ok) { return 1; }
 

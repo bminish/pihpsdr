@@ -6,14 +6,23 @@
 #
 #   tar xzf pi5-bench.tar.gz && cd pi5-bench && ./run_pi5.sh
 #
-# Takes about 15 minutes. Close piHPSDR first: anything else using the CPU
+# Takes about 25 minutes. Close piHPSDR first: anything else using the CPU
 # moves the figures. Leaves results-<host>-<time>.tar.gz here; copy that
 # back.
 #
-# Needs a C compiler, pkg-config, and the FFTW single-precision and GTK 3
-# development packages (the ones piHPSDR itself builds with):
+# What it does: times the engine's kernels, transforms and decimators
+# (pi_bench), times every reference and objective at every rate, the
+# engine's start / stop / restart, and the receive thread's combine
+# (bench_cpu), runs the whole functional suite on this machine, and then
+# compares the figures with the 2026-10-02 Pi 5 run in baseline/ and says
+# whether anything regressed, dropped blocks, or became a bottleneck
+# (compare.txt; the last line is the verdict).
 #
-#   sudo apt install build-essential pkg-config libfftw3-dev libgtk-3-dev
+# Needs make, a C compiler, pkg-config, and the FFTW and GTK 3 development
+# packages (the ones piHPSDR itself builds with). python3 is optional: it
+# runs the comparison.
+#
+#   sudo apt install build-essential make pkg-config libfftw3-dev libgtk-3-dev python3
 #
 # perf is optional. With it, a profile says which functions the time goes
 # to:
@@ -37,6 +46,7 @@ say() { echo "$*" | tee -a "$LOG"; }
 missing=""
 command -v cc >/dev/null || missing="$missing build-essential"
 command -v pkg-config >/dev/null || missing="$missing pkg-config"
+command -v make >/dev/null || missing="$missing make"
 pkg-config --exists fftw3f 2>/dev/null || missing="$missing libfftw3-dev"
 pkg-config --exists gtk+-3.0 2>/dev/null || missing="$missing libgtk-3-dev"
 
@@ -110,21 +120,21 @@ cc $CFLAGS -Isrc $(pkg-config --cflags gtk+-3.0 fftw3f) -o bench_cpu bench_cpu.c
 
 # ---- Run -------------------------------------------------------------------
 
-say "1/4 pi_bench: kernels, FFT planners, decimators (about 5 minutes)"
+say "1/6 pi_bench: kernels, FFT planners, decimators, the combine (about 5 minutes)"
 ./pi_bench > "$OUT/pi_bench.txt" 2>&1
 say "    exit $? (1 means a selection or decimator check failed)"
 state "after pi_bench"
 
-say "2/4 bench_cpu, paced as the radio (about 5 minutes)"
+say "2/6 bench_cpu, paced as the radio, with start / stop / restart (about 8 minutes)"
 ./bench_cpu > "$OUT/bench_cpu-paced.txt" 2>&1
 state "after bench_cpu paced"
 
-say "3/4 bench_cpu, hot (about 2 minutes)"
+say "3/6 bench_cpu, hot (about 3 minutes)"
 ./bench_cpu --hot > "$OUT/bench_cpu-hot.txt" 2>&1
 state "after bench_cpu hot"
 
 if command -v perf >/dev/null; then
-  say "4/4 perf profile of bench_cpu --hot --quick (about 1 minute)"
+  say "4/6 perf profile of bench_cpu --hot --quick (about 1 minute)"
   if perf record -F 999 -o "$OUT/perf.data" ./bench_cpu --hot --quick > /dev/null 2>> "$OUT/perf.log"; then
     #
     # The analysis thread alone (named div_auto), then everything: the
@@ -142,7 +152,28 @@ if command -v perf >/dev/null; then
     say "    perf record failed (see perf.log; perf_event_paranoid is $(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null))"
   fi
 else
-  say "4/4 perf not installed: skipped (optional)"
+  say "4/6 perf not installed: skipped (optional)"
+fi
+state "after perf"
+
+say "5/6 the functional suite, on this machine (about 3 minutes)"
+if make -C test/diversity run > "$OUT/suite.txt" 2>&1; then
+  say "    PASS (exit 0). Known gaps are reported in suite.txt and are not counted."
+  suite=0
+else
+  say "    FAILED (exit $?): see $OUT/suite.txt"
+  suite=1
+fi
+grep -c ' FAIL' "$OUT/suite.txt" | sed 's/^/    lines with FAIL (known gaps among them): /' | tee -a "$LOG"
+state "after suite"
+
+say "6/6 compare with the 2026-10-02 Pi 5 run"
+if command -v python3 >/dev/null; then
+  python3 compare_pi5.py baseline "$OUT" > "$OUT/compare.txt" 2>&1
+  say "    $(tail -1 "$OUT/compare.txt")"
+  say "    (details: $OUT/compare.txt)"
+else
+  say "    python3 not installed: skipped. Copy the results back and compare there."
 fi
 state "after"
 
