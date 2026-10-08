@@ -92,7 +92,7 @@ capture with the same settings, and score them together:
 
 ```
 test/diversity/devtools/run_ref captures/X.divc --ref band --mode sum \
-    --weighting flat --cohmin 0.20 --out after.csv
+    --weighting flat --cohmin 0.20 --out after.csv   # flat is the only weighting
 /path/to/run_ref_without_it captures/X.divc --ref band --mode sum \
     --weighting flat --cohmin 0.20 --out before.csv
 cd test/diversity/devtools/py && python3 score_wideband.py ../../../../captures/X.divc before.csv after.csv
