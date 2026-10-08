@@ -18,11 +18,12 @@
 # whether anything regressed, dropped blocks, or became a bottleneck
 # (compare.txt; the last line is the verdict).
 #
-# Needs make, a C compiler, pkg-config, and the FFTW and GTK 3 development
-# packages (the ones piHPSDR itself builds with). python3 is optional: it
+# Needs make, a C compiler, pkg-config, and the FFTW, GTK 3 and Opus
+# development packages (the ones piHPSDR itself builds with; the suite's
+# test_props includes client_server.h, which wants opus/opus.h). python3 is optional: it
 # runs the comparison.
 #
-#   sudo apt install build-essential make pkg-config libfftw3-dev libgtk-3-dev python3
+#   sudo apt install build-essential make pkg-config libfftw3-dev libgtk-3-dev libopus-dev python3
 #
 # perf is optional. With it, a profile says which functions the time goes
 # to:
@@ -49,6 +50,7 @@ command -v pkg-config >/dev/null || missing="$missing pkg-config"
 command -v make >/dev/null || missing="$missing make"
 pkg-config --exists fftw3f 2>/dev/null || missing="$missing libfftw3-dev"
 pkg-config --exists gtk+-3.0 2>/dev/null || missing="$missing libgtk-3-dev"
+pkg-config --exists opus 2>/dev/null || missing="$missing libopus-dev"
 
 if [ -n "$missing" ]; then
   echo "Missing:$missing"

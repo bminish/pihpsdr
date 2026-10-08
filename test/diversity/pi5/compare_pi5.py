@@ -15,10 +15,16 @@ What it checks, and what each verdict means:
               (the worker needed more than a block period), RADE V1 did not
               lock where it should or locked where it should not, or the
               bench's transform size disagreed with the engine's (NFFT-MISMATCH).
-  REGRESSION  a row that exists in both runs costs clearly more now: more
-              than 25 % over the baseline AND more than 0.3 percentage points
-              of a core (1.0 for RADE V1's search, whose cost varies from run
-              to run by about a point).
+  REGRESSION  a bench_cpu row that exists in both runs costs clearly more now
+              in BOTH the paced and the hot run: more than 25 % over the
+              baseline AND more than 0.3 percentage points of a core (1.0 for
+              RADE V1's search, whose cost varies from run to run by about a
+              point). One pacing alone is shown as "noise?" and not counted:
+              on the Pi 5 (ondemand governor) a single run moves a row by up
+              to about +-35 % with no change to the code (2026-10-08: CW 768k
+              was +28 % paced and -23 % hot in one run). The micro-benchmarks
+              (pi_bench) must be over 60 % to count, for the same reason:
+              unchanged decimator code read x1.41 and x1.48.
   BOTTLENECK  a row, new or old, costs more than BUDGET_PCT of one core
               (worker plus feeder), or a start / stop / restart holds the
               caller longer than SLOW_MS.
@@ -39,6 +45,7 @@ SLOW_MS = 50.0          # a start / stop / restart the UI thread waits for
 REL = 1.25              # regression: ratio over the baseline ...
 ABS_PTS = 0.3           # ... and points of a core over it
 ABS_PTS_SEARCH = 1.0    # RADE V1 searching varies by about a point
+REL_PIB = 1.6           # pi_bench micro-benchmarks: identical code read x1.48 once
 
 
 def read_tsv(path):
@@ -113,6 +120,7 @@ def main(argv):
     bp, np_ = pib_rows(base["pib"]), pib_rows(new["pib"])
     bad = 0
     lines = []
+    cand = {}       # (reference, rate) -> {pacing: text}, for the both-pacings rule
 
     def note(verdict, text):
         nonlocal bad
@@ -150,14 +158,23 @@ def main(argv):
         d = tot - bt
         tol = ABS_PTS_SEARCH if "search" in key[1] else ABS_PTS
         if tot > bt * REL and d > tol:
-            note("REGRESSION", "%s %s %dk: %.2f %% -> %.2f %% (+%.2f points, x%.2f)" %
-                 (key[0], key[1], key[2] // 1000, bt, tot, d, tot / bt if bt else 0))
-            tag = tag or "REGRESSION"
+            cand.setdefault((key[1], key[2]), {})[key[0]] = \
+                "%.2f %% -> %.2f %% (+%.2f points, x%.2f)" % (bt, tot, d, tot / bt if bt else 0)
+            tag = tag or "over?"
         if b["nfft"] != n["nfft"]:
             lines.append("%-10s %s %s %dk: transform size %d -> %d" %
                          ("note", key[0], key[1], key[2] // 1000, b["nfft"], n["nfft"]))
         print("%-6s %-22s %5dk %6d %9.2f %9.2f %+8.2f  %s" %
               (key[0], key[1], key[2] // 1000, n["nfft"], bt, tot, d, tag or "ok"))
+    for (ref, rate), per in sorted(cand.items()):
+        both = all(((p, ref, rate) in nc and (p, ref, rate) in bc) for p in ("paced", "hot"))
+        if both and len(per) == 2:
+            note("REGRESSION", "%s %dk, paced and hot: paced %s; hot %s" %
+                 (ref, rate // 1000, per["paced"], per["hot"]))
+        else:
+            for p, t in per.items():
+                lines.append("%-10s %s %s %dk only in the %s run: %s (the other pacing does not agree)" %
+                             ("noise?", p, ref, rate // 1000, p, t))
     present = set((k[0], k[1]) for k in nc)
     for ref in sorted(set((k[0], k[1]) for k in bc) - present):
         lines.append("%-10s %s %s (every rate; in the baseline only)" % ("gone", ref[0], ref[1]))
@@ -184,7 +201,7 @@ def main(argv):
             print("%-34s %12s %12.4f  NEW" % (label[:34], "-", n["pct"]))
             continue
         tag = "ok"
-        if n["pct"] > b["pct"] * REL and n["pct"] - b["pct"] > ABS_PTS:
+        if n["pct"] > b["pct"] * REL_PIB and n["pct"] - b["pct"] > ABS_PTS:
             note("REGRESSION", "%s: %.3f %% -> %.3f %% of a core" % (label, b["pct"], n["pct"]))
             tag = "REGRESSION"
         print("%-34s %12.4f %12.4f  %s" % (label[:34], b["pct"], n["pct"], tag))
