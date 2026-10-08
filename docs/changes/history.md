@@ -16,8 +16,10 @@ Newest first.
   6 Hz tier. Twelve captures taken afterwards (15 m and 20 m SSB, FSK,
   PSK31, a multitone mode, a digital signal near 14092 kHz) confirmed
   Window and sank 24 Hz on FSK/Digital (PSK31 and the multitone mode lost
-  1.4 to 4.4 dB on Sum): FSK/Digital is now at 12 Hz. For testing; `TEST`
-  is unchanged.
+  1.4 to 4.4 dB on Sum): FSK/Digital is now at 12 Hz. Accepted: the
+  automatic choice is a fraction of a dB from the best on average (mean
+  0.2 to 0.4 dB, tail to 2 to 7 dB on single captures), in return for no
+  control to set wrongly. For testing; `TEST` is unchanged.
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for

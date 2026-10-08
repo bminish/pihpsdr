@@ -132,6 +132,23 @@ an older build, or sent by an older client, becomes Auto. The field stays
 on the wire and in the file so neither changes shape. The achieved width
 still shows in the status line.
 
+**Accepted trade-off (decided 2026-10-08).** There may be room to optimise
+the policy further, but automating the choice removes the operator's ability
+to make a bad one, and in every test so far Auto lands close to the best
+fixed width, so the trade is accepted and the UI is simpler for it. The
+measured distance, against the best of 24, 12 and 6 Hz picked per capture
+with hindsight (84 captures, the engine's own Auto; T-021): mean 0.20 to
+0.25 dB on Sum and 0.24 to 0.43 dB on Null, median 0.02 to 0.09 dB (Null
+0.00 to 0.17), and 76 to 82 % of captures within 0.25 dB of it. The tail is
+longer than the mean suggests: the 90th percentile is 0.35 to 0.74 dB, and
+the worst single captures are 2 to 3.3 dB away on Sum (all FSK/Digital or
+Carrier; the 14092 kHz capture wants 6 Hz, +2.5 dB) and up to 7 dB on Null
+at 6 s (one 15 m capture that wants 24 Hz). The best-of-three is itself
+an optimistic yardstick (a maximum of three noisy figures), and a fixed
+setting would not have been the best either. Where a class of signal is
+known to want something else, the way back is the policy table in
+`diversity_auto_bin_policy()`, not a control.
+
 **Kept for the tools.** `div_target_hz()` still honours a fixed width,
 because `run_ref --resolution` and the unit tests set one directly (a
 sweep needs it). It is unreachable from the radio; it is deleted when a PR
