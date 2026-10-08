@@ -1162,36 +1162,33 @@ static int div_choose_nfft(int sample_rate, double target_hz) {
 //
 // The bin width Auto asks for, from the reference and the Averaging time.
 //
-// Two things pull against each other. The block period is 1 / bin width,
-// and an average of only a few blocks is hardly an average: at 0.2 s a
-// 6 Hz block (171 ms) is most of one averaging time (alpha 0.57) and a
-// 3 Hz block is longer than it. And finer bins resolve a narrow carrier, tone or
-// occupancy edge better, which only costs anything while the block is
-// long against the average. So:
+// The block period is 1 / bin width, and an average of only a few blocks is
+// hardly an average: at 0.2 s a 6 Hz block (171 ms) is most of one
+// averaging time (alpha 0.57) and a 3 Hz block is longer than it. So the
+// short end gets the coarsest bins; beyond it 12 Hz, the default, which is
+// where nothing measured does better:
 //
-//   - up to 0.5 s: 24 Hz (43 ms, at least 4 blocks to the average down to
-//     0.2 s) on Window, which has plenty of bins. Carrier, CW and
-//     FSK/Digital stay at 12 Hz: they track a narrow feature (five bins,
-//     the tone's three, the occupancy edges) and 24 Hz is not measured to
-//     help them (T-020);
-//   - up to 5 s: 12 Hz, the default;
-//   - above 5 s the block is under 1/30 of the average and the resolution
-//     is free: 6 Hz.
+//   - up to 1 s: 24 Hz (43 ms) on Window, Carrier and FSK/Digital. Against
+//     12 Hz it is +0.1 dB on Sum (up to +0.25 on mid-fade captures) and
+//     +0.2 dB on Null, which it improves at every averaging time (T-021);
+//   - above 1 s, and CW and RADE V1 at any time: 12 Hz. CW tracks a tone
+//     in a filter that can be 100 Hz wide, and keys at a rate a longer
+//     block smears; RADE V1 works in the time domain, so the bin width
+//     only sets the chunk the samples arrive in.
 //
-// RADE V1 works in the time domain, so the bin width only sets the chunk
-// the samples arrive in: it keeps 12 Hz.
+// There is no 6 Hz tier. It was one (above 5 s) and T-021 measured it:
+// Window Sum -0.16 dB, Null -0.24 dB overall and -0.39 dB on FSK/Digital,
+// with single captures losing 2 to 4.6 dB, against +0.17 dB on FSK/Digital
+// Sum. The slider stops at 6 s anyway.
 //
-// The thresholds are a hypothesis to be tested, not a measurement: the
-// sweep (T-020) shows 24 Hz about +0.08 dB at 0.5 s, 6 Hz level at 6 s on
-// Window and +0.22 dB on FSK/Digital, and nothing beyond a few tenths of a
-// dB anywhere.
+// The 1 s edge was chosen after looking at the sweep it is scored on, so
+// it still wants captures it was not chosen on (docs/test-findings.md,
+// T-021).
 //
 double diversity_auto_bin_policy(int ref, double tau) {
-  if (ref == DIV_REF_RADE_V1) { return 12.0; }
-
-  if (tau > 5.0) { return 6.0; }
-
-  if (tau <= 0.5 && ref == DIV_REF_BAND) { return 24.0; }
+  if (tau <= 1.0 && (ref == DIV_REF_BAND || ref == DIV_REF_CARRIER || ref == DIV_REF_DIGITAL_IQ)) {
+    return 24.0;
+  }
 
   return 12.0;
 }
