@@ -666,9 +666,10 @@ at 96, 384 or 768 kHz.
 
 ### T-021, adopted: the policy as now in LC-050
 
-The candidate above is `diversity_auto_bin_policy()` on `test/auto-bins`
-(24 Hz up to 1 s on Window, Carrier and FSK/Digital; 12 Hz otherwise; no
-6 Hz tier). The same 72 captures through the engine as the radio runs it
+The candidate above was adopted as `diversity_auto_bin_policy()` on
+`test/auto-bins` (24 Hz up to 1 s on Window, Carrier and FSK/Digital; 12 Hz
+otherwise; no 6 Hz tier). **Revised after the held-out captures below:
+FSK/Digital is out of the 24 Hz tier.** The table here is the first version. The same 72 captures through the engine as the radio runs it
 (`run_ref --resolution auto`, 1008 runs) give the numbers predicted from
 the fixed-width cells, and **exactly** them: the largest difference between
 the engine's Auto and the cell the policy names is 0.00 dB. Against fixed
@@ -686,7 +687,7 @@ room: the lowest lower bound is −0.06 dB. Individually, 6 to 11 captures of
 72 are worse than 0.25 dB at the 24 Hz averaging times (3 to 5 on Null).
 This is not a held-out result: the policy was chosen on these captures.
 
-### T-021, what is still needed
+### T-021, what was still needed (before the held-out captures below)
 
 Captures taken for the purpose, 192 kHz, two antennas, with the operator's
 description of the conditions in the findings (the recorder writes the
@@ -729,3 +730,73 @@ settings):
 
 Offline, on the existing captures: the same sweep at 0.8, 0.9, 1.1, 1.2 and
 1.5 s, to see whether 1 s is an edge or the middle of a slope.
+
+### T-021, held-out: twelve captures taken after the policy was fixed
+
+**Captures** (192 kHz, 60 s, 8192-point blocks, recorded 2026-10-08; the
+capture notes were empty and the descriptions below are the operator's, the
+labels inferred from their order and the filter): 3 SSB on 15 m near the
+MUF with fading ("fairly typical for upper HF, not fast"; inter-arm ratio
+correlation at 1 s of 0.82 to 0.93), 4 SSB on 20 m (0.90 to 0.97), 1 FSK on
+20 m (mark and space about 1.5 kHz, filter 150 to 2550 Hz, correlation
+1.00), 2 PSK31 (several signals at times in the 1.15 kHz filter), 1 multitone
+mode, and 1 digital capture on about 14092 kHz. A 0.6 s stub is not used.
+Run exactly as the others, with the engine's own Auto
+(`run_ref --resolution auto`) as well as the fixed widths.
+
+**Window, 7 SSB captures: the 24 Hz tier is confirmed.** Auto against
+fixed 12 Hz, mean (95 % interval), worst capture:
+
+| Averaging | Sum | worst | Null | worst |
+|---|---|---|---|---|
+| 0.2 s | +0.07 [−0.02, +0.16] | −0.11 | +0.74 [+0.40, +1.15] | +0.14 |
+| 0.5 s | +0.04 [−0.03, +0.10] | −0.15 | +0.60 [+0.24, +1.07] | −0.05 |
+| 1 s | +0.26 [+0.02, +0.58] | −0.12 | +1.07 [+0.21, +2.30] | +0.02 |
+
+No capture is worse than −0.15 dB. One 15 m capture (`134008`, correlation
+0.82) gains +1.18 dB on Sum and +4.5 dB on Null at 1 s. These are
+single-recording, one-run-per-cell figures. The 15 m set is mid-fade,
+not fast; the fast-fade question stays open.
+
+**FSK on 20 m, one capture:** 24 Hz +0.18 / +0.14 / +0.07 dB on Sum at 0.2 /
+0.5 / 1 s. A wide signal, as the old FSK/Digital set was.
+
+**Narrow digital modes, 4 captures: 24 Hz fails, as feared.** Against 12 Hz
+on Sum, the 24 Hz tier gave:
+
+| Capture | 0.2 s | 0.5 s | 1 s | 3 s |
+|---|---|---|---|---|
+| PSK31 a | −2.74 | −3.09 | −3.03 | −3.53 |
+| PSK31 b | −1.41 | −1.84 | −1.94 | −1.98 |
+| multitone | −2.17 | −2.36 | −4.36 | −1.08 |
+| 14092 digital | −1.78 | +1.53 | −0.02 | −0.29 |
+
+A mean of −1.4 to −2.3 dB, with every PSK31 and multitone cell worse than
+−1 dB, against the criterion of −0.25. The occupancy split needs the
+resolution a 31 Hz signal does not have at 24 Hz. **FSK/Digital is taken out
+of the 24 Hz tier** (policy now: Window and Carrier 24 Hz up to 1 s, 12 Hz
+otherwise); the old 26-capture FSK/Digital set had missed it because its
+signals are wide. At 6 Hz the same four are within ±0.5 dB of 12 Hz on
+average (−0.05 / +0.50 / −0.20 / +0.56 / +0.11 dB from 0.2 to 6 s), and
+carried by the 14092 capture, which gains +2.5 dB at 0.5 s and +2.3 dB from
+3 s at 6 Hz (a narrow-tone mode, presumably FT8, whose tones are 6.25 Hz
+apart). One capture is not a policy: finer bins for narrow-tone digital
+modes are a candidate for more captures, not a change.
+
+**Null.** Every Null figure is positive for 24 Hz on these captures too
+(+0.6 to +2.5 dB, FSK and the digital capture the most), but they
+are depth on the wanted signal and the captures have no separate
+interferer, so they are not evidence for Null's actual job.
+
+**What is closed.** Window at 24 Hz up to 1 s on mid-fade to slow-fade SSB
+(item 1 of the list above, with 7 of the 10 asked for). The failure of 24 Hz
+on narrow digital modes (item 4, with 4 of the 8), and its removal. The
+engine reproduces the revised policy exactly on all 84 captures; over them
+24 Hz on Window and Carrier gives Sum +0.06 / +0.05 / +0.02 / +0.02 / +0.05
+dB and Null +0.23 / +0.17 / +0.22 dB at 0.2 / 0.3 / 0.5 / 0.7 / 1 s (Null at
+0.2, 0.5 and 1 s), intervals above zero on Null and spanning zero on Sum,
+lowest lower bound −0.03.
+
+**What is still open.** Carrier (no new AM captures, six in the set), fast
+fades, Null against a real interferer, 96, 384 and 768 kHz, and finer bins for
+narrow-tone digital modes (FT8, Olivia, PSK at several signals).

@@ -13,7 +13,11 @@ Newest first.
   status line shows the coherence on Carrier, CW and FSK/Digital as well
   as Window. T-021 tested Auto's thresholds against fixed 12 Hz and the
   policy changed: 24 Hz up to 1 s on Window, Carrier and FSK/Digital, no
-  6 Hz tier. For testing; `TEST` is unchanged.
+  6 Hz tier. Twelve captures taken afterwards (15 m and 20 m SSB, FSK,
+  PSK31, a multitone mode, a digital signal near 14092 kHz) confirmed
+  Window and sank 24 Hz on FSK/Digital (PSK31 and the multitone mode lost
+  1.4 to 4.4 dB on Sum): FSK/Digital is now at 12 Hz. For testing; `TEST`
+  is unchanged.
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for

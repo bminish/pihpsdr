@@ -66,12 +66,13 @@ port from `feature/auto-diversity`, done on `TEST`'s menu.
 **Why.** The block period is 1 / bin width. On a short average a long
 block is not honoured (at 0.2 s a 6 Hz block of 171 ms is most of one
 averaging time, alpha 0.57, and a 3 Hz block is longer than it), so the
-operator should not have to pick. Against fixed 12 Hz, over 72 captures
-(T-021), 24 Hz is +0.1 dB on Sum up to 1 s and +0.2 dB on Null at every
-averaging time, and a 6 Hz tier above 5 s (the first version of this
-policy) loses on Null and on Window Sum, with single captures losing 2 to
-4.6 dB. **The 1 s edge was chosen after looking at that data, so it still
-needs captures it was not chosen on** (T-021 lists them).
+operator should not have to pick. Against fixed 12 Hz, over 84 captures
+(T-021), 24 Hz is +0.05 dB on Sum up to 1 s and +0.2 dB on Null at every
+averaging time on Window and Carrier. Two earlier versions of the policy
+lost: a 6 Hz tier above 5 s (Null and Window Sum, single captures losing 2
+to 4.6 dB), and 24 Hz on FSK/Digital (PSK31, a multitone mode and an FT8
+capture lost 1.4 to 2.3 dB on Sum). Seven Window captures taken after the
+policy was fixed agree with it (T-021); Carrier has no held-out captures.
 
 **Change.** "Auto (from Averaging)" is added to the Resolution combo as
 its first entry, beside 24, 12 and 6 Hz (LC-051 then removes the combo, so
@@ -80,16 +81,18 @@ Auto is the only way the bin width is chosen).
 
 | | up to 1 s | above 1 s |
 |---|---|---|
-| Window, Carrier, FSK/Digital | 24 Hz | 12 Hz |
-| CW, RADE V1 | 12 Hz | 12 Hz |
+| Window, Carrier | 24 Hz | 12 Hz |
+| FSK/Digital, CW, RADE V1 | 12 Hz | 12 Hz |
 
-There is no 6 Hz tier. CW stays at 12 Hz: it tracks a tone in a filter
+There is no 6 Hz tier. FSK/Digital stays at 12 Hz because its occupancy
+split needs the resolution: narrow signals (PSK31 is 31 Hz, about one bin
+at 24 Hz) lose 1.4 to 2.3 dB on Sum at 24 Hz. CW stays at 12 Hz: it tracks a tone in a filter
 that can be 100 Hz wide, and its key detection (LC-018) compares block
 peaks, which a longer block smears; nobody runs CW at a long average, so it
 was not swept. RADE V1 works in the time domain, so the bin width only
 sets the chunk. The policy runs through the engine as the radio runs it
 (`run_ref --resolution auto`) and reproduces the fixed-width cell it names
-exactly, on all 72 captures and all 14 averaging times (T-021).
+exactly, on every capture and averaging time (T-021).
 
 `div_auto_resolution` holds `DIV_RES_AUTO` (−1) for Auto, and the engine
 never writes it: the width in use is the engine's own derived value
@@ -103,8 +106,10 @@ value to Auto.
 
 **Depends on** LC-049 (the 24 Hz entry, `DIV_MIN_NFFT`).
 
-**Open.** The held-out captures in T-021, and Null measured on a real
-interferer (every Null figure so far is the depth on the wanted signal).
+**Open.** Carrier has no held-out captures, there is no fast-fade set, and
+Null has not been measured against a real interferer: every Null figure so
+far is the depth on the wanted signal, which is not what Null is for
+(T-021).
 
 ---
 
