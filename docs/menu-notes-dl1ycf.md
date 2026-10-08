@@ -196,3 +196,11 @@ On branch `test/auto-bins`, not in `TEST` yet. Changes in
   `div_auto_tau`, so the transform is rebuilt only if Auto's width
   changed. A reference change already restarts the engine. 3 Hz loses at
   every averaging time (T-020); the achieved width is in the status line.
+
+- **The status line shows the coherence (LC-052).** The first status line
+  is now five labels side by side (`status_col[]`, `div_status_label()`),
+  each left-justified with a minimum width in pixels
+  (`DIV_STATUS_W_*`), in the dialog's own font; a "coh  62%" column is
+  added for every reference except RADE V1 and `div_status_set()` gains a
+  `coh` argument. The old single label's fields moved with the digits.
+  `DIV_STATUS_CHARS` is removed.

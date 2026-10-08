@@ -264,3 +264,38 @@ not "Other"; "other" stays internal. The left label is unchanged. The
 menu is built when it opens, so a change of RX1's ADC with the menu open
 shows on the next open, like the sliders' own values. No dependencies.
 Written up for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+
+<a id="lc-052"></a>
+
+## LC-052 — The status line shows the coherence on every reference with a Min coherence
+
+**Why.** Only Window showed the coherence the gate compares with Min
+coherence ("coh 62%"). Carrier and CW showed the tone, FSK/Digital the
+occupied width, and nothing showed the number the slider is set against,
+so setting Min coherence on those references was blind.
+
+**Change.** A "coh  62%" column on the first status line, for Window,
+Carrier, CW and FSK/Digital; blank on RADE V1, which has no Min coherence
+(the pilot gates). Window's detail field, which carried the coherence, is
+now empty. The value is `div_auto_coherence`, which every one of those
+references writes.
+
+**The line is rebuilt as columns.** The single label it used to be had fields
+that moved with the digits (the dialog's `boldlabel` is a proportional
+face), so a state changing from "track" to "wait" shifted the coherence
+beside it. It is now five labels side by side, each left-justified with a
+minimum width in pixels (tag 88, state 60, coherence 80, detail 98, the
+weight as wide as it is), each a few pixels more than the widest thing the
+column can show. The font is the dialog's own and css.c fixes it at 15 px,
+which is why the widths are in pixels. The line is about as wide as it was
+as one label; it takes only the room its fields need. Three earlier
+versions were dropped: a monospace override broke the house style; a
+reserved character count left uneven gaps because a proportional font does
+not keep one; and putting the labels on the dialog's eleven-column grid
+spread them over the whole width. The second (antenna) line starts at the
+same left edge. `DIV_STATUS_CHARS` is gone.
+
+**Not checked on screen.** The reserved widths and the spread of the
+columns need looking at in the dialog. On a branch for testing; written up
+for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
