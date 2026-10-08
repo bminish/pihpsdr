@@ -7,11 +7,9 @@
  *    and the spin ranges allowed exactly that. It must now be clamped and
  *    flagged rather than aliased.
  *
- * 2. Bin weighting on speech. SSB voice has no carrier, the energy moves
- *    about constantly and much of the passband is noise at any instant.
- *    Flat weighting averages h(f) by power and is therefore diluted by
- *    the noise-only bins; coherence weighting should be measurably
- *    better. This is the evidence for which one is the default.
+ * 2. (Flat against Coherence weighting on speech: removed with the
+ *    Coherence-weighted code, LC-049. The comparison that chose Flat is
+ *    in docs/changes/lc-gate.md, LC-006.)
  */
 
 #include <stdio.h>
@@ -120,7 +118,7 @@ static int test_keyed(void) {
   div_auto_follow_filter = 1;
   div_auto_tau = 2.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_COHERENCE;
+  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -274,126 +272,6 @@ static int test_placement(void) {
 
   printf("  PASS: refused and flagged, not aliased\n");
   return 1;
-}
-
-/* ------------------------------------------------------------------ */
-/* 2. flat vs coherence weighting on speech                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * Speech-like: a few band-limited tones whose frequencies and amplitudes
- * wander, with pauses. Not a vocoder - just enough non-stationarity that
- * only part of the passband carries signal at any instant, which is the
- * property that separates the two weightings.
- */
-static double voice(double t, int *active) {
-  double env = 0.5 * (1.0 + sin(2.0 * M_PI * 0.7 * t));
-  *active = (env > 0.25);
-
-  if (!*active) { return 0.0; }
-
-  //
-  // One narrow formant that wanders across the passband, rather than
-  // energy everywhere at once. This is the case the operator described:
-  // a wide window of which only a small part carries signal at any
-  // instant, which is why hand-placing a 300 Hz window helps.
-  //
-  double f1 = 1500.0 + 1100.0 * sin(2.0 * M_PI * 0.31 * t);
-  return env * sin(2.0 * M_PI * f1 * t);
-}
-
-static double run_ssb(int weighting, double noise, double *err_deg) {
-  const int rate = 48000, nfft = 4096;
-  const double hr = 0.62, hi = -0.48;
-  rx0.sample_rate = rate;
-  //
-  // An LSB passband. voice() below builds its energy at positive
-  // frequencies, and the tapped buffer is inverted with respect to RF -
-  // see the frequency bookkeeping note in diversity_auto.c - so an LSB
-  // passband is what puts the analysis window on top of it. With a USB
-  // passband the window would land on the image instead, which still
-  // measures the same channel but is not what the mode does on air.
-  //
-  rx0.filter_low = -2800;
-  rx0.filter_high = -200;
-  vfo[0].mode = modeLSB;
-  div_auto_ref = DIV_REF_BAND;
-  div_auto_mode = DIV_AUTO_SUM;
-  div_auto_follow_filter = 1;        /* whole passband, as intended */
-  div_auto_tau = 3.0;
-  div_auto_coherence_min = 0.05;
-  div_auto_weighting = weighting;
-  auto_div_cos = 1.0;
-  auto_div_sin = 0.0;
-  auto_div_gain = 0.0;
-  auto_div_phase = 0.0;
-  diversity_auto_start();
-  double t = 0.0;
-  srand(11);
-
-  for (int b = 0; b < 120; b++) {
-    for (int n = 0; n < nfft; n++) {
-      int active;
-      double s = voice(t, &active);
-      t += 1.0 / rate;
-      /* analytic-ish: quadrature partner via a quarter-cycle shift is not
-         needed here, the estimator only sees the complex pair we build */
-      double q = voice(t + 0.25 / 1200.0, &active);
-      diversity_auto_sample(s + noise * frand(), q + noise * frand(),
-                            hr * s - hi * q + noise * frand(),
-                            hr * q + hi * s + noise * frand());
-    }
-
-    settle();
-  }
-
-  g_usleep(300000);
-  double g = auto_div_gain, p = auto_div_phase;
-  diversity_auto_stop();
-  /* target for Sum is conj(h) */
-  double want_g = 20.0 * log10(hypot(hr, hi));
-  double want_p = atan2(-hi, hr) * 180.0 / M_PI;
-  double dp = p - want_p;
-
-  while (dp > 180.0) { dp -= 360.0; }
-
-  while (dp < -180.0) { dp += 360.0; }
-
-  *err_deg = fabs(dp);
-  return fabs(g - want_g);
-}
-
-static int test_weighting(void) {
-  int ok = 1;
-  //
-  // Both the gain and the phase error matter, and they fail differently:
-  // noise-only bins in the window add to the denominator but not the
-  // numerator, so flat weighting biases the *magnitude* low while leaving
-  // the phase roughly right. Reporting only the phase would hide the
-  // whole effect.
-  //
-  printf("  weighting on speech, whole passband, signal in part of it\n");
-  printf("  target conj(h) = -2.11 dB, +37.75 deg\n\n");
-  printf("    %-7s   %-9s %-9s   %-9s %-9s\n",
-         "noise", "flat dB", "flat deg", "coh dB", "coh deg");
-
-  for (int i = 0; i < 4; i++) {
-    double noise = (double[]) { 0.05, 0.20, 0.50, 1.00 } [i];
-    double fd, cd;
-    double fg = run_ssb(DIV_WEIGHT_FLAT, noise, &fd);
-    double cg = run_ssb(DIV_WEIGHT_COHERENCE, noise, &cd);
-    printf("    %-7.2f   %-9.2f %-9.2f   %-9.2f %-9.2f   %s\n",
-           noise, fg, fd, cg, cd,
-           (cg <= fg + 0.1 && cd <= fd + 0.5) ? "coherence >= flat" : "flat better here");
-
-    //
-    // The claim being tested is that coherence is not worse. A large
-    // regression either way is a failure.
-    //
-    if (cg > fg + 1.0 || cd > fd + 5.0) { ok = 0; }
-  }
-
-  return ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -950,8 +828,6 @@ int main(int argc, char **argv) {
   printf("Window reference checks\n\n");
   int a = test_placement();
   printf("\n");
-  int b = test_weighting();
-  printf("\n");
   int c = test_keyed();
   printf("\n");
   int d = test_cw_zero();
@@ -969,6 +845,6 @@ int main(int argc, char **argv) {
 #ifdef GAP_STANDDOWN
   h = known_gap(h, GAP_STANDDOWN);
 #endif
-  printf("\n%s\n", (a && b && c && d && e && f && g && h) ? "PASS" : "FAIL");
-  return (a && b && c && d && e && f && g && h) ? 0 : 1;
+  printf("\n%s\n", (a && c && d && e && f && g && h) ? "PASS" : "FAIL");
+  return (a && c && d && e && f && g && h) ? 0 : 1;
 }

@@ -243,19 +243,19 @@ int main(int argc, char **argv) {
       }
     }
     else if (!strcmp(argv[i], "--weighting") && i + 1 < argc) {
-      /* flat|coherence, for the wideband window reference */
+      /* flat only: Coherence weighting was cut from the engine (LC-049) */
       const char *a = argv[++i];
-      weighting = !strcmp(a, "coherence") ? DIV_WEIGHT_COHERENCE
-                  : !strcmp(a, "flat") ? DIV_WEIGHT_FLAT : -2;
 
-      if (weighting == -2) {
-        fprintf(stderr, "%s: --weighting wants flat or coherence\n", argv[0]);
+      if (strcmp(a, "flat")) {
+        fprintf(stderr, "%s: --weighting wants flat (Coherence weighting was removed, LC-049)\n", argv[0]);
         return 2;
       }
+
+      weighting = DIV_WEIGHT_FLAT;
     }
     else if (argv[i][0] == '-') {
       fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
-              "       [--mode null|sum|best] [--weighting flat|coherence]\n"
+              "       [--mode null|sum|best] [--weighting flat]\n"
               "       [--cohmin F] [--centre HZ --width HZ] [--follow 0|1]\n"
               "       [--noise RMS] [--seed N] [--resolution HZ] [--notch C:W]...\n"
               "       [--set name=value]... [--tau S] [--pace US] [-v]\n",
