@@ -1,0 +1,13 @@
+make: Entering directory '/home/pi/pi5-bench/test/diversity'
+cc -O2 -Wall -I../../src -I../../wdsp `pkg-config --cflags gtk+-3.0 fftw3f` -o test_modes_live test_modes_live.c ../../src/diversity_auto.c ../../src/rade_correlator.c `pkg-config --libs gtk+-3.0 fftw3f` -lm
+cc -O2 -Wall -I../../src -I../../wdsp `pkg-config --cflags gtk+-3.0 fftw3f` -o test_window test_window.c ../../src/diversity_auto.c ../../src/rade_correlator.c `pkg-config --libs gtk+-3.0 fftw3f` -lm
+cc -O2 -Wall -I../../src -I../../wdsp `pkg-config --cflags gtk+-3.0 fftw3f` -o test_rade test_rade.c ../../src/diversity_auto.c ../../src/rade_correlator.c `pkg-config --libs gtk+-3.0 fftw3f` -lm
+cc -O2 -Wall -I../../src -I../../wdsp `pkg-config --cflags gtk+-3.0 fftw3f` -o test_digital test_digital.c ../../src/diversity_auto.c ../../src/rade_correlator.c `pkg-config --libs gtk+-3.0 fftw3f` -lm
+cc -O2 -Wall -I../../src -I../../wdsp `pkg-config --cflags gtk+-3.0 fftw3f` -o test_props test_props.c ../../src/diversity_auto.c ../../src/rade_correlator.c `pkg-config --libs gtk+-3.0 fftw3f` -lm
+In file included from test_props.c:26:
+../../src/client_server.h:26:10: fatal error: opus/opus.h: No such file or directory
+   26 | #include <opus/opus.h>
+      |          ^~~~~~~~~~~~~
+compilation terminated.
+make: *** [Makefile:40: test_props] Error 1
+make: Leaving directory '/home/pi/pi5-bench/test/diversity'
