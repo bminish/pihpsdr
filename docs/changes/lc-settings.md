@@ -4,6 +4,8 @@ How the auto-diversity settings get from the props file (or a client) into the e
 
 Part of the local-change register: [changes.md](../changes.md).
 
+> **2026-10-08:** every change in this file that is marked Upstream in the [register](../changes.md#register) is in `upstream/TEST` since `f05546e3`. The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+
 ---
 
 <a id="lc-001"></a>
@@ -19,6 +21,12 @@ settings, and the next save writes zeros out for every group.
 **Change.** One line: call `diversity_auto_restore_state()` in
 `radio_restore_state()`, next to where the manual diversity gain and
 phase are read.
+
+**Upstream (`f05546e3`).** Taken, with the call placed last in the
+`!radio_is_remote` block, after `vfo_restore_state()`, instead of beside
+the manual diversity gain and phase. Equivalent (the function only reads
+the props file, and no receiver exists at either place); his placement
+is kept.
 
 **Note.** With this fix, settings saved by earlier builds now load.
 Those may include the all-zero blocks, which LC-002 repairs.

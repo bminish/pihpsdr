@@ -4,6 +4,8 @@ Each antenna's noise floor measured across frequency (LC-025) and what is built 
 
 Part of the local-change register: [changes.md](../changes.md).
 
+> **2026-10-08:** every change in this file that is marked Upstream in the [register](../changes.md#register) is in `upstream/TEST` since `f05546e3`. The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+
 ---
 
 <a id="lc-025"></a>

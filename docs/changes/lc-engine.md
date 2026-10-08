@@ -4,6 +4,8 @@ Changes to how the two arms are fed, combined, held and reset, outside any one r
 
 Part of the local-change register: [changes.md](../changes.md).
 
+> **2026-10-08:** every change in this file that is marked Upstream in the [register](../changes.md#register) is in `upstream/TEST` since `f05546e3`. The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+
 ---
 
 <a id="lc-007"></a>
@@ -244,3 +246,25 @@ this commit is the one line.)
 **Checks.** Applies to bare `upstream/TEST` alone. The harness does not
 call `diversity_auto_att_changed()`, so nothing in the suite covers it.
 
+
+---
+
+<a id="lc-048"></a>
+
+## LC-048 — Two stale comments found by the 2026-10-08 reconcile
+
+**Change.** Comments only, in `diversity_auto.h` and `diversity_auto.c`.
+
+- `diversity_auto.h`'s description of the combination said z0 comes from
+  "ADC0 (main antenna)" and z1 from "ADC1 (aux antenna)". LC-035 renamed
+  the ADCs in the comments it knew of and missed this one, and it was
+  already wrong in substance since `5db64949`: z0 comes from the ADC RX1 is
+  set to (ADC1 unless RX1 is on ADC2), z1 from the other.
+- `diversity_auto_restore_state()` said the mode was "not restored until
+  after this runs". That was true of where LC-001 called it, and not of
+  where upstream calls it (after `vfo_restore_state()`). What actually
+  matters is that no receiver exists yet, so
+  `diversity_auto_mode_changed()` has not announced a mode, at either
+  place. The comment says that.
+
+**Checks.** Builds, `make -C test/diversity run` passes. No code change.
