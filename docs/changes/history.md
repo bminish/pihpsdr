@@ -19,8 +19,9 @@ Newest first.
   (the slider stops at 6 s), LC-051 (Resolution 24 / 12 / 6 Hz, 3 Hz
   retired) and LC-052 (Auto bin width from Averaging), with LT-022 and
   LT-023. Then LC-053: Auto made the only bin width, the Resolution
-  control removed, the stored value pinned like Hang. For testing; `TEST`
-  is unchanged.
+  control removed, the stored value pinned like Hang. Then LC-054: the
+  status line shows the coherence on Carrier, CW and FSK/Digital as well
+  as Window. For testing; `TEST` is unchanged.
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for
