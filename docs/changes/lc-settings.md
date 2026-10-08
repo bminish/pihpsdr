@@ -31,7 +31,7 @@ Those may include the all-zero blocks, which LC-002 repairs.
 
 **Problem.** `div_settings_validate()` clamps every value into its legal
 range. An all-zero block (see LC-001) clamps to values that are legal
-but useless: 0.2 s averaging, 3 Hz bins, and a 20 Hz window with Follow
+but useless: 0.2 s averaging (and, then, 3 Hz bins), and a 20 Hz window with Follow
 RX filter off. That is what an operator saw on entering auto diversity
 in CW.
 

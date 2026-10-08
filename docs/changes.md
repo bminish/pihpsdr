@@ -159,6 +159,9 @@ and which changes must travel together:
 7. LC-025 + LC-028 + LC-029 (+ LC-033, LC-036): the noise floor and Best,
    after LC-012. LC-027 and LC-030 (Level output) stand alone.
 8. LC-006 last: it needs the measurement data behind it.
+9. LC-048 (the slider's cap), then LC-050 with LC-049 and LC-051 folded in
+   (Auto bin width, no control): from branch `test/auto-bins`. LC-052
+   (coherence on the status line) stands alone.
 
 Not yet placed in a group: LC-023, LC-031, LC-037 and LC-038 stand alone;
 LC-034, LC-044 and LC-047 (all stand alone) are the RX1-on-ADC2 group; LC-045 goes with LC-012, LC-046 with the CW group (it needs the width
