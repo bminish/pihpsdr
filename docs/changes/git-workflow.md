@@ -159,20 +159,13 @@ it, but it does not use anything LC-008 adds.
   `upstream/TEST` with the fixups folded in (see [Cutting a PR branch](#cutting-a-pr-branch)).
   Not re-checked since the 2026-10-01 rebase.
 
-**First PR:** LC-015, opened 2026-09-30 as
+**History of PRs.** The first and only PR was LC-015, opened 2026-09-30 as
 [dl1ycf/pihpsdr#150](https://github.com/dl1ycf/pihpsdr/pull/150) from
-`pr/diversity-menu-ref-row`.
+`pr/diversity-menu-ref-row`; it was closed on 2026-10-08 as superseded when
+he took the whole series (`f05546e3`).
 
-Suggested PR grouping, when we get there: LC-001 + LC-002 (settings are
-restored, and restored sanely) with LC-026 (which answers upstream's
-"THIS MUST BE CORRECTED"), then LC-008 + LC-009, then LC-007, then LC-010 +
-LC-011 + LC-014 + LC-016 (RADE: resync, Hang slider gone, no timeout,
-no threshold) and LC-012. LC-013 (notches) stands
-alone and can go at any point. LC-017 + LC-018 + LC-019 (CW) go after
-LC-012, LC-013 and LC-015. The "Measure on" order and the CW row are the
-part most likely to interest upstream on their own. LC-020 (menu tidy)
-can go with LC-008 + LC-009. LC-006 goes last because it needs the
-measurement data behind it. LC-027 is a fix that stands alone; LC-030
-(Level output) stands alone and is the most likely of the noise-floor
-group to interest upstream on its own; LC-025, LC-028 and LC-029 go
-together, after LC-012.
+**Grouping, now.** The grouping that was planned for LC-001 to LC-047 is
+moot. For the pending changes it is in
+[changes.md](../changes.md#pending-local-not-yet-in-upstream): LC-050, then
+LC-051 + LC-052 + LC-053 folded as one, LC-054 alone, and LC-048 / LC-049 only
+as a patch he can take or leave.
