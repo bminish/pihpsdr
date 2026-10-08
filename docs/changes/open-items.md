@@ -68,14 +68,18 @@ settled: [upstream-reconcile.md](upstream-reconcile.md#decisions).
   operator uses most of the time. 6 Hz doubles the FFT length and the
   block duration. The operator can still choose 12, 6 or 3 Hz.
 
-## Efficiency on the Pi: closed (measured 2026-10-02)
+## Efficiency on the Pi: closed on 2026-10-02, rerun pending (2026-10-08)
 
 Measured on a CM5 with the LT-020 bundle. The analysis is in
-[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 copes:**
-at 192 kHz and below every reference costs under 1 % of one core,
-except RADE V1 (up to about 6 % searching on an SSB passband, 9 % on an
-AM passband). The worst case, RADE V1 searching on an AM passband at
-1536 kHz, is 15 % of one core of four. What is left is headroom:
+[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
+at 192 kHz and below every reference cost under 1 % of one core, except
+RADE V1 (up to about 6 % searching on an SSB passband). That analysis also
+quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is not a
+valid case, since RADE V1 searches one sideband at most, and it is
+withdrawn. **The engine has changed since** (Auto bin width, always-on
+Level output, the cut code), so the verdict is not current until the rerun
+in [pi5-analysis.md](../bench/pi5-analysis.md#rerun-2026-10-08-pending)
+has been done on the Pi (LT-026). What was left was headroom:
 
 - **Candidate LC:** vectorise RADE V1's decimator. 3.0× faster on the Pi,
   same output; saves 0.7 % of a core at 192 kHz and 5.5 % at 1536 kHz.

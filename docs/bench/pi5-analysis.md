@@ -1,5 +1,18 @@
 # Diversity engine on a Pi 5: what it costs, and what is worth optimising
 
+> **2026-10-08: a rerun is planned, and this analysis is the baseline for
+> it, not a current result.** The engine has changed since: Auto bin width
+> (LC-050 to LC-053: 24 Hz bins on Window and Carrier at an Averaging time
+> of 1 s or less, so a smaller transform at twice the block rate), Level
+> output always on (LC-055), the reference-only code cut (LC-049). The
+> harness is updated (LT-026): see [Rerun](#rerun-2026-10-08-pending). One
+> row below is withdrawn: **RADE V1 searching on an AM passband** is not a
+> valid case (RADE V1 is a single-sideband mode, so the most it ever
+> searches is one sideband), and its figures (5.7-8.8 % up to 15.1 %) and
+> the "worst case" sentence that rests on them should not be quoted.
+> Read the SSB rows instead: at most 5.6 % up to 192 kHz, 11.9 % at
+> 1536 kHz.
+
 Measured 2026-10-02 with the LT-020 bundle (`make -C test/diversity
 pi5-bench.tar.gz`, bundle `887d4016`) on a Compute Module 5 (Cortex-A76,
 4 cores, `ondemand` 1.5-2.4 GHz, Debian trixie, gcc 14.2, FFTW 3.3.10).
@@ -100,3 +113,38 @@ largest single function in the analysis thread.
 5. **RADE V1's search:** 3-5 % while searching. The next step would be
    `perf` on the Pi (`sudo apt install linux-perf` and re-run the bundle),
    but at this cost it isn't pressing.
+
+## Rerun, 2026-10-08 (pending)
+
+**Why.** To verify that nothing regressed and nothing became a bottleneck
+on the Pi 5 after the changes since 2026-10-02 (above), and to cover the
+parts of the diversity code the first run did not time.
+
+**What the bundle does now** (`make -C test/diversity pi5-bench.tar.gz`,
+then `./run_pi5.sh` on the Pi, about 25 minutes, piHPSDR closed):
+
+| Step | What | New since 2026-10-02 |
+|---|---|---|
+| `pi_bench` | kernels, FFT planners (ESTIMATE, MEASURE, PATIENT), the RADE V1 decimator and a vectorised one | the per-sample combine on the receive thread (`rx_add_div_iq_samples`, with the level scale), 2.2 ns a sample on the i7 |
+| `bench_cpu`, paced and hot | every reference at 48 to 1536 kHz, as a share of one core, worker and feeder, with drops counted | transform size from Auto's own policy (checked against the engine, `NFFT-MISMATCH` otherwise); the 24 Hz tier on Window and Carrier; Best and Null (Level output rides on Sum and Best, so Sum against Null is its cost); three notches; CW with Best; the AM-passband RADE V1 row removed |
+| Transitions | the engine's start, stop and restart in wall-clock ms at every transform size, in both tiers: what the UI thread waits for when diversity is switched on or off, the reference changes, or Averaging crosses 1 s | all |
+| Functional suite | `make -C test/diversity run` on the Pi, for behaviour on the Pi's compiler and NEON | all |
+| Comparison | `compare_pi5.py` lines every row up against `baseline/` (the 2026-10-02 CM5 run) | all |
+
+**Verdicts** (`compare.txt`, last line):
+- *FAIL*: a row dropped blocks, RADE V1 did not lock where it should (or locked where it should not), or the bench's transform size disagreed with the engine's.
+- *REGRESSION*: a row in both runs costs more than 25 % and more than 0.3 points of a core above the baseline (1.0 point for RADE V1's search, which varies by about that between runs).
+- *BOTTLENECK*: a row over 25 % of one core (worker plus feeder), or a start, stop or restart holding the caller longer than 50 ms.
+- *NEW* rows have no baseline; they are checked against the two absolute limits only.
+
+**Not covered, and why.** The menu's timers and the panadapter's
+diversity overlay are GTK drawing and need the real application; WDSP and
+the rest of piHPSDR are not measured either, as before. Compare like with
+like: the baseline is the CM5 under `ondemand`, so rerun on that module,
+in that state (the older note about `throttled=0x50000` still stands: check
+the supply).
+
+**Results:** none yet. Dry run of the harness on the development machine
+(i7-12700K, not the Pi): every row sound, no drops, the transform sizes
+agree with the engine's, the suite passes from the unpacked bundle alone,
+start / stop / restart under 6 ms at every size.

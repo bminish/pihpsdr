@@ -83,7 +83,7 @@ The capture recorder (`make DIVCAP=1`), the unit tests under `test/diversity/`, 
 - **DIVCAP in his tree:** the module is missing (above).
 - **Flagged:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
 - **To port** from `feature/auto-diversity`: stand-down (which conflicts with the hold rule and needs a decision), time-based slew, 0.5 s default averaging, the Carrier tooltip. The 24/12/6 Hz Resolution menu was ported as LC-051 and then replaced by Auto (LC-052, LC-053).
-- **Pi CPU: closed.** The Pi 5 copes, with headroom; the one clear win left is vectorising RADE V1's decimator (3x on the Pi).
+- **Pi CPU: rerun pending.** The 2026-10-02 run said the Pi 5 copes, with headroom; the engine has changed since (Auto bin width, always-on Level output), so the bundle (LT-026) is to be rerun on the Pi and compared with it. RADE V1 is scored on a single sideband only.
 
 All of it: [changes/open-items.md](changes/open-items.md).
 

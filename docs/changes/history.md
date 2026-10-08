@@ -4,6 +4,13 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: the Pi 5 benchmark bundle reworked (LT-026) for a rerun on the
+  Pi: transform size from Auto's own policy, the 24 Hz tier, Best, Null,
+  notches, start / stop / restart timings, the receive-thread combine, the
+  functional suite on the Pi, and a comparison against the 2026-10-02 run.
+  RADE V1 on an AM passband dropped (not a valid case). The Pi item is
+  reopened until the rerun has been done. No Pi figures yet.
+
 - 2026-10-08: LC-055, Level output is always on where it applies: the menu
   tick and the saved setting are removed (owner's decision). The write-up
   lists when it applies and when it does not. The tick had been kept as an
