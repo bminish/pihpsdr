@@ -56,7 +56,7 @@
 // rather than zero, and the tools say so.
 //
 // Version 3 had no arm-swap bit: the arms were never exchanged and arm 0
-// was always ADC0, so a v3 file's clear bit 2 means what it says and such
+// was always ADC1, so a v3 file's clear bit 2 means what it says and such
 // a file replays unchanged. Nothing about the layout changed; the version
 // is what says the bit is written.
 //
@@ -104,8 +104,8 @@
 //
 #define DIVCAP_FLAG_ENGINE_RESET 0x2u
 //
-// Bit 2 says arm 0 was ADC1 rather than ADC0 on this block, because the
-// operator had RX1 set to ADC1. Unlike the two above it is not an event,
+// Bit 2 says arm 0 was ADC2 rather than ADC1 on this block, because the
+// operator had RX1 set to ADC2. Unlike the two above it is not an event,
 // it is a context field: it describes the block rather than the
 // transition into it.
 //
@@ -123,7 +123,7 @@
 // for an instrument that is to be deleted.
 //
 // Written from format version 4. On an older file it reads zero, which is
-// correct for those: the arms were not exchanged, so arm 0 was ADC0.
+// correct for those: the arms were not exchanged, so arm 0 was ADC1.
 // That is the one respect in which this differs from rec_flags before v3
 // - there, zero could not be distinguished from "not written"; here the
 // only value an older writer could have meant is the one a reader gets.
@@ -182,7 +182,7 @@ struct divcap_block {
   // The two step attenuators. div_context_changed() compares them, so a
   // change of either resets the statistics, and a capture that cannot
   // show them cannot be replayed through that reset - which is exactly
-  // what happened on the capture where the operator stepped ADC1 twice
+  // what happened on the capture where the operator stepped ADC2 twice
   // while recording. They sit in what was pad0 plus the padding the
   // compiler was already inserting before the double below, so the block
   // record is the same 208 bytes it always was and only the version
