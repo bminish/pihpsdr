@@ -41,8 +41,9 @@ props file that already holds `diversity_band_cohmin=0.30` keeps it,
 which is a slightly stricter gate than intended under Flat. This is a
 test branch, so we don't migrate it; an operator can move the slider.
 
-**Kept local, deleted in the PR:** the Coherence-weighted code path,
-which only `run_ref --weighting coherence` can reach. See [git-workflow.md](git-workflow.md#cutting-a-pr-branch).
+**Cut by LC-049 (2026-10-08):** the Coherence-weighted code path, which
+only `run_ref --weighting coherence` could reach, was kept local for our
+tools and then arrived in upstream with the series. See [LC-049](#lc-049).
 
 ---
 
@@ -316,3 +317,44 @@ an offset band is not) was written for the feature branch's `41f8700c` and
 now counts. Does not apply to bare `upstream/TEST`: it needs LC-002's
 width constants, LC-009's `diversity_auto_seed_window()` and LC-017's CW
 width default (textual; the set was not minimised).
+
+---
+
+<a id="lc-049"></a>
+
+## LC-049 — The reference-only code is cut
+
+**Why.** Two paths in `diversity_auto.c` were kept after LC-006 and
+LC-016 retired what they served, only so that `run_ref` could compare
+old behaviour with new. The house rule was to delete them when a PR was
+cut. Upstream's `f05546e3` took the series with them in, so they would
+sit in his file unreachable by the radio: dead code in a file he owns,
+with comments explaining behaviour nobody can select. They are cut here;
+he pulls again.
+
+**Change.**
+
+- `div_process_block()`: the Coherence-weighted accumulation
+  (`coherence_weighted`, the per-bin weight `w`, `wsum`). The loop sums
+  each bin once; `wsum <= 0` became `nacc == 0` (the same test). Flat
+  was `w = 1.0`, so its results are unchanged exactly. The comments that
+  described Coherence weighting as live now say Flat, and point here.
+- The RADE V1 comparison of `rade_corr_quality` against
+  `div_auto_coherence_min`. That threshold is pinned to 0 whenever RADE V1
+  is selected (LC-016), so the comparison could not fire.
+- Not touched: `DIV_WEIGHT_COHERENCE` stays in the enum, and
+  `weighting` and `rade_cohmin` stay on the wire and in the props file,
+  so old files and old clients still parse; a stored Coherence is
+  still turned into Flat (`test_props`).
+
+**Tooling that follows (LT-001 family, not part of the LC).** `run_ref
+--weighting` accepts only `flat` and says why. `test_window`'s section 2
+(Flat against Coherence on speech) is removed: it would now compare Flat
+with Flat. Two test set-ups that set Coherence now set Flat. The
+evidence that chose Flat stays in LC-006 and
+`diversity-measurements.md`. `run_ref --cohmin` can no longer sweep
+RADE V1's retired gate.
+
+**Checks.** `make`, `make DIVCAP=1` and `make -C test/diversity run`
+build; the suite's results are the same as before the change (only the
+four known gaps report FAIL, and they are not counted).

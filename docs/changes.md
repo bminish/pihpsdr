@@ -21,7 +21,7 @@ a shape that could go upstream as a small PR. Upstream made two of our
 fixes independently before that (LC-005, LC-021), and took the routing of
 a third (LC-022) in `5db64949`, which we then dropped. One PR of ours is
 still open ([#150](https://github.com/dl1ycf/pihpsdr/pull/150), LC-015)
-and is now moot. New changes carry on from LC-049 on top of his tree.
+and is now moot. New changes carry on from LC-050 on top of his tree.
 
 ## Where things are
 
@@ -87,7 +87,7 @@ tag, and force-pushed only with the owner's OK. That rule stands, but its
 last use was different: upstream had taken the whole series in one
 commit, so the 47 LC commits were not replayed (their effect was already
 in the tree) and only the tooling and docs commits were, onto his tip.
-New changes are cut as before, one `LC-NNN` commit each, from LC-049. A PR
+New changes are cut as before, one `LC-NNN` commit each, from LC-050. A PR
 branch is cut fresh from `upstream/TEST` with the change's fixups folded
 in. Commands, PR cutting and the dependency notes:
 [changes/git-workflow.md](changes/git-workflow.md).
@@ -148,6 +148,7 @@ open; **Upstream** taken upstream (`f05546e3` unless said otherwise);
 | [LC-046](changes/lc-gate.md#lc-046) | Fix       | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | diversity_auto.c/.h, rx_panadapter.c | LC-002, LC-009, LC-017 (textual; not minimised) | Upstream (`f05546e3`) |
 | [LC-047](changes/lc-menu.md#lc-047) | UI        | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | diversity_menu.c | — | Upstream (`f05546e3`) |
 | [LC-048](changes/lc-engine.md#lc-048) | Comments  | Two stale comments: the arms are RX1's ADC and the other (not ADC0/ADC1), and the restore does not depend on call order | diversity_auto.c/.h | — | Local |
+| [LC-049](changes/lc-gate.md#lc-049) | Cleanup   | The reference-only code cut: Coherence-weighted accumulation, and RADE V1's pinned Min coherence comparison | diversity_auto.c | LC-006, LC-016 (upstream) | Local |
 
 "(LC-003)": applies and builds without LC-003, but only makes full sense
 with it. "[LC-008]": a textual dependency only (adjacent lines). Details,
@@ -214,6 +215,6 @@ All of it: [changes/open-items.md](changes/open-items.md).
 ## History
 
 Latest: 2026-10-08, upstream took the series (`f05546e3`); `TEST` rebuilt
-on it and LC-048 added; before that 2026-10-07, LC-022 dropped (LC-034
+on it and LC-048 and LC-049 added; before that 2026-10-07, LC-022 dropped (LC-034
 and LC-044 now find RX1's ADC themselves); before that 2026-10-06,
 re-synced onto `c60db7b4`. Full log: [changes/history.md](changes/history.md).
