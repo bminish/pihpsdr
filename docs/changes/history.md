@@ -4,6 +4,10 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: `test/auto-bins` pulled in (LC-050 to LC-054 here, LC-048 to
+  LC-052 on the branch, renumbered because LC-048 and LC-049 were taken
+  by the reconcile). See [upstream-reconcile.md](upstream-reconcile.md).
+
 - 2026-10-08: **upstream took the series.** `f05546e3` ("Aligned with BM's
   auto diversity repository") is one squashed commit with our source;
   with it came two TCI commits (`b5be5b73`, `6ce76a30`) that are not

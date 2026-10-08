@@ -61,11 +61,26 @@ block, `.gitignore` entries, `test/` and `docs/`.
   test/diversity run` pass.
 - **To port from `feature/auto-diversity`**, as before and not touched by
   his commit: stand-down, time-based slew, 0.5 s default averaging, the
-  24/12/6 Hz Resolution menu, the Carrier tooltip.
+  Carrier tooltip. (The 24/12/6 Hz Resolution menu was ported afterwards
+  from `test/auto-bins` as LC-051, and then replaced by Auto, LC-052 and
+  LC-053: see below.)
 - **Client/server**: LC-003, LC-004 and the faults in
   [open-items.md](open-items.md) stand. `client_server.c` is identical
   to ours, so nothing there changed.
 - **Not carried** by anyone: the 6 Hz default bins (dropped earlier).
+
+## `test/auto-bins` pulled in (2026-10-08)
+
+The auto-bin work (Averaging cap, Resolution 24/12/6 Hz, Auto, the
+status-line coherence; 26 commits on the old tip `8b13f572`) was replayed
+onto the rebuilt `TEST`. Its LC numbers collided with LC-048 and LC-049
+(taken above), so they moved up by two: **LC-048..052 on the branch are
+LC-050..054 here** (messages, docs and code comments renumbered on a copy
+of the branch before the replay; `test/auto-bins` itself is untouched, and
+`backup/auto-bins-pre-pull-20261008` marks it). Register rows wording
+edited by later docs commits were de-duplicated by hand. The two built
+binaries `radev2_iq` and `score_radev2` that `f546f2c5` had committed were
+dropped and gitignored.
 
 ## What upstream now holds that we said would stay local
 

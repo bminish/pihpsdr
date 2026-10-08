@@ -21,7 +21,7 @@ a shape that could go upstream as a small PR. Upstream made two of our
 fixes independently before that (LC-005, LC-021), and took the routing of
 a third (LC-022) in `5db64949`, which we then dropped. One PR of ours is
 still open ([#150](https://github.com/dl1ycf/pihpsdr/pull/150), LC-015)
-and is now moot. New changes carry on from LC-050 on top of his tree.
+and is now moot. New changes carry on from LC-055 on top of his tree.
 
 ## Where things are
 
@@ -88,7 +88,7 @@ tag, and force-pushed only with the owner's OK. That rule stands, but its
 last use was different: upstream had taken the whole series in one
 commit, so the 47 LC commits were not replayed (their effect was already
 in the tree) and only the tooling and docs commits were, onto his tip.
-New changes are cut as before, one `LC-NNN` commit each, from LC-050. A PR
+New changes are cut as before, one `LC-NNN` commit each, from LC-055. A PR
 branch is cut fresh from `upstream/TEST` with the change's fixups folded
 in. Commands, PR cutting and the dependency notes:
 [changes/git-workflow.md](changes/git-workflow.md).
