@@ -91,6 +91,11 @@ Do not keep such code again: it ends up where it was not meant to go.)
   - LC-016: the RADE V1 quality comparison against
     `div_auto_coherence_min` in `div_process_block()`. `rade_cohmin`
     stays on the wire and in the props file.
+  - LC-053: the fixed-width branch of `div_target_hz()` (the engine
+    honours a `div_auto_resolution` above zero only because `run_ref
+    --resolution` and the unit tests set one). With the branch gone,
+    `div_auto_resolution` is Auto always and can be dropped from the
+    engine; the field stays on the wire and in the props file.
 - **Drop the `Local-Change:` trailer** if the maintainer does not want it.
 - **Comments may cite `docs/`.** Our docs don't go upstream, and upstream
   code already cites `docs/diversity-measurements.md`, so a reference to
@@ -134,6 +139,12 @@ it, but it does not use anything LC-008 adds.
   `receiver[0]->adc`, so neither needs anything else. Both apply to bare
   `upstream/TEST` (by construction; not cherry-picked there). LC-045
   needs LC-012 (and so LC-008, with its fixups).
+- LC-050 to LC-054 (branch `test/auto-bins`; not applied to bare
+  `upstream/TEST`): LC-050 stands alone. LC-051 (the 24 / 12 / 6 Hz menu)
+  is superseded in part by LC-053, which removes the control; what stays of
+  it is `DIV_MIN_NFFT` 2048. LC-052 needs LC-051 and LC-050 (the 5 s tier
+  sits under the cap). LC-053 needs LC-052. For a PR, fold LC-051 into
+  LC-052 and LC-053. LC-054 stands alone (menu only).
 - LC-046 does not apply to bare `upstream/TEST` (checked 2026-10-06): it
   conflicts with LC-002's `DIV_*_WIDTH_DEFAULT` constants, LC-009's
   `diversity_auto_seed_window()` and LC-017's CW width default and
