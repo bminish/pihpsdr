@@ -92,7 +92,7 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-007](lc-engine.md#lc-007) | Behaviour | Hold stays on until the operator releases it | — | `f05546e3` |
 | [LC-023](lc-engine.md#lc-023) | Fix | Transmit gap and reset requests stop racing the threads | — | `f05546e3` |
 | [LC-027](lc-engine.md#lc-027) | Fix | An operator reset clears the statistics on the worker | — | `f05546e3` |
-| [LC-030](lc-engine.md#lc-030) | Behaviour | Level output: the combined output at one antenna's level | — | `f05546e3` |
+| [LC-030](lc-engine.md#lc-030) | Behaviour | Level output: the combined output at one antenna's level (its tick removed by LC-055) | — | `f05546e3` |
 | [LC-035](lc-engine.md#lc-035) | Comments | Comments name the ADCs ADC1 and ADC2, as the hardware does | [LC-023, LC-025, LC-028] | `f05546e3` |
 | [LC-037](lc-engine.md#lc-037) | Fix | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | — | `f05546e3` |
 | [LC-044](lc-engine.md#lc-044) | Fix | An attenuator step moves the weight by the right arm (arm 0 is RX1's ADC) | — | `f05546e3` |

@@ -155,6 +155,9 @@ captures (`score_level.py`): Sum +2.07 → −0.08 dB over one antenna, Best
 steps over 3 dB 1175 → 774. `test_window`: a Sum that raised the level
 +4.2 dB comes out at 0.00, Null untouched.
 
+**Since LC-055:** the menu tick and the saved setting are gone; the level
+is held wherever it applies, as listed under [LC-055](#lc-055).
+
 ---
 
 <a id="lc-035"></a>
@@ -268,3 +271,69 @@ call `diversity_auto_att_changed()`, so nothing in the suite covers it.
   place. The comment says that.
 
 **Checks.** Builds, `make -C test/diversity run` passes. No code change.
+
+---
+
+<a id="lc-055"></a>
+
+## LC-055 — Level output is always on where it applies
+
+**Why.** LC-030 added the output-level normaliser with a menu tick,
+default on, kept as a runtime control because the AGC interacts with it
+(an operator choice, not a test switch: see
+[noise-floor-refactor.md](../noise-floor-refactor.md)). The owner decided
+on 2026-10-08 that it is simply how diversity behaves: no tick, no
+setting. A control that only matters in some modes, and is greyed in the
+rest, was one more thing to explain for something nobody should want off.
+
+**Change.**
+- `diversity_menu.c`: the "Level output" check button, its callback, its
+  greyed-out logic (`div_level_sensitive()` and its six calls) are
+  removed. The freed cell on the top row stays empty.
+- `diversity_auto.c/.h`: `div_auto_normalise` is removed, so
+  `div_norm_refresh()` no longer asks it. The props key
+  `diversity_auto_normalise` is no longer written or read; a file that
+  still holds it is ignored, so an operator who had unticked it now gets
+  the level held. Nothing was on the wire, so no protocol change.
+- Tests: `test_window` takes its "without" figure from the same run (the
+  output before `div_norm` is applied), and gains a RADE V1 case.
+
+**When it applies.** `div_norm` is computed, and applied by `receiver.c`,
+when **all** of these hold:
+
+| Condition | Detail |
+|---|---|
+| The engine runs on this machine | A standalone radio, or the radio side of client/server. Diversity enabled. |
+| Objective is **Sum** or **Best** | The two that combine or choose between the antennas. |
+| Reference is **Window**, **Carrier**, **FSK/Digital** or **CW** | Every reference that runs the block transform the powers come from. |
+| At least one block has been transformed since the engine started, was reset, or the reference changed | Until then `div_norm` is 1.0. |
+
+Then the output is scaled back to arm 0's level over the operator's
+passband, from the passband powers and cross-power smoothed at 1 s and
+the weight in force; recomputed whenever the weight is written (so a Best
+switch or a slew step is levelled in the same block); clamped to 0.01..2.0
+(-40..+6 dB). It keeps acting while the loop is holding, and between
+blocks that skip the transform it keeps the last powers.
+
+**When it does not apply** (`div_norm` is 1.0, or is not used):
+
+| Case | Why |
+|---|---|
+| Diversity off, or the engine stopped | `diversity_auto_stop()` sets 1.0; there is no combiner. |
+| **Manual** | `receiver.c` applies `div_norm` only on the auto path; the manual weight is the operator's. |
+| **Null** | Making the output quieter is its purpose (`div_norm_refresh()`). |
+| **RADE V1** | It never runs the transform the powers come from; the weight is the correlator's own. Output stays about +4.6 dB over one antenna in the synthetic test. |
+| Before the first transformed block | After a start, a reset or a reference change (`norm_valid`). |
+| Powers or output power not positive | Falls back to 1.0 rather than dividing. |
+| A remote client | It runs no engine and has no `div_norm`; it hears the radio's output, which is levelled there. It has no control for it either. |
+
+**Checked.** `test_window`: Sum on Window comes out at 0.00 dB against
+arm 0 (+4.20 dB without), Null is untouched (-31.55 dB either way), and
+RADE V1 stays at `div_norm` 1.0 with the output unlevelled. The rest of
+the suite and both builds are unchanged. SNR is unaffected, as for LC-030
+(one multiplier).
+
+**Not measured.** The reason the tick existed, an AGC that reacts to the
+level, was not measured on air; if an operator reports the AGC behaving
+worse with diversity, this is the first place to look. Nothing here shows
+the level held is wanted on RADE V1 either: it is left alone by design.

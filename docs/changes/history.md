@@ -4,6 +4,12 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: LC-055, Level output is always on where it applies: the menu
+  tick and the saved setting are removed (owner's decision). The write-up
+  lists when it applies and when it does not. The tick had been kept as an
+  operator choice because the AGC interacts with it; that interaction is
+  not measured.
+
 - 2026-10-08: replayed onto `f9803763` (copyright lines for the owner; our
   Makefile DIVCAP block added to his tree without the module). Tree change
   is exactly his `src/` lines; backup tag

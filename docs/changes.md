@@ -2,13 +2,13 @@
 
 `TEST` on [bminish/pihpsdr](https://github.com/bminish/pihpsdr) tracks the `TEST` branch of [dl1ycf/pihpsdr](https://github.com/dl1ycf/pihpsdr) and carries a few local changes on top of it, mostly to auto diversity. This file is the front page of the register: what is still local, where the finished work is written up, and where the rules, decisions and open work are.
 
-**Where we are (2026-10-08).** dl1ycf took our whole series into `upstream/TEST` (`f05546e3`, one squashed commit). Of the 51 changes in the register, **41 are accepted** and no longer differ from upstream (two of them he made himself), **7 are pending** (local only), 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` is 0 behind and 115 ahead of `upstream/TEST` (`f9803763`). The next free number is **LC-055**.
+**Where we are (2026-10-08).** dl1ycf took our whole series into `upstream/TEST` (`f05546e3`, one squashed commit). Of the 52 changes in the register, **41 are accepted** and no longer differ from upstream (two of them he made himself), **8 are pending** (local only), 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` is 0 behind and 115 ahead of `upstream/TEST` (`f9803763`). The next free number is **LC-056**.
 
 ## Register
 
 ### Pending: local, not yet in upstream
 
-Status **Local**: carried here only. LC-048 and LC-049 edit files he now owns; LC-050 to LC-054 came from the branch `test/auto-bins`.
+Status **Local**: carried here only. LC-048, LC-049 and LC-055 edit files he now owns; LC-050 to LC-054 came from the branch `test/auto-bins`.
 
 | ID | Kind | Summary | Files | Depends on | Status |
 |---|---|---|---|---|---|
@@ -19,13 +19,15 @@ Status **Local**: carried here only. LC-048 and LC-049 edit files he now owns; L
 | [LC-052](changes/lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-050, LC-051 | Local |
 | [LC-053](changes/lc-averaging.md#lc-053) | UI | Auto is the only bin width; the Resolution control is removed (pinned like Hang) | diversity_menu.c, diversity_auto.c | LC-052 | Local |
 | [LC-054](changes/lc-menu.md#lc-054) | UI | The status line shows the coherence on every reference with a Min coherence (Window, Carrier, CW, FSK/Digital) | diversity_menu.c | — | Local |
+| [LC-055](changes/lc-engine.md#lc-055) | Behaviour | Level output always on where it applies; the menu tick and the saved setting removed (when it applies and when not is listed in the write-up) | diversity_auto.c/.h, diversity_menu.c | LC-030 (upstream) | Local |
 
-Dependencies among these: LC-052 needs LC-050 and LC-051, and LC-053 needs LC-052. LC-051's entries go away with LC-053, so LC-051, LC-052 and LC-053 travel together. LC-048, LC-049, LC-050 and LC-054 stand alone. Each applies on top of `upstream/TEST` as it stands; none depends on our tooling.
+Dependencies among these: LC-052 needs LC-050 and LC-051, and LC-053 needs LC-052. LC-051's entries go away with LC-053, so LC-051, LC-052 and LC-053 travel together. LC-048, LC-049, LC-050, LC-054 and LC-055 stand alone (LC-055 builds on LC-030, which is upstream). Each applies on top of `upstream/TEST` as it stands; none depends on our tooling.
 
 **Possible PRs, when he asks or we choose to send:**
 1. LC-050 (the Averaging cap), then LC-051 + LC-052 + LC-053 folded as one (Auto bin width, no Resolution control). Their evidence is T-019 to T-022 in [test-findings.md](test-findings.md).
 2. LC-054 (coherence on the status line): stands alone and is small.
 3. LC-048 and LC-049 (two comments, and the reference-only code cut): only as a patch he can take or leave, since they tidy his tree rather than add anything.
+4. LC-055 (Level output always on): removes a control from his menu file; written up for him, with the full list of when it applies.
 
 ### Deferred and dropped
 
