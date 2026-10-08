@@ -4975,13 +4975,13 @@ void diversity_auto_restore_state(void) {
   }
 
   //
-  // Back to "nothing filed away yet". The mode is not restored until
-  // after this runs, so which group the live values belong to is not
-  // knowable here; the first diversity_auto_mode_changed() adopts that
-  // group's block, which for a file written by this version is the same
-  // thing the flat keys just gave us. Without the reset, that first call
-  // would file the live values under whichever group was current before
-  // the restore and overwrite the block just read for it.
+  // Back to "nothing filed away yet". No receiver exists yet, so
+  // diversity_auto_mode_changed() has not announced a mode and which
+  // group the live values belong to is not knowable here; the first call
+  // adopts that group's block, which for a file written by this version
+  // is the same thing the flat keys just gave us. Without the reset, that
+  // first call would file the live values under whichever group was
+  // current before the restore and overwrite the block just read for it.
   //
   div_group_current = -1;
 }
