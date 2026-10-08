@@ -47,6 +47,7 @@ block, `.gitignore` entries, `test/` and `docs/`.
 | LC-003, LC-004 | Still **Deferred (client)**; not in his tree. |
 | LC-022 | Still **Dropped**. |
 | LC-048 | New, **Local**: two stale comments found by this re-sync. |
+| LC-049 | New, **Local**: the reference-only code cut. |
 
 ## What remains on our side
 
@@ -77,7 +78,7 @@ so. They are not true now.
    contain. Inert in a normal build; but `-DDIVERSITY_CAPTURE` against his
    tree cannot build, and the comments in the hooks ("never sent
    upstream", "delete before submission") are wrong in his file.
-2. **The reference-only code.** LC-006's Coherence-weighted accumulation
+2. **The reference-only code** (cut by LC-049). LC-006's Coherence-weighted accumulation
    (`coherence_weighted` in `div_process_block()`) and LC-016's RADE V1
    quality comparison against `div_auto_coherence_min` were to be deleted
    when the PR was cut, because nothing in the radio reaches them and only
@@ -88,20 +89,27 @@ so. They are not true now.
 
 ## Decisions
 
-None of these is decided yet; the outcome of each goes in
-[history.md](history.md) when it is.
+Decided 2026-10-08 (owner):
 
-1. Capture hooks and module: offer him the module and the Makefile block
-   (so the hooks mean something), or ask him to strip the hooks (we then
-   keep a patch), or leave as is and correct our comments. *Open.*
-2. Reference-only code: keep it in his tree for `run_ref`'s sake, or cut
-   it as the rules said. *Open.*
-3. PR #150: close with a note that `f05546e3` supersedes it. *Open.*
-4. Force-push of the rebuilt `TEST` to `origin`. *Waiting for the owner's
-   OK, as always.*
-5. The register: kept as the record of the series. New work on his tree
-   carries on from LC-049, and the "proposed PR series" and "cutting a PR
-   branch" notes now apply only to such new work.
+1. **DIVCAP stays whole in our `TEST`**: the module, the Makefile block,
+   the `.gitignore` entries and the hooks in `diversity_auto.c` and
+   `diversity_menu.c`, as they are. **It goes entirely when this work goes
+   to `main`.** The removal is clean by construction: every piece is
+   either a whole file (`src/diversity_capture.[ch]`), a block between
+   `#ifdef DIVERSITY_CAPTURE` and its `#endif`, or inside the Makefile's
+   `ifdef DIVCAP` conditional, and
+   `test/diversity/devtools/remove.sh` (dry run by default, `--do` to
+   act) strips them. *Not re-run on 2026-10-08:* run it dry first when the
+   time comes and check that it still finds all 13 hook blocks and the
+   Makefile block, since upstream's tree now carries the hooks. Until then
+   the hook comments saying "never sent upstream" are wrong about his
+   tree but are left, because the code is left intact.
+2. **The reference-only code is cut here** (LC-049): see its write-up in
+   [lc-gate.md](lc-gate.md#lc-049). He will pull it again.
+3. **PR #150 is closed**, superseded by `f05546e3`.
+4. **Force-push**: not decided; waits for the owner's OK.
+5. **Docs are ours and stay.** The comments in his source that cite our
+   register (LC-029 twice, LC-014) are left as they are.
 
 ## What was done, mechanically
 

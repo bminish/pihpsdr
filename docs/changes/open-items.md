@@ -56,7 +56,7 @@ changes it, we take upstream.
 
 ## Undecided after the 2026-10-08 reconcile
 
-The capture hooks, the reference-only code (LC-006, LC-016) and PR #150:
+Only the force-push of the rebuilt `TEST` (the capture hooks, the reference-only code and PR #150 are settled):
 [upstream-reconcile.md](upstream-reconcile.md#decisions).
 
 ## Not carried
@@ -101,7 +101,7 @@ as done in the findings but are on `feature/auto-diversity` only:
 
 Features and documentation will be brought in from
 `feature/auto-diversity` one at a time. Each one gets the next `LC`
-number (LC-049 onwards), a commit (or a short run of commits) that follows the
+number (LC-050 onwards), a commit (or a short run of commits) that follows the
 [house rules](rules.md), a row in the register and a write-up in the
 matching topic file, all in the same push.
 

@@ -198,8 +198,8 @@ moves. It's pinned at every route in:
 
 The menu hides the Min coherence row while RADE V1 is selected. The field
 stays on the wire and in the props file, and the engine's comparison
-stays, so `run_ref --cohmin` can still sweep the retired path. That
-comparison is kept local and deleted in the PR (see [git-workflow.md](git-workflow.md#cutting-a-pr-branch)).
+stays; the engine's comparison was cut by [LC-049](lc-gate.md#lc-049) (it
+could not fire with the threshold pinned at 0).
 
 **Checked.**
 

@@ -72,9 +72,10 @@ git cherry-pick <commit of LC-001>
 ## Cutting a PR branch
 
 (From 2026-10-08 this applies to new changes only: LC-001 to LC-047 are
-upstream. The two "kept only for our tools" items below are no longer
-ours to delete, since `f05546e3` put them in his tree; see
-[upstream-reconcile.md](upstream-reconcile.md#what-upstream-now-holds-that-we-said-would-stay-local).)
+upstream. The two "kept only for our tools" items below arrived in his
+tree with the series and were cut by LC-049; see
+[upstream-reconcile.md](upstream-reconcile.md#what-upstream-now-holds-that-we-said-would-stay-local).
+Do not keep such code again: it ends up where it was not meant to go.)
 
 - **Fold in the fixups.** Cherry-pick the LC commit and every
   `LC-NNN fixup` commit after it, and squash them into one.

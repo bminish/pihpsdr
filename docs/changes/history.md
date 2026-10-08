@@ -12,7 +12,7 @@ Newest first.
   call placed after `vfo_restore_state()`, taken as his). Every LC is
   therefore Upstream. `TEST` rebuilt on `upstream/TEST` by replaying the
   78 tooling and docs commits, not the 47 LC commits; backup tag
-  `backup/TEST-pre-rebase-20261008`. LC-048 added (two stale comments).
+  `backup/TEST-pre-rebase-20261008`. LC-048 added (two stale comments) and LC-049 (the reference-only code cut). DIVCAP kept whole until `main`; PR #150 closed.
   Record, with the open decisions: [upstream-reconcile.md](upstream-reconcile.md).
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
