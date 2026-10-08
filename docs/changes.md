@@ -151,13 +151,6 @@ open; **Upstream** taken upstream (`f05546e3` unless said otherwise);
 | [LC-048](changes/lc-engine.md#lc-048) | Comments  | Two stale comments: the arms are RX1's ADC and the other (not ADC0/ADC1), and the restore does not depend on call order | diversity_auto.c/.h | — | Local |
 | [LC-049](changes/lc-gate.md#lc-049) | Cleanup   | The reference-only code cut: Coherence-weighted accumulation, and RADE V1's pinned Min coherence comparison | diversity_auto.c | LC-006, LC-016 (upstream) | Local |
 | [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Local |
-| [LC-051](changes/lc-averaging.md#lc-051) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 | diversity_menu.c, diversity_auto.c | — | Local |
-| [LC-052](changes/lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-050, LC-051 | Local |
-| [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Local |
-| [LC-051](changes/lc-averaging.md#lc-051) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 (the entries go with LC-053) | diversity_menu.c, diversity_auto.c | — | Local |
-| [LC-052](changes/lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-050, LC-051 | Local |
-| [LC-053](changes/lc-averaging.md#lc-053) | UI        | Auto is the only bin width; the Resolution control is removed (pinned like Hang) | diversity_menu.c, diversity_auto.c | LC-052 | Local |
-| [LC-050](changes/lc-averaging.md#lc-050) | Behaviour | The Averaging slider stops at 6 s (was 30)            | diversity_menu.c, diversity_auto.c        | —          | Local |
 | [LC-051](changes/lc-averaging.md#lc-051) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired; `DIV_MIN_NFFT` 2048 (the entries go with LC-053) | diversity_menu.c, diversity_auto.c | — | Local |
 | [LC-052](changes/lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | diversity_menu.c, diversity_auto.c/.h | LC-050, LC-051 | Local |
 | [LC-053](changes/lc-averaging.md#lc-053) | UI        | Auto is the only bin width; the Resolution control is removed (pinned like Hang) | diversity_menu.c, diversity_auto.c | LC-052 | Local |
