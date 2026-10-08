@@ -11,7 +11,9 @@ Newest first.
   LT-023. Then LC-051: Auto made the only bin width, the Resolution
   control removed, the stored value pinned like Hang. Then LC-052: the
   status line shows the coherence on Carrier, CW and FSK/Digital as well
-  as Window. For testing; `TEST` is unchanged.
+  as Window. T-021 tested Auto's thresholds against fixed 12 Hz and the
+  policy changed: 24 Hz up to 1 s on Window, Carrier and FSK/Digital, no
+  6 Hz tier. For testing; `TEST` is unchanged.
 
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for

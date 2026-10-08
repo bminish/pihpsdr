@@ -35,7 +35,7 @@ Findings from captures taken on `TEST` itself are in
 | LT-021 | The Carrier-follow check in `test_window` counts (LC-046); the known gap narrows to the scheme-3 migration | `test/diversity/test_window.c`, `known_gaps.h` |
 | LT-022 | Follow LC-048 to LC-050: `test_props` checks the 6 s cap, the bin width pinned to Auto, and Auto's table; `test_rates` checks the transform follows Averaging; `run_ref`'s transform floor is 2048 | `test/diversity/` |
 | LT-023 | The sweep drivers behind T-019 and T-020: catalogue, averaging and bin-width sweeps, RADE decode sweep, and their scorers | `test/diversity/devtools/py/sweeps/` |
-| LT-024 | The dense sweep for Auto's thresholds (T-021): `sweep_dense.py`, `score_dense.py` (Sum and Null, fade rate), `agg_dense.py` (intervals) | `test/diversity/devtools/py/sweeps/` |
+| LT-024 | The dense sweep for Auto's thresholds (T-021): `sweep_dense.py`, `score_dense.py` (Sum and Null, fade rate), `agg_dense.py` (intervals), `agg_auto.py` (the engine's own Auto against fixed 12 Hz, `run_ref --resolution auto`) | `test/diversity/devtools/py/sweeps/` |
 
 **LT-020.** One tarball (`make -C test/diversity pi5-bench.tar.gz`) holds
 the engine's own sources (found by the compiler's dependency list),
