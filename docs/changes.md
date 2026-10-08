@@ -198,8 +198,9 @@ Register and notes: [changes/tooling.md](changes/tooling.md); usage:
 
 - **Client/server** faults are recorded, not fixed (decided 2026-10-01);
   upstream is taken there. LC-003 and LC-004 wait on it.
-- **Undecided after the reconcile:** the capture hooks in his tree; the
-  reference-only code (LC-006, LC-016) now in his tree; PR #150. See
+- **After the reconcile:** only the force-push of the rebuilt `TEST` waits
+  on the owner. DIVCAP stays whole until `main`; the reference-only code
+  is cut (LC-049); PR #150 is closed. See
   [changes/upstream-reconcile.md](changes/upstream-reconcile.md#decisions).
 - **Flagged:** upstream dropped the guard that refused manual weight
   sets while the loop owns the weight (taken); upstream text that
