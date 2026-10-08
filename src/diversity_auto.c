@@ -1168,25 +1168,29 @@ static int div_choose_nfft(int sample_rate, double target_hz) {
 // short end gets the coarsest bins; beyond it 12 Hz, the default, which is
 // where nothing measured does better:
 //
-//   - up to 1 s: 24 Hz (43 ms) on Window, Carrier and FSK/Digital. Against
-//     12 Hz it is +0.1 dB on Sum (up to +0.25 on mid-fade captures) and
-//     +0.2 dB on Null, which it improves at every averaging time (T-021);
-//   - above 1 s, and CW and RADE V1 at any time: 12 Hz. CW tracks a tone
-//     in a filter that can be 100 Hz wide, and keys at a rate a longer
-//     block smears; RADE V1 works in the time domain, so the bin width
-//     only sets the chunk the samples arrive in.
+//   - up to 1 s: 24 Hz (43 ms) on Window and Carrier. Against 12 Hz it is
+//     +0.1 dB on Sum (+0.05 to +0.26 dB on seven captures taken after the
+//     policy was fixed, none worse than -0.15) and +0.2 dB on Null
+//     (T-021);
+//   - above 1 s, and FSK/Digital, CW and RADE V1 at any time: 12 Hz.
+//     FSK/Digital is out of the 24 Hz tier because its occupancy split
+//     needs the resolution: on PSK31, a multitone mode and FT8 captures
+//     24 Hz costs 1.4 to 2.3 dB on Sum (T-021). CW tracks a tone in a
+//     filter that can be 100 Hz wide, and keys at a rate a longer block
+//     smears; RADE V1 works in the time domain, so the bin width only sets
+//     the chunk the samples arrive in.
 //
 // There is no 6 Hz tier. It was one (above 5 s) and T-021 measured it:
 // Window Sum -0.16 dB, Null -0.24 dB overall and -0.39 dB on FSK/Digital,
 // with single captures losing 2 to 4.6 dB, against +0.17 dB on FSK/Digital
 // Sum. The slider stops at 6 s anyway.
 //
-// The 1 s edge was chosen after looking at the sweep it is scored on, so
-// it still wants captures it was not chosen on (docs/test-findings.md,
-// T-021).
+// The 1 s edge was chosen after looking at the sweep it is scored on;
+// seven Window captures taken since agree with it, Carrier has six and no
+// held-out ones (docs/test-findings.md, T-021).
 //
 double diversity_auto_bin_policy(int ref, double tau) {
-  if (tau <= 1.0 && (ref == DIV_REF_BAND || ref == DIV_REF_CARRIER || ref == DIV_REF_DIGITAL_IQ)) {
+  if (tau <= 1.0 && (ref == DIV_REF_BAND || ref == DIV_REF_CARRIER)) {
     return 24.0;
   }
 
