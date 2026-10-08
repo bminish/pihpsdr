@@ -26,7 +26,8 @@
 //
 //     z = z0 + w * z1,     w = div_cos + j*div_sin
 //
-// with z0 taken from ADC0 (main antenna) and z1 from ADC1 (aux antenna).
+// with z0 taken from the ADC RX1 is set to (arm 0: ADC1, the main antenna,
+// unless RX1 is set to ADC2) and z1 from the other ADC (arm 1).
 // This module estimates a "good" w by looking at the cross spectrum of
 // the two raw streams, and writes the result back into div_cos/div_sin
 // (and, back-computed, div_gain/div_phase).
