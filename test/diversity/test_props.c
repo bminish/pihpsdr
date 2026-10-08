@@ -207,7 +207,6 @@ static int test_wire_round_trip(void) {
   a.follow_filter = 1;
   a.weighting = DIV_WEIGHT_FLAT;
   a.hold = 1;
-  a.normalise = 1;
   a.centre = -1234.0;   a.width = 2345.0;
   a.tau = 5.25;         a.hang = 11.5;
   a.coherence_min = 0.41;  a.resolution = DIV_RES_AUTO;
@@ -236,7 +235,7 @@ static int test_wire_round_trip(void) {
 #define CHK_D(f)  do { const double e = fabs(a.f - b.f); if (e > worst) { worst = e; } \
                        if (e > 1.0e-6) { printf("    FAIL %-16s %.12g -> %.12g\n", #f, a.f, b.f); bad++; } } while (0)
   CHK_I(mode); CHK_I(ref); CHK_I(follow_filter); CHK_I(weighting);
-  CHK_I(hold); CHK_I(normalise);
+  CHK_I(hold);
   CHK_D(centre); CHK_D(width); CHK_D(tau); CHK_D(hang);
   CHK_D(coherence_min); CHK_D(resolution);
   CHK_D(band_centre); CHK_D(band_width);

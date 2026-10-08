@@ -34,9 +34,6 @@
 #ifdef GAP_STANDDOWN
 static const int div_auto_standdown = 0;   /* TEST never stands down */
 #endif
-#ifdef GAP_LEVEL_OUTPUT
-static int div_auto_normalise = 0;         /* TEST has no Level output */
-#endif
 #define DIV_CARRIER_FOLLOW_WIDTH 400.0     /* LC-046's search width */
 
 static RECEIVER rx0;
@@ -461,12 +458,12 @@ static int cw_follow_case(int mode, const char *name, double tone, int want_trac
  * output is louder than one antenna by whatever the array does to it -
  * and that rise is not signal. div_norm is meant to take it back out.
  *
- * Checked three ways, because each is a different way to get it wrong:
- * the scale must actually cancel the level rise; it must be exactly 1
- * when the operator has not asked for it; and it must be exactly 1 in
- * Null, whose whole purpose is to make the output quieter.
+ * There is no switch for it (LC-055), so the "without" figure is taken in
+ * the same run, from the output before div_norm is applied. Checked two
+ * ways: the scale must actually cancel the level rise in Sum, and it must
+ * leave Null alone, whose whole purpose is to make the output quieter.
  */
-static int norm_case(int mode, int on, const char *name, double *level_db) {
+static int norm_case(int mode, int ref, const char *name, double *level_db, double *raw_db, double *norm_out) {
   const int rate = 48000, nfft = 4096;
   const double hr = 0.62, hi = -0.48;
   rx0.sample_rate = rate;
@@ -476,14 +473,13 @@ static int norm_case(int mode, int on, const char *name, double *level_db) {
   vfo[0].frequency = 7100000;
   vfo[0].ctun_frequency = 7100000;
   vfo[0].offset = 0;
-  div_auto_ref = DIV_REF_BAND;
+  div_auto_ref = ref;
   div_auto_mode = mode;
   div_auto_follow_filter = 1;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.30;
   div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
-  div_auto_normalise = on;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
   auto_div_gain = 0.0;
@@ -492,7 +488,7 @@ static int norm_case(int mode, int on, const char *name, double *level_db) {
   srand(37);
   diversity_auto_start();
   double ph = 0.0;
-  double p0 = 0.0, pout = 0.0;
+  double p0 = 0.0, pout = 0.0, praw = 0.0;
   long np = 0;
 
   for (int b = 0; b < 80; b++) {
@@ -506,9 +502,12 @@ static int norm_case(int mode, int on, const char *name, double *level_db) {
 
       /* the last twenty blocks, once the loop has settled */
       if (b >= 60) {
-        const double is = (i0 + (auto_div_cos * i1 - auto_div_sin * q1)) * div_norm;
-        const double qs = (q0 + (auto_div_sin * i1 + auto_div_cos * q1)) * div_norm;
+        const double ir = i0 + (auto_div_cos * i1 - auto_div_sin * q1);
+        const double qr = q0 + (auto_div_sin * i1 + auto_div_cos * q1);
+        const double is = ir * div_norm;
+        const double qs = qr * div_norm;
         p0   += i0 * i0 + q0 * q0;
+        praw += ir * ir + qr * qr;
         pout += is * is + qs * qs;
         np++;
       }
@@ -519,19 +518,21 @@ static int norm_case(int mode, int on, const char *name, double *level_db) {
 
   g_usleep(300000);
   const double norm = div_norm;
+  if (norm_out) { *norm_out = norm; }
   diversity_auto_stop();
   *level_db = 10.0 * log10(pout / p0);
-  printf("  %-28s div_norm %.4f -> output %+0.2f dB against arm 0 alone\n",
-         name, norm, *level_db);
+  *raw_db = 10.0 * log10(praw / p0);
+  printf("  %-28s div_norm %.4f -> output %+0.2f dB against arm 0 alone (%+0.2f dB without)\n",
+         name, norm, *level_db, *raw_db);
   (void)np;
   return 1;
 }
 
 static int test_normalise(void) {
-  double off = 0.0, on = 0.0, nul = 0.0;
-  norm_case(DIV_AUTO_SUM,  0, "Sum, normaliser off", &off);
-  norm_case(DIV_AUTO_SUM,  1, "Sum, normaliser on",  &on);
-  norm_case(DIV_AUTO_NULL, 1, "Null, normaliser on", &nul);
+  double off = 0.0, on = 0.0, nul = 0.0, nul_raw = 0.0, rade = 0.0, rade_raw = 0.0, rade_norm = 0.0;
+  norm_case(DIV_AUTO_SUM,  DIV_REF_BAND,     "Sum, Window", &on,  &off, NULL);
+  norm_case(DIV_AUTO_NULL, DIV_REF_BAND,     "Null",        &nul, &nul_raw, NULL);
+  norm_case(DIV_AUTO_SUM,  DIV_REF_RADE_V1,  "Sum, RADE V1", &rade, &rade_raw, &rade_norm);
   int ok = 1;
 
   if (!(off > 1.0)) {
@@ -544,13 +545,18 @@ static int test_normalise(void) {
     ok = 0;
   }
 
-  if (!(nul < -1.0)) {
+  if (!(nul < -1.0) || fabs(nul - nul_raw) > 0.01) {
     printf("  FAIL: Null was normalised - its output should still be quieter\n");
     ok = 0;
   }
 
+  if (rade_norm != 1.0 || fabs(rade - rade_raw) > 0.01) {
+    printf("  FAIL: RADE V1 was levelled (div_norm %.4f) - it runs no transform to level from\n", rade_norm);
+    ok = 0;
+  }
+
   if (ok) {
-    printf("  PASS: %+0.2f dB becomes %+0.2f dB, and Null keeps its %+0.2f dB\n", off, on, nul);
+    printf("  PASS: %+0.2f dB becomes %+0.2f dB, Null keeps its %+0.2f dB, RADE V1 is left at div_norm 1\n", off, on, nul);
   }
 
   return ok;
@@ -837,9 +843,6 @@ int main(int argc, char **argv) {
   int f = test_carrier_follow();
   printf("\n");
   int g = test_normalise();
-#ifdef GAP_LEVEL_OUTPUT
-  g = known_gap(g, GAP_LEVEL_OUTPUT);
-#endif
   printf("\n");
   int h = test_standdown();
 #ifdef GAP_STANDDOWN
