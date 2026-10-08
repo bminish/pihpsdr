@@ -1,0 +1,129 @@
+bundle: v3.0-294-g19497e33
+model: Raspberry Pi Compute Module 5 Lite Rev 1.0
+kernel: Linux Saturn 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+compiler: cc (Debian 14.2.0-19) 14.2.0
+fftw3f: 3.3.10   gtk+-3.0: 3.24.49
+
+Architecture:                            aarch64
+CPU op-mode(s):                          32-bit, 64-bit
+Byte Order:                              Little Endian
+CPU(s):                                  4
+On-line CPU(s) list:                     0-3
+Vendor ID:                               ARM
+Model name:                              Cortex-A76
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per cluster:                     4
+Socket(s):                               -
+Cluster(s):                              1
+Stepping:                                r4p1
+Frequency boost:                         disabled
+CPU(s) scaling MHz:                      67%
+CPU max MHz:                             2400.0000
+CPU min MHz:                             1500.0000
+BogoMIPS:                                108.00
+Flags:                                   fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm lrcpc dcpop asimddp
+L1d cache:                               256 KiB (4 instances)
+L1i cache:                               256 KiB (4 instances)
+L2 cache:                                2 MiB (4 instances)
+L3 cache:                                2 MiB (1 instance)
+NUMA node(s):                            4
+NUMA node0 CPU(s):                       0-3
+NUMA node1 CPU(s):                       0-3
+NUMA node2 CPU(s):                       0-3
+NUMA node3 CPU(s):                       0-3
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; CSV2, BHB
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
+
+               total        used        free      shared  buff/cache   available
+Mem:            2010         319        1411          42         385        1690
+Swap:           2009           0        2009
+
+busiest processes:
+%CPU %MEM COMMAND
+ 6.9  0.1 p2app
+ 1.3  0.3 bash
+ 0.4  0.0 kworker/0:1-events
+ 0.4  0.0 kworker/0:3-events_freezable
+ 0.3  0.0 kworker/0:2-events
+ 0.1  0.3 sshd-session
+ 0.0  0.6 sshd-session
+ 0.0  1.3 python3
+ 0.0  1.2 python3
+ 0.0  0.8 systemd-journal
+ 0.0  0.4 mosquitto
+
+== before, 2026-10-08 21:20:35
+loadavg: 0.00 0.04 0.05 1/199 3852
+cpu0: governor ondemand cur 1700000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 1700000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 1700000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 1700000 kHz min 1500000 max 2400000
+vcgencmd: temp=35.6'C throttled=0x50000 frequency(0)=1700014464
+
+== after pi_bench, 2026-10-08 21:31:13
+loadavg: 0.56 0.72 0.45 1/197 3922
+cpu0: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+vcgencmd: temp=41.1'C throttled=0x50000 frequency(0)=2400020480
+
+== after bench_cpu paced, 2026-10-08 21:36:49
+loadavg: 0.07 0.29 0.33 1/199 4069
+cpu0: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+vcgencmd: temp=37.3'C throttled=0x50000 frequency(0)=1600023552
+
+== after bench_cpu hot, 2026-10-08 21:38:56
+loadavg: 0.27 0.28 0.32 1/197 4214
+cpu0: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+vcgencmd: temp=36.7'C throttled=0x50000 frequency(0)=1600023552
+
+== after perf, 2026-10-08 21:38:56
+loadavg: 0.27 0.28 0.32 1/197 4261
+cpu0: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 1600000 kHz min 1500000 max 2400000
+vcgencmd: temp=37.8'C throttled=0x50000 frequency(0)=1600023552
+
+== after suite, 2026-10-08 21:39:08
+loadavg: 0.38 0.30 0.33 1/197 4371
+cpu0: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+vcgencmd: temp=40.6'C throttled=0x50000 frequency(0)=2400023808
+
+== after, 2026-10-08 21:39:08
+loadavg: 0.38 0.30 0.33 1/197 4424
+cpu0: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu1: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu2: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+cpu3: governor ondemand cur 2400000 kHz min 1500000 max 2400000
+vcgencmd: temp=42.2'C throttled=0x50000 frequency(0)=2400020480
+
