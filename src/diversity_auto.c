@@ -4767,8 +4767,8 @@ static void div_settings_validate(DIV_SETTINGS *s) {
   // Values no control can produce - zero or less, or not a number - are
   // treated as missing and given the default, not clamped to the nearest
   // legal value. A settings block saved before it was ever restored is all
-  // zeros, and clamping that yields 0.2 s averaging, 3 Hz bins and a 20 Hz
-  // window with Follow off: legal, and useless.
+  // zeros, and clamping that yields 0.2 s averaging and a 20 Hz window
+  // with Follow off: legal, and useless.
   //
   if (!(s->tau > 0.0))        { s->tau = 2.0; }
 
