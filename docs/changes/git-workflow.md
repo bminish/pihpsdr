@@ -42,6 +42,19 @@ git push --force-with-lease origin TEST     # only with the owner's OK
 git branch -d TEST-rebase-<date>
 ```
 
+**2026-10-08: the case where upstream has taken the whole series.** The
+rebase above would conflict on every LC commit, and `git cherry` cannot
+help because the series was squashed. Check by tree instead (`git diff
+upstream/TEST TEST -- <the files he touched>`), then branch from
+`upstream/TEST` and replay only the commits that are not LC commits
+(`git log --no-merges upstream/TEST..TEST`, minus those with a
+`Local-Change:` trailer). On a conflict in a file he already has in final
+form, keep his; on a conflict in `docs/`, take the replayed commit's
+version. Then look for anything that rode inside a skipped LC commit
+(LC-035's `diversity_capture.h`, two history lines): diff `docs/`, `test/`,
+`Makefile` and the capture module against the old tip. Full record:
+[upstream-reconcile.md](upstream-reconcile.md).
+
 A rebase rewrites `origin/TEST`, so it is force-pushed, and only after
 the owner has looked at the result. The backup tag keeps the old
 series (a tag, not a branch, so backups stay out of the branch list). If upstream has taken a change, drop its commit in the rebase
@@ -57,6 +70,11 @@ git cherry-pick <commit of LC-001>
 ```
 
 ## Cutting a PR branch
+
+(From 2026-10-08 this applies to new changes only: LC-001 to LC-047 are
+upstream. The two "kept only for our tools" items below are no longer
+ours to delete, since `f05546e3` put them in his tree; see
+[upstream-reconcile.md](upstream-reconcile.md#what-upstream-now-holds-that-we-said-would-stay-local).)
 
 - **Fold in the fixups.** Cherry-pick the LC commit and every
   `LC-NNN fixup` commit after it, and squash them into one.
@@ -78,6 +96,10 @@ git cherry-pick <commit of LC-001>
   a finding or to this register is left as it is.
 
 ## Dependencies between changes
+
+(Historical from 2026-10-08: the series is upstream in one commit, so
+none of these constrains a PR any more. They remain true of the order in
+which the changes were built, and of LC-048 onwards they are new.)
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:

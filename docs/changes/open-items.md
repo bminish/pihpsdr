@@ -54,6 +54,11 @@ changes it, we take upstream.
   declares `diversity_auto_ref_store()` / `_recall()` and mentions
   `DIV_REF_SCHEME`, neither of which exists any more.
 
+## Undecided after the 2026-10-08 reconcile
+
+The capture hooks, the reference-only code (LC-006, LC-016) and PR #150:
+[upstream-reconcile.md](upstream-reconcile.md#decisions).
+
 ## Not carried
 
 - **6 Hz default bins.** An earlier local commit changed the
@@ -96,7 +101,7 @@ as done in the findings but are on `feature/auto-diversity` only:
 
 Features and documentation will be brought in from
 `feature/auto-diversity` one at a time. Each one gets the next `LC`
-number, a commit (or a short run of commits) that follows the
+number (LC-049 onwards), a commit (or a short run of commits) that follows the
 [house rules](rules.md), a row in the register and a write-up in the
 matching topic file, all in the same push.
 

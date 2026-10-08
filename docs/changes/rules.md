@@ -27,7 +27,9 @@ How a local change is cut, named and kept so that it can go upstream later as a 
 7. **The register is local.** `docs/changes.md` and `docs/changes/` are
    never part of an upstream PR. It is updated in the same push as the change it
    describes.
-8. **Tooling is not a change.** The capture recorder, the test harness
+8. **Tooling is not a change.** (Since `f05546e3` the capture *hooks* in
+   `diversity_auto.c` and `diversity_menu.c` are in upstream; the module
+   and the rest are not. See [upstream-reconcile.md](upstream-reconcile.md).) The capture recorder, the test harness
    and the findings docs are local tooling. They carry
    `Local-Tooling: LT-NNN` instead of `Local-Change:`, are never part of
    an upstream PR, and no LC commit may depend on them. Before trusting a

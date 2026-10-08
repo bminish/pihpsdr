@@ -4,6 +4,17 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: **upstream took the series.** `f05546e3` ("Aligned with BM's
+  auto diversity repository") is one squashed commit with our source;
+  with it came two TCI commits (`b5be5b73`, `6ce76a30`) that are not
+  ours. Checked by tree: for the ten files it touches, `git diff
+  upstream/TEST TEST` was seven lines, of which one is real (LC-001's
+  call placed after `vfo_restore_state()`, taken as his). Every LC is
+  therefore Upstream. `TEST` rebuilt on `upstream/TEST` by replaying the
+  78 tooling and docs commits, not the 47 LC commits; backup tag
+  `backup/TEST-pre-rebase-20261008`. LC-048 added (two stale comments).
+  Record, with the open decisions: [upstream-reconcile.md](upstream-reconcile.md).
+
 - 2026-10-07: LC-047, the second attenuator slider is labelled with its
   own ADC; it said "ADC2:" when RX1 was on ADC2 (the one flagged for
   dl1ycf at the 2026-10-05 re-sync, now fixed locally).
