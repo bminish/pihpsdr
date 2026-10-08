@@ -74,18 +74,18 @@ settled: [upstream-reconcile.md](upstream-reconcile.md#decisions).
 row: RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four).
 Write-up: [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md).
 Open from it: the functional suite has still to be run on the Pi (it
-needs `libopus-dev`, now in the bundle's check), and RADE V1 on an AM
-passband is not a valid case (undecided whether the menu should stop
-offering it). What follows is the 2026-10-02 text.
+needs `libopus-dev`, now in the bundle's check). RADE V1 on an AM passband
+is an outlier and stays as it is. What follows is the 2026-10-02 text.
 
 
 Measured on a CM5 with the LT-020 bundle. The analysis is in
 [../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
 at 192 kHz and below every reference cost under 1 % of one core, except
 RADE V1 (up to about 6 % searching on an SSB passband). That analysis also
-quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is not a
-valid case, since RADE V1 searches one sideband at most, and it is
-withdrawn. **The engine has changed since** (Auto bin width, always-on
+quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is a real
+outlier (the search follows the passband, one bank unless it straddles the
+carrier), so it is withdrawn and not scored. No code change (decided
+2026-10-08). **The engine has changed since** (Auto bin width, always-on
 Level output, the cut code), so the verdict is not current until the rerun
 in [pi5-analysis.md](../bench/pi5-analysis.md#rerun-2026-10-08-pending)
 has been done on the Pi (LT-026). What was left was headroom:

@@ -8,9 +8,9 @@
 > of 1 s or less, so a smaller transform at twice the block rate), Level
 > output always on (LC-055), the reference-only code cut (LC-049). The
 > harness is updated (LT-026): see [Rerun](#rerun-2026-10-08-pending). One
-> row below is withdrawn: **RADE V1 searching on an AM passband** is not a
-> valid case (RADE V1 is a single-sideband mode, so the most it ever
-> searches is one sideband), and its figures (5.7-8.8 % up to 15.1 %) and
+> row below is withdrawn: **RADE V1 searching on an AM passband** is a real
+> outlier (the search follows the passband: one pilot bank unless the
+> passband straddles the carrier, as AM does), so it is not scored, and its figures (5.7-8.8 % up to 15.1 %) and
 > the "worst case" sentence that rests on them should not be quoted.
 > Read the SSB rows instead: at most 5.6 % up to 192 kHz, 11.9 % at
 > 1536 kHz.
