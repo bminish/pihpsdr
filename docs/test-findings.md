@@ -577,3 +577,89 @@ reached only through Auto). Auto (LC-050, LC-051) is a hypothesis built on
 the timing argument, not on these numbers. **Not covered:** Null (Findings 42 and 43: coarse bins win by
 0.4 to 6 dB), CW keying (a long block smears the elements; LC-018's key
 detection compares block peaks), other sample rates.
+
+## T-021: Auto's thresholds, tested against fixed 12 Hz
+
+**What.** The dense sweep behind LC-050's thresholds: 72 wideband captures
+(Window 40, Carrier 6, FSK/Digital 26; 20 s or more, at 192 kHz or below)
+through `run_ref` on `test/auto-bins` at 24, 12 and 6 Hz, Sum at 0.2, 0.3,
+0.5, 0.7, 1, 3, 5, 5.5 and 6 s and Null at 0.2, 0.5, 1, 3 and 6 s (3024
+runs), flat weighting, Follow RX Filter. Scored with
+`sweeps/score_dense.py`: Sum as the split-guard SNR against the better
+antenna, Null as the passband power against arm 0 alone (more negative is
+deeper), each engine's weights resampled onto the capture's block grid. The
+captures are split by fade rate (the correlation of the inter-arm ratio at
+1 s: fast under 0.66, mid under 0.95, slow above). Intervals are bootstrap
+95 % over captures. `sweeps/agg_dense.py` prints it all. **These are the
+captures the thresholds were chosen on, not a held-out set.**
+
+**Criterion, set before the run:** Auto no worse than fixed 12 Hz by more
+than 0.25 dB (the mean over captures).
+
+### Sum: Auto passes, and the 24 Hz tier is barely there
+
+Auto against 12 Hz, all 72 captures: +0.06 / +0.05 / +0.01 dB at 0.2 / 0.3
+/ 0.5 s, exactly 0 from 0.7 to 5 s (it is 12 Hz), and 0.00 [−0.11, +0.11]
+at 5.5 and 6 s. No setting is below −0.25 on the mean. The edges:
+
+- **24 Hz on Window up to 0.5 s:** +0.12 / +0.08 / +0.02 dB at 0.2 / 0.3 /
+  0.5 s, every interval including zero. Mid-fade captures gain most (24 Hz
+  +0.20 to +0.25 dB from 0.2 to 1 s, intervals above zero from 0.5 s to
+  1 s); fast-fade captures gain nothing (−0.05 at 0.5 s).
+- **6 Hz above 5 s is the weak tier.** Window loses 0.14 to 0.16 dB there
+  (interval to −0.30), mid-fade captures −0.12, and the worst single
+  captures lose 2.05 dB (`000209`) and 0.9 dB (`001054`). Only FSK/Digital
+  gains (+0.16 to +0.18 dB, interval above zero) and Carrier (+0.29, six
+  captures, interval across zero).
+
+### Null: 24 Hz wins everywhere; the 6 Hz tier loses
+
+Against 12 Hz, all 72: 24 Hz **+0.19 to +0.25 dB at every averaging time**
+with intervals clear of zero (+0.06 at the lowest); 6 Hz **−0.23 to
+−0.32 dB**, intervals clear of zero. Auto gives 24 Hz only on Window up to
+0.5 s (+0.19 / +0.14 dB overall, +0.35 / +0.25 on Window), so it forgoes
+about 0.2 dB from 1 s up, and at 6 s it gives 6 Hz: −0.24 dB overall (just
+inside the criterion), **−0.39 dB on FSK/Digital (fails it)**, and the
+worst captures lose 4.65 dB (`112151`, FSK/Digital) and 2.94 dB (`001054`).
+
+### What it says about the thresholds
+
+- **Pass:** Auto is within criterion on Sum everywhere and on Null up to
+  5 s. Nothing at 5 s or under is worse than −0.1 dB on average.
+- **The edge is the 5 s tier.** Above it Null loses 0.24 dB (0.39 on
+  Digital) and Sum on Window 0.16 dB, with single captures losing 2 to
+  4.6 dB; the gains are Digital and Carrier Sum only.
+- **The other edge is 24 Hz's reach.** It helps Null everywhere and Sum up
+  to about 1 s (+0.10 dB overall at 1 s, interval above zero), but Auto
+  stops at 0.5 s and only on Window.
+- **A candidate policy,** worth trying and not yet adopted: 24 Hz up to 1 s
+  on Window, Carrier and FSK/Digital (CW and RADE V1 stay at 12 Hz), 12 Hz
+  above, and no 6 Hz tier. On this data that is Sum +0.09 / +0.05 / +0.06 /
+  +0.06 / +0.10 dB at 0.2 to 1 s and exactly 0 from 3 s; Null +0.25 / +0.19
+  / +0.20 dB at 0.2 / 0.5 / 1 s and 0 from 3 s; no tier below zero on the
+  mean. Its worst single captures at 24 Hz are −0.9 dB Sum (`111852`) and
+  −1.25 dB Null (`122632`, a 17 m capture where Finding 42 says the loop
+  should not be running). It was picked after looking at this data, so it
+  needs captures it was not chosen on.
+
+### Sample rates: where the edges are
+
+Block period depends on the bin width alone, but which widths exist depends
+on the rate (`DIV_MIN_NFFT` 2048, `DIV_MAX_NFFT` 65536):
+
+| Rate | 24 Hz asks for | 12 Hz | 6 Hz |
+|---|---|---|---|
+| 48 kHz | 23.44 (n 2048) | 11.72 | 5.86 |
+| 96, 192, 384 kHz | 23.44 | 11.72 | 5.86 |
+| 768 kHz | 23.44 | 11.72 | **11.72** (6 Hz unreachable) |
+| 1536 kHz | 23.44 | **23.44** | **23.44** (only one width exists) |
+
+Auto therefore needs nothing special up to 384 kHz. At 768 kHz the 6 Hz tier
+is the same as 12 Hz, and at 1536 kHz every tier is 23.44 Hz, as it was
+before (a 12 Hz request there was also granted as 23.44 Hz). A 6 Hz tier,
+if kept, is dead above 384 kHz. At 1536 kHz a 100 Hz CW filter holds too few
+bins either way (LC-029). Only one capture here is above 192 kHz, and none
+at 96, 384 or 768 kHz.
+
+**Not covered.** CW (not swept: nobody runs CW at a 6 s average), RADE V1
+(Auto leaves it at 12 Hz), Best, and a held-out set.
