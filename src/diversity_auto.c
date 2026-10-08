@@ -928,12 +928,11 @@ static double cw_nf0 = 0.0, cw_nf1 = 0.0;
 static int    cw_nf_valid = 0;
 
 //
-// The output-level normaliser: the smoothed passband powers behind it,
-// and the operator's tick (on by default). See div_norm_refresh().
+// The output-level normaliser: the smoothed passband powers behind it.
+// Always on where it applies; see div_norm_refresh().
 //
 static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
 static int    norm_valid = 0;
-int           div_auto_normalise = 1;
 
 
 //
@@ -2196,11 +2195,17 @@ static double div_wideband_sum_scale(void) {
 // correction: recomputed every time the weight is written, a Best switch
 // or a slew step is levelled in the same block rather than a second later.
 //
-// Null is excluded - making the output quieter is its purpose - and so is
-// RADE V1, which never runs the transform the powers come from.
+// There is no switch for it. It acts in Sum and Best, on Window, Carrier,
+// FSK/Digital and CW, while the engine runs on the radio. It does not act
+// (div_norm is 1.0) in Manual, where receiver.c never applies it; in Null,
+// where making the output quieter is the purpose; on RADE V1, which never
+// runs the transform the powers come from; with diversity off; on a
+// remote client, which runs no engine; and until the first block has been
+// transformed since a start or a reset. Full list: LC-055 in
+// docs/changes/lc-engine.md.
 //
 static void div_norm_refresh(void) {
-  if (!div_auto_normalise || div_auto_mode == DIV_AUTO_NULL || !norm_valid) {
+  if (div_auto_mode == DIV_AUTO_NULL || !norm_valid) {
     div_norm = 1.0;
     return;
   }
@@ -4921,7 +4926,6 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
-  SetPropI0("diversity_auto_normalise",      div_auto_normalise);
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -4971,9 +4975,6 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
-  GetPropI0("diversity_auto_normalise",      div_auto_normalise);
-
-  div_auto_normalise = div_auto_normalise ? 1 : 0;
 
   //
   // Validate what came out of the file, then use it to seed every group
