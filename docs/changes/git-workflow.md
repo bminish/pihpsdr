@@ -62,7 +62,7 @@ and mark it *Upstream* in the [register](../changes.md#register). If upstream re
 code a change sits in, the change is re-expressed on upstream's shape
 (its LC number stays), not used to undo upstream's.
 
-Build a PR branch for one change (or one group) when the time comes:
+Build a PR branch for one change (or one group) if he asks for one:
 
 ```sh
 git switch -c pr/lc-001 upstream/TEST
@@ -71,31 +71,22 @@ git cherry-pick <commit of LC-001>
 
 ## Cutting a PR branch
 
-(From 2026-10-08 this applies to new changes only: LC-001 to LC-047 are
-upstream. The two "kept only for our tools" items below arrived in his
-tree with the series and were cut by LC-049; see
-[upstream-reconcile.md](upstream-reconcile.md#what-upstream-now-holds-that-we-said-would-stay-local).
-Do not keep such code again: it ends up where it was not meant to go.)
+(Applies to the pending changes only, LC-048 onwards; LC-001 to LC-047
+are upstream.)
 
 - **Fold in the fixups.** Cherry-pick the LC commit and every
   `LC-NNN fixup` commit after it, and squash them into one.
-- **Delete what is kept only for our tools.** `TEST` keeps some engine
-  code that nothing in the radio can reach, because `run_ref` still uses
-  it to compare old behaviour against new. It stays local, and is deleted
-  in the PR:
-  - LC-006: the Coherence-weighted accumulation in
-    `div_process_block()` (`coherence_weighted` and the branch it guards,
-    and the comment about the staleness test under Coherence weighting).
-    `DIV_WEIGHT_COHERENCE` stays in the enum for the wire and the props
-    file.
-  - LC-016: the RADE V1 quality comparison against
-    `div_auto_coherence_min` in `div_process_block()`. `rade_cohmin`
-    stays on the wire and in the props file.
+- **Delete what is kept only for our tools.** Do not keep engine code that
+  nothing in the radio can reach: the 2026-10-08 reconcile found the
+  earlier two (LC-006's Coherence-weighted accumulation, LC-016's pinned
+  RADE V1 comparison) in his tree, and LC-049 had to cut them. One is
+  still kept:
   - LC-053: the fixed-width branch of `div_target_hz()` (the engine
     honours a `div_auto_resolution` above zero only because `run_ref
-    --resolution` and the unit tests set one). With the branch gone,
-    `div_auto_resolution` is Auto always and can be dropped from the
-    engine; the field stays on the wire and in the props file.
+    --resolution` and the unit tests set one). Delete it in the PR. With
+    the branch gone, `div_auto_resolution` is Auto always and can be
+    dropped from the engine; the field stays on the wire and in the props
+    file.
 - **Drop the `Local-Change:` trailer** if the maintainer does not want it.
 - **Comments may cite `docs/`.** Our docs don't go upstream, and upstream
   code already cites `docs/diversity-measurements.md`, so a reference to
@@ -103,9 +94,10 @@ Do not keep such code again: it ends up where it was not meant to go.)
 
 ## Dependencies between changes
 
-(Historical from 2026-10-08: the series is upstream in one commit, so
-none of these constrains a PR any more. They remain true of the order in
-which the changes were built, and of LC-048 onwards they are new.)
+(Historical for LC-001 to LC-047, which are upstream in one commit and no
+longer constrain a PR; they record the order in which the changes were
+built. For the pending changes the dependencies are in
+[changes.md](../changes.md#pending-local-not-yet-in-upstream).)
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -117,11 +109,11 @@ it, but it does not use anything LC-008 adds.
 - LC-011 must never be taken without LC-010. On its own it would fix
   every RADE changeover at a 10 s search blackout.
 - LC-015's changed line in `ref_changed_cb()` sits next to the one LC-008
-  changes. So its upstream PR is a separate commit, cut from
+  changes. So its PR (#150, now closed) was a separate commit cut from
   `upstream/TEST` (branch `pr/diversity-menu-ref-row`), not a cherry-pick.
 - LC-014 needs LC-010 (the resync search is what replaces a lock) and
-  LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 go
-  upstream together.
+  LC-011 (it rewrites that change's note). LC-010, LC-011 and LC-014 had to
+  go upstream together.
 - LC-016 uses LC-008's slider pointer and edits LC-026's switch, so it
   goes after both.
 - LC-017 adds CW to LC-026's switch and to the menu's

@@ -1,10 +1,10 @@
 # Settings: saved, restored and validated
 
-How the auto-diversity settings get from the props file (or a client) into the engine, and what happens to values that make no sense. LC-001, LC-002 and LC-026 are the natural first upstream PR: settings are restored, restored sanely, and the threshold comes from the right slot (LC-026 answers upstream's `THIS MUST BE CORRECTED`). LC-003 and LC-004 are client-side and deferred.
+How the auto-diversity settings get from the props file (or a client) into the engine, and what happens to values that make no sense. LC-001, LC-002 and LC-026 were the natural first group: settings are restored, restored sanely, and the threshold comes from the right slot (LC-026 answers upstream's `THIS MUST BE CORRECTED`). LC-003 and LC-004 are client-side and deferred.
 
 Part of the local-change register: [changes.md](../changes.md).
 
-> **2026-10-08:** every change in this file that is marked Upstream in the [register](../changes.md#register) is in `upstream/TEST` since `f05546e3`. The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+> **2026-10-08:** every change in this file that is listed in [accepted.md](accepted.md) is in `upstream/TEST` (most since `f05546e3`); the pending ones are in the [register](../changes.md#register). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
 
 ---
 

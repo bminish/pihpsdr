@@ -2,7 +2,7 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-How a local change is cut, named and kept so that it can go upstream later as a series of small PRs. The git commands are in [git-workflow.md](git-workflow.md).
+How a local change is cut, named and kept so that it stays small and independent, and can go to dl1ycf as a PR if he wants it. The git commands are in [git-workflow.md](git-workflow.md).
 
 1. **One change, one commit.** A commit does one thing that can be
    explained in a sentence. Anything that bundles a fix with an unrelated

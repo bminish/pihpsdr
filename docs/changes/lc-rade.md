@@ -1,10 +1,10 @@
 # RADE V1
 
-The pilot correlator: how a lock is found, held and replaced, and how it is shown. LC-010, LC-011 and LC-014 go upstream together; LC-011 must never be taken without LC-010.
+The pilot correlator: how a lock is found, held and replaced, and how it is shown. LC-010, LC-011 and LC-014 were built to go together; LC-011 must never be taken without LC-010.
 
 Part of the local-change register: [changes.md](../changes.md).
 
-> **2026-10-08:** every change in this file that is marked Upstream in the [register](../changes.md#register) is in `upstream/TEST` since `f05546e3`. The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+> **2026-10-08:** every change in this file that is listed in [accepted.md](accepted.md) is in `upstream/TEST` (most since `f05546e3`); the pending ones are in the [register](../changes.md#register). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
 
 ---
 

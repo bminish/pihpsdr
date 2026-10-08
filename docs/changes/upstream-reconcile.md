@@ -45,7 +45,7 @@ DIVCAP block to his tree, identical to ours, without the module: see
 |---|---|
 | LC-001, LC-002, LC-006 to LC-020, LC-023 to LC-047 (all of the series) | **Upstream**, in `f05546e3`. Written up in the topic files, which stay as the record of what each is and why. |
 | LC-005, LC-021 | Upstream earlier, unchanged. |
-| LC-015, PR [#150](https://github.com/dl1ycf/pihpsdr/pull/150) | Upstream through `f05546e3`; the PR is still open and is now moot. Not touched (outward-facing): see the decisions below. |
+| LC-015, PR [#150](https://github.com/dl1ycf/pihpsdr/pull/150) | Upstream through `f05546e3`; the PR was closed as superseded on 2026-10-08. |
 | LC-003, LC-004 | Still **Deferred (client)**; not in his tree. |
 | LC-022 | Still **Dropped**. |
 | LC-048 | New, **Local**: two stale comments found by this re-sync. |
@@ -119,7 +119,7 @@ so. They are not true now.
 2. **The reference-only code** (cut by LC-049). LC-006's Coherence-weighted accumulation
    (`coherence_weighted` in `div_process_block()`) and LC-016's RADE V1
    quality comparison against `div_auto_coherence_min` were to be deleted
-   when the PR was cut, because nothing in the radio reaches them and only
+   when a PR was cut, because nothing in the radio reaches them and only
    `run_ref` uses them. They are in his tree.
 3. **Citations of our register.** Three comments cite it:
    `diversity_auto.c` (LC-029, twice) and `rade_correlator.c` (LC-014, "in
