@@ -60,7 +60,6 @@ static GtkWidget *acontainer = NULL;
 static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
-static GtkWidget *level_b = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -215,7 +214,6 @@ static void cleanup(void) {
     // diversity is switched off and on again (see radio_set_diversity()).
     //
     hold_b = NULL;
-    level_b = NULL;
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     win_centre_btn = NULL;
@@ -255,32 +253,12 @@ static void sanitize_man_values() {
   phase_fine = man_div_phase - phase_coarse;
 }
 
-//
-// "Level output" is greyed out whenever the normaliser is not acting, so
-// the tick never looks like it does something it does not. It acts only
-// with diversity on, in Sum or Best: Null is excluded on purpose, Manual
-// never runs the loop, and RADE V1 never runs the transform its powers
-// come from (see div_norm_refresh()). It cannot be set from a remote
-// client at all.
-//
-static void div_level_sensitive(void) {
-  if (level_b == NULL) { return; }
-
-  const int active = !radio_is_remote && diversity_enabled
-                     && (div_auto_mode == DIV_AUTO_SUM || div_auto_mode == DIV_AUTO_BEST)
-                     && div_auto_ref != DIV_REF_RADE_V1;
-
-  if (gtk_widget_get_sensitive(level_b) != active) { gtk_widget_set_sensitive(level_b, active); }
-}
-
 static void enable_cb(GtkWidget *widget, gpointer data) {
   int state = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
   //
-  // This starts or stops the analysis thread, so what the controls below
-  // may be used for changes with it.
+  // This starts or stops the analysis thread.
   //
   radio_set_diversity(state);
-  div_level_sensitive();
 }
 
 static void att_cb(GtkWidget *widget, gpointer data) {
@@ -512,12 +490,6 @@ static int status_update_cb(gpointer data) {
   //
   diversity_auto_retarget();
   //
-  // On the tick as well as in the callbacks below: Enable can change from
-  // outside the menu.
-  //
-  div_level_sensitive();
-
-  //
   // Whether the loop is running is not something this dialog is told
   // about. It changes on the Diversity Enable tick, on a resolution
   // change, and from outside the menu altogether - a toolbar action or a
@@ -728,7 +700,6 @@ static int div_row_to_ref(int row) {
 static void mode_changed_cb(GtkWidget *widget, gpointer data) {
   int previous = div_auto_mode;
   div_auto_mode = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
-  div_level_sensitive();
 
   if (div_auto_mode == DIV_MANUAL) {
     //
@@ -1027,7 +998,6 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   store_ref_values(div_auto_ref);
   div_auto_ref = div_row_to_ref(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   restore_ref_values(div_auto_ref);
-  div_level_sensitive();
 
   //
   // On RADE V1 the wanted signal is the one the pilot correlator is
@@ -1057,15 +1027,6 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   diversity_auto_restart();
   diversity_auto_reset();
   div_send_settings(DIV_ACTION_NONE);
-}
-
-//
-// The output-level normaliser. Radio-side only: it is not on the wire, so
-// it is insensitive on a client.
-//
-static void normalise_cb(GtkWidget *widget, gpointer data) {
-  (void)data;
-  div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 }
 
 static void follow_cb(GtkWidget *widget, gpointer data) {
@@ -1186,14 +1147,6 @@ void diversity_menu(GtkWidget *parent) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(auto_btn), div_auto_mode);
   gtk_grid_attach(GTK_GRID(grid), auto_btn, 2, row, 4, 1);
   g_signal_connect(auto_btn, "changed", G_CALLBACK(mode_changed_cb), NULL);
-  //
-  // Beside the objective it depends on; greyed out when it is not acting -
-  // see div_level_sensitive().
-  //
-  level_b = gtk_check_button_new_with_label("Level output");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(level_b), div_auto_normalise);
-  gtk_grid_attach(GTK_GRID(grid), level_b, 7, row, 4, 1);
-  g_signal_connect(level_b, "toggled", G_CALLBACK(normalise_cb), NULL);
   //gtk_widget_set_tooltip_text(auto_combo,
   //                          "Sum combines both antennas. Best measures the "
   //                          "signal-to-noise ratio on each and hands the "
@@ -1434,7 +1387,6 @@ void diversity_menu(GtkWidget *parent) {
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   gtk_widget_show_all(dialog);
-  div_level_sensitive();
 
   //
   // No Min coherence row on RADE V1: see ref_changed_cb().
