@@ -14,6 +14,15 @@ Newest first.
   78 tooling and docs commits, not the 47 LC commits; backup tag
   `backup/TEST-pre-rebase-20261008`. LC-048 added (two stale comments) and LC-049 (the reference-only code cut). DIVCAP kept whole until `main`; PR #150 closed.
   Record, with the open decisions: [upstream-reconcile.md](upstream-reconcile.md).
+- 2026-10-08: T-022, captures with interferers (local noise on the MW band,
+  an EMC source nulled by a window offset, an AM station beside another, at
+  96, 192 and 768 kHz). On a stationary interferer Null depth does not depend
+  on the bin width or on Averaging, so Auto costs nothing there; Carrier
+  Sum wants 24 Hz at every averaging time (candidate, not adopted). The
+  captures stopping when Averaging crossed 1 s was Auto restarting the
+  engine; the recorder now holds the transform while it records (LC-052
+  fixup). LT-025.
+
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-050
   (the slider stops at 6 s), LC-051 (Resolution 24 / 12 / 6 Hz, 3 Hz
