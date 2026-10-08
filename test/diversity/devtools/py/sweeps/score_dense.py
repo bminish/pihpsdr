@@ -49,7 +49,7 @@ def score(c):
     res = dict(ref=ref, rate=rate, nfft=n, blocks=nb, rho1s=float(rho), sum={}, null={})
     for mode, taus in (('sum', SUM_TAUS), ('null', NULL_TAUS)):
         for tau in taus:
-            for r in RES:
+            for r in RES + ['auto']:
                 p = f'{SP}/runs4/{name}.{ref}.{mode}.r{r}.t{tau}.csv'
                 if not os.path.exists(p): continue
                 w = weights(p, Pc, nb)
