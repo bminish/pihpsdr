@@ -1,7 +1,9 @@
 # Diversity engine on a Pi 5: what it costs, and what is worth optimising
 
-> **2026-10-08: a rerun is planned, and this analysis is the baseline for
-> it, not a current result.** The engine has changed since: Auto bin width
+> **2026-10-08: this is the baseline for a rerun, and the rerun is done:
+> [pi5-rerun-20261008.md](pi5-rerun-20261008.md) (no regression, no
+> bottleneck; the functional suite did not run on the Pi).** The text
+> below is the 2026-10-02 analysis, not the current figures. The engine has changed since: Auto bin width
 > (LC-050 to LC-053: 24 Hz bins on Window and Carrier at an Averaging time
 > of 1 s or less, so a smaller transform at twice the block rate), Level
 > output always on (LC-055), the reference-only code cut (LC-049). The
@@ -144,7 +146,8 @@ like: the baseline is the CM5 under `ondemand`, so rerun on that module,
 in that state (the older note about `throttled=0x50000` still stands: check
 the supply).
 
-**Results:** none yet. Dry run of the harness on the development machine
-(i7-12700K, not the Pi): every row sound, no drops, the transform sizes
-agree with the engine's, the suite passes from the unpacked bundle alone,
-start / stop / restart under 6 ms at every size.
+**Results:** [pi5-rerun-20261008.md](pi5-rerun-20261008.md). Run on the
+CM5 the same evening: no regression, no dropped blocks, no bottleneck; the
+worst row is RADE V1 on a single sideband at 1536 kHz, 13 % of one core.
+The functional suite did not run there (missing `libopus-dev`; fixed in the
+bundle). The comparison script's tolerances were corrected from this run.

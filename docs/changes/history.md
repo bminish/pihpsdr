@@ -4,6 +4,15 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-08: the Pi 5 rerun done on the CM5 (LT-026): no regression, no
+  dropped blocks, no bottleneck; findings in
+  [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md). The
+  functional suite did not run there (the Pi lacks `libopus-dev`; added to
+  the bundle's dependency check). The comparison script's first verdict,
+  four "regressions", was all noise (two on code that had not changed, two
+  that reversed between the paced and hot runs); it now needs both pacings
+  to agree.
+
 - 2026-10-08: the Pi 5 benchmark bundle reworked (LT-026) for a rerun on the
   Pi: transform size from Auto's own policy, the 24 Hz tier, Best, Null,
   notches, start / stop / restart timings, the receive-thread combine, the

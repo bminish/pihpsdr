@@ -68,7 +68,16 @@ settled: [upstream-reconcile.md](upstream-reconcile.md#decisions).
   operator uses most of the time. 6 Hz doubles the FFT length and the
   block duration. The operator can still choose 12, 6 or 3 Hz.
 
-## Efficiency on the Pi: closed on 2026-10-02, rerun pending (2026-10-08)
+## Efficiency on the Pi: closed on 2026-10-02, rerun done 2026-10-08
+
+**Rerun result: no regression, no dropped blocks, no bottleneck** (worst
+row: RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four).
+Write-up: [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md).
+Open from it: the functional suite has still to be run on the Pi (it
+needs `libopus-dev`, now in the bundle's check), and RADE V1 on an AM
+passband is not a valid case (undecided whether the menu should stop
+offering it). What follows is the 2026-10-02 text.
+
 
 Measured on a CM5 with the LT-020 bundle. The analysis is in
 [../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
