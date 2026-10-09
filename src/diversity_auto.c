@@ -933,6 +933,15 @@ static int    cw_nf_valid = 0;
 //
 static double norm_p0 = 0.0, norm_p1 = 0.0, norm_xr = 0.0, norm_xi = 0.0;
 static int    norm_valid = 0;
+#ifdef DIVERSITY_CAPTURE
+//
+// LOCAL TEST AID, not part of the diversity feature (LT-027): the old
+// "Level output" tick, back so that the level normaliser can be switched
+// off to compare with it. Only in "make DIVCAP=1" builds, and removed with
+// them (test/diversity/devtools/remove.sh). Normal builds always level.
+//
+int           div_auto_normalise = 1;
+#endif
 
 
 //
@@ -2205,6 +2214,12 @@ static double div_wideband_sum_scale(void) {
 // docs/changes/lc-engine.md.
 //
 static void div_norm_refresh(void) {
+#ifdef DIVERSITY_CAPTURE
+  if (!div_auto_normalise) {
+    div_norm = 1.0;
+    return;
+  }
+#endif
   if (div_auto_mode == DIV_AUTO_NULL || !norm_valid) {
     div_norm = 1.0;
     return;
@@ -4926,6 +4941,9 @@ void diversity_auto_save_state(void) {
   SetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   SetPropF0("diversity_cw_centre",           div_cw_centre);
   SetPropF0("diversity_cw_width",            div_cw_width);
+#ifdef DIVERSITY_CAPTURE
+  SetPropI0("diversity_auto_normalise",      div_auto_normalise);
+#endif
 
   for (int g = 0; g < DIV_GROUPS; g++) {
     div_group_save(g, &div_group_set[g]);
@@ -4975,6 +4993,10 @@ void diversity_auto_restore_state(void) {
   GetPropF0("diversity_cw_cohmin",           div_cw_cohmin);
   GetPropF0("diversity_cw_centre",           div_cw_centre);
   GetPropF0("diversity_cw_width",            div_cw_width);
+#ifdef DIVERSITY_CAPTURE
+  GetPropI0("diversity_auto_normalise",      div_auto_normalise);
+  div_auto_normalise = div_auto_normalise ? 1 : 0;
+#endif
 
   //
   // Validate what came out of the file, then use it to seed every group

@@ -63,6 +63,41 @@ static GtkWidget *hold_b = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
+#ifdef DIVERSITY_CAPTURE
+//
+// ===================================================================
+//  LOCAL TEST AID - NOT PART OF THE DIVERSITY FEATURE (LT-027).
+//  Compiled only under "make DIVCAP=1", never sent upstream. The old
+//  "Level output" tick, so that the level normaliser can be switched off
+//  to compare with it; normal builds always level (LC-055). Delete this
+//  block, the one in the teardown, the one in the status tick and the one
+//  beside the objective combo to remove it; remove.sh does.
+// ===================================================================
+//
+// Radio-side only: not on the wire, so it is insensitive on a client. It
+// is greyed out whenever the normaliser is not acting - diversity off,
+// Manual, Null, RADE V1 or a remote client - so it never looks like it does
+// something it does not (see div_norm_refresh()).
+//
+extern int div_auto_normalise;
+static GtkWidget *level_b = NULL;
+
+static void div_level_sensitive(void) {
+  if (level_b == NULL) { return; }
+
+  const int active = !radio_is_remote && diversity_enabled
+                     && (div_auto_mode == DIV_AUTO_SUM || div_auto_mode == DIV_AUTO_BEST)
+                     && div_auto_ref != DIV_REF_RADE_V1;
+
+  if (gtk_widget_get_sensitive(level_b) != active) { gtk_widget_set_sensitive(level_b, active); }
+}
+
+static void normalise_cb(GtkWidget *widget, gpointer data) {
+  (void)data;
+  div_auto_normalise = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+}
+#endif
+
 //
 // The Averaging slider is geometric, not linear.
 //
@@ -214,6 +249,9 @@ static void cleanup(void) {
     // diversity is switched off and on again (see radio_set_diversity()).
     //
     hold_b = NULL;
+#ifdef DIVERSITY_CAPTURE
+    level_b = NULL;
+#endif
     gtk_widget_destroy(tmp);
     sub_menu = NULL;
     win_centre_btn = NULL;
@@ -489,6 +527,9 @@ static int status_update_cb(gpointer data) {
   // capture (held the transform while it ran).
   //
   diversity_auto_retarget();
+#ifdef DIVERSITY_CAPTURE
+  div_level_sensitive();
+#endif
   //
   // Whether the loop is running is not something this dialog is told
   // about. It changes on the Diversity Enable tick, on a resolution
@@ -1147,6 +1188,13 @@ void diversity_menu(GtkWidget *parent) {
   gtk_combo_box_set_active(GTK_COMBO_BOX(auto_btn), div_auto_mode);
   gtk_grid_attach(GTK_GRID(grid), auto_btn, 2, row, 4, 1);
   g_signal_connect(auto_btn, "changed", G_CALLBACK(mode_changed_cb), NULL);
+#ifdef DIVERSITY_CAPTURE
+  level_b = gtk_check_button_new_with_label("Level output");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(level_b), div_auto_normalise);
+  gtk_grid_attach(GTK_GRID(grid), level_b, 7, row, 4, 1);
+  g_signal_connect(level_b, "toggled", G_CALLBACK(normalise_cb), NULL);
+  div_level_sensitive();
+#endif
   //gtk_widget_set_tooltip_text(auto_combo,
   //                          "Sum combines both antennas. Best measures the "
   //                          "signal-to-noise ratio on each and hands the "
