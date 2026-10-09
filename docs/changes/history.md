@@ -4,6 +4,11 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-09: LT-027, the "Level output" tick put back in `make DIVCAP=1`
+  builds only, as a local test aid for comparing with the normaliser off.
+  Plain builds are unchanged (objects byte-identical) and always level, as
+  LC-055 says.
+
 - 2026-10-08: **history tidied.** The 126 commits on top of `f9803763` (12 of
   them code; the rest docs and tooling, in the order they were written)
   rewritten as 16 logical ones: the eight code changes LC-048 to LC-055, one

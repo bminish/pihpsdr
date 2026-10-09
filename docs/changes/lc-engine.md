@@ -333,6 +333,13 @@ RADE V1 stays at `div_norm` 1.0 with the output unlevelled. The rest of
 the suite and both builds are unchanged. SNR is unaffected, as for LC-030
 (one multiplier).
 
+**Test aid (LT-027).** A `make DIVCAP=1` build has the "Level output" tick
+again, default on, saved, greyed whenever the normaliser is not acting, so
+the level can be compared with it off. It exists only in those builds: a
+plain build has no tick and always levels, and its object files are
+byte-identical to a tree without the aid. It is ours alone (his tree has
+the capture hooks, not this) and comes out with DIVCAP at `main`.
+
 **Not measured.** The reason the tick existed, an AGC that reacts to the
 level, was not measured on air; if an operator reports the AGC behaving
 worse with diversity, this is the first place to look. Nothing here shows
