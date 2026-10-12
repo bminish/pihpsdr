@@ -896,3 +896,126 @@ FSK/Digital at 12 Hz, T-021's finding on narrow modes standing.
 and the depth above is the window power, which for the MW noise is −5 dB
 against arm 0 alone. The wanted signal in the MW noise captures is not
 separated from the noise by anything this measures.
+
+## T-023: the 6145 kHz PV inverter noise - what a correlator can lock to
+
+**Captures** (2026-10-12, 11:32 and 11:35, 60 s each, 192 kHz, centre 6145 kHz,
+LSB 150 to 2850 Hz, both ADCs recorded; the notes were empty and these are
+read from the recorded settings and the operator's description):
+
+| Capture | Recorded as | Antenna on ADC1 |
+|---|---|---|
+| 113251 | Window, Sum, 8192-point blocks | the earlier antenna |
+| 113509 | FSK/Digital, Sum, 16384-point blocks | **changed** before this capture |
+
+The noise is inverter noise from a PV system. **The ADC1 antenna was changed
+between the two captures**, so the two are not the same measurement of the same
+path, and the differences below (level ratio, coherence, null ceiling) are the
+antenna change, not the noise changing. `113509` is the case the operator
+describes as nulling very well.
+
+**Method.** The captures were read in full (11.5 million samples an arm) and
+analysed with Welch spectra and cross-spectra, the power envelope, folding at
+the burst rate, and a 256-point short-time transform (1.33 ms frames, 750 Hz
+bins) for burst-gated covariances over 3 kHz passbands from -78 to +78 kHz.
+Nothing here is a replay through `run_ref`: no engine code was run on these
+captures yet. The analysis scripts were not kept (scratch work), so the figures
+below are the record.
+
+### The two arms
+
+| | 113251 | 113509 |
+|---|---|---|
+| ADC1 above ADC2 | 8 to 10 dB | 15 to 17 dB |
+| Whole-band coherence | 0.4 to 0.8 | 0.8 to 0.96 |
+| Inter-arm weight, \|w\| | 2.0 to 2.4, phase 31 to 39 deg | 6.4 to 8.5, phase 65 to 86 deg |
+
+The weight is a constant ratio plus a small delay (about 0.4 us, 20 to 25
+degrees across 156 kHz): **one complex weight per passband holds, and it moves
+slowly with the tuning.** Both captures are wideband across the whole 190 kHz;
+the peak spacing along the spectrum measured 45 kHz in one and 54 kHz in the
+other, so it is the burst's own spectrum and not a fixed feature to lock to.
+
+### The noise is a 100.1 Hz burst train
+
+- The power envelope is exactly harmonic: 100.1, 200.2, 300.3 Hz and up to at
+  least 700 Hz, in both ADCs. The repetition rate was 100.10 Hz in `113509`
+  and 100.12 Hz in `113251`, i.e. twice the grid frequency. Over the minute its
+  timing wanders by about 0.2 to 0.3 ms (0.14 to 0.17 rad of the fundamental).
+- In `113509` the bursts are about 2.2 ms wide (22 % of the cycle) and 16 to
+  17 dB above the gaps, with a dip of about 6 dB inside each burst. The two
+  ADCs' envelopes are the same (zero lag, correlation 0.90).
+- In `113251` the wideband envelope of ADC1 shows only 1.8 dB of modulation
+  because two strong stations (about -8 and +8 kHz) dominate its power. ADC2
+  shows 0.91 depth, and the burst-dominated bins show 7 to 8 dB on/off in both
+  ADCs, and 12 dB at the strongest band.
+- **There is no spectral comb.** Searching for 100 Hz lines with the best
+  offset per block, at 5.9 and 11.7 Hz bins, gave 0.2 to 0.6 dB line-to-valley
+  in both captures, which is noise. Each burst has its own carrier phase; the
+  structure is in the envelope. Our blocks are 43 to 85 ms and hold 4 to 8
+  bursts, so a detector built on the bins of the block transform finds
+  nothing: **the on/off gating has to be in the time domain, before the
+  transform.**
+
+### What to lock to: the burst-on minus burst-off covariance
+
+The gate is derived from the bins outside the passband (here, burst-dominated
+bins more than 6 kHz from it), so a wanted signal in the passband cannot
+disturb it. In the passband the weight is
+
+    w = -(Cab_on - Cab_off) / (Cbb_on - Cbb_off)
+
+A stationary wanted signal contributes equally to both terms and cancels.
+
+Tested by adding synthetic CW (20 wpm, random keying), SSB (syllabic),
+AM (80 %) and 4-FSK (31 baud) to a clean 3 kHz band, arriving with an inter-arm
+ratio different from the noise's. Weight error and the interferer suppression
+that weight gives, `113509` at +18 kHz (the other two bands show the same):
+
+| Wanted signal over the burst power | Plain least squares (as the engine now estimates) | On-frames only | On minus off |
+|---|---|---|---|
+| 0 dB | error 0.75, +2.4 dB | 0.44, +6.8 dB | **0.01, +17.4 dB** |
+| +10 dB | 1.8, **-4.9 dB** (worse than none) | 1.5, -3.4 dB | **0.01 to 0.04, about +17 dB** |
+| +20 dB | 2.1, -6.5 dB | 2.1, -6.3 dB | 0.07 to 0.29, +10 to +16 dB |
+
+No mode behaved differently at 0 and +10 dB. The +20 dB cases that degrade
+are keyed or syllabic signals, which correlate with the gate by chance over a
+60 s average; a longer Averaging time should reduce that and this was not
+tried. In the real captures the same difference estimator, next to the real
+stations (-6 kHz in both, +13 kHz in `113509`), gave +4.1 dB against +0.4 dB
+(`113251`) and +16.6 dB against +6.6 dB (`113509`) for the plain estimate.
+
+### How deep it can null
+
+The ceiling from the burst-gated coherence, 3 kHz passbands:
+
+| | coherence | ceiling |
+|---|---|---|
+| 113509 | 0.96 to 1.00 | 12 to 27 dB; typically 15 to 19 dB |
+| 113251 | 0.63 to 0.95 | 2 to 10 dB; typically 3 to 5 dB |
+
+Both are the interferer's own power (burst-on minus burst-off), which is not
+the same as the total passband power. `113251` is lower and its bursts are
+lower in contrast; with the antenna change between the captures that is
+expected to be the antenna, but this was not separated out. The band at +13 kHz
+(a real station) is the exception in both: the burst contrast falls to 5 dB
+and the off-burst coherence rises to 0.84 because the station is coherent
+between the arms.
+
+### What this implies for a correlator
+
+1. A burst-timing tracker on 100.1 Hz and its harmonics, read from a wideband
+   envelope **outside** the passband, following the grid drift. It needs no
+   timer, so it does not conflict with settled decision 1.
+2. A time-domain covariance accumulator gated by that tracker, with
+   w = -dCab/dCbb applied on the engine's existing path. The cost is about
+   one complex multiply per sample at the decimated passband rate.
+3. A confidence measure: tracker lock (burst contrast) and the gated
+   coherence, deciding whether the weight is applied, as the coherence gate
+   does now. Hold the last weight when the interferer stops (decisions 2, 4).
+
+**Not covered.** Two captures from one site, and one antenna change between
+them. The wanted-signal test is synthetic; the real stations in the captures
+are two. 48 and 96 kHz leave less spectrum outside the passband for the gate;
+how much burst contrast survives there is not measured. The Null reference
+code was not read, so how this fits it is not decided. No `run_ref` score yet.
