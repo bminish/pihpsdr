@@ -70,6 +70,10 @@ Newest first.
   captures stopping when Averaging crossed 1 s was Auto restarting the
   engine; the recorder now holds the transform while it records (LC-052
   fixup). LT-025.
+- 2026-10-12: T-023, the 6145 kHz PV inverter noise (two captures, ADC1
+  antenna changed between them). A 100.1 Hz burst train with no spectral
+  comb; the burst-on minus burst-off covariance gives a weight that wanted
+  CW, SSB, AM and FSK do not disturb. Analysis only, no engine change.
 
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-050
