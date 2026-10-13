@@ -1019,3 +1019,84 @@ them. The wanted-signal test is synthetic; the real stations in the captures
 are two. 48 and 96 kHz leave less spectrum outside the passband for the gate;
 how much burst contrast survives there is not measured. The Null reference
 code was not read, so how this fits it is not decided. No `run_ref` score yet.
+
+## T-024: how common repeating on/off interference is, and the gated weight on the 14 best
+
+Branch `test/noise-correlator`; tool `burst_gate.py` (LT-028). All 170
+captures were scanned (166 usable, 4 under 8 s), then the 14 with the highest
+ceiling were scored on a held-out half.
+
+### The scan
+
+The power of the burst-dominated bins (those whose mean is more than 4x their
+median over time) is taken as an envelope and its strongest line above 40 Hz
+looked for.
+
+- 72 of 166 captures have a line more than 20 dB over the envelope-spectrum
+  median. 27 of them are at about 100 Hz; 4 or 5 each are at 50 Hz, 53 Hz and
+  80 Hz, and the rest are scattered. The T-022 captures (`20261008`) show
+  99.9 Hz as well, so 100 Hz bursts are at the MW site and on 6145 kHz.
+- Exact 40.0, 64.0 and 80.0 Hz lines appear in several captures
+  (`20260911` CW, `20261008-133758`). Not identified: a local source or
+  something in the rig; not investigated.
+- **The ceiling in the scan is optimistic.** It takes the burst-on minus
+  burst-off coherence in groups of the very bins that were chosen for being
+  bursty, which selects for it. Six captures came out at a ceiling of exactly
+  40 dB (coherence 1.00); the arms are clearly different signals there and
+  these are treated as unreliable. The counts of captures at 10 dB or more
+  (14), 5 dB or more (30) and 3 dB or more (45) of 66 reliable ones are an
+  upper bound and not a measure of what a passband would get.
+
+### The test on the 14 with the highest scan ceiling
+
+Per 3 kHz band, a weight from the first half of the capture, applied to the
+second, in three ways (plain least squares over all frames; burst-on frames;
+burst-on minus burst-off), the gate taken from bursty bins at least 6 kHz from
+the band. Only bands with 6 dB of burst contrast in arm 0 and a gated coherence
+of 0.7 or more are scored. The medians below are over those bands, in dB
+relative to arm 0 alone (negative is a reduction):
+
+| Capture | Bands | Total, plain / on / diff | Burst-on frames, plain / on / diff | Burst-off frames, plain / on / diff |
+|---|---|---|---|---|
+| 144142 (AM 6130) | 20 | -5.7 / -5.7 / -5.7 | -8.7 / -8.8 / -8.8 | -0.4 / -0.4 / -0.4 |
+| 144318 (AM 6130, nulled by a window) | 25 | -4.8 / -4.8 / -4.8 | -7.3 / -7.4 / -7.3 | -0.5 / -0.5 / -0.4 |
+| 144446 (AM 6140) | 24 | -4.9 / -4.9 / -4.8 | -7.5 / -7.6 / -7.7 | -0.5 / -0.5 / -0.4 |
+| 113509 (6145, new antenna) | 56 | -5.3 / -5.0 / -4.3 | -7.6 / -8.1 / -7.7 | **+2.6 / +3.9 / +5.1** |
+| 134813 | 5 | -1.6 / -1.6 / -1.4 | - | - |
+| 115357 | 2 | -2.3 / -1.2 / -0.4 | -2.4 / -1.4 / -0.5 | -2.2 / -1.1 / -0.3 |
+| 135727 | 1 | -1.0 / +0.2 / +8.0 | -1.2 / -0.3 / +7.4 | -0.8 / +1.0 / +8.9 |
+
+Seven of the 14 have no band that qualifies at all (`122632`, `142333`,
+`165548`, `142118`, `235906`, `213018`, `192827`): the bursts are there but not
+coherent enough, or not strong enough, across a 3 kHz band. `134813` has no
+burst-on frames in its bands to score.
+
+**What this says.**
+1. **On natural data the burst-gated weight is not better than the plain
+   one.** On every capture with a usable result they agree within 0.1 dB
+   except `113509` (plain best on the total, by 1.0 dB), and `115357` and
+   `135727` (plain best, the gated weight worse, from few bands and noisy
+   estimates). The synthetic wanted-signal test in T-023 showed the
+   advantage; it does not appear here because these captures do not have a
+   strong wanted signal in the scored bands.
+2. **The reduction is about 5 dB in the total, 7 to 9 dB in the burst-on
+   frames,** not the 15 to 27 dB of the scan ceiling. The rest of the
+   passband power is background that the second arm does not carry.
+3. **On `113509` the null costs the burst-off frames 2.6 to 5.1 dB:** the
+   weight (|w| about 7) adds seven times the second arm's own background
+   there. The total goes down because the bursts dominate it. A weight that
+   is applied all the time pays that in every gap.
+4. The gated weight's own variance is high where `dbb` is small (`135727`
+   +8 dB worse than arm 0 alone).
+
+### Not covered
+
+- The wanted-signal case on natural data: none of these 14 has a strong
+  station in a scored band, so the advantage in T-023 is untested on real
+  captures. A test needs a capture with a station in a band the burst noise
+  also covers.
+- Seven of the 14 gave no scored band; whether a narrower band or a longer
+  average would is not tried.
+- 48 and 96 kHz: one capture each qualified for the scan; none for the score.
+- The held-out split is first half to second half of one capture, so it does
+  not test a change of source or antenna.

@@ -74,6 +74,11 @@ Newest first.
   antenna changed between them). A 100.1 Hz burst train with no spectral
   comb; the burst-on minus burst-off covariance gives a weight that wanted
   CW, SSB, AM and FSK do not disturb. Analysis only, no engine change.
+- 2026-10-13: T-024, the scan for repeating on/off interferers over all 170
+  captures and the first test of the burst-gated weight on the 14 best.
+  Branch `test/noise-correlator` (not on TEST). The scan's ceiling was biased
+  (bins chosen for burstiness); held out, the gated weight matches the plain
+  one on natural data. LT-028.
 
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-050
