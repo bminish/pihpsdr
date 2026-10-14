@@ -1,9 +1,9 @@
 # RADE diversity: passband window and V1 pilot correlator
 
-> **On `TEST` (bminish/pihpsdr).** The correlator design record as it stands on `feature/diversity-binaural` (2026-09-22). `TEST` has the resync search (LC-010) and no Hang at all: a RADE lock has no timeout, and a new lock replaces an old one (LC-011, LC-014; see "Settled decisions" in `docs/changes.md`). RADE V1 has no Min coherence on `TEST` either: it is pinned at 0 and the row is hidden (LC-016). Where this document describes the hang or a RADE coherence threshold, it describes feature-branch behaviour. Other feature-branch changes described here may not be on `TEST`: see `docs/changes.md`.
+> **On `TEST` (bminish/pihpsdr).** The correlator design record as it stands on `feature/diversity-binaural` (2026-09-22). `TEST` has the resync search (LC-010) and no Hang at all: a RADE lock has no timeout, and a new lock replaces an old one (LC-011, LC-014; see "Settled decisions" in `docs/changes.md`). RADE V1 has no Min coherence on `TEST` either: it is pinned at 0 and the row is hidden (LC-016). Where this document describes the hang or a RADE coherence threshold, it describes feature-branch behaviour. Other feature-branch changes described here may not be on `TEST`: see `docs/changes.md`. References to `diversity.md` are to the general design document on `feature/diversity-binaural`; it is not on `TEST`.
 
 Detail on the two FreeDV RADE reference modes. For how diversity and the
-automatic loop work in general, see [`diversity.md`](diversity.md). For
+automatic loop work in general, see `diversity.md`. For
 what this mode measurably does on recorded on-air signals - which is not
 what the synthetic tests suggested - see
 [`diversity-measurements.md`](diversity-measurements.md).
@@ -133,7 +133,7 @@ That is a decisive result, and it says the tapped buffer is inverted with
 respect to RF - an LSB signal, already inverted once by the transmitter,
 arrives at the correlator the right way up. The mapping is now bank 0 for
 LSB, and the reasoning is set out under "Frequency bookkeeping" in
-[`diversity.md`](diversity.md).
+`diversity.md`.
 
 ## Stage 1: RADE passband — retired
 
@@ -147,7 +147,7 @@ actually is rather than assuming the nominal band, and it measures the
 noise on the empty part of the passband instead of assuming both branches
 carry equal, uncorrelated noise. For a signal that lives near the noise
 floor, which is the point of RADE, that second difference is the one that
-counts. See §5 of [`diversity.md`](diversity.md).
+counts. See §5 of `diversity.md`.
 
 Its `diversity_auto_ref` value is migrated to FSK/Digital on restore, so
 a props file that selected it comes back on its successor.
@@ -521,7 +521,7 @@ Consuming the request on the sample path rather than acting on it in
 `rxtx()` is what keeps `fillptr` and `q_pending_drop` private to a single
 thread, and therefore what lets the analysis queue be a plain
 single-producer/single-consumer ring with no mutex - see "The queue" in
-[`diversity.md`](diversity.md). It also places the discard correctly:
+`diversity.md`. It also places the discard correctly:
 samples still in flight from the last DDC packet when `rxtx()` ran are
 pre-TX samples, and they now go with the block they belong to instead of
 being spliced onto post-TX ones by a store from another thread.
@@ -533,7 +533,7 @@ from before the over stay applied until a new lock produces a better fit.
 
 The cost is that the engine re-enters searching after every over, which on
 RADE V1 is the 4.7-7.8 % of a core the CPU section of
-[`diversity.md`](diversity.md) documents. That is the trade: the
+`diversity.md` documents. That is the trade: the
 alternative is the dead lock it replaces.
 
 ## Hang

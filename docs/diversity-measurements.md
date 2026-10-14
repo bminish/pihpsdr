@@ -609,7 +609,7 @@ thirds of the frames of two of the three captures, which is not what the
 surrounding text assumes was happening. The figures under "What was
 changed, and what it scored" supersede them.
 
-For how the modes work, see [`diversity.md`](diversity.md) and
+For how the modes work, see `diversity.md` and
 [`diversity-rade.md`](diversity-rade.md).
 
 ## Capture set

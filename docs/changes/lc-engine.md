@@ -344,3 +344,26 @@ the capture hooks, not this) and comes out with DIVCAP at `main`.
 level, was not measured on air; if an operator reports the AGC behaving
 worse with diversity, this is the first place to look. Nothing here shows
 the level held is wanted on RADE V1 either: it is left alone by design.
+
+## LC-058 — Dead declarations and stale comments found by the 2026-10-14 review
+
+**Kind:** Cleanup. **Files:** `diversity_auto.c`, `diversity_auto.h`.
+**Depends on:** nothing. No behaviour changes.
+
+- `diversity_auto_ref_store()` and `diversity_auto_ref_recall()` were
+  declared in `diversity_auto.h` with a comment saying the menu calls them
+  when the operator changes reference. Nothing defines or calls them since
+  `f5a0ce9c` moved the slots into the menu; the declarations and the
+  comment go. (The test tools have their own `tool_ref_store()` and
+  `tool_ref_recall()` in `test/diversity/ref_slots.h`.)
+- The comment on the reference enum said `diversity_auto_restore_state()`
+  migrates old props files, "see DIV_REF_SCHEME there". It no longer does
+  and the name no longer exists; the sentence goes.
+- Three comments named the Resolution control, which LC-053 removed; they
+  now say the bin width.
+
+`div_auto_hang` is left alone on purpose: unused, but its field is on the
+wire and in the props file (see `DIV_HANG_DEFAULT`).
+
+**Checked.** Plain and `make DIVCAP=1` builds link; `test_props` and
+`test_modal` pass after a forced rebuild.
