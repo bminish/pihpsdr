@@ -90,7 +90,8 @@ matter here:
 
 Our `TEST` was replayed onto it (114 commits, no conflicts; the only
 change to the tree is his `src/` lines), so this is a rebase, not a
-fast-forward: `origin/TEST` needs a force-push after the earlier one.
+fast-forward: `origin/TEST` needed a force-push after the earlier one (done
+2026-10-14, after the second rebase onto `61f9a023`).
 
 ## `test/auto-bins` pulled in (2026-10-08)
 

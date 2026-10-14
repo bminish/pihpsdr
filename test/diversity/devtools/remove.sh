@@ -7,7 +7,7 @@
 #
 # Deletes the new files and every "#ifdef DIVERSITY_CAPTURE" block in the
 # permanent ones, plus the "ifdef DIVCAP" block in the Makefile and the
-# two .gitignore lines. Nothing else in those files is touched.
+# four .gitignore lines. Nothing else in those files is touched.
 #
 # Afterwards:
 #

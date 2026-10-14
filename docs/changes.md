@@ -2,13 +2,13 @@
 
 `TEST` on [bminish/pihpsdr](https://github.com/bminish/pihpsdr) tracks the `TEST` branch of [dl1ycf/pihpsdr](https://github.com/dl1ycf/pihpsdr) and carries a few local changes on top of it, mostly to auto diversity. This file is the front page of the register: what is still local, where the finished work is written up, and where the rules, decisions and open work are.
 
-**Where we are (2026-10-08).** dl1ycf took our whole series into `upstream/TEST` (`f05546e3`, one squashed commit). Of the 52 changes in the register, **41 are accepted** and no longer differ from upstream (two of them he made himself), **8 are pending** (local only), 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` is 0 behind and 115 ahead of `upstream/TEST` (`f9803763`). The next free number is **LC-056**.
+**Where we are (2026-10-14).** dl1ycf took our whole series into `upstream/TEST` (`f05546e3`, one squashed commit, 2026-10-08). Of the 55 changes in the register, **41 are accepted** and no longer differ from upstream (two of them he made himself), **11 are pending** (local only: LC-048 to LC-058), 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` was rebased onto `upstream/TEST` (`61f9a023`) on 2026-10-14 and is 0 behind it. The next free number is **LC-059**.
 
 ## Register
 
 ### Pending: local, not yet in upstream
 
-Status **Local**: carried here only. LC-048, LC-049, LC-055, LC-056 and LC-057 edit files he now owns; LC-050 to LC-054 came from the branch `test/auto-bins`.
+Status **Local**: carried here only. LC-048, LC-049, LC-055, LC-056 and LC-057 edit files he now owns (LC-058 only touches the engine file and its header); LC-050 to LC-054 came from the branch `test/auto-bins`.
 
 | ID | Kind | Summary | Files | Depends on | Status |
 |---|---|---|---|---|---|
@@ -22,6 +22,7 @@ Status **Local**: carried here only. LC-048, LC-049, LC-055, LC-056 and LC-057 e
 | [LC-055](changes/lc-engine.md#lc-055) | Behaviour | Level output always on where it applies; the menu tick and the saved setting removed (when it applies and when not is listed in the write-up) | diversity_auto.c/.h, diversity_menu.c | LC-030 (upstream) | Local |
 | [LC-056](changes/lc-settings.md#lc-056) | Refactor | The client's two `g_idle_add` targets, `diversity_client_set_settings()` and `diversity_client_set_status()`, move from `diversity_menu.c` to `diversity_auto.c` (his request, 2026-10-14) | diversity_auto.c, diversity_menu.c | — | Local |
 | [LC-057](changes/lc-menu.md#lc-057) | UI | The Enable tick follows diversity being switched by `DIVT` or a remote client while the menu is open (the status tick syncs it, as it does Hold) | diversity_menu.c | — | Local |
+| [LC-058](changes/lc-engine.md#lc-058) | Cleanup | Two declarations nothing defines (`diversity_auto_ref_store()`/`_recall()`) and a pointer to `DIV_REF_SCHEME` removed; three comments stop naming the Resolution control | diversity_auto.c/.h | — | Local |
 
 Dependencies among these: LC-052 needs LC-050 and LC-051, and LC-053 needs LC-052. LC-051's entries go away with LC-053, so LC-051, LC-052 and LC-053 travel together. LC-048, LC-049, LC-050, LC-054 and LC-055 stand alone (LC-055 builds on LC-030, which is upstream). Each applies on top of `upstream/TEST` as it stands; none depends on our tooling.
 
@@ -94,4 +95,4 @@ All of it: [changes/open-items.md](changes/open-items.md).
 
 ## History
 
-Latest: 2026-10-08, upstream took the series (`f05546e3`); `TEST` rebuilt on it, LC-048 and LC-049 added, `test/auto-bins` pulled in as LC-050 to LC-054, and replayed onto his copyright commit (`f9803763`). Before that: 2026-10-07 LC-022 dropped; 2026-10-06 re-synced onto `c60db7b4`. Full log: [changes/history.md](changes/history.md).
+Latest: 2026-10-14, `TEST` rebased onto his `61f9a023`; LC-055 to LC-058 added (Level output, the client adopters move, the Enable tick, a cleanup) and the empty-band stand-down decided against (T-026). Before that: 2026-10-08 upstream took the series (`f05546e3`), LC-048 and LC-049 added, `test/auto-bins` pulled in as LC-050 to LC-054; 2026-10-07 LC-022 dropped; 2026-10-06 re-synced onto `c60db7b4`. Full log: [changes/history.md](changes/history.md).
