@@ -123,13 +123,13 @@ becomes its regression test.
 
 | Gap | Feature branch commit | What the check shows on `TEST` |
 |---|---|---|
-| Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Conflicts with the hold rule; decision needed, see below** |
+| Stand-down | `fc0b3d1e`, `94b4cc6f` | Never stands down on an empty band. **Decided against, 2026-10-14** (T-026, settled decision 5): the check stays as a known gap |
 | Carrier follow flag, scheme-3 migration | `41f8700c` | The search itself is LC-046 and its `test_window` check counts. What is left is the props migration of the follow flag by scheme, which upstream dropped with the schemes (`f5a0ce9c`) |
 | Wire helpers | `42f68714` | Not a behaviour: the conversion is inline on `TEST`, so the round trip cannot be called |
 | CW at 1536 kHz, 100 Hz filter | none: an accepted limitation (LC-029) | CW holds; 23.4 Hz bins leave too few for the region |
 | Reference scheme migration | upstream `f5a0ce9c` removed it | A scheme-1 props file loads its old reference numbers as they are (2 → RADE V1, 3 → FSK/Digital, 4 → CW). Taken from upstream and tracked, not restored |
 
-**Stand-down is not simply a gap.** On the feature branches, the combiner
+**Stand-down is not simply a gap, and was decided against (T-026).** On the feature branches, the combiner
 slews the weight to zero on an empty band and puts it back when the band
 fills. That's the opposite of the rule on `TEST`: when there is nothing
 new to correlate on, hold where we were. The feature branch measured the

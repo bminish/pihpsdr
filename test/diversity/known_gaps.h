@@ -14,7 +14,7 @@
 #ifndef KNOWN_GAPS_H
 #define KNOWN_GAPS_H
 
-#define GAP_STANDDOWN          "fc0b3d1e: the combiner stands down on an empty band"
+#define GAP_STANDDOWN          "fc0b3d1e: the combiner stands down on an empty band (decided against, T-026)"
 #define GAP_CARRIER_FOLLOW     "41f8700c: the Carrier follow-filter flag's scheme-3 props migration (upstream dropped the schemes)"
 #define GAP_WIRE_HELPERS       "42f68714: DIV_SETTINGS <-> wire conversion as functions (inline on TEST)"
 
