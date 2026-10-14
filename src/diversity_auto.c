@@ -21,6 +21,7 @@
 #include <string.h>
 #include <fftw3.h>
 
+#include "client_server.h"
 #include "diversity_auto.h"
 #include "diversity_menu.h"
 #include "message.h"
@@ -29,6 +30,7 @@
 #include "radio.h"
 #include "rade_correlator.h"
 #include "receiver.h"
+#include "rx_panadapter.h"
 #include "vfo.h"
 
 #ifdef DIVERSITY_CAPTURE
@@ -4527,6 +4529,93 @@ void diversity_auto_apply_status(const DIV_STATUS *st) {
   div_track_gain         = st->track_gain;
   div_track_phase        = st->track_phase;
   rade_corr_quality      = st->rade_quality;
+}
+
+//
+// Remote client: the radio has sent its settings - on connect, or because
+// someone moved a control on the radio's own panel. Adopt them. Runs on
+// the GTK thread, put there by the client read loop.
+//
+gboolean diversity_client_set_settings(gpointer data) {
+  const DIV_SETTINGS_COMMAND *c = (const DIV_SETTINGS_COMMAND *)data;
+  DIV_SETTINGS set;
+  set.mode           = c->mode;
+  set.ref            = c->ref;
+  set.follow_filter  = c->follow_filter;
+  set.weighting      = c->weighting;
+  set.hold           = c->hold;
+  set.centre         = from_double(c->centre);
+  set.width          = from_double(c->width);
+  set.tau            = from_double(c->tau);
+  set.hang           = from_double(c->hang);
+  set.coherence_min  = from_double(c->coherence_min);
+  set.resolution     = from_double(c->resolution);
+  set.band_centre    = from_double(c->band_centre);
+  set.band_width     = from_double(c->band_width);
+  set.carrier_centre = from_double(c->carrier_centre);
+  set.carrier_width  = from_double(c->carrier_width);
+  set.digital_centre = from_double(c->digital_centre);
+  set.digital_width  = from_double(c->digital_width);
+  diversity_auto_apply_settings(&set, DIV_ACTION_NONE);
+  g_free(data);
+  return G_SOURCE_REMOVE;
+}
+
+//
+// Remote client: what the loop is measuring. Written straight into the
+// globals the status line, the antenna line and the panadapter overlay
+// already read, so none of them needs to know where it came from.
+//
+gboolean diversity_client_set_status(gpointer data) {
+  const DIV_STATUS_DATA *d = (const DIV_STATUS_DATA *)data;
+  DIV_STATUS st;
+  st.enabled         = d->enabled;
+  st.running         = d->running;
+  st.holding         = d->holding;
+  st.clamped         = d->clamped;
+  st.arm_valid       = d->arm_valid;
+  st.arm_pick        = d->arm_pick;
+  st.carrier_valid   = d->carrier_valid;
+  st.occ_valid       = d->occ_valid;
+  st.rade_locked     = d->rade_locked;
+  st.rade_confirming = d->rade_confirming;
+  st.rade_side       = d->rade_side;
+  st.att0            = d->att0;
+  st.att1            = d->att1;
+  st.binhz        = from_double(d->binhz);
+  st.coherence    = from_double(d->coherence);
+  st.carrier      = from_double(d->carrier);
+  st.arm_db       = from_double(d->arm_db);
+  st.occ_lo       = from_double(d->occ_lo);
+  st.occ_hi       = from_double(d->occ_hi);
+  st.gain         = from_double(d->gain);
+  st.phase        = from_double(d->phase);
+  st.track_gain   = from_double(d->track_gain);
+  st.track_phase  = from_double(d->track_phase);
+  st.rade_quality = from_double(d->rade_quality);
+  //
+  // Whether the panadapter overlay should be on screen, before and after
+  // adopting this block: rx_panadapter.c draws it while diversity is on
+  // and the objective is not Manual.
+  //
+  const int overlay_was = (diversity_enabled && div_auto_mode != DIV_MANUAL);
+  diversity_auto_apply_status(&st);
+  const int overlay_now = (diversity_enabled && div_auto_mode != DIV_MANUAL);
+
+  //
+  // The panadapter repaints its whole surface every frame, so on the radio
+  // the overlay clears itself with the next frame. A client only draws
+  // when a spectrum packet arrives and passes client_thread.c's tests, so
+  // switching diversity off at the radio could leave the last frame, green
+  // box and all, on screen until those agreed again. Repaint once here.
+  //
+  if (overlay_was && !overlay_now && receivers > 0 && receiver[0] != NULL
+      && receiver[0]->display_panadapter && receiver[0]->panadapter_surface != NULL) {
+    rx_panadapter_update(receiver[0]);
+  }
+
+  g_free(data);
+  return G_SOURCE_REMOVE;
 }
 
 //
