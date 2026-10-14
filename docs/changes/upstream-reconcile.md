@@ -62,8 +62,8 @@ DIVCAP block to his tree, identical to ours, without the module: see
   replayed onto his tree; `make`, `make DIVCAP=1` and `make -C
   test/diversity run` pass.
 - **To port from `feature/auto-diversity`**, as before and not touched by
-  his commit: stand-down, time-based slew, 0.5 s default averaging, the
-  Carrier tooltip. (The 24/12/6 Hz Resolution menu was ported afterwards
+  his commit: time-based slew, 0.5 s default averaging, the
+  Carrier tooltip. (Stand-down was decided against on 2026-10-14: T-026.) (The 24/12/6 Hz Resolution menu was ported afterwards
   from `test/auto-bins` as LC-051, and then replaced by Auto, LC-052 and
   LC-053: see below.)
 - **Client/server**: LC-003, LC-004 and the faults in

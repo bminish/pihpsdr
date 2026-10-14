@@ -86,7 +86,8 @@ The capture recorder (`make DIVCAP=1`), the unit tests under `test/diversity/`, 
 - **Client/server** faults are recorded, not fixed (decided 2026-10-01); upstream is taken there. LC-003 and LC-004 wait on it.
 - **DIVCAP in his tree:** the module is missing (above).
 - **Flagged:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
-- **To port** from `feature/auto-diversity`: stand-down (which conflicts with the hold rule and needs a decision), time-based slew, 0.5 s default averaging, the Carrier tooltip. The 24/12/6 Hz Resolution menu was ported as LC-051 and then replaced by Auto (LC-052, LC-053).
+- **Stand-down: decided not to port (2026-10-14, T-026, settled decision 5).**
+- **To port** from `feature/auto-diversity`: time-based slew, 0.5 s default averaging, the Carrier tooltip. The 24/12/6 Hz Resolution menu was ported as LC-051 and then replaced by Auto (LC-052, LC-053).
 - **Pi CPU: rerun done (2026-10-08).** No regression, no dropped blocks, no bottleneck on the CM5; the worst row is RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four ([findings](bench/pi5-rerun-20261008.md)). Still to do: the functional suite on the Pi (needed `libopus-dev`; fixed in the bundle).
 
 All of it: [changes/open-items.md](changes/open-items.md).
