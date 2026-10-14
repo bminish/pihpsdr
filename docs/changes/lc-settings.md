@@ -129,3 +129,43 @@ selected, its live threshold is written into that reference's slot
 first. It is clamped to the slider's 0–0.95 range, because it has not
 been through validation. After a reference change the slot still wins,
 as before.
+
+---
+
+<a id="lc-056"></a>
+
+## LC-056 — The client's settings and status adopters move to the engine file
+
+**Why.** dl1ycf asked (2026-10-14) for `diversity_client_set_settings()`
+and `diversity_client_set_status()` to move out of `diversity_menu.c`. They
+were put there when the idea was that the radio sends settings while the
+menu is open and the menu has to adjust. Neither touches a widget: the
+first converts the wire block and calls `diversity_auto_apply_settings()`,
+the second calls `diversity_auto_apply_status()` and repaints the
+panadapter once if the overlay has just gone. Both were already declared in
+`diversity_auto.h`.
+
+**Change.**
+- The two bodies move to `diversity_auto.c`, after
+  `diversity_auto_apply_status()`, unchanged. The commented-out
+  `//div_populate_from_settings();` (a function upstream removed) is
+  dropped, and "and show them" is dropped from the first comment, since
+  nothing shows them: an open menu is not repainted.
+- `diversity_auto.c` includes `client_server.h` (the wire structs and
+  `from_double()`) and `rx_panadapter.h` (`rx_panadapter_update()`);
+  `diversity_menu.c` loses its `rx_panadapter.h` include, which nothing
+  else there used.
+- The 13 test and devtool programs that link `diversity_auto.c` get a stub
+  for `rx_panadapter_update()` (LT-030, the commit before this one).
+
+**Checked.** Plain and `make DIVCAP=1` builds, DIVCAP by symbol; the
+test and devtool programs build; the suite gives the same result as
+before (four known-gap lines); `nm` shows both functions in
+`diversity_auto.o` and none in `diversity_menu.o`. The moved text differs
+from the removed text only in the lines named above.
+
+**Left to dl1ycf.** Two points about the premise, in
+[../menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md): the radio's own menu
+still pushes settings to a watching client (`div_send_settings()`), and the
+radio drops the settings a client sends.
+
