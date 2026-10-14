@@ -63,11 +63,11 @@ double div_norm = 1.0;   /* the output-level normaliser; receiver.c applies it *
 //
 ADC adc[3];
 int div_indep_att = 0;
-//
-// The engine tells the menu when a mode change swapped one block of
-// modal settings for another. There is no menu here.
-//
-gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
+/*
+ * The client's panadapter repaint, which diversity_client_set_status()
+ * calls. There is no panadapter here.
+ */
+void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 struct _vfo vfo[MAX_VFOS];
 
 static int verbose = 0;
