@@ -18,7 +18,7 @@ changes it, we take upstream.
   drops it. Radio-to-client is handled in `client_thread.c` and is not
   affected. Worth telling dl1ycf.
 - **The client fills its settings block from the wire only.**
-  `diversity_client_set_settings()` leaves the per-reference slots
+  `diversity_client_set_settings()` (in `diversity_auto.c` since LC-056) leaves the per-reference slots
   uninitialised, so a reference change on the client recalls garbage.
   That was LC-003's client half (deferred).
 - **A client's Min coherence move would be dropped** if the handler came

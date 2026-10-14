@@ -204,3 +204,48 @@ On branch `test/auto-bins`, not in `TEST` yet. Changes in
   added for every reference except RADE V1 and `div_status_set()` gains a
   `coh` argument. The old single label's fields moved with the digits.
   `DIV_STATUS_CHARS` is removed.
+
+---
+
+## The client's two adopters are in diversity_auto.c (LC-056)
+
+You asked (2026-10-14) for `diversity_client_set_settings()` and
+`diversity_client_set_status()` to move out of `diversity_menu.c`. Done in
+LC-056, a pure move:
+
+- Both bodies are in `diversity_auto.c`, after `diversity_auto_apply_status()`.
+  Their declarations were already in `diversity_auto.h`, and `client_thread.c`
+  needs no change.
+- `diversity_auto.c` now includes `client_server.h` and `rx_panadapter.h`;
+  `diversity_menu.c` drops `rx_panadapter.h` (it was used only by the status
+  adopter).
+- Dropped from the text: the commented-out `//div_populate_from_settings();`
+  and "and show them" in the first comment.
+- Our test programs, which link `diversity_auto.c` on their own, get a stub
+  for `rx_panadapter_update()`. Nothing else in the tree is affected.
+
+**What the menu does on this path: nothing.** An open menu is not repainted
+when a settings block arrives (`diversity_menu_refresh()` went with
+`f5a0ce9c`). That was already so; the move does not change it.
+
+Two things about the reasoning that we found while reading the code, in case
+they matter for how you want the protocol to end up:
+
+1. **Settings are also sent from the radio during operation.**
+   `div_send_settings()` in `diversity_menu.c` has an `else` branch: if the
+   radio has a client connected (`remoteclient.running`), moving a control on
+   the radio's own panel sends the whole settings block to the client. So the
+   client adopts settings during operation as well as on connect. If the
+   intent is "radio to client on connect only", that branch is the part to
+   remove; we have not touched it.
+2. **The radio drops what a client sends.** The client's menu sends
+   `CMD_DIV_SETTINGS` (`div_send_settings()` with `radio_is_remote`), but the
+   case is no longer handled in `server_command()`; the radio logs a
+   forgotten case. So client-to-server settings, which the premise relies on
+   for normal operation, do not arrive today. (Recorded on our side as a
+   deferred client/server fault in `docs/changes/open-items.md`; we are not
+   fixing it unless you want it.)
+
+Neither is needed for the move. They are here because they decide what the
+two functions are for.
+
