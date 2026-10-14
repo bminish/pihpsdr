@@ -111,10 +111,10 @@ void setProperty(const char *n, const char *v) { (void)n; (void)v; }
 double myatof(const char *s) { return atof(s); }
 
 /*
- * The engine tells the menu when a mode change swapped one block of modal
- * settings for another. There is no menu here.
+ * The client's panadapter repaint, which diversity_client_set_status()
+ * calls. There is no panadapter here.
  */
-gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
+void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 
 static double cpu_seconds(void) {
   struct timespec ts;
