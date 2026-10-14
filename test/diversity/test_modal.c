@@ -49,10 +49,10 @@ void t_print(const char *f, ...) { (void)f; }
 double myatof(const char *s) { return atof(s); }
 
 /*
- * The engine tells the menu when a mode change swapped one block of modal
- * settings for another. There is no menu here.
+ * The client's panadapter repaint, which diversity_client_set_status()
+ * calls. There is no panadapter here.
  */
-gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
+void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 
 /* ------------------------------------------------------------------ */
 /* a property store the test drives directly                          */
