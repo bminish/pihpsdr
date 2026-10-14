@@ -59,6 +59,7 @@ static GtkWidget *acontainer = NULL;
 static GtkWidget *coh_label = NULL;
 static GtkWidget *arm_label = NULL;
 static GtkWidget *hold_b = NULL;
+static GtkWidget *enable_b = NULL;
 
 static void hold_cb(GtkWidget *widget, gpointer data);
 
@@ -248,6 +249,7 @@ static void cleanup(void) {
     // diversity is switched off and on again (see radio_set_diversity()).
     //
     hold_b = NULL;
+    enable_b = NULL;
 #ifdef DIVERSITY_CAPTURE
     level_b = NULL;
 #endif
@@ -582,6 +584,18 @@ static int status_update_cb(gpointer data) {
     g_signal_handlers_block_by_func(hold_b, G_CALLBACK(hold_cb), NULL);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(hold_b), div_auto_hold);
     g_signal_handlers_unblock_by_func(hold_b, G_CALLBACK(hold_cb), NULL);
+  }
+
+  //
+  // The same for Enable: diversity is also switched by the DIVT action (a
+  // CAT command, a toolbar button) and by a remote client, none of which
+  // knows about this dialog. Blocking the handler keeps this from calling
+  // radio_set_diversity() again.
+  //
+  if (enable_b && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(enable_b)) != diversity_enabled) {
+    g_signal_handlers_block_by_func(enable_b, G_CALLBACK(enable_cb), NULL);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(enable_b), diversity_enabled);
+    g_signal_handlers_unblock_by_func(enable_b, G_CALLBACK(enable_cb), NULL);
   }
 
   if (!div_auto_running) {
@@ -1091,6 +1105,7 @@ void diversity_menu(GtkWidget *parent) {
   gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (btn), diversity_enabled);
   g_signal_connect(btn, "toggled", G_CALLBACK(enable_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), btn, 0, row, 2, 1);
+  enable_b = btn;
   auto_btn = gtk_combo_box_text_new();
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Manual");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Null (cancel common signal)");
