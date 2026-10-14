@@ -50,14 +50,15 @@ changes it, we take upstream.
   menu open. Taken from upstream for now (decided 2026-10-01). The
   intended cure is E5 in [ownership.md](ownership.md#review-e1-to-e8): the per-group settings move
   into `profiles.c`.
-- Upstream leftovers from `f5a0ce9c`, harmless: `diversity_auto.h` still
-  declares `diversity_auto_ref_store()` / `_recall()` and mentions
-  `DIV_REF_SCHEME`, neither of which exists any more.
+- Upstream leftovers from `f5a0ce9c`, removed by LC-058: the declarations of
+  `diversity_auto_ref_store()` / `_recall()` and the mention of `DIV_REF_SCHEME`
+  in `diversity_auto.h`.
 
 ## After the 2026-10-08 reconcile
 
-Only the force-push of the rebuilt `TEST` waits on the owner; the rest is
-settled: [upstream-reconcile.md](upstream-reconcile.md#decisions).
+Nothing waits on the owner: the rebuilt `TEST` was force-pushed on
+2026-10-14 after the second rebase. The rest is settled:
+[upstream-reconcile.md](upstream-reconcile.md#decisions).
 
 ## Not carried
 
