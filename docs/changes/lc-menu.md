@@ -301,3 +301,29 @@ same left edge. `DIV_STATUS_CHARS` is gone.
 **Not checked on screen.** The reserved widths and the spread of the
 columns need looking at in the dialog. On a branch for testing; written up
 for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+---
+
+<a id="lc-057"></a>
+
+## LC-057 — The Enable tick follows diversity being switched from outside the menu
+
+**Problem.** With the Diversity menu open, switching diversity with the
+`DIVT` action (a CAT command, or a toolbar button) or from a remote client
+changed the engine but not the Enable check button, which stayed as it was
+until the dialog was reopened. `DIVT` is `DIV` in `actions.c`, which calls
+`radio_set_diversity(NOT(diversity_enabled))` and tells the menu nothing.
+
+**Change.** `diversity_menu.c` only. The check button is kept in
+`enable_b` (cleared in `cleanup()` with `hold_b`), and the 250 ms status
+tick compares it with `diversity_enabled` and sets it when they differ, with
+`enable_cb` blocked so the correction does not call `radio_set_diversity()`
+again. It is the same as the Hold button's sync a few lines above, placed
+before the early return for "loop not running", which is the state
+`DIVT` starts from. No engine call into the menu is added.
+
+**Checked.** Plain and `make DIVCAP=1` builds, DIVCAP by symbol. **Not
+checked on screen:** that needs `DIVT` with the dialog open; the tick means
+the tick follows within a quarter of a second, not at once. Written up for
+dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+

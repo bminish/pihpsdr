@@ -249,3 +249,21 @@ they matter for how you want the protocol to end up:
 Neither is needed for the move. They are here because they decide what the
 two functions are for.
 
+---
+
+## The Enable tick follows DIVT (LC-057)
+
+With the menu open, switching diversity by the `DIVT` action (CAT, toolbar)
+or from a remote client left the Enable check button as it was until the
+dialog was reopened: `radio_set_diversity()` changes the engine and does not
+know about the dialog.
+
+Fixed in `diversity_menu.c` the way Hold already is: the button is kept in
+a static `enable_b` (cleared in `cleanup()`), and `status_update_cb()`
+compares it with `diversity_enabled` and sets it when they differ, with
+`enable_cb` blocked so it does not call `radio_set_diversity()` again. The
+check is next to Hold's and before the early return for "loop not running",
+because `DIVT` starts from exactly that state. It follows within one tick
+(250 ms). No call from `radio.c` into the menu was added; that is the route
+that went with `f5a0ce9c`.
+
