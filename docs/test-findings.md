@@ -1019,3 +1019,62 @@ them. The wanted-signal test is synthetic; the real stations in the captures
 are two. 48 and 96 kHz leave less spectrum outside the passband for the gate;
 how much burst contrast survives there is not measured. The Null reference
 code was not read, so how this fits it is not decided. No `run_ref` score yet.
+
+## T-026: the empty-band stand-down, against today's engine
+
+The stand-down (`fc0b3d1e`, `94b4cc6f`, on `feature/auto-diversity`) slews the
+weight to zero, arm 0 alone, after both arms have carried nothing for 2 s
+(`DIV_QUIET_DWELL`), and puts it back in one step when a signal returns. It
+was the last "to port" item that conflicted with a settled decision. This
+asks whether `TEST` still needs it.
+
+**What it was for.** A held weight goes on adding the second antenna's noise
+in dead air. The feature branch measured 12.18 dB of extra noise between
+overs on `122843` and 3.5 dB over two thirds of a minute on `235906`, gains
+on 7 of 19 wideband captures against one cost of 0.58 dB. That was before
+LC-012 (the noise-floor gate) and before Level output.
+
+**Measurement on `TEST`.** The 73 LSB, USB and CWL captures through today's
+`run_ref` (Window reference, Sum, Level output as shipped). A stretch counts
+as an empty band when both arms are within 3 dB of their own 5th-percentile
+level, for more than 2 s, and only the blocks after that dwell are scored.
+27 of the 73 have at least 10 such blocks (1.5 to 36 s). The figure is the
+median output level over those blocks, against arm 0 alone (what the
+stand-down would give) and against the better arm.
+
+- Against arm 0: **within 0.2 dB on 15 of the 27, within 0.5 dB on 18**. Five
+  differ by more than 1 dB: +1.8 dB (`000332`) and -1.4 to -3.1 dB (`000328`,
+  `165548`, `122211`, `143433`). On those four the output is *below* arm 0, so
+  a stand-down to arm 0 would be noisier there than the engine is.
+- Against the better arm: 13 are at or below it, 7 are more than 3 dB above
+  (+6 to +10 dB: `111328`, `162729`, `122119`, `122211`, `205923`, `150826`,
+  `211946`). All seven are captures where arm 0 is the noisier arm, so the
+  output is at arm 0's level, which is also where the stand-down would put
+  it. Neither reaches the better arm.
+
+**So** the 12 dB of the original finding is not there on `TEST` for Sum:
+Level output holds the output at arm 0's level and the flat Sum weight shrinks
+in dead air on its own (LC-012's scoring found -14 to -20 dB). What is left
+for a stand-down to win is the one capture at +1.8 dB.
+
+**What it would cost.**
+- A timer, which settled decision 1 rules out and which this does not show
+  failing the current rule.
+- Its premise, "arm 0 is the antenna the operator would have been listening
+  to", is false when arm 0 is the poor one. In the findings (Finding on the
+  disconnected-converter capture, `diversity-measurements.md`) it pulled the
+  output 26 to 35 dB below the live antenna for 10.4 s of 60 s.
+- About 234 lines in `diversity_auto.c`, and a "quiet" state in the status line
+  in `diversity_menu.c`.
+
+**Decision (2026-10-14): not ported.** Added to the settled decisions as 5;
+the stand-down is taken off the to-port lists. The "long gap" check in
+`test_window` stays as a known gap (`GAP_STANDDOWN`) and keeps printing its
+figures; its text now says so.
+
+**Not covered.** Sum only: Best and Null were not scored. The empty-band test is
+a proxy for the feature's own (`div_window_quiet()`, which uses the bounded
+five-second minimum), not that function. No A/B with the feature built in; the
+comparison is the output level against arm 0, which is what the stand-down
+sets. The analysis script was not kept.
+

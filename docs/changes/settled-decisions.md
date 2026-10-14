@@ -38,3 +38,15 @@ reasoning.
    from one that ended long ago. Window, Carrier and FSK/Digital update
    every block anyway. RADE V1 ages through a freeze (LC-010). CW ages
    every bin in its region every block (LC-017).
+5. **No empty-band stand-down (2026-10-14).** The combiner does not slew
+   the weight to zero when both arms carry nothing; it holds, like every
+   other time there is nothing new to correlate on. On `TEST` Level output
+   already keeps the output at arm 0's level in dead air, and the flat Sum
+   weight shrinks by itself there (LC-012), so the feature branch's 12 dB
+   between overs is not found: 18 of 27 captures with an empty stretch are
+   within 0.5 dB of arm 0, and four more are below it (T-026). The stand-down needs a 2 s timer
+   (decision 1) and assumes arm 0 is the good antenna, which a capture with
+   a dead arm 0 showed false (26 to 35 dB below the live antenna).
+   **Changing it needs** a capture where the held weight costs several dB in
+   dead air with Level output on.
+
