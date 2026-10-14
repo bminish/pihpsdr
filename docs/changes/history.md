@@ -74,6 +74,12 @@ Newest first.
   antenna changed between them). A 100.1 Hz burst train with no spectral
   comb; the burst-on minus burst-off covariance gives a weight that wanted
   CW, SSB, AM and FSK do not disturb. Analysis only, no engine change.
+- 2026-10-14: `TEST` rebased onto `upstream/TEST` (five commits of his, backup
+  tag `backup/TEST-pre-rebase-20261014`) and force-pushed. His "Small
+  alignments with master" removed the DIVCAP block from the Makefile, so
+  `make DIVCAP=1` built a plain binary; restored (LT-029). LC-056: at his
+  request the client's two `g_idle_add` adopters move from `diversity_menu.c`
+  to `diversity_auto.c` (stubs: LT-030).
 
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-050

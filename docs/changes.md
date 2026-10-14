@@ -8,7 +8,7 @@
 
 ### Pending: local, not yet in upstream
 
-Status **Local**: carried here only. LC-048, LC-049 and LC-055 edit files he now owns; LC-050 to LC-054 came from the branch `test/auto-bins`.
+Status **Local**: carried here only. LC-048, LC-049, LC-055 and LC-056 edit files he now owns; LC-050 to LC-054 came from the branch `test/auto-bins`.
 
 | ID | Kind | Summary | Files | Depends on | Status |
 |---|---|---|---|---|---|
@@ -20,6 +20,7 @@ Status **Local**: carried here only. LC-048, LC-049 and LC-055 edit files he now
 | [LC-053](changes/lc-averaging.md#lc-053) | UI | Auto is the only bin width; the Resolution control is removed (pinned like Hang) | diversity_menu.c, diversity_auto.c | LC-052 | Local |
 | [LC-054](changes/lc-menu.md#lc-054) | UI | The status line shows the coherence on every reference with a Min coherence (Window, Carrier, CW, FSK/Digital) | diversity_menu.c | — | Local |
 | [LC-055](changes/lc-engine.md#lc-055) | Behaviour | Level output always on where it applies; the menu tick and the saved setting removed (when it applies and when not is listed in the write-up) | diversity_auto.c/.h, diversity_menu.c | LC-030 (upstream) | Local |
+| [LC-056](changes/lc-settings.md#lc-056) | Refactor | The client's two `g_idle_add` targets, `diversity_client_set_settings()` and `diversity_client_set_status()`, move from `diversity_menu.c` to `diversity_auto.c` (his request, 2026-10-14) | diversity_auto.c, diversity_menu.c | — | Local |
 
 Dependencies among these: LC-052 needs LC-050 and LC-051, and LC-053 needs LC-052. LC-051's entries go away with LC-053, so LC-051, LC-052 and LC-053 travel together. LC-048, LC-049, LC-050, LC-054 and LC-055 stand alone (LC-055 builds on LC-030, which is upstream). Each applies on top of `upstream/TEST` as it stands; none depends on our tooling.
 
@@ -28,6 +29,7 @@ Dependencies among these: LC-052 needs LC-050 and LC-051, and LC-053 needs LC-05
 2. LC-054 (coherence on the status line): stands alone and is small.
 3. LC-048 and LC-049 (two comments, and the reference-only code cut): only as a patch he can take or leave, since they tidy his tree rather than add anything.
 4. LC-055 (Level output always on): removes a control from his menu file; written up for him, with the full list of when it applies.
+5. LC-056 (the client adopters move to the engine file): he asked for it; a pure move, written up in [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md).
 
 ### Deferred and dropped
 
