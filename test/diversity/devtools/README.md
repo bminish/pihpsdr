@@ -117,6 +117,25 @@ untouched.
 
 LC-012 was assessed this way; the results are in `docs/changes.md`.
 
+### Scoring the output level
+
+`py/score_level.py` scores `run_ref` weight series for what an operator
+hears as the band getting louder or as pumping: the median level of the
+combined output against arm 0 alone, the block-to-block step size, and how
+many steps exceed 3 dB. It takes the `norm` column `run_ref` writes, and
+reads a run without one as norm = 1. `py/score_wideband.py` scores the same
+series on SNR.
+
+### Parameter sweeps
+
+`py/sweeps/` holds the sweep and scoring scripts for the bin width, time
+constant (including RADE V1's), signal density and interference studies
+(`sweep_*.py` run `run_ref` over the capture set, `score_*.py` and `agg_*.py`
+score and aggregate the CSVs, `catalogue.py` lists the captures). They
+assume the working directory is the repository root and the captures are in
+`captures/`. They are kept so a figure in `docs/test-findings.md` can be
+rerun, not as a maintained interface.
+
 ### Scoring CW captures
 
 `py/score_cw.py` scores `run_ref` weight series on CW captures with
