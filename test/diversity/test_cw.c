@@ -52,7 +52,11 @@ void t_print(const char *fmt, ...) { (void)fmt; }
 const char *getProperty(const char *n) { (void)n; return NULL; }
 void setProperty(const char *n, const char *v) { (void)n; (void)v; }
 double myatof(const char *s) { return atof(s); }
-gboolean diversity_menu_settings_changed(gpointer data) { (void)data; return G_SOURCE_REMOVE; }
+/*
+ * The client's panadapter repaint, which diversity_client_set_status()
+ * calls. There is no panadapter here.
+ */
+void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 
 #define RATE   192000
 #define BLOCK  16384          // one engine block at the default 12 Hz Resolution
