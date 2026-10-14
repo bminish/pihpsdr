@@ -642,7 +642,7 @@ double div_cw_width            = DIV_CW_WIDTH_DEFAULT;
 // window of pure noise still reports about 1/N for N averages - so the
 // same threshold is a different false-alarm risk in a five-bin carrier
 // window and a two-hundred-bin passband, and moves again with Averaging
-// and Resolution.
+// and the bin width.
 //
 // The parameter was already modal, but on the mode group, which is the
 // wrong axis: what fixes the meaning is the reference. See Finding 26 in
@@ -1455,7 +1455,7 @@ static int div_context_changed(const struct div_context *a, const struct div_con
 // which is why this needs no CW special case.
 //
 // "Entirely inside" rather than "overlapping": a bin straddling a notch
-// edge still carries wanted signal, and at a coarse Resolution a narrow
+// edge still carries wanted signal, and at a coarse bin width a narrow
 // notch is narrower than one bin, where excluding on overlap would throw
 // away the whole region the operator was trying to keep.
 //
@@ -3124,7 +3124,7 @@ static void div_cw_solve(const struct div_context *ctx, int klo, int khi) {
   //
   // Not the keying rate: at 10 to 35 WPM the envelope moves at 4 to 15 Hz,
   // and one block per 43 to 171 ms samples that below Nyquist at every
-  // Resolution. What survives the block rate is that Morse stops - between
+  // bin width. What survives the block rate is that Morse stops - between
   // letters, words and overs - and a carrier does not. So the peak's power
   // against the quietest the peak has recently been: a minimum that falls
   // at once and climbs back at DIV_CW_ACT_RISE_DB. The peak over bins, not

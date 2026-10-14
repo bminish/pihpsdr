@@ -53,8 +53,7 @@ enum {
 // New references go on the end. The value is what is written to the
 // props file, so inserting one in the middle - or removing one, as the
 // RADE passband reference was - silently changes what an existing file
-// means. diversity_auto_restore_state() migrates instead; see
-// DIV_REF_SCHEME there.
+// means.
 //
 
 extern int    div_auto_ref;
@@ -301,14 +300,6 @@ typedef struct _div_status {
 //
 #define DIV_ACTION_NONE   0
 #define DIV_ACTION_RESET  1
-
-//
-// Move the per-reference settings - window pair and coherence threshold -
-// between their own slots and the live values the engine reads. Called
-// when the operator changes reference.
-//
-extern void diversity_auto_ref_store(int ref);
-extern void diversity_auto_ref_recall(int ref);
 
 //
 // The lowest Min coherence worth setting on a reference: the coherence
