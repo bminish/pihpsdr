@@ -106,7 +106,8 @@ has been done on the Pi (LT-026). What was left was headroom:
 From the 2026-10-02 evaluation of the findings' open list
 (`diversity-measurements.md`, "Status on `TEST`"), these are described
 as done in the findings but are on `feature/auto-diversity` only:
-- the empty-band stand-down (`div_window_quiet()`, `DIV_QUIET_DWELL`);
+- ~~the empty-band stand-down (`div_window_quiet()`, `DIV_QUIET_DWELL`)~~: decided
+  against on 2026-10-14 (T-026, settled decision 5);
 - the time-based slew (Finding 48);
 - the 0.5 s default averaging;
 - ~~the 24 / 12 / 6 Hz Resolution menu (`DIV_MIN_NFFT` 2048)~~: done as
@@ -123,8 +124,8 @@ Noted while porting, not yet decided:
 
 - The validation scenario for LC-013 (notches): no capture checked so far
   has a steady interferer inside a weaker station's passband. See "What the capture set offers so far" under [LC-013](lc-gate.md#lc-013).
-- Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule. LC-012's
-  capture scoring bears on it: see "Scored on recorded captures" under [LC-012](lc-gate.md#lc-012).
+- ~~Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule~~: decided
+  2026-10-14, not ported (T-026, settled decision 5).
 - A RADE V2 correlator. There is no V2 reference on `TEST` yet. Three V2
   captures (two stations, 40 m, heavy multipath, both decoding at about
   0 to 8 dB) are logged as T-008 in `docs/test-findings.md` as the

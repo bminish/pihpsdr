@@ -80,6 +80,10 @@ Newest first.
   `make DIVCAP=1` built a plain binary; restored (LT-029). LC-056: at his
   request the client's two `g_idle_add` adopters move from `diversity_menu.c`
   to `diversity_auto.c` (stubs: LT-030).
+- 2026-10-14: T-026, the empty-band stand-down against today's engine: not needed
+  (Level output and LC-012 already cover it: 18 of 27 captures within 0.5 dB
+  of arm 0, four more below it), costs a timer, and assumes arm 0 is the good antenna. Decided
+  against; settled decision 5; off the to-port lists.
 - 2026-10-14: LC-057, the Enable tick follows `DIVT` (and a remote client) while
   the Diversity menu is open: the status tick syncs it, as it does Hold.
 
