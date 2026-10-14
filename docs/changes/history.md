@@ -308,3 +308,8 @@ Newest first.
   local commits made on 2026-09-28 were re-cut into LC-001 … LC-009, and
   the 6 Hz default was dropped. The pre-split branch is kept as
   `history/backup/TEST-pre-split-20260930`.
+- 2026-10-14: LC-058, a review for dead code and stale comments: two declarations
+  nothing defines, a pointer to `DIV_REF_SCHEME`, three comments naming the
+  removed Resolution control. Docs: the register front page, `open-items.md`
+  and `upstream-reconcile.md` brought up to date; links to `diversity.md`,
+  which is not on `TEST`, turned into plain text.
