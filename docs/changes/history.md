@@ -80,6 +80,8 @@ Newest first.
   `make DIVCAP=1` built a plain binary; restored (LT-029). LC-056: at his
   request the client's two `g_idle_add` adopters move from `diversity_menu.c`
   to `diversity_auto.c` (stubs: LT-030).
+- 2026-10-14: LC-057, the Enable tick follows `DIVT` (and a remote client) while
+  the Diversity menu is open: the status tick syncs it, as it does Hold.
 
 - 2026-10-07: branch `test/auto-bins` from `TEST`: T-019 and T-020 (the
   Averaging time and the bin width, swept over the capture set), LC-050
