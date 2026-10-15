@@ -2,19 +2,22 @@
 
 `TEST` on [bminish/pihpsdr](https://github.com/bminish/pihpsdr) tracks the `TEST` branch of [dl1ycf/pihpsdr](https://github.com/dl1ycf/pihpsdr) and carries a few local changes on top of it, mostly to auto diversity. This file is the front page of the register: what is still local, where the finished work is written up, and where the rules, decisions and open work are.
 
-**Where we are (2026-10-15).** dl1ycf has taken our diversity series into `upstream/TEST` twice: `f05546e3` (2026-10-08, LC-001 to LC-047, one squashed commit) and `07ae1f56` (2026-10-15, "updated AUTO DIVERSITY by aligning with Brendan's repo", LC-048 to LC-058). Of the 55 changes in the register, **52 are accepted** and no longer differ from upstream (two of them he made himself), **none is pending**, 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. He changed one thing on the way in: LC-056's panadapter repaint in `diversity_client_set_status()` is gone. `TEST` is `upstream/TEST` (`07ae1f56`, 0 behind) plus our local-only layer: the capture recorder and its `Makefile` block (`make DIVCAP=1`, ours and never going upstream), the test harness and tools, and these docs. The next free number is **LC-059**.
+**Where we are (2026-10-15).** dl1ycf has taken our diversity series into `upstream/TEST` twice: `f05546e3` (2026-10-08, LC-001 to LC-047, one squashed commit) and `07ae1f56` (2026-10-15, "updated AUTO DIVERSITY by aligning with Brendan's repo", LC-048 to LC-058). Of the 57 changes in the register, **52 are accepted** and no longer differ from upstream (two of them he made himself), **2 are pending** (local only: LC-059, LC-060, the objective and reference order), 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. He changed one thing on the way in: LC-056's panadapter repaint in `diversity_client_set_status()` is gone. `TEST` is `upstream/TEST` (`07ae1f56`, 0 behind) plus our local-only layer: the capture recorder and its `Makefile` block (`make DIVCAP=1`, ours and never going upstream), the test harness and tools, and these docs. The next free number is **LC-061**.
 
 ## Register
 
-### Pending: nothing local
+### Pending: local, not yet in upstream
 
-Every change from LC-048 to LC-058 arrived in `07ae1f56` (2026-10-15) and moved to [accepted.md](changes/accepted.md); the source in `src/` now differs from `upstream/TEST` only by `src/diversity_capture.[ch]` (see Local tooling). How that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-15-the-second-reconcile).
+Status **Local**: carried here only. Both edit files he owns (`radio.h`, `diversity_menu.c`, `diversity_auto.h`). Every change from LC-048 to LC-058 arrived in `07ae1f56` (2026-10-15) and moved to [accepted.md](changes/accepted.md); how that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-15-the-second-reconcile).
 
-**Planned, not started:**
+| ID | Kind | Summary | Files | Depends on | Status |
+|---|---|---|---|---|---|
+| [LC-059](changes/lc-menu.md#lc-059) | UI | The objective list reads Manual, Sum, Null, Best: the `DIV_AUTO_*` enum is reordered to match (`DIV_MANUAL` stays 0), so the combo needs no mapping. Null and Sum swap their stored numbers; no props migration, wire not bumped | radio.h, diversity_menu.c | — | Local |
+| [LC-060](changes/lc-menu.md#lc-060) | UI | The "Measure on" list is the `DIV_REF_*` order (Window, CW, FSK/Digital, Carrier, RADE V1): the enum is reordered, `div_ref_rows[]` and its two converters go, the range check ends at RADE V1. Four reference numbers move; same decisions as LC-059 | diversity_auto.h, diversity_auto.c, diversity_menu.c | — | Local |
 
-| ID | Kind | Summary | Files | Status |
-|---|---|---|---|---|
-| LC-059 (proposed) | UI | The Diversity menu lists the objectives as Manual, Sum, Null, Best: the `DIV_AUTO_*` enum in `radio.h` is reordered (`DIV_MANUAL` stays 0), so the combo needs no mapping. The stored number changes meaning (Null and Sum swap), so it needs a props migration, a `CLIENT_SERVER_VERSION` bump and a capture-format bump. Decisions still open: [open-items.md](changes/open-items.md#to-do-objective-order-lc-059) | radio.h, diversity_menu.c, radio.c, diversity_auto.c, client_server.h, diversity_capture.h | Discussed 2026-10-15, awaiting decisions |
+LC-059 and LC-060 are independent. The capture format is bumped to 5 for both (LT-033) so the existing captures replay as recorded; `reset_diversity_props.py` (LT-034) clears the diversity settings from a props file for the one-time break and for testing as a new user.
+
+**Possible PRs, when he asks or we choose to send:** LC-059 and LC-060 as one pair (they are one request and one break), written up for him in [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md), with the wire-version question that is his to decide.
 
 ### Deferred and dropped
 
@@ -69,7 +72,6 @@ The capture recorder (`make DIVCAP=1`), the unit tests under `test/diversity/`, 
 - **Client/server** faults are recorded, not fixed (decided 2026-10-01); upstream is taken there. LC-003 and LC-004 wait on it.
 - **DIVCAP in his tree:** the hooks are there and the module and `Makefile` block are not; that stays so (ours, local).
 - **Flagged:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
-- **To do:** the objective order, LC-059 (above).
 - **Stand-down: decided not to port (2026-10-14, T-026, settled decision 5).**
 - **To port** from `feature/auto-diversity`: time-based slew, 0.5 s default averaging, the Carrier tooltip. The 24/12/6 Hz Resolution menu was ported as LC-051 and then replaced by Auto (LC-052, LC-053).
 - **Pi CPU: rerun done (2026-10-08).** No regression, no dropped blocks, no bottleneck on the CM5; the worst row is RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four ([findings](bench/pi5-rerun-20261008.md)). Still to do: the functional suite on the Pi (needed `libopus-dev`; fixed in the bundle).
@@ -78,4 +80,4 @@ All of it: [changes/open-items.md](changes/open-items.md).
 
 ## History
 
-Latest: 2026-10-15, upstream took LC-048 to LC-058 (`07ae1f56`), dropping LC-056's repaint; `TEST` was rebuilt on it (the replayed commits are tooling and docs only) and the 13 test stubs for `rx_panadapter_update()` went with it (LT-032). Before that: 2026-10-14 `TEST` rebased onto `61f9a023`, LC-055 to LC-058 added, the empty-band stand-down decided against (T-026); 2026-10-08 upstream took the series (`f05546e3`); 2026-10-07 LC-022 dropped; 2026-10-06 re-synced onto `c60db7b4`. Full log: [changes/history.md](changes/history.md).
+Latest: 2026-10-15, upstream took LC-048 to LC-058 (`07ae1f56`), dropping LC-056's repaint; `TEST` was rebuilt on it and force-pushed; then LC-059 and LC-060 (objective and reference order, with the capture format bumped to 5). Before that: 2026-10-14 `TEST` rebased onto `61f9a023`, LC-055 to LC-058 added, the empty-band stand-down decided against (T-026); 2026-10-08 upstream took the series (`f05546e3`); 2026-10-07 LC-022 dropped; 2026-10-06 re-synced onto `c60db7b4`. Full log: [changes/history.md](changes/history.md).
