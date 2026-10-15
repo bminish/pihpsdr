@@ -1108,8 +1108,8 @@ void diversity_menu(GtkWidget *parent) {
   enable_b = btn;
   auto_btn = gtk_combo_box_text_new();
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Manual");
-  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Null (cancel common signal)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Sum (co-phase antennas)");
+  gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Null (cancel common signal)");
   gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(auto_btn), "Best (use the better antenna)");
   gtk_combo_box_set_active(GTK_COMBO_BOX(auto_btn), div_auto_mode);
   gtk_grid_attach(GTK_GRID(grid), auto_btn, 2, row, 4, 1);
