@@ -24,19 +24,167 @@
 
 #include <gtk/gtk.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
+#include "agc.h"
+#include "diversity_auto.h"
 #include "message.h"
 #include "new_menu.h"
 #include "rade_native.h"
 #include "rade_native_menu.h"
 #include "radio.h"
 #include "receiver.h"
+#include "mode.h"
+#include "version.h"
 #include "vfo.h"
 
 static GtkWidget *dialog = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *edge_label = NULL;
+static GtkWidget *capture_b = NULL;
+static GtkWidget *capture_label = NULL;
 static guint timer_id = 0;
+static guint event_timer_id = 0;
+static char last_state[1024];
+
+#define CAPTURE_DIR "rade-captures"
+
+
+//
+// ---- capture ----
+//
+static const char *agc_name(int a) {
+  static const char *n[] = {"off", "long", "slow", "medium", "fast", "custom", "fixed"};
+  return a >= 0 && a < 7 ? n[a] : "?";
+}
+
+static const char *div_mode_name(int m) {
+  static const char *n[] = {"manual", "auto-sum", "auto-null", "auto-best"};
+  return m >= 0 && m < 4 ? n[m] : "?";
+}
+
+//
+// The state that matters for judging a capture, as one line. The event
+// log gets a line whenever this changes.
+//
+static void state_line(char *buf, size_t len) {
+  const RECEIVER *rx = receiver[0];
+  int w = rade_native_waveform();
+  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  snprintf(buf, len,
+           "f=%lld ctun=%d ctunf=%lld mode=%s filter=%d..%d rade=V%d inv=%d(user %d) "
+           "agc=%s gain=%.0f hangthr=%.0f vol=%.1f nb=%d nr=%d snb=%d anf=%d "
+           "adc=%d att=%d preamp=%d div=%d divmode=%s divref=%d divrun=%d",
+           vfo[0].frequency, vfo[0].ctun, vfo[0].ctun_frequency, mode_string[vfo[0].mode],
+           rx->filter_low, rx->filter_high, w, inv, rade_native_user_invert(),
+           agc_name(rx->agc), rx->agc_gain, rx->agc_hang_threshold, rx->volume,
+           rx->nb, rx->nr, rx->snb, rx->anf, rx->adc, adc[rx->adc].attenuation,
+           adc[rx->adc].preamp, diversity_enabled, div_mode_name(div_auto_mode),
+           div_auto_ref, div_auto_running);
+}
+
+static void meta_text(char *buf, size_t len, const char *what) {
+  const RECEIVER *rx = receiver[0];
+  int w = rade_native_waveform();
+  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  double lo, hi;
+  rade_native_wdsp_edges(w, inv, 0.0, &lo, &hi);
+  time_t t = time(NULL);
+  char ts[64];
+  strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S %Z", localtime(&t));
+  snprintf(buf, len,
+           "--- %s ---\n"
+           "time: %s\n"
+           "build: %s (%s)\n"
+           "rade_waveform: V%d\n"
+           "rade_user_invert: %d\n"
+           "rade_effective_invert: %d\n"
+           "rade_centre_hz: %.1f\n"
+           "rade_passband_wdsp: %.0f..%.0f\n"
+           "dial_hz: %lld\n"
+           "ctun: %d  ctun_hz: %lld\n"
+           "rit: %d %lld\n"
+           "vfo_mode: %s\n"
+           "rx_filter: %d..%d\n"
+           "rx_sample_rate: %d\n"
+           "rx_adc: %d  antenna: %d  attenuation: %d  preamp: %d  dither: %d  random: %d\n"
+           "agc: %s  agc_gain: %.1f  agc_hang_threshold: %.1f  agc_hang: %.1f\n"
+           "volume_db: %.1f\n"
+           "nb: %d  nr: %d  snb: %d  anf: %d\n"
+           "diversity_enabled: %d\n"
+           "div_mode: %s\n"
+           "div_ref: %d  div_running: %d\n"
+           "div_weight: cos %.4f sin %.4f  norm %.3f\n"
+           "man_div: gain %.2f phase %.1f\n"
+           "files: _rx48.wav = float32 stereo 48 kHz, L=I R=Q as WDSP delivered it "
+           "(WDSP sign convention, includes RX volume); _speech.wav = decoded speech as "
+           "played; _stats.csv rx48_pos indexes into _rx48.wav\n",
+           what, ts, build_version, build_commit, w, rade_native_user_invert(), inv,
+           rade_native_centre(w), lo, hi, vfo[0].frequency, vfo[0].ctun, vfo[0].ctun_frequency,
+           vfo[0].rit_enabled, vfo[0].rit, mode_string[vfo[0].mode], rx->filter_low,
+           rx->filter_high, rx->sample_rate, rx->adc, adc[rx->adc].antenna,
+           adc[rx->adc].attenuation, adc[rx->adc].preamp, adc[rx->adc].dither,
+           adc[rx->adc].random, agc_name(rx->agc), rx->agc_gain, rx->agc_hang_threshold,
+           rx->agc_hang, rx->volume, rx->nb, rx->nr, rx->snb, rx->anf, diversity_enabled,
+           div_mode_name(div_auto_mode), div_auto_ref, div_auto_running, auto_div_cos,
+           auto_div_sin, div_norm, man_div_gain, man_div_phase);
+}
+
+static int event_cb(gpointer arg) {
+  if (!rade_native_capture_active()) {
+    event_timer_id = 0;
+    return G_SOURCE_REMOVE;
+  }
+  char now[1024];
+  state_line(now, sizeof now);
+  if (strcmp(now, last_state) != 0) {
+    rade_native_capture_event(now);
+    strcpy(last_state, now);
+  }
+  return G_SOURCE_CONTINUE;
+}
+
+static void capture_stop(void) {
+  if (!rade_native_capture_active()) { return; }
+  char meta[3072];
+  meta_text(meta, sizeof meta, "end");
+  rade_native_capture_stop(meta);
+}
+
+static void capture_start(void) {
+  mkdir(CAPTURE_DIR, 0755);
+  int w = rade_native_waveform();
+  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  time_t t = time(NULL);
+  char ts[32], stem[128], meta[3072];
+  strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", localtime(&t));
+  snprintf(stem, sizeof stem, "%s_%lldkHz_RADE-V%d%s", ts, vfo[0].frequency / 1000, w, inv ? "-inv" : "");
+  meta_text(meta, sizeof meta, "start");
+  if (rade_native_capture_start(CAPTURE_DIR, stem, meta) != 0) {
+    t_print("%s: could not start capture in %s\n", __func__, CAPTURE_DIR);
+    return;
+  }
+  state_line(last_state, sizeof last_state);
+  rade_native_capture_event(last_state);
+  if (event_timer_id == 0) { event_timer_id = g_timeout_add(500, event_cb, NULL); }
+}
+
+static void capture_cb(GtkWidget *widget, gpointer data) {
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    if (rade_native_waveform() == 0) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+      return;
+    }
+    capture_start();
+    if (!rade_native_capture_active()) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+    }
+  } else {
+    capture_stop();
+  }
+}
 
 static void cleanup(void) {
   if (timer_id != 0) {
@@ -84,6 +232,7 @@ static void show_edges(void) {
 static void waveform_cb(GtkWidget *widget, gpointer data) {
   if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) { return; }
   rade_native_configure(GPOINTER_TO_INT(data), rade_native_user_invert());
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
   apply();
   show_edges();
 }
@@ -105,6 +254,12 @@ static int update_cb(gpointer arg) {
              st.sync ? "SYNC" : "searching", st.snr_db, st.foff_hz, st.underruns, st.overruns);
   }
   gtk_label_set_text(GTK_LABEL(status_label), text);
+  rade_native_capture_info(text, sizeof text);
+  gtk_label_set_text(GTK_LABEL(capture_label), text);
+  if (!rade_native_capture_active() &&
+      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(capture_b))) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), FALSE);
+  }
   return G_SOURCE_CONTINUE;
 }
 
@@ -146,9 +301,16 @@ void rade_native_menu(GtkWidget *parent) {
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, 2, 5, 1);
+  capture_b = gtk_toggle_button_new_with_label("Capture");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
+  g_signal_connect(capture_b, "toggled", G_CALLBACK(capture_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 3, 1, 1);
+  capture_label = gtk_label_new("not capturing");
+  gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 3, 4, 1);
   GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never.");
   gtk_widget_set_halign(hint, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), hint, 0, 3, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), hint, 0, 4, 5, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   show_edges();
