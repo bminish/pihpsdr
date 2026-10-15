@@ -554,6 +554,7 @@ static void engine_stop(void) {
 #define TX_PCM_RING    8192              // 16 kHz int16
 #define TX_OUT_RING    65536             // 48 kHz complex
 #define TX_LEVEL       0.3               // modem amplitude into WDSP (T-11b)
+#define LV_BLOCK       4800              // 100 ms at 48 kHz
 #define TX_TAIL        8000              // 48 kHz samples held after the EOO (167 ms)
 
 static struct {
@@ -586,7 +587,19 @@ static struct {
   long eoo_end_pos;                      // out_w after the EOO, -1 until generated
   long tail;                             // samples delivered since then
   char call[16];
-} T = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
+  // mic level
+  double trim_db, trim_g;                // asked for / smoothed linear
+  int agc_on;
+  double agc_db;                         // leveller gain, dB
+  double k1x[2], k1y[2], k2x[2], k2y[2]; // K-weighting filter state
+  double blk_ms[100];                    // mean square of each 100 ms block, last 10 s
+  int blk_n, blk_pos;                    // blocks held, next slot
+  double acc_ms;                         // accumulating block
+  int acc_n;
+  double peak_acc, peak_hold;            // peak of this block / of the last second
+  int limit_hold;                        // blocks since the limiter acted
+  int pk_blocks;
+} T = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER, .agc_on = 1, .trim_g = 1.0 };
 
 static void tx_design(void) {
   for (int k = 0; k < TX_DEC_TAPS; k++) {
@@ -743,14 +756,139 @@ void rade_native_tx_enable(int on) {
   T.flush = 0;
   T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0;
   T.underruns = 0;
+  memset(T.k1x, 0, sizeof T.k1x); memset(T.k1y, 0, sizeof T.k1y);
+  memset(T.k2x, 0, sizeof T.k2x); memset(T.k2y, 0, sizeof T.k2y);
+  memset(T.blk_ms, 0, sizeof T.blk_ms);
+  T.blk_n = T.blk_pos = T.acc_n = T.pk_blocks = 0;
+  T.acc_ms = T.peak_acc = T.peak_hold = 0.0;
+  T.limit_hold = 1000;
+  T.agc_db = 0.0;
+  T.trim_g = pow(10.0, T.trim_db / 20.0);
   T.running = 1;
   T.enabled = 1;
   pthread_create(&T.thread, NULL, tx_worker, NULL);
 }
 
+
+//
+// Mic level: trim, leveller, limiter and BS.1770 loudness, at 48 kHz.
+// Called with T.mx held, for every mic block, transmitting or not.
+//
+static double lv_db(double ms) { return -0.691 + 10.0 * log10(ms + 1e-20); }
+
+// gated loudness over the blocks held: windows of 4 blocks (400 ms), absolute gate
+// -70 LUFS, relative gate 10 LU below the mean of what passed the first
+static int lv_gated(double *avg, double *mom) {
+  int n = T.blk_n;
+  if (n < 4) { return 0; }
+  double w[100];
+  int nw = 0;
+  for (int i = 0; i + 4 <= n; i++) {
+    double sum = 0.0;
+    for (int k = 0; k < 4; k++) {
+      int idx = (T.blk_pos - n + i + k + 200) % 100;
+      sum += T.blk_ms[idx];
+    }
+    w[nw++] = sum / 4.0;
+  }
+  *mom = lv_db(w[nw - 1]);
+  double s1 = 0.0;
+  int n1 = 0;
+  for (int i = 0; i < nw; i++) { if (lv_db(w[i]) > -70.0) { s1 += w[i]; n1++; } }
+  if (n1 == 0) { return 0; }
+  double rel = lv_db(s1 / n1) - 10.0;
+  double s2 = 0.0;
+  int n2 = 0;
+  for (int i = 0; i < nw; i++) { if (lv_db(w[i]) > -70.0 && lv_db(w[i]) > rel) { s2 += w[i]; n2++; } }
+  if (n2 < 8) { return 0; }                       // under 0.8 s of speech: too little to say
+  *avg = lv_db(s2 / n2);
+  return 1;
+}
+
+static void lv_block_done(void) {
+  T.blk_ms[T.blk_pos] = T.acc_ms / LV_BLOCK;
+  T.blk_pos = (T.blk_pos + 1) % 100;
+  if (T.blk_n < 100) { T.blk_n++; }
+  T.acc_ms = 0.0;
+  T.acc_n = 0;
+  if (T.peak_acc > T.peak_hold || ++T.pk_blocks >= 10) { T.peak_hold = T.peak_acc; T.pk_blocks = 0; }
+  T.peak_acc = 0.0;
+  if (T.limit_hold < 1000) { T.limit_hold++; }
+  if (!T.agc_on) {
+    // the leveller lets go slowly when it is switched off
+    T.agc_db *= 0.9;
+    return;
+  }
+  double avg, mom;
+  int ok = lv_gated(&avg, &mom);
+  if (!ok || mom < -55.0) { return; }             // nothing to level: leave the gain alone, do not lift noise
+  double step = 0.0;
+  if (mom > RADE_NATIVE_TARGET_LUFS + 8.0) {
+    step = -0.6;                                  // a shout: down 6 dB/s
+  } else {
+    double e = RADE_NATIVE_TARGET_LUFS - avg;
+    if (e > 1.5) { step = e > 12 ? 0.2 : e > 6 ? 0.1 : 0.05; }   // too low: up, 0.5 to 2 dB/s
+    else if (e < -1.5) { step = -0.1; }           // too high: down 1 dB/s
+  }
+  T.agc_db += step;
+  if (T.agc_db > 30.0) { T.agc_db = 30.0; }
+  if (T.agc_db < -20.0) { T.agc_db = -20.0; }
+}
+
+static void lv_process(double *buf, int n) {
+  static const double b1[3] = {1.53512485958697, -2.69169618940638, 1.19839281085285};
+  static const double a1[2] = {-1.69065929318241, 0.73248077421585};
+  static const double a2[2] = {-1.99004745483398, 0.99007225036621};
+  double target = pow(10.0, T.trim_db / 20.0);
+  double ga = pow(10.0, (T.agc_on ? T.agc_db : 0.0) / 20.0);
+  for (int i = 0; i < n; i++) {
+    T.trim_g += (target - T.trim_g) * 0.002;      // ~10 ms, no zipper noise
+    double x = buf[2 * i] * T.trim_g * ga;
+    double ax = fabs(x);
+    if (ax > T.peak_acc) { T.peak_acc = ax; }
+    if (ax > 0.9) {                               // gentle limiter: 0.9 .. 1.0, never past full scale
+      x = (x < 0 ? -1.0 : 1.0) * (0.9 + 0.1 * tanh((ax - 0.9) / 0.1));
+      T.limit_hold = 0;
+    }
+    buf[2 * i] = x;
+    // K-weighting: shelf then high-pass (BS.1770-4 coefficients for 48 kHz)
+    double y1 = b1[0] * x + b1[1] * T.k1x[0] + b1[2] * T.k1x[1] - a1[0] * T.k1y[0] - a1[1] * T.k1y[1];
+    T.k1x[1] = T.k1x[0]; T.k1x[0] = x; T.k1y[1] = T.k1y[0]; T.k1y[0] = y1;
+    double y2 = y1 - 2.0 * T.k2x[0] + T.k2x[1] - a2[0] * T.k2y[0] - a2[1] * T.k2y[1];
+    T.k2x[1] = T.k2x[0]; T.k2x[0] = y1; T.k2y[1] = T.k2y[0]; T.k2y[0] = y2;
+    T.acc_ms += y2 * y2;
+    if (++T.acc_n == LV_BLOCK) { lv_block_done(); }
+  }
+}
+
+void rade_native_tx_set_trim_db(double db) {
+  if (db < -20.0) { db = -20.0; }
+  if (db > 20.0) { db = 20.0; }
+  T.trim_db = db;
+}
+
+double rade_native_tx_get_trim_db(void) { return T.trim_db; }
+void rade_native_tx_set_agc(int on) { T.agc_on = on != 0; }
+int rade_native_tx_get_agc(void) { return T.agc_on; }
+
+void rade_native_tx_level(rade_native_txlevel_t *l) {
+  pthread_mutex_lock(&T.mx);
+  double avg = 0.0, mom = -99.0;
+  l->valid = lv_gated(&avg, &mom);
+  l->loud_avg = avg;
+  l->momentary = mom;
+  l->delta_db = avg - RADE_NATIVE_TARGET_LUFS;
+  double pk = T.peak_acc > T.peak_hold ? T.peak_acc : T.peak_hold;
+  l->peak_dbfs = 20.0 * log10(pk + 1e-9);
+  l->limiting = T.limit_hold < 10;
+  l->agc_gain_db = T.agc_on ? T.agc_db : 0.0;
+  pthread_mutex_unlock(&T.mx);
+}
+
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   if (!T.enabled) { return; }
   pthread_mutex_lock(&T.mx);
+  lv_process(buf, n);               // trim, level, limit and measure the mic, keyed or not
   if (!transmitting) {
     // discard whatever is in flight so the next over starts clean
     if (T.active || T.pcm_w != T.pcm_r || T.out_w != T.out_r) { T.flush = 1; pthread_cond_signal(&T.cv); }

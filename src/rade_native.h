@@ -125,6 +125,39 @@ void rade_native_tx_enable(int on);
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
 
 //
+// ---- mic level ----
+//
+// The mic is trimmed, optionally levelled, and measured before it goes into
+// the vocoder; it is measured whether or not the radio is transmitting, so it
+// can be set before keying. The measure is ITU-R BS.1770 loudness (LUFS,
+// K-weighted, mono), averaged with the standard gating over the last 10 s so
+// that pauses do not count. The ideal is RADE_NATIVE_TARGET_LUFS: the median
+// of the speech clips that come with rade_c (-24.7 to -17.1, median -19.9).
+// librade passes the level through (its output is 1.5 to 2.7 dB below its
+// input) and loses little between 10 dB under and 3 dB over that; louder
+// than that the speech clips.
+//
+#define RADE_NATIVE_TARGET_LUFS   (-20.0)
+#define RADE_NATIVE_RIGHT_DB      3.0     // "about right" is within this of the target
+
+void rade_native_tx_set_trim_db(double db);       // -20 .. +20
+double rade_native_tx_get_trim_db(void);
+void rade_native_tx_set_agc(int on);              // slow leveller towards the target
+int  rade_native_tx_get_agc(void);
+
+typedef struct {
+  int    valid;          // 0: not enough speech yet to say (loud_avg and delta_db are meaningless)
+  double loud_avg;       // gated average loudness, LUFS
+  double momentary;      // last 400 ms, LUFS
+  double delta_db;       // loud_avg - target: negative is too low
+  double peak_dbfs;      // peak of the last second
+  int    limiting;       // the limiter acted in the last second
+  double agc_gain_db;    // what the leveller is adding (0 with the leveller off)
+} rade_native_txlevel_t;
+
+void rade_native_tx_level(rade_native_txlevel_t *l);
+
+//
 // End of over. With RADE transmit on, releasing the transmitter has to wait
 // for the last speech, the end-of-over frame (with the callsign) and the
 // delay through WDSP's TX filters, about 0.4 s in all. radio_set_mox(0)
