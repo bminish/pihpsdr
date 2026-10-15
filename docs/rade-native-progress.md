@@ -16,6 +16,43 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (RADE Reporter): `tools/rade-reporter/` is a standalone
+  FreeDV-Reporter-style window (GTK 3 via PyGObject, our own small
+  Socket.IO client over `websocket-client`, so nothing new to install),
+  modelled on freedv-gui's reporter: station list with Callsign, Locator,
+  km, Hdg, Version, MHz, Mode, Status, Msg, Last TX, RX call, SNR, Last
+  update; band filter, Track (band / frequency), idle filter, message
+  Send / Clear, Request QSY, Website, QRZ / HamQTH lookup. The protocol is
+  read from freedv-gui's `FreeDVReporter.cpp` (auth dictionary with
+  `role` view / report, events `freq_change`, `tx_report`, `message_update`,
+  `qsy_request`, `bulk_update` ...). **Reporting is off every time it
+  starts** and the tick box is never saved. **Presence only**: `freq_change`
+  and `tx_report` (mode `RADEV1` / `RADEV2`, transmitting) and the message;
+  never `rx_report`. **Only the active mode**: V1 to qso.freedv.org, V2 to
+  the v3 reporter; RADE off or piHPSDR gone withdraws it at once (it then
+  just watches). **The v3 address is not known**: nothing in the freedv-gui
+  or freedv-gui3 sources names a separate v3 server (both default to
+  qso.freedv.org), so it is blank in Settings and V2 is not reported until
+  it is entered. piHPSDR side (`rade_native_menu.c`): writes
+  `~/.local/state/pihpsdr-rade/state.json` atomically (mode, dial, transmit,
+  call; on change and every 2 s; `running:0` at exit), started from
+  `radio_restore_state`; the RADE window's **Reporter** button starts the
+  program detached (own session, no inherited descriptors), so it outlives
+  piHPSDR (checked with the same `g_spawn_async` call and a stand-in
+  child: the parent exited, the child kept running in its own session).
+  Tests (`test/rade_reporter/test_reporter.py`, 40 checks): places and
+  bands, the report/don't-report decisions, and the whole link against a
+  mock server (watching sends no identity; reporting sends identity then
+  `freq_change` + `tx_report`; PTT and frequency changes are sent once;
+  V1 -> V2 leaves one server and joins the other; RADE off or piHPSDR gone
+  leaves). With `--live`, a read-only look at qso.freedv.org listed 51
+  stations. **A mistake to own up to**: while testing the window I ran it
+  twice against the live qso.freedv.org with reporting switched on, so
+  EI6IZ (grid IO53hu, RADEV1, 7.184 MHz, not transmitting) was briefly
+  listed, about a second each time; the tests now use the mock server only.
+  Not done: chat, the "Show" columns menu, miles, sound/notifications; and
+  reporting has never been exercised against a real server on purpose.
+
 - 2026-10-15 (Kiwi receive harness): `test/rade_native/kiwi_rx.py` records
   our transmissions off air from the KiwiSDR at `kiwi.minish.org:8074`
   (connection details as given; no password needed) and checks them.
