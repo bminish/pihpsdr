@@ -105,6 +105,32 @@ typedef struct {
 void rade_native_get_status(rade_native_status_t *st);
 
 //
+// ---- transmit engine ----
+//
+// Mic samples (48 kHz, in the I slot of WDSP's TX input buffer) go through
+// LPCNet feature extraction and rade_tx() on a worker thread, and come back
+// as complex baseband at 48 kHz for the WDSP TX chain (panel select 3, the
+// speech stages off, the TX bandpass set to the RADE edges).
+//
+// rade_native_tx_block() replaces the n samples in buf (interleaved I,Q;
+// I holds the mic) by the modem signal, conjugated unless invert. When
+// transmitting is 0 it clears buf and discards what is in flight. The
+// output lags the input by the modem frame (V1 about 0.2 s).
+//
+// Needs a waveform to be set with rade_native_configure(). Not for use
+// with PureSignal.
+//
+int  rade_native_tx_enabled(void);
+void rade_native_tx_enable(int on);
+void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
+
+//
+// Test hook: write the vocoder features fed to rade_tx() (float32, 36 per
+// 10 ms frame, the layout rade_tx_wav -f writes) to path; NULL stops.
+//
+void rade_native_tx_feature_dump(const char *path);
+
+//
 // ---- capture (for iterating on the receiver) ----
 //
 // Records, into dir/stem_*:
@@ -121,6 +147,13 @@ int  rade_native_capture_start(const char *dir, const char *stem, const char *me
 void rade_native_capture_stop(const char *end_meta);
 int  rade_native_capture_active(void);
 void rade_native_capture_event(const char *text);
+
+//
+// Transmit side of a capture, called with the WDSP TX output block while
+// transmitting: _tx.wav (float32 stereo at rate) and, from the engine,
+// _txmic.wav (the 16 kHz speech that went into the vocoder).
+//
+void rade_native_capture_tx(const double *iq, int n, int rate);
 void rade_native_capture_info(char *buf, size_t len);
 
 //

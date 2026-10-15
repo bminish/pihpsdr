@@ -11,10 +11,35 @@ Updated with every commit that moves the work. Newest entry first.
 | 1 Harness | started: T-11b chain test works; T-2 channels next |
 | 2 RX | first working version: engine + menu + receiver hooks, offline-tested; needs an on-air capture |
 | 3 Tuning, SNR, logging | not started |
-| 4 TX | not started |
+| 4 TX | first working version: engine + menu toggle + TXA hooks + TX capture; validated offline against librade's own tools; needs on-air test |
 | 5 Extras | not started |
 
 ## Log
+
+- 2026-10-15 (TX, Phase 4 first cut): `rade_native.c` has the transmit
+  engine: mic (I slot of WDSP's TX input buffer, 48 kHz) → 36-tap
+  decimator to 16 kHz → `lpcnet_compute_single_frame_features` →
+  `rade_tx` on a worker thread (own `struct rade`, own LPCNet state) →
+  48-tap polyphase interpolator to 48 kHz → level 0.3 → conj unless
+  invert → back into `tx->mic_input_buffer` as I and Q. WDSP side
+  (`rade_native_menu.c`, "Transmit RADE" toggle): the existing
+  `tx_xmit_captured_data_start()` state (EQ, leveler, CFC, compressor,
+  DEXP off, panel gain 1), `SetTXAPanelSelect(3)`, and the TX bandpass
+  from `tx_set_filter()` taking the RADE edges. Hooks in `transmitter.c`
+  (`#ifdef RADE_NATIVE`): `tx_full_buffer` (substitute before `xdexp`/
+  `fexchange0`, capture after), `tx_set_filter`, `tx_set_mic_gain` (the
+  slider does not scale the modem). Not allowed with PureSignal. Capture
+  now also writes `_tx.wav` (the TXA output block, float32 stereo at the TX
+  IQ rate) and `_txmic.wav` (16 kHz speech into the vocoder).
+  **Known gaps:** no EOO frame at the end of an over (the radio has left TX
+  by the time `tx_full_buffer` sees the end; needs a PTT-release hold);
+  only tested at 48 kHz TX IQ (P1 rate; P2 runs WDSP at 96 kHz and
+  resamples to 192 kHz, not exercised); the mic gain slider is ignored
+  while RADE TX is on; the level is fixed (0.3 into WDSP, ALC idle,
+  drive sets power) and uncalibrated against power; no VOX/PTT-timing
+  work; the TX filter edges are the nominal 1.6 / 1.0 kHz.
+  Also still open from the capture work: no script yet that plots
+  `stats.csv` (SNR / sync / offset) against `speech.wav` energy.
 
 - 2026-10-15 (capture): the RADE menu has a **Capture** toggle. It writes
   to `rade-captures/` (created in the working directory, git-ignored):
@@ -210,10 +235,35 @@ Bugs found and fixed on the way: speech buffer truncated at 8 of 12 frames
 per V1 modem frame; play-out cushion shorter than a V1 frame (now 200 ms V1,
 100 ms V2). Speech was listened to by correlation only, not by ear.
 
+**TX validation, offline** (`test/rade_native/tx_validate.py`; 12 s clips from
+rade_c's `wav/`, reference = `rade_tx_wav` + `rade_rx_wav`, ours = TX
+engine → WDSP TXA (the capture, far side of WDSP) → WDSP RXA → RX engine):
+
+| clip | feature error | decode vs ref (envelope) | TXA out rms / PAPR | TXA band |
+|---|---|---|---|---|
+| brian_g8sez V1 | 0.004 | 0.98 | 0.52 / 4.8 dB | -2227..-738 Hz |
+| david_vk5dgr V1 | 0.007 | 0.93 | 0.52 / 4.7 dB | -2227..-727 Hz |
+| k0pfx_mel V1 | 0.009 | 0.96 | 0.52 / 4.7 dB | -2227..-727 Hz |
+| brian_g8sez V2 | 0.004 | 0.98 | 0.41 / 3.5 dB | -1887..-1102 Hz |
+| david_vk5dgr V2 | 0.007 | 0.97 | 0.42 / 3.4 dB | -1887..-1102 Hz |
+| k0pfx_mel V2 | 0.009 | 0.98 | 0.42 / 3.3 dB | -1887..-1102 Hz |
+
+All six PASS (feature error under 5 %, envelope correlation 0.90 or more
+against the reference decode). The TXA output sits at negative frequency,
+which is WDSP's upper sideband, inside the planned filter. Output level
+is well under the ALC clamp (rms 0.67). Notes: (1) the waveform
+correlation with the reference decode is 0.02-0.06 (V1) and 0.18-0.42 (V2)
+even though the features agree to under 1 %: the vocoder output is not
+phase-reproducible, so only envelopes are compared; (2) the first version of
+the metric compared unaligned ends and wrongly failed clips, now aligned and
+trimmed by 0.5 s; (3) end-to-end latency TX engine + WDSP + RX engine is
+about 1.9 s on V1 (clip start to first decoded speech), dominated by the
+V1 frame, the WDSP linear-phase filters and the play-out cushion.
+
 ## Next
 
 1. Capture on air with the RADE button; report what happens.
-2. TX (Phase 4).
+2. On-air TX test (V1 first): Transmit RADE, Capture on, key up briefly into a dummy load or on a quiet frequency; check `_tx.wav` band and level, then the far end.
 3. T-2: the same chain over AWGN and fading channels, with and without WDSP.
 4. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
 5. Listen to the mirrored V2 decode.

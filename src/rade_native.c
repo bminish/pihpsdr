@@ -110,14 +110,19 @@ int rade_native_probe(char *msg, size_t len) {
 //
 #define CAP_IQ_RING    (1 << 22)         // 4 MB, ~10 s of 48 kHz complex float
 #define CAP_SP_RING    (1 << 20)
+#define CAP_TX_RING    (1 << 24)         // 16 MB: 192 kHz complex float is 1.5 MB/s
+#define CAP_MIC_RING   (1 << 20)
 
 static struct {
   int active, run;
   char stem[512];
   FILE *iq, *sp, *csv, *ev;
   uint32_t iq_bytes, sp_bytes;
-  uint8_t *iq_ring, *sp_ring;
-  long iq_w, iq_r, sp_w, sp_r;
+  uint8_t *iq_ring, *sp_ring, *tx_ring, *mic_ring;
+  long iq_w, iq_r, sp_w, sp_r, tx_w, tx_r, mic_w, mic_r;
+  FILE *txf, *micf;                      // opened by the writer when data comes
+  uint32_t tx_bytes, mic_bytes;
+  int tx_rate;
   long pos48;                            // 48 kHz samples captured
   long dropped;                          // bytes lost to a full ring
   double t0;
@@ -299,7 +304,68 @@ static void cap_row(long consumed, int nout) {
           rs.delta_hat, rs.freq_offset, rs.gain, rs.snr_est);
 }
 
+void rade_native_capture_tx(const double *iq, int n, int rate) {
+  pthread_mutex_lock(&E.mx);
+  if (C.active) {
+    C.tx_rate = rate;
+    float f[2 * 1024];
+    for (int done = 0; done < n; done += 1024) {
+      int m = n - done < 1024 ? n - done : 1024;
+      for (int k = 0; k < 2 * m; k++) { f[k] = (float)iq[2 * done + k]; }
+      ring_put(C.tx_ring, CAP_TX_RING, &C.tx_w, C.tx_r, f, m * 8);
+    }
+  }
+  pthread_mutex_unlock(&E.mx);
+}
+
+// called with E.mx held
+static void cap_push_mic(const int16_t *pcm, int n) {
+  if (C.active) { ring_put(C.mic_ring, CAP_MIC_RING, &C.mic_w, C.mic_r, pcm, n * 2); }
+}
+
+static long take(uint8_t *ring, long size, long *r, long w, uint8_t *dst, long max) {
+  long n = w - *r;
+  if (n > max) { n = max; }
+  for (long i = 0; i < n; i++) { dst[i] = ring[(*r + i) % size]; }
+  *r += n;
+  return n;
+}
+
+static void drain_tx(void) {
+  static uint8_t tmp[1 << 16];
+  for (;;) {
+    pthread_mutex_lock(&E.mx);
+    long n = take(C.tx_ring, CAP_TX_RING, &C.tx_r, C.tx_w, tmp, sizeof tmp);
+    int rate = C.tx_rate;
+    pthread_mutex_unlock(&E.mx);
+    if (n > 0 && !C.txf) {
+      char path[1024];
+      snprintf(path, sizeof path, "%s_tx.wav", C.stem);
+      C.txf = fopen(path, "wb");
+      if (C.txf) { wav_header(C.txf, 3, 2, rate, 32, 0); }
+    }
+    if (n > 0 && C.txf) { fwrite(tmp, 1, n, C.txf); C.tx_bytes += n; }
+    if (n < (long)sizeof tmp) { break; }
+  }
+  for (;;) {
+    pthread_mutex_lock(&E.mx);
+    long n = take(C.mic_ring, CAP_MIC_RING, &C.mic_r, C.mic_w, tmp, sizeof tmp);
+    pthread_mutex_unlock(&E.mx);
+    if (n > 0 && !C.micf) {
+      char path[1024];
+      snprintf(path, sizeof path, "%s_txmic.wav", C.stem);
+      C.micf = fopen(path, "wb");
+      if (C.micf) { wav_header(C.micf, 1, 1, 16000, 16, 0); }
+    }
+    if (n > 0 && C.micf) { fwrite(tmp, 1, n, C.micf); C.mic_bytes += n; }
+    if (n < (long)sizeof tmp) { break; }
+  }
+  if (C.txf) { wav_header(C.txf, 3, 2, C.tx_rate, 32, C.tx_bytes); fflush(C.txf); }
+  if (C.micf) { wav_header(C.micf, 1, 1, 16000, 16, C.mic_bytes); fflush(C.micf); }
+}
+
 static void drain(int final) {
+  drain_tx();
   static uint8_t tmp[1 << 16];
   for (;;) {
     long n;
@@ -372,7 +438,11 @@ int rade_native_capture_start(const char *dir, const char *stem, const char *met
         "v2_delta_hat,v2_foff,v2_gain,v2_snr\n", C.csv);
   C.iq_ring = malloc(CAP_IQ_RING);
   C.sp_ring = malloc(CAP_SP_RING);
-  C.iq_w = C.iq_r = C.sp_w = C.sp_r = 0;
+  C.tx_ring = malloc(CAP_TX_RING);
+  C.mic_ring = malloc(CAP_MIC_RING);
+  C.iq_w = C.iq_r = C.sp_w = C.sp_r = C.tx_w = C.tx_r = C.mic_w = C.mic_r = 0;
+  C.tx_bytes = C.mic_bytes = 0;
+  C.txf = C.micf = NULL;
   C.pos48 = 0; C.dropped = 0;
   C.t0 = now_sec();
   C.run = 1;
@@ -405,19 +475,25 @@ void rade_native_capture_stop(const char *end_meta) {
                                          now_sec() - C.t0, C.pos48, C.dropped); fclose(m); }
   }
   fclose(C.iq); fclose(C.sp); fclose(C.csv); fclose(C.ev);
-  C.iq = C.sp = C.csv = C.ev = NULL;
-  free(C.iq_ring); free(C.sp_ring);
-  C.iq_ring = C.sp_ring = NULL;
+  if (C.txf) { fclose(C.txf); }
+  if (C.micf) { fclose(C.micf); }
+  C.iq = C.sp = C.csv = C.ev = C.txf = C.micf = NULL;
+  free(C.iq_ring); free(C.sp_ring); free(C.tx_ring); free(C.mic_ring);
+  C.iq_ring = C.sp_ring = C.tx_ring = C.mic_ring = NULL;
 }
 
 void rade_native_capture_info(char *buf, size_t len) {
   if (!C.active) { snprintf(buf, len, "not capturing"); return; }
   snprintf(buf, len, "%s  %.0f s  %.1f MB%s", strrchr(C.stem, '/') ? strrchr(C.stem, '/') + 1 : C.stem,
-           now_sec() - C.t0, (C.iq_bytes + C.sp_bytes) / 1e6, C.dropped ? "  (DROPPED DATA)" : "");
+           now_sec() - C.t0, (C.iq_bytes + C.sp_bytes + C.tx_bytes + C.mic_bytes) / 1e6,
+           C.dropped ? "  (DROPPED DATA)" : "");
 }
+
+static void tx_stop(void);
 
 static void engine_stop(void) {
   rade_native_capture_stop(NULL);
+  tx_stop();
   if (E.running) {
     pthread_mutex_lock(&E.mx);
     E.running = 0;
@@ -428,6 +504,216 @@ static void engine_stop(void) {
   if (E.r) { rade_close(E.r); E.r = NULL; }
   free(E.in_ring); E.in_ring = NULL;
   free(E.out_ring); E.out_ring = NULL;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Transmit engine
+//
+//////////////////////////////////////////////////////////////////////////////
+
+#define TX_DEC         3                 // 48 kHz mic -> 16 kHz
+#define TX_DEC_TAPS    36
+#define TX_INT         6                 // 8 kHz modem -> 48 kHz
+#define TX_INT_TAPS    48
+#define TX_PCM_RING    8192              // 16 kHz int16
+#define TX_OUT_RING    65536             // 48 kHz complex
+#define TX_LEVEL       0.3               // modem amplitude into WDSP (T-11b)
+
+static struct {
+  int enabled, running, flush;
+  struct rade *r;
+  LPCNetEncState *enc;
+  pthread_t thread;
+  pthread_mutex_t mx;
+  pthread_cond_t cv;
+  int16_t pcm[TX_PCM_RING];
+  long pcm_w, pcm_r;
+  RADE_COMP out[TX_OUT_RING];
+  long out_w, out_r;
+  double dec_h[TX_DEC_TAPS], int_h[TX_INT_TAPS];
+  double dec_hist[TX_DEC_TAPS];
+  int dec_pos, dec_phase;
+  double ihi[TX_INT_TAPS / TX_INT], ihq[TX_INT_TAPS / TX_INT];   // interpolator history
+  int ipos;
+  FILE *featdump;
+  unsigned long underruns;
+} T = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
+
+static void tx_design(void) {
+  for (int k = 0; k < TX_DEC_TAPS; k++) {
+    double m = k - 0.5 * (TX_DEC_TAPS - 1), fc = 7200.0 / 48000.0;
+    double sinc = fabs(m) < 1e-9 ? 2.0 * fc : sin(2.0 * M_PI * fc * m) / (M_PI * m);
+    double w = 0.42 - 0.5 * cos(2.0 * M_PI * k / (TX_DEC_TAPS - 1)) + 0.08 * cos(4.0 * M_PI * k / (TX_DEC_TAPS - 1));
+    T.dec_h[k] = sinc * w;
+  }
+  for (int k = 0; k < TX_INT_TAPS; k++) {
+    double m = k - 0.5 * (TX_INT_TAPS - 1), fc = 3900.0 / 48000.0;
+    double sinc = fabs(m) < 1e-9 ? 2.0 * fc : sin(2.0 * M_PI * fc * m) / (M_PI * m);
+    double w = 0.42 - 0.5 * cos(2.0 * M_PI * k / (TX_INT_TAPS - 1)) + 0.08 * cos(4.0 * M_PI * k / (TX_INT_TAPS - 1));
+    T.int_h[k] = TX_INT * sinc * w;
+  }
+}
+
+static void *tx_worker(void *arg) {
+  struct rade *r = T.r;
+  int nfeat = rade_n_features_in_out(r), nout = rade_n_tx_out(r);
+  float *feat = malloc(sizeof(float) * nfeat);
+  RADE_COMP *mod = malloc(sizeof(RADE_COMP) * nout);
+  int fidx = 0;
+  const int per = TX_INT_TAPS / TX_INT;      // taps per polyphase branch
+  static RADE_COMP up[1152 * TX_INT];
+  pthread_mutex_lock(&T.mx);
+  while (T.running) {
+    if (T.flush) {
+      T.flush = 0; T.pcm_r = T.pcm_w; T.out_r = T.out_w; fidx = 0;
+      memset(T.ihi, 0, sizeof T.ihi); memset(T.ihq, 0, sizeof T.ihq); T.ipos = 0;
+    }
+    if (T.pcm_w - T.pcm_r < LPCNET_FRAME_SIZE) {
+      pthread_cond_wait(&T.cv, &T.mx);
+      continue;
+    }
+    int16_t pcm[LPCNET_FRAME_SIZE];
+    for (int i = 0; i < LPCNET_FRAME_SIZE; i++) { pcm[i] = T.pcm[(T.pcm_r + i) % TX_PCM_RING]; }
+    T.pcm_r += LPCNET_FRAME_SIZE;
+    pthread_mutex_unlock(&T.mx);
+    lpcnet_compute_single_frame_features(T.enc, pcm, &feat[fidx * NB_TOTAL_FEATURES], 0);
+    fidx++;
+    if (fidx * NB_TOTAL_FEATURES == nfeat) {
+      fidx = 0;
+      if (T.featdump) { fwrite(feat, sizeof(float), nfeat, T.featdump); }
+      int n = rade_tx(r, mod, feat);
+      // 8 kHz -> 48 kHz, polyphase (the interpolator history belongs to this thread
+      // between flushes; a flush resets it above, under the lock)
+      int nup = 0;
+      for (int i = 0; i < n && nup + TX_INT <= (int)(sizeof up / sizeof up[0]); i++) {
+        T.ihi[T.ipos] = mod[i].real * TX_LEVEL;
+        T.ihq[T.ipos] = mod[i].imag * TX_LEVEL;
+        T.ipos = (T.ipos + 1) % per;
+        for (int ph = 0; ph < TX_INT; ph++) {
+          double yi = 0.0, yq = 0.0;
+          for (int k = 0; k < per; k++) {
+            int idx = (T.ipos - 1 - k + 2 * per) % per;
+            yi += T.int_h[ph + TX_INT * k] * T.ihi[idx];
+            yq += T.int_h[ph + TX_INT * k] * T.ihq[idx];
+          }
+          up[nup].real = (float)yi;
+          up[nup].imag = (float)yq;
+          nup++;
+        }
+      }
+      pthread_mutex_lock(&T.mx);
+      if (!T.flush) {
+        for (int i = 0; i < nup; i++) {
+          if (T.out_w - T.out_r >= TX_OUT_RING) { break; }
+          T.out[T.out_w % TX_OUT_RING] = up[i];
+          T.out_w++;
+        }
+      }
+      continue;
+    }
+    pthread_mutex_lock(&T.mx);
+  }
+  pthread_mutex_unlock(&T.mx);
+  free(feat); free(mod);
+  return NULL;
+}
+
+int rade_native_tx_enabled(void) { return T.enabled; }
+
+void rade_native_tx_feature_dump(const char *path) {
+  pthread_mutex_lock(&T.mx);
+  if (T.featdump) { fclose(T.featdump); T.featdump = NULL; }
+  if (path) { T.featdump = fopen(path, "wb"); }
+  pthread_mutex_unlock(&T.mx);
+}
+
+static void tx_stop(void) {
+  if (T.running) {
+    pthread_mutex_lock(&T.mx);
+    T.running = 0;
+    pthread_cond_broadcast(&T.cv);
+    pthread_mutex_unlock(&T.mx);
+    pthread_join(T.thread, NULL);
+  }
+  if (T.r) { rade_close(T.r); T.r = NULL; }
+  if (T.enc) { lpcnet_encoder_destroy(T.enc); T.enc = NULL; }
+  T.enabled = 0;
+}
+
+void rade_native_tx_enable(int on) {
+  if (!on) { tx_stop(); return; }
+  if (T.enabled || E.waveform == 0) { return; }
+  tx_design();
+  static int inited = 0;
+  if (!inited) { rade_initialize(); inited = 1; }
+  int flags = RADE_USE_C_ENCODER | RADE_VERBOSE_0;
+  if (E.waveform == RADE_NATIVE_V2) { flags |= RADE_MODE_V2; }
+  T.r = rade_open("", flags);
+  T.enc = lpcnet_encoder_create();
+  if (!T.r || !T.enc) { tx_stop(); return; }
+  T.pcm_w = T.pcm_r = T.out_w = T.out_r = 0;
+  memset(T.dec_hist, 0, sizeof T.dec_hist);
+  T.dec_pos = T.dec_phase = 0;
+  memset(T.ihi, 0, sizeof T.ihi); memset(T.ihq, 0, sizeof T.ihq); T.ipos = 0;
+  T.flush = 0;
+  T.underruns = 0;
+  T.running = 1;
+  T.enabled = 1;
+  pthread_create(&T.thread, NULL, tx_worker, NULL);
+}
+
+void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
+  if (!T.enabled) { return; }
+  pthread_mutex_lock(&T.mx);
+  if (!transmitting) {
+    // discard whatever is in flight so the next over starts clean
+    if (T.pcm_w != T.pcm_r || T.out_w != T.out_r) { T.flush = 1; pthread_cond_signal(&T.cv); }
+    pthread_mutex_unlock(&T.mx);
+    memset(buf, 0, sizeof(double) * 2 * n);
+    return;
+  }
+  // 48 kHz mic -> 16 kHz speech
+  int16_t blk[1024 / TX_DEC + 2];
+  int nb = 0;
+  for (int i = 0; i < n; i++) {
+    T.dec_hist[T.dec_pos] = buf[2 * i];
+    T.dec_pos = (T.dec_pos + 1) % TX_DEC_TAPS;
+    if (++T.dec_phase == TX_DEC) {
+      T.dec_phase = 0;
+      double a = 0.0;
+      for (int k = 0; k < TX_DEC_TAPS; k++) {
+        a += T.dec_h[k] * T.dec_hist[(T.dec_pos - 1 - k + 2 * TX_DEC_TAPS) % TX_DEC_TAPS];
+      }
+      a *= 32768.0;
+      if (nb < (int)(sizeof blk / sizeof blk[0])) {
+        blk[nb++] = (int16_t)(a > 32767.0 ? 32767 : a < -32767.0 ? -32767 : a);
+      }
+    }
+  }
+  if (T.pcm_w - T.pcm_r + nb <= TX_PCM_RING) {
+    for (int i = 0; i < nb; i++) { T.pcm[(T.pcm_w + i) % TX_PCM_RING] = blk[i]; }
+    T.pcm_w += nb;
+    pthread_cond_signal(&T.cv);
+  }
+  // modem signal back out; WDSP's convention needs the conjugate unless inverted
+  const double sq = rade_native_conjugate(invert) ? -1.0 : 1.0;
+  for (int i = 0; i < n; i++) {
+    if (T.out_r < T.out_w) {
+      RADE_COMP c = T.out[T.out_r % TX_OUT_RING];
+      T.out_r++;
+      buf[2 * i] = c.real;
+      buf[2 * i + 1] = sq * c.imag;
+    } else {
+      buf[2 * i] = 0.0;
+      buf[2 * i + 1] = 0.0;
+      T.underruns++;
+    }
+  }
+  pthread_mutex_unlock(&T.mx);
+  pthread_mutex_lock(&E.mx);
+  cap_push_mic(blk, nb);
+  pthread_mutex_unlock(&E.mx);
 }
 
 int rade_native_waveform(void) { return E.waveform; }
