@@ -135,7 +135,7 @@ that `rade_tx` output really is one-sided (carriers only at positive
 frequency). If so, I/Q TX is a clean single-sideband signal with no image
 at all, which is better than the real-part-then-SSB-modulator path
 freedv-gui relies on. A spectrum capture of a `rade_tx` frame settles it
-(test T-1).
+(test T-1). **Result (2026-10-15, progress file): V2 is one-sided (99.9 % of power at positive frequency, 1070..1898 Hz). V1 is 98.8 % positive but its time-domain soft limiter spreads about 10 % of the power outside 750..2200 Hz, so the V1 TX bandpass is required, not optional.**
 
 ### Centre frequency as the operator's number
 
