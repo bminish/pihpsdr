@@ -130,7 +130,7 @@ so. They are not true now.
 
 Decided 2026-10-08 (owner):
 
-1. **DIVCAP stays whole in our `TEST`**: the module, the Makefile block,
+1. **DIVCAP stays whole in our `TEST`** (restated 2026-10-15 by the owner: ours and local, an option we keep, never going upstream): the module, the Makefile block,
    the `.gitignore` entries and the hooks in `diversity_auto.c` and
    `diversity_menu.c`, as they are. **It goes entirely when this work goes
    to `main`.** The removal is clean by construction: every piece is
@@ -140,13 +140,15 @@ Decided 2026-10-08 (owner):
    `test/diversity/devtools/remove.sh` (dry run by default, `--do` to
    act) strips them. *Not re-run on 2026-10-08:* run it dry first when the
    time comes and check that it still finds all 13 hook blocks and the
-   Makefile block, since upstream's tree now carries the hooks. Until then
-   the hook comments saying "never sent upstream" are wrong about his
-   tree but are left, because the code is left intact.
+   Makefile block, since upstream's tree now carries the hooks (22 blocks: 13 in
+   `diversity_auto.c`, 9 in `diversity_menu.c`; the "13" counted on
+   2026-10-08 was before LT-027). Until then the hook comments saying "never
+   sent upstream" are wrong about his tree but are left, because the code is
+   left intact.
 2. **The reference-only code is cut here** (LC-049): see its write-up in
    [lc-gate.md](lc-gate.md#lc-049). He will pull it again.
 3. **PR #150 is closed**, superseded by `f05546e3`.
-4. **Force-push**: not decided; waits for the owner's OK.
+4. **Force-push**: only with the owner's OK; given 2026-10-08 and again 2026-10-14 (history.md).
 5. **Docs are ours and stay.** The comments in his source that cite our
    register (LC-029 twice, LC-014) are left as they are.
 
@@ -167,3 +169,38 @@ rewording of `diversity_capture.h` (our file) and two history lines that
 LC-039 and LC-040 had added. Before the documentation edits that
 follow this page, the new tip's `docs/`, `test/`, `Makefile` and capture
 module equalled the old tip's.
+
+## 2026-10-15: the second reconcile
+
+**What upstream did.** Two commits since `61f9a023`: `aa97b063` (a two-tone
+signal for `hpsdrsim`, not ours) and `07ae1f56` ("updated AUTO DIVERSITY by
+aligning with Brendan's repo", 3 files, +412 −381). The second takes our
+pending series LC-048 to LC-058 in `diversity_auto.c/.h` and
+`diversity_menu.c`, again as one squashed commit, so `git cherry` is no use
+and the check is by tree.
+
+**How "taken" was checked.** `git diff upstream/TEST backup/TEST-pre-rebase-20261015
+-- src` (our old tip against his):
+
+| Difference | What it is |
+|---|---|
+| `diversity_auto.c`, 20 lines | LC-056's panadapter repaint in `diversity_client_set_status()` and the `rx_panadapter.h` include: **he dropped them** (his reason: a repaint must wait for complete pixel samples; see [lc-settings.md](lc-settings.md#lc-056)). Everything else in the three files is identical to ours. |
+| `Makefile` | Our DIVCAP block (LT-029) is not in his; the `hpsdrsim` rules without `sintab` are his (`aa97b063`). |
+| `.gitignore`, `src/diversity_capture.[ch]` | Ours (LT-001): not in his. |
+| `hpsdrsim.c/.h`, `newhpsdrsim.c` | His, not ours. |
+
+So LC-048 to LC-058 are **accepted**, LC-056 in his form.
+
+**What was done.** `TEST` rebuilt on `07ae1f56` by replaying the commits that
+carry no `Local-Change:` trailer (tooling and docs) from the old tip, backup
+tag `backup/TEST-pre-rebase-20261015`: 16 commits replayed, one dropped
+(LT-027's code is already in his tree; the docs commit for it was kept). No
+conflict except LT-027's, resolved by keeping his. Afterwards the 13 test
+stubs for `rx_panadapter_update()` were removed (LT-032), the register moved
+LC-048 to LC-058 to [accepted.md](accepted.md), and the docs were brought up
+to date. Both builds link (DIVCAP checked by symbol), the suite gives the same
+result as before (7 PASS, the known-gap lines).
+
+**Left on our side.** Only the local layer: `src/diversity_capture.[ch]`, the
+`Makefile` DIVCAP block, `.gitignore` lines, `test/`, `docs/`. Nothing in
+`src/diversity_*.c/.h` differs from his tree.

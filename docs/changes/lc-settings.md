@@ -4,7 +4,7 @@ How the auto-diversity settings get from the props file (or a client) into the e
 
 Part of the local-change register: [changes.md](../changes.md).
 
-> **2026-10-08:** every change in this file that is listed in [accepted.md](accepted.md) is in `upstream/TEST` (most since `f05546e3`); the pending ones are in the [register](../changes.md#register). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+> **2026-10-15:** every change in this file is in `upstream/TEST`, except any listed as deferred or dropped in the [register](../changes.md#register): LC-001 to LC-047 since `f05546e3` (2026-10-08) and LC-048 to LC-058 since `07ae1f56` (2026-10-15). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
 
 ---
 
@@ -141,8 +141,8 @@ and `diversity_client_set_status()` to move out of `diversity_menu.c`. They
 were put there when the idea was that the radio sends settings while the
 menu is open and the menu has to adjust. Neither touches a widget: the
 first converts the wire block and calls `diversity_auto_apply_settings()`,
-the second calls `diversity_auto_apply_status()` and repaints the
-panadapter once if the overlay has just gone. Both were already declared in
+the second calls `diversity_auto_apply_status()` and, as written here,
+repainted the panadapter once if the overlay had just gone. Both were already declared in
 `diversity_auto.h`.
 
 **Change.**
@@ -155,8 +155,21 @@ panadapter once if the overlay has just gone. Both were already declared in
   `from_double()`) and `rx_panadapter.h` (`rx_panadapter_update()`);
   `diversity_menu.c` loses its `rx_panadapter.h` include, which nothing
   else there used.
-- The 13 test and devtool programs that link `diversity_auto.c` get a stub
+- The 13 test and devtool programs that link `diversity_auto.c` got a stub
   for `rx_panadapter_update()` (LT-030, the commit before this one).
+
+**Taken 2026-10-15 (`07ae1f56`) without the repaint.** dl1ycf took the move
+but removed the `rx_panadapter_update()` call, the `overlay_was`/`overlay_now`
+test around it and the `rx_panadapter.h` include from
+`diversity_client_set_status()`. His reason: the panadapter must not be
+redrawn until the new pixel samples are complete (still being computed on the
+server, or being received on the client); the new window waits for the next
+pixels. `rx_panadapter_update()` draws from `rx->pixel_samples`, and the radio
+calls it only under `display_mutex` once `pixels_available` is set. We adopted
+his form. What it costs: a client that receives no further spectrum packet
+after diversity goes off keeps the last frame, overlay included, until one
+arrives. Not measured; display only. The stubs (LT-030) are therefore gone
+too (LT-032).
 
 **Checked.** Plain and `make DIVCAP=1` builds, DIVCAP by symbol; the
 test and devtool programs build; the suite gives the same result as

@@ -2,7 +2,7 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-Every change here is in `upstream/TEST`. Most arrived with `f05546e3` (2026-10-08), where dl1ycf took the whole series as one squashed commit; LC-005 and LC-021 he made himself earlier. They are no longer local differences. The write-up of each, with the problem, the change and how it was checked, is in the topic file the ID links to. How the squash was verified, and what it left over: [upstream-reconcile.md](upstream-reconcile.md).
+Every change here is in `upstream/TEST`. Most arrived with `f05546e3` (2026-10-08), where dl1ycf took the whole series as one squashed commit; LC-048 to LC-058 arrived the same way in `07ae1f56` (2026-10-15); LC-005 and LC-021 he made himself earlier. They are no longer local differences. The write-up of each, with the problem, the change and how it was checked, is in the topic file the ID links to. How the squash was verified, and what it left over: [upstream-reconcile.md](upstream-reconcile.md).
 
 IDs are permanent and numbered in the order they were made, not in the order below. "Depends on" is how the change was built, kept for the record: `(LC-003)` applied without it but made full sense only with it, `[LC-008]` a textual dependency (adjacent lines). Details: [git-workflow.md](git-workflow.md#dependencies-between-changes).
 
@@ -16,6 +16,7 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-001](lc-settings.md#lc-001) | Fix | Restore the saved auto-diversity settings at start-up | — | `f05546e3`, with the call placed after `vfo_restore_state()` |
 | [LC-002](lc-settings.md#lc-002) | Fix | Treat impossible saved values as missing | — | `f05546e3` |
 | [LC-026](lc-settings.md#lc-026) | Fix | Live Min coherence from the selected reference's slot | — | `f05546e3` |
+| [LC-056](lc-settings.md#lc-056) | Refactor | The client's settings and status adopters live in `diversity_auto.c`, not the menu (his request) | — | `07ae1f56`, **without** the panadapter repaint in the status adopter (he dropped it) |
 
 ## The Diversity menu
 
@@ -34,6 +35,8 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-039](lc-menu.md#lc-039) | UI | Restart averaging button removed | — | `f05546e3` |
 | [LC-040](lc-menu.md#lc-040) | UI | Hold and Invert move up into the freed cell | LC-039 | `f05546e3` |
 | [LC-047](lc-menu.md#lc-047) | UI | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | — | `f05546e3` |
+| [LC-054](lc-menu.md#lc-054) | UI | The status line shows the coherence on every reference with a Min coherence | — | `07ae1f56` |
+| [LC-057](lc-menu.md#lc-057) | UI | The Enable tick follows diversity being switched by `DIVT` or a remote client | — | `07ae1f56` |
 
 ## The estimate and its gate
 
@@ -46,6 +49,7 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-013](lc-gate.md#lc-013) | Fix | Bins in the operator's manual notches left out of the estimate | — | `f05546e3` |
 | [LC-045](lc-gate.md#lc-045) | Fix | The Min coherence slider's bottom is the search region's floor on FSK/Digital, not the moving occupied span | LC-012 | `f05546e3` |
 | [LC-046](lc-gate.md#lc-046) | Fix | The Carrier reference follows the RX filter when Follow is ticked: 400 Hz mid-passband, the default width | LC-002, LC-009, LC-017 (textual; not minimised) | `f05546e3` |
+| [LC-049](lc-gate.md#lc-049) | Cleanup | The reference-only code cut: Coherence-weighted accumulation, RADE V1's pinned comparison | LC-006, LC-016 | `07ae1f56` |
 
 ## RADE V1
 
@@ -96,3 +100,17 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-035](lc-engine.md#lc-035) | Comments | Comments name the ADCs ADC1 and ADC2, as the hardware does | [LC-023, LC-025, LC-028] | `f05546e3` |
 | [LC-037](lc-engine.md#lc-037) | Fix | The weights start at unity, not 1 + 1j (`radio.c` initialisers) | — | `f05546e3` |
 | [LC-044](lc-engine.md#lc-044) | Fix | An attenuator step moves the weight by the right arm (arm 0 is RX1's ADC) | — | `f05546e3` |
+| [LC-048](lc-engine.md#lc-048) | Comments | Two stale comments: the arms are RX1's ADC and the other, and the restore does not depend on call order | — | `07ae1f56` |
+| [LC-055](lc-engine.md#lc-055) | Behaviour | Level output always on where it applies; the menu tick and the saved setting removed (the tick survives in `make DIVCAP=1` builds, LT-027) | LC-030 | `07ae1f56` |
+| [LC-058](lc-engine.md#lc-058) | Cleanup | Two declarations nothing defines and a pointer to `DIV_REF_SCHEME` removed; three comments stop naming Resolution | — | `07ae1f56` |
+
+## Averaging and bin width
+
+[Write-ups: lc-averaging.md](lc-averaging.md)
+
+| ID | Kind | Summary | Depends on | Taken |
+|---|---|---|---|---|
+| [LC-050](lc-averaging.md#lc-050) | Behaviour | The Averaging slider stops at 6 s (was 30) | — | `07ae1f56` |
+| [LC-051](lc-averaging.md#lc-051) | Behaviour | Resolution offers 24 / 12 / 6 Hz; 3 Hz retired (replaced by LC-053) | — | `07ae1f56` |
+| [LC-052](lc-averaging.md#lc-052) | Behaviour | Resolution gains Auto: the bin width from Averaging and the reference | LC-050, LC-051 | `07ae1f56` |
+| [LC-053](lc-averaging.md#lc-053) | UI | Auto is the only bin width; the Resolution control is removed | LC-052 | `07ae1f56` |

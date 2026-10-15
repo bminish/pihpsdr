@@ -42,7 +42,7 @@ git push --force-with-lease origin TEST     # only with the owner's OK
 git branch -d TEST-rebase-<date>
 ```
 
-**2026-10-08: the case where upstream has taken the whole series.** The
+**2026-10-08 and again 2026-10-15: the case where upstream has taken the whole series.** The
 rebase above would conflict on every LC commit, and `git cherry` cannot
 help because the series was squashed. Check by tree instead (`git diff
 upstream/TEST TEST -- <the files he touched>`), then branch from
@@ -71,8 +71,7 @@ git cherry-pick <commit of LC-001>
 
 ## Cutting a PR branch
 
-(Applies to the pending changes only, LC-048 onwards; LC-001 to LC-047
-are upstream.)
+(Applies to a future pending change; everything to LC-058 is upstream.)
 
 - **Fold in the fixups.** Cherry-pick the LC commit and every
   `LC-NNN fixup` commit after it, and squash them into one.
@@ -96,8 +95,7 @@ are upstream.)
 
 (Historical for LC-001 to LC-047, which are upstream in one commit and no
 longer constrain a PR; they record the order in which the changes were
-built. For the pending changes the dependencies are in
-[changes.md](../changes.md#pending-local-not-yet-in-upstream).)
+built. Nothing is pending now; LC-048 to LC-058 are upstream too.)
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -157,7 +155,6 @@ it, but it does not use anything LC-008 adds.
 he took the whole series (`f05546e3`).
 
 **Grouping, now.** The grouping that was planned for LC-001 to LC-047 is
-moot. For the pending changes it is in
-[changes.md](../changes.md#pending-local-not-yet-in-upstream): LC-050, then
-LC-051 + LC-052 + LC-053 folded as one, LC-054 alone, and LC-048 / LC-049 only
-as a patch he can take or leave.
+moot, and so is the grouping that was planned for LC-048 to LC-058 (taken
+in `07ae1f56`). Nothing is pending; the next change, LC-059, is in
+[changes.md](../changes.md#pending-nothing-local).
