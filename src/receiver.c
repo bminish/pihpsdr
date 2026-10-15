@@ -1246,8 +1246,8 @@ static void rx_process_buffer(RECEIVER *rx) {
 
 #ifdef RADE_NATIVE
 static int rx_rade_invert(const RECEIVER *rx) {
-  return rade_native_effective_invert(rade_native_waveform(), vfo[rx->id].frequency,
-                                      rade_native_user_invert());
+  (void)rx;
+  return rade_native_get_invert();
 }
 #endif
 

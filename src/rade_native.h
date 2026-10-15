@@ -52,6 +52,39 @@ int rade_native_default_invert(int waveform, long long dial_hz);
 int rade_native_effective_invert(int waveform, long long dial_hz, int user_invert);
 
 //
+// The sideband in use (invert), as chosen when the waveform or the user's Invert last changed. The
+// receiver and transmitter code read this; it is not recomputed from the dial, because the dial moves by
+// 3 kHz when the sideband changes (see rade_native_plan()).
+//
+int  rade_native_get_invert(void);
+void rade_native_set_invert(int invert);
+
+//
+// Where the energy sits. The dial of an SSB radio is its suppressed carrier; the modem's energy is
+// RADE_NATIVE_DIAL_OFFSET above it (upper sideband, normal) or below it (lower sideband, inverted), for V1
+// as for V2 (V1's carriers are centred on 1475 Hz; that stays in the filter, 1500 is used for the dial).
+// The centre of the energy, Fe = dial + sign * 1500, is what is kept still: when the waveform, the invert
+// or the mode changes, the dial moves so that Fe does not. So V1 on 1985.5 kHz is the LSB carrier 1987.0,
+// V2 on 1985.5 kHz is the USB carrier 1984.0, and leaving RADE leaves the radio on the carrier of the last
+// RADE sideband, in LSB or USB.
+//
+#define RADE_NATIVE_DIAL_OFFSET  1500
+
+typedef struct {
+  int       invert;        // the sideband to use: 1 lower (LSB-like), 0 upper
+  long long dial;          // where the dial goes
+} rade_native_plan_t;
+
+//
+// old_wave / old_invert: what RADE was doing (old_wave 0: it was off, and mode_sign, +1 for USB or DIGU,
+// -1 for LSB or DIGL, 0 for anything else, says where the SSB energy is); new_wave 0 is "leaving RADE":
+// the result is the sideband to hand back to, on the same dial. Otherwise the sideband is the band default
+// for the energy centre, exclusive-or the user's Invert (V2: never inverted by default).
+//
+rade_native_plan_t rade_native_plan(int old_wave, int old_invert, int mode_sign, long long dial,
+                                    int new_wave, int user_invert);
+
+//
 // WDSP passband edges (filter_low < filter_high) for the modem centred on
 // its nominal frequency, shifted by shift_hz. Positive for a normal
 // signal, negative for an inverted one: WDSP selects the sideband with the

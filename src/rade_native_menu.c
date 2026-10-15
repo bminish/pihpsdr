@@ -73,6 +73,27 @@ static guint timer_id = 0;
 static guint event_timer_id = 0;
 static char last_state[1024];
 
+
+//
+// Where the dial is (with CTUN, the dial is the CTUN frequency), and which side of it the SSB energy is.
+//
+static long long rade_dial(void) {
+  return vfo[0].ctun ? vfo[0].ctun_frequency : vfo[0].frequency;
+}
+
+static int vfo_mode_sign(void) {
+  switch (vfo[0].mode) {
+  case modeUSB:
+  case modeDIGU:
+    return 1;
+  case modeLSB:
+  case modeDIGL:
+    return -1;
+  default:
+    return 0;
+  }
+}
+
 static const char *agc_name(int a);
 
 // the last call heard in an end-of-over frame, for the Reporter (seq counts them)
@@ -126,9 +147,9 @@ static void log_call(const rade_native_call_t *c) {
   char utc[40], loc[40];
   strftime(utc, sizeof utc, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
   strftime(loc, sizeof loc, "%Y-%m-%d %H:%M:%S", localtime(&t));
-  int inv = rade_native_effective_invert(c->waveform, vfo[0].frequency, rade_native_user_invert());
+  int inv = rade_native_get_invert();
   fprintf(f, "%s,%s,%s,V%d,%lld,%s,%d,%.1f,%.1f,%d,%d,%s,%.1f,%d,%d,%d,%s\n", utc, loc, c->call,
-          c->waveform, vfo[0].frequency, mode_string[vfo[0].mode], inv, c->snr_db, c->foff_hz,
+          c->waveform, rade_dial(), mode_string[vfo[0].mode], inv, c->snr_db, c->foff_hz,
           rx->filter_low, rx->filter_high, agc_name(rx->agc), rx->volume, rx->adc,
           adc[rx->adc].attenuation, adc[rx->adc].preamp, rade_native_capture_stem());
   fclose(f);
@@ -154,7 +175,7 @@ static void log_call(const rade_native_call_t *c) {
   char hms[16];
   strftime(hms, sizeof hms, "%H:%M:%S", localtime(&t));
   snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  SNR %.1f dB  %+.1f Hz  %.4f MHz", hms, c->call,
-           c->waveform, c->snr_db, c->foff_hz, vfo[0].frequency / 1e6);
+           c->waveform, c->snr_db, c->foff_hz, rade_dial() / 1e6);
   t_print("%s: RADE call %s\n", __func__, recent[0]);
 }
 
@@ -229,10 +250,11 @@ static void state_write(int running) {
            "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
            "\"rx_sync\":%d,\"rx_snr\":%.1f,\"rx_foff\":%.1f,"
            "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
-           "\"tx_count\":%d,\"tx_last_t\":%.0f,\"heard\":[%s]}\n",
+           "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"heard\":[%s]}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
-           vfo[0].frequency, radio_is_transmitting() ? 1 : 0, call, ver,
-           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_foff, heard_t, tx_count, tx_last_t, hist);
+           rade_dial(), radio_is_transmitting() ? 1 : 0, call, ver,
+           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_foff, heard_t, tx_count, tx_last_t,
+           rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, hist);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
   if (!f) { return; }
@@ -245,18 +267,33 @@ static void state_exit(void) {
   state_write(0);
 }
 
+static void band_default_changed(void);
+
 static int state_cb(gpointer arg) {
   static char last[200];
   static gint64 last_t = 0;
   static int prev_tx = 0;
   char now[200];
+  static int hf_side = -1;
+  if (rade_native_waveform() == RADE_NATIVE_V1) {
+    long long d = rade_dial();
+    int side = d < 9900000 ? 0 : d > 10100000 ? 1 : hf_side;
+    if (hf_side < 0) {
+      hf_side = side;
+    } else if (side != hf_side) {
+      hf_side = side;
+      band_default_changed();
+    }
+  } else {
+    hf_side = -1;
+  }
   int tx_now = radio_is_transmitting() ? 1 : 0;
   if (tx_now && !prev_tx) {
     tx_count++;
     tx_last_t = g_get_real_time() / 1e6;
   }
   prev_tx = tx_now;
-  snprintf(now, sizeof now, "%d %lld %d %s %d %d", rade_native_waveform(), vfo[0].frequency,
+  snprintf(now, sizeof now, "%d %lld %d %s %d %d", rade_native_waveform(), rade_dial(),
            tx_now, rade_native_get_callsign(), heard_seq, tx_count);
   gint64 t = g_get_monotonic_time();
   if (strcmp(now, last) != 0 || t - last_t >= 2000000) {
@@ -410,12 +447,12 @@ static const char *div_mode_name(int m) {
 static void state_line(char *buf, size_t len) {
   const RECEIVER *rx = receiver[0];
   int w = rade_native_waveform();
-  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  int inv = rade_native_get_invert();
   snprintf(buf, len,
            "f=%lld ctun=%d ctunf=%lld mode=%s filter=%d..%d rade=V%d inv=%d(user %d) "
            "agc=%s gain=%.0f hangthr=%.0f vol=%.1f nb=%d nr=%d snb=%d anf=%d "
            "adc=%d att=%d preamp=%d div=%d divmode=%s divref=%d divrun=%d",
-           vfo[0].frequency, vfo[0].ctun, vfo[0].ctun_frequency, mode_string[vfo[0].mode],
+           rade_dial(), vfo[0].ctun, vfo[0].ctun_frequency, mode_string[vfo[0].mode],
            rx->filter_low, rx->filter_high, w, inv, rade_native_user_invert(),
            agc_name(rx->agc), rx->agc_gain, rx->agc_hang_threshold, rx->volume,
            rx->nb, rx->nr, rx->snb, rx->anf, rx->adc, adc[rx->adc].attenuation,
@@ -426,7 +463,7 @@ static void state_line(char *buf, size_t len) {
 static void meta_text(char *buf, size_t len, const char *what) {
   const RECEIVER *rx = receiver[0];
   int w = rade_native_waveform();
-  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  int inv = rade_native_get_invert();
   double lo, hi;
   rade_native_wdsp_edges(w, inv, 0.0, &lo, &hi);
   time_t t = time(NULL);
@@ -461,7 +498,7 @@ static void meta_text(char *buf, size_t len, const char *what) {
            "(WDSP sign convention, includes RX volume); _speech.wav = decoded speech as "
            "played; _stats.csv rx48_pos indexes into _rx48.wav\n",
            what, ts, build_version, build_commit, w, rade_native_user_invert(), inv,
-           rade_native_centre(w), lo, hi, vfo[0].frequency, vfo[0].ctun, vfo[0].ctun_frequency,
+           rade_native_centre(w), lo, hi, rade_dial(), vfo[0].ctun, vfo[0].ctun_frequency,
            vfo[0].rit_enabled, vfo[0].rit, mode_string[vfo[0].mode], rx->filter_low,
            rx->filter_high, rx->sample_rate, rx->adc, adc[rx->adc].antenna,
            adc[rx->adc].attenuation, adc[rx->adc].preamp, adc[rx->adc].dither,
@@ -498,11 +535,11 @@ static void capture_stop(void) {
 static void capture_start(void) {
   mkdir(CAPTURE_DIR, 0755);
   int w = rade_native_waveform();
-  int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+  int inv = rade_native_get_invert();
   time_t t = time(NULL);
   char ts[32], stem[128], meta[3072];
   strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", localtime(&t));
-  snprintf(stem, sizeof stem, "%s_%lldkHz_RADE-V%d%s", ts, vfo[0].frequency / 1000, w, inv ? "-inv" : "");
+  snprintf(stem, sizeof stem, "%s_%lldkHz_RADE-V%d%s", ts, rade_dial() / 1000, w, inv ? "-inv" : "");
   meta_text(meta, sizeof meta, "start");
   if (rade_native_capture_start(CAPTURE_DIR, stem, meta) != 0) {
     t_print("%s: could not start capture in %s\n", __func__, CAPTURE_DIR);
@@ -570,7 +607,7 @@ static void show_edges(void) {
   if (w == 0) {
     snprintf(text, sizeof text, "RADE off");
   } else {
-    int inv = rade_native_effective_invert(w, vfo[0].frequency, rade_native_user_invert());
+    int inv = rade_native_get_invert();
     double lo, hi;
     rade_native_wdsp_edges(w, inv, 0.0, &lo, &hi);
     snprintf(text, sizeof text, "Modem %s the dial frequency: %.0f to %.0f Hz (centre %.0f Hz)",
@@ -677,9 +714,42 @@ static gboolean key_cb(GtkWidget *widget, GdkEventKey *event, gpointer data) {
   return FALSE;
 }
 
+//
+// Change the waveform and/or the sideband without moving the energy. rade_native_plan() works out the
+// sideband and the dial; the VFO goes to DIGU or DIGL while RADE is on, and back to USB or LSB (the same
+// carrier, so the same place in the band) when RADE is switched off. The state is set before the mode and
+// frequency change, because that recomputes the receive and transmit passbands.
+//
+static void retune(int new_wave) {
+  int old_wave = rade_native_waveform();
+  if (old_wave == 0 && new_wave == 0) { return; }
+  rade_native_plan_t p = rade_native_plan(old_wave, rade_native_get_invert(), vfo_mode_sign(), rade_dial(),
+                                          new_wave, rade_native_user_invert());
+  rade_native_set_invert(p.invert);
+  rade_native_configure(new_wave, rade_native_user_invert());
+  int mode = new_wave ? (p.invert ? modeDIGL : modeDIGU) : (p.invert ? modeLSB : modeUSB);
+  if (p.dial != rade_dial()) { vfo_id_set_frequency(0, p.dial); }
+  if (vfo[0].mode != mode) { vfo_id_mode_changed(0, mode); }
+}
+
+//
+// V1 is inverted below 10 MHz and not above. If the operator tunes across 10 MHz (by more than 100 kHz, so
+// that the 3 kHz moves made here can never trigger it) the sideband follows the new band, and the dial is
+// left where the operator put it.
+//
+static void band_default_changed(void) {
+  int inv = rade_native_effective_invert(RADE_NATIVE_V1, rade_dial(), rade_native_user_invert());
+  if (inv == rade_native_get_invert()) { return; }
+  rade_native_set_invert(inv);
+  vfo_id_mode_changed(0, inv ? modeDIGL : modeDIGU);
+  apply();
+  if (rade_native_tx_enabled() && transmitter != NULL) { tx_set_filter(transmitter); }
+  show_edges();
+}
+
 static void waveform_cb(GtkWidget *widget, gpointer data) {
   if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) { return; }
-  rade_native_configure(GPOINTER_TO_INT(data), rade_native_user_invert());
+  retune(GPOINTER_TO_INT(data));
   if (rade_native_waveform() != 0 && calls_timer_id == 0) {
     calls_timer_id = g_timeout_add(500, calls_cb, NULL);
   }
@@ -697,6 +767,7 @@ static void waveform_cb(GtkWidget *widget, gpointer data) {
 
 static void invert_cb(GtkWidget *widget, gpointer data) {
   rade_native_configure(rade_native_waveform(), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
+  retune(rade_native_waveform());       // the sideband flips and the dial moves 3 kHz, the energy stays
   apply();
   if (rade_native_tx_enabled() && transmitter != NULL) { tx_set_filter(transmitter); }
   show_edges();
@@ -859,7 +930,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
   gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 10, 4, 1);
   show_recent();
-  GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never. This window stays open while you use other menus.");
+  GtkWidget *hint = gtk_label_new("Receiver 0. The energy stays where it is: choosing V1 or V2, or Invert, moves the dial (3 kHz for a sideband change) and sets DIGU or DIGL; Off returns to USB or LSB on the same carrier. V1 is lower sideband below 10 MHz, V2 upper. This window stays open while you use other menus.");
   gtk_label_set_line_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_widget_set_halign(hint, GTK_ALIGN_START);

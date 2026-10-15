@@ -60,6 +60,25 @@ void rade_native_wdsp_edges(int waveform, int invert, double shift_hz,
   }
 }
 
+static int stored_invert = 0;
+int rade_native_get_invert(void) { return stored_invert; }
+void rade_native_set_invert(int invert) { stored_invert = invert != 0; }
+
+rade_native_plan_t rade_native_plan(int old_wave, int old_invert, int mode_sign, long long dial,
+                                    int new_wave, int user_invert) {
+  rade_native_plan_t p;
+  int old_sign = old_wave ? (old_invert ? -1 : 1) : mode_sign;
+  long long fe = dial + (long long)old_sign * RADE_NATIVE_DIAL_OFFSET;
+  if (new_wave == 0) {
+    p.invert = old_wave ? old_invert : (mode_sign < 0);
+    p.dial = dial;                           // already on the carrier of that sideband
+    return p;
+  }
+  p.invert = rade_native_effective_invert(new_wave, fe, user_invert);
+  p.dial = fe - (long long)(p.invert ? -1 : 1) * RADE_NATIVE_DIAL_OFFSET;
+  return p;
+}
+
 int rade_native_conjugate(int invert) {
   return !invert;
 }
