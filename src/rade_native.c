@@ -573,7 +573,8 @@ static void engine_stop(void) {
 #define TX_INT_TAPS    48
 #define TX_PCM_RING    8192              // 16 kHz int16
 #define TX_OUT_RING    65536             // 48 kHz complex
-#define TX_LEVEL       0.3               // modem amplitude into WDSP (T-11b)
+#define TX_LEVEL_V1    0.378             // modem amplitude into WDSP: peaks reach the ALC ceiling (0 dB)
+#define TX_LEVEL_V2    0.534             // V2's crest factor is lower, so it needs 3 dB more than V1 (was 0.3 for both: ALC -2 dB V1, -5 dB V2)
 #define LV_BLOCK       4800              // 100 ms at 48 kHz
 #define TX_TAIL        8000              // 48 kHz samples held after the EOO (167 ms)
 
@@ -642,9 +643,10 @@ static void tx_emit(const RADE_COMP *mod, int n) {
   static RADE_COMP up[1152 * TX_INT];
   const int per = TX_INT_TAPS / TX_INT;
   int nup = 0;
+  const double lvl = E.waveform == RADE_NATIVE_V2 ? TX_LEVEL_V2 : TX_LEVEL_V1;
   for (int i = 0; i < n && nup + TX_INT <= (int)(sizeof up / sizeof up[0]); i++) {
-    T.ihi[T.ipos] = mod[i].real * TX_LEVEL;
-    T.ihq[T.ipos] = mod[i].imag * TX_LEVEL;
+    T.ihi[T.ipos] = mod[i].real * lvl;
+    T.ihq[T.ipos] = mod[i].imag * lvl;
     T.ipos = (T.ipos + 1) % per;
     for (int ph = 0; ph < TX_INT; ph++) {
       double yi = 0.0, yq = 0.0;
