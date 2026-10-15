@@ -7,7 +7,7 @@ Updated with every commit that moves the work. Newest entry first.
 
 | Phase | State |
 |---|---|
-| 0 Build/link `librade`, T-0, T-1, T-11 | in progress: librade builds, T-0, T-1, T-11 (first pass) done; `RADE_NATIVE` make option to do |
+| 0 Build/link `librade`, T-0, T-1, T-11 | in progress: librade builds, T-0, T-1, T-11 (first pass) done; `RADE_NATIVE` make option done |
 | 1 Harness | not started |
 | 2 RX | not started |
 | 3 Tuning, SNR, logging | not started |
@@ -15,6 +15,18 @@ Updated with every commit that moves the work. Newest entry first.
 | 5 Extras | not started |
 
 ## Log
+
+- 2026-10-15 (make option): `make RADE_NATIVE=ON` compiles `src/rade_native.c`
+  and links `librade` (rpath into `third_party/rade_c-build`); default is
+  OFF and the default build is unchanged and still builds. `rade_native.[ch]`
+  holds only engine-independent code so far: waveform centres and widths,
+  default/effective Invert (V1 below 10 MHz inverted, V2 never, user
+  Invert XORed), WDSP passband edges (negative for inverted), the
+  conjugation rule, and a probe that opens V1 and V2 contexts. Not called
+  from the engine yet. `make -C test/rade_native check` tests it
+  (librade 2.2 reported). A gotcha worth keeping: librade's headers include
+  a `nnet.h` that clashes with `wdsp/nnet.h`, so only the `rade_native.o`
+  object gets librade's include path.
 
 - 2026-10-15 (T-11): `wdsp_probe.c` + `t11_wdsp_probe.py` run tones through
   the vendored WDSP RXA/TXA channels set up as piHPSDR does it. Results
