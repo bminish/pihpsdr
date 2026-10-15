@@ -5,7 +5,7 @@
  * blocks and writes the modem signal that comes back (interleaved float32
  * I,Q at 48 kHz), then the over is ended the way radio_set_mox(0) ends it (end of over frame, hold).
  *
- *   test_tx_engine [--v2] [--invert] [--speed N] [--features f.f32] [--call CALL] in.f32 out.f32
+ *   test_tx_engine [--v2] [--invert] [--speed N] [--features f.f32] [--call CALL] [--agc 0|1] in.f32 out.f32
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,12 +17,14 @@ int main(int argc, char **argv) {
   int wf = RADE_NATIVE_V1, invert = 0, i = 1;
   double speed = 8.0;
   const char *feat = NULL, *call = NULL;
+  int agc = 0;                     // the leveller changes the level the reference does not have
   for (; i < argc && argv[i][0] == '-'; i++) {
     if (!strcmp(argv[i], "--v2")) wf = RADE_NATIVE_V2;
     else if (!strcmp(argv[i], "--invert")) invert = 1;
     else if (!strcmp(argv[i], "--speed")) speed = atof(argv[++i]);
     else if (!strcmp(argv[i], "--features")) feat = argv[++i];
     else if (!strcmp(argv[i], "--call")) call = argv[++i];
+    else if (!strcmp(argv[i], "--agc")) agc = atoi(argv[++i]);
   }
   if (argc - i != 2) { fprintf(stderr, "usage: test_tx_engine [opts] in.f32 out.f32\n"); return 1; }
   FILE *fi = fopen(argv[i], "rb"), *fo = fopen(argv[i + 1], "wb");
@@ -32,6 +34,8 @@ int main(int argc, char **argv) {
   if (fread(in, 8, n, fi) != (size_t)n) return 1;
   rade_native_configure(wf, 0);
   if (call) rade_native_set_callsign(call);
+  rade_native_tx_set_agc(agc);
+  rade_native_tx_set_trim_db(0.0);
   rade_native_tx_enable(1);
   if (!rade_native_tx_enabled()) { fprintf(stderr, "tx enable failed\n"); return 1; }
   if (feat) rade_native_tx_feature_dump(feat);
