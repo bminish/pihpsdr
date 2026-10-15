@@ -198,8 +198,9 @@ then upstream, and record any difference here.
 - **RX panel** (`wdsp/patchpanel.c`): `inselect` 3 passes I and Q; `copy`
   0 leaves them separate, 1 copies I to Q, 2 copies Q to I, 3 swaps.
   piHPSDR sets `SetRXAPanelSelect(rx->id, 3)` (`receiver.c:958`). The
-  copy setting piHPSDR leaves for SSB audio is **to verify**; we need
-  `copy = 0` so the output stays complex.
+  copy comes from `SetRXAPanelBinaural()` (`receiver.c:1724`,
+  `copy = 1 - binaural`): normal audio is copy 1, binaural on is copy 0.
+  RADE needs copy 0, so it uses the binaural setting (measured, T-11).
 - **TX chain** (`wdsp/TXA.c`): `rsmpin → gen0 → panel → phrot → micmeter →
   amsq → eqp → preemph → leveler → cfcomp → bp0 → compressor → bp1 →
   osctrl → bp2 → alc → ammod/fmmod → gen1 → uslew → siphon → calcc/iqc →
