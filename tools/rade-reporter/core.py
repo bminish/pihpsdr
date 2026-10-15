@@ -267,6 +267,17 @@ class Link:
                 return True
         return False
 
+    def pulse_tx(self, mode):
+        """A transmission that began and ended between two looks: tell the server both, in order, so that its
+        'last TX' is right (freedv-gui reports every PTT change)."""
+        with self.lock:
+            if self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode:
+                self.client.emit("tx_report", {"mode": mode, "transmitting": True})
+                self.client.emit("tx_report", {"mode": mode, "transmitting": False})
+                self.sent["mode"], self.sent["tx"] = mode, False
+                return True
+        return False
+
     def close(self):
         with self.lock:
             old = self._detach()
@@ -374,24 +385,6 @@ def read_pihpsdr_state(path=None, now=None):
     return d
 
 
-def rx_report_due(p, last_seq, mycall, now=None, max_age=60.0):
-    """A call piHPSDR has decoded from an end-of-over frame that should be reported.
-
-    Returns (call, snr, seq) or None. last_seq is the count of calls already dealt with
-    (None before the first look: whatever is there is old news). A call is not reported
-    if it is stale, empty or our own."""
-    if not p or not p.get("linked"):
-        return None
-    seq = int(p.get("heard_seq", 0))
-    if last_seq is None or seq <= last_seq:
-        return None
-    now = time.time() if now is None else now
-    call = (p.get("heard_call") or "").strip().upper()
-    if not call or call == (mycall or "").strip().upper() or now - float(p.get("heard_t", 0)) > max_age:
-        return None
-    return call, float(p.get("heard_snr", 0.0)), seq
-
-
 class PeriodicSnr:
     """The RADE SNR, sent every few seconds while a signal is in sync - what freedv-gui does.
 
@@ -444,6 +437,30 @@ class PeriodicSnr:
         snr = float(p.get("rx_snr", 0.0))
         self.last = (self.call, snr, now)
         return True, self.call, snr, status
+
+
+def rx_reports_due(p, last_seq, mycall, now=None, max_age=60.0):
+    """Every call piHPSDR has decoded from an end-of-over frame since last_seq, oldest first, as
+    [(call, snr, seq)]. Each decode is reported, even a call that was just reported (freedv-gui reports
+    a call every time one is decoded). last_seq is the count of calls already dealt with (None before the
+    first look: whatever is there is old news). Stale, empty and our own calls are left out."""
+    if not p or not p.get("linked") or last_seq is None:
+        return []
+    now = time.time() if now is None else now
+    entries = p.get("heard")
+    if not isinstance(entries, list):          # an older piHPSDR: just the latest
+        entries = [{"seq": p.get("heard_seq", 0), "call": p.get("heard_call"), "snr": p.get("heard_snr", 0.0),
+                    "t": p.get("heard_t", 0)}]
+    out = []
+    for e in sorted(entries, key=lambda x: int(x.get("seq", 0))):
+        seq = int(e.get("seq", 0))
+        call = (e.get("call") or "").strip().upper()
+        if seq <= last_seq or not call or call == (mycall or "").strip().upper():
+            continue
+        if now - float(e.get("t", 0)) > max_age:
+            continue
+        out.append((call, float(e.get("snr", 0.0)), seq))
+    return out
 
 
 def load_config(path=None):
