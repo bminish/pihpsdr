@@ -20,6 +20,12 @@ without freedv-gui and an audio loopback in between.
 - Test harness good enough to validate performance numerically, before
   and after every step.
 
+Constraint: work **with** the existing WDSP chain (its shift, filters,
+AGC, slew, ALC), using its public `Set*` calls. No bypass of
+`fexchange0()` and no changes to WDSP code. Upstream WDSP code and
+docs are at <https://github.com/TAPR/OpenHPSDR-wdsp> and are consulted
+as needed.
+
 Non-goals for now: upstreaming; diversity changes (the existing V1 pilot
 correlator stays as it is, see `diversity-rade.md`); PureSignal with RADE
 TX; data/text channel beyond reading what the library exposes.
@@ -90,13 +96,17 @@ In I/Q we can do better. Define, per band/operator setting:
   x_lib[n] = conj?( x_if[n] * exp(-j 2 pi * d * n / Fs) )
 ```
 
-- `x_if` is the 8 kHz complex baseband produced from the radio's I/Q by
-  mixing the **dial frequency** to zero and decimating.
+- `x_if` is the 8 kHz complex baseband taken from the WDSP RXA output
+  (section 4), which has already mixed the **dial frequency** to zero and
+  applied the shift and bandpass. In the WDSP design most of this
+  transform is done by WDSP itself: the RXA shift (`SetRXAShiftFreq`)
+  and the complex bandpass edges (negative for invert) place the signal;
+  only the final conjugation and the 6:1 rate change are ours.
 - **Shift `d`** (Hz) is how far the modem centre sits from where the
   library expects it, i.e. the tuning error plus any deliberate offset.
   Inner loop: `rade_freq_offset()` tracks the residue (V1 acquisition
   range is +-100 Hz, `RADE_ACQ_FRANGE`; V2 to verify). Outer loop: the
-  mixer here, steered by the tuning indication.
+  RXA shift, steered by the tuning indication.
 - **Inversion** is a conjugation. It turns a lower-sideband signal into
   an upper-sideband one with no change of dial frequency, because
   conjugating baseband mirrors the spectrum about the dial.
@@ -116,8 +126,10 @@ button corrects the on-air mistakes: V2 sent on LSB, V1 sent on the
 named constant, ideally per-band overridable.
 
 TX is the same transform run the other way: library output is at positive
-frequency, so conjugate (if the effective invert is on), shift, and hand
-the result to the radio as I/Q. A conjugated baseband spectrum appears
+frequency, so conjugate (if the effective invert is on), and feed the
+result to the WDSP TXA chain as complex input, where the TX bandpass
+(at negative edges for invert) and the rest of the chain take it to the
+radio as I/Q. A conjugated baseband spectrum appears
 below the dial frequency, which is exactly what LSB means. **To verify**:
 that `rade_tx` output really is one-sided (carriers only at positive
 frequency). If so, I/Q TX is a clean single-sideband signal with no image
@@ -141,102 +153,147 @@ Presenting "LSB / USB" is the thing to avoid. Proposal:
   for this kind of thing, and `diversity_auto.c` uses it as `frame_off`;
   reuse that rather than inventing a second offset concept.
 
-## 4. Where it plugs in
+## 4. Where it plugs in: through WDSP, not around it
 
-The RX and TX engines (`receiver.c`, `transmitter.c`) have clean seams.
+Decision: **use WDSP's I/Q path as it is.** We do not bypass `fexchange0()`
+or replace `iq_output_buffer`. WDSP supplies the shift, the complex
+bandpass, the notch/NB, the AGC, the PTT slew, ALC/overshoot control and
+(in principle) PureSignal; we add only what it does not have: the 8 kHz
+rate change, `librade`, the speech coder, and the invert conjugation.
 
-### RX (known from `receiver.c`)
+**WDSP references.** The local `wdsp/` is piHPSDR's vendored copy and may
+differ from upstream. Upstream code and documentation are at
+<https://github.com/TAPR/OpenHPSDR-wdsp> and are the reference for stage
+behaviour, parameter ranges and the meaning of the `Set*` calls. When a
+section below says "to verify against WDSP", check the local copy first,
+then upstream, and record any difference here.
 
-`rx_add_iq_samples()` fills `rx->iq_input_buffer`; `rx_full_buffer()` runs
-the noise blanker, `fexchange0()` (WDSP, produces `rx->audio_output_buffer`
-at 48 kHz) and `Spectrum0()`; then `rx_process_buffer()` does volume,
-mute, local audio, and hands samples to the protocol. The diversity engine
-already taps this stream before the noise blanker (`rx_add_div_iq_samples`
-→ `diversity_auto_sample`) and decimates to 8 kHz for the V1 correlator,
-so a working decimator and rate table (48 kHz .. 1536 kHz, all integer
-ratios to 8 kHz) exists in-tree.
+### 4.1 What the local WDSP does, from the source (known)
 
-**Option R1 (recommended): tap, decode off-thread, replace the audio.**
+- **RXA chain** (`wdsp/RXA.c`): `shift → rsmpin → gen0/adcmeter → notchdb →
+  nbp0 → bpsnba → … → agc → bp1 → siphon → … → panel → rsmpout`. The
+  chain is complex (interleaved I/Q doubles) until the panel.
+- **Sideband selection is a complex bandpass**, not a demodulator: in the
+  SSB modes the filter passes one side of zero and the panel copies I to
+  Q. Positive `filter_low/high` pass the signal above the dial frequency,
+  negative the signal below it.
+- **RX panel** (`wdsp/patchpanel.c`): `inselect` 3 passes I and Q; `copy`
+  0 leaves them separate, 1 copies I to Q, 2 copies Q to I, 3 swaps.
+  piHPSDR sets `SetRXAPanelSelect(rx->id, 3)` (`receiver.c:958`). The
+  copy setting piHPSDR leaves for SSB audio is **to verify**; we need
+  `copy = 0` so the output stays complex.
+- **TX chain** (`wdsp/TXA.c`): `rsmpin → gen0 → panel → phrot → micmeter →
+  amsq → eqp → preemph → leveler → cfcomp → bp0 → compressor → bp1 →
+  osctrl → bp2 → alc → ammod/fmmod → gen1 → uslew → siphon → calcc/iqc →
+  cfir → rsmpout`. Also complex.
+- **TX panel**: `SetTXAPanelSelect(…, 2)` is "mic I" (what piHPSDR uses,
+  `transmitter.c:1274`); **`select = 3` with `copy = 0` passes I and Q**
+  (`patchpanel.c:228`). So the TX input can be complex.
+- **TX bandpass**: in the digital and SSB modes `bp0` is a complex filter
+  between `f_low` and `f_high` (`TXASetupBPFilters`, `TXA.c:824`), set by
+  `SetTXABandpassFreqs`. Negative values pass the lower sideband.
+- **I/O**: `fexchange0(channel, in, out, &err)` takes interleaved I/Q at
+  the channel input rate (48 kHz for the mic and RX audio side).
+  `fexchange2` takes separate I and Q buffers; piHPSDR uses `fexchange0`.
 
-```
- iq_input_buffer ──► (WDSP as today: spectrum, S-meter, NB) 
-        │
-        └─► decimate to 8 kHz ─► mix/invert ─► ring ─► RADE worker thread
-                                                         rade_rx → FARGAN
-        audio_output_buffer ◄── resample 16k→48k ◄──────┘  (16 kHz speech)
-```
-
-- WDSP keeps running, so the panadapter, waterfall, S-meter and the
-  existing diversity machinery are untouched; only the demodulated audio
-  is replaced when RADE is the active mode and has speech to give.
-- Worker thread because `rade_rx` is not cheap (the existing bench puts
-  V1 correlation, not the decoder, at 13 % of one Pi core;
-  the **decoder cost on a Pi is not measured**). RADE is block-timed at
-  120 ms (V1) / 40 ms (V2), so the thread adds no latency beyond the
-  protocol itself.
-- Needs: its own level normaliser ahead of the V1 decoder (V2 has the
-  library AGC, `rade_rx_set_agc`), a squelch-to-silence when not in
-  sync, and a sample-clock-drift policy for the 16 kHz speech against
-  the 48 kHz audio clock (a slow-adjusting resampler or fixed-depth FIFO
-  with occasional repeat/drop; freedv-gui's pipeline does something
-  similar).
-- Pre-decimation selectivity: WDSP's RXA filter does not apply, so the
-  decimator must reject adjacent signals itself. A 3 kHz wide channel at
-  8 kHz is enough for both waveforms; a strong adjacent signal inside the
-  radio's own passband remains a limitation we share with any I/Q
-  receiver.
-
-**Option R2: a mode in WDSP.** Adds a RADE stage inside the RXA chain.
-It would get filtering, AGC and shift for free but means modifying WDSP
-(vendored, upstream-owned) and WDSP stages are real-valued by the time
-they leave the demodulator. Rejected: it works against the I/Q goal.
-
-**Option R3: audio loopback to freedv-gui** (status quo). Kept as the
-**reference** for A/B comparison in the harness, not as a product option.
-
-### TX (known from `transmitter.c`)
-
-`tx_add_mic_sample()` fills `tx->mic_input_buffer` at 48 kHz;
-`tx_full_buffer()` runs `fexchange0()` into `tx->iq_output_buffer` and
-sends the samples to the protocol layer (`old_protocol_iq_samples()` /
-`new_protocol_iq_samples()`), after applying `drive_scale`.
-
-**Option T1 (recommended): replace the IQ at the seam.**
+### 4.2 RX design
 
 ```
- mic 48k ─► decimate 16k ─► LPCNet features ─► rade_tx (8 kHz, complex)
-        ─► TX bandpass 1.6k (V1) / 1.0k (V2), complex, centred on fc
-        ─► conj? · shift ─► interpolate to radio TX rate ─► drive/limit ─► protocol
+ radio I/Q ─► (rx->iq_input_buffer) ─► WDSP RXA  ──────────────────────────┐
+                                        shift · NB · notch · bandpass · AGC │
+                                        panel: select 3, copy 0             │
+                                                                            ▼
+                          audio_output_buffer = complex baseband, 48 kHz  (rx_full_buffer)
+                                                                            │
+         (display, S-meter, volume, protocol audio unchanged)               ▼
+                            decimate 6:1 ─► conj if invert ─► ring ─► RADE worker thread
+                                                                      rade_rx → FARGAN
+        audio_output_buffer (L/R) ◄── interpolate 16 kHz → 48 kHz ◄──────┘  speech
 ```
 
-- Where WDSP would have produced `iq_output_buffer`, we produce it
-  ourselves. Still call `fexchange0()` (and discard) so the WDSP TX
-  state machine (slew, PTT sequencing, VOX) keeps working, as the CW
-  path already does.
-- The TX panadapter reads `iq_output_buffer`, so it shows what is sent.
-- V2: pass `RADE_NO_TX_BPF` and filter ourselves (we need a complex,
-  invertible, shiftable filter anyway), or leave the library filter on
-  and add ours behind it. Which to choose is test T-4.
-- **ALC / drive**: RADE is an OFDM waveform, so peak-to-average matters
-  and the radio's PA is the limit. We need a defined RMS level out of the
-  chain, a hard peak limiter after the filter (or clip → filter → clip,
-  as freedv-gui does for RADE; **to verify** against its code), and
-  `drive_scale` applied last. Power calibration is a bench job, **not
-  measured**.
-- **EOO** on unkey: `rade_tx_eoo()` must be sent before the PA drops.
-  piHPSDR's PTT-release path needs a short, bounded tail: flush the last
-  frame, send EOO, then go. The tail length is 1152 samples at 8 kHz
-  (V1, 144 ms) or 960 (V2, 120 ms) plus filter group delay.
-- **Not supported with RADE TX**: PureSignal (distorts a waveform the
-  predistorter cannot assume), CFC and the TX equaliser/compressor
-  (bypassed because we bypass `fexchange0()` output). The menus should
-  grey them out rather than silently ignore them.
+- **WDSP sets the geometry.** The RX filter is set around the modem
+  centre `fc` (1475 Hz V1, 1500 Hz V2) with a width that comes from the
+  waveform (V1 about 1.6 kHz, V2 about 1.0 kHz plus skirts, to be
+  tuned in T-4). With effective invert on, the same edges are negative:
+  WDSP selects the lower sideband, and we conjugate after the tap.
+  So "LSB/USB" never appears in the operator's view: the UI shows
+  V1 / V2 / Invert, and the code maps that to the filter edges and one
+  conjugation.
+- **Tap point** is the end of `rx_full_buffer()`, after `fexchange0()` and
+  before `rx_process_buffer()`. The complex samples are consumed there,
+  and the same buffer is then overwritten with decoded speech (or
+  silence) before the existing volume / mute / local-audio / protocol
+  code runs. Display, S-meter and diversity code are untouched.
+- **AGC.** The WDSP AGC stays in the chain. A fast AGC on a flat OFDM
+  spectrum will modulate the envelope; the aim is slow/fixed AGC for RADE
+  so that RADE sees a steady level. V2 also has `rade_rx_set_agc()`. Which
+  combination decodes best is test T-9 (WDSP AGC off / slow / fast
+  × library AGC on / off).
+- **Rate change only.** 48 kHz → 8 kHz is 6:1, a half-band-friendly
+  chain; the existing decimator in `rade_correlator.c` is a candidate
+  to share (see section 9). Speech back is 16 kHz → 48 kHz, 3:1.
+- **Thread.** `rade_rx` and FARGAN run on a worker, fed from a ring.
+  Decoder cost on a Pi is **not measured** (T-7).
+- **When not in sync** the speech path outputs silence; the operator
+  hears nothing rather than the complex baseband as noise.
+- **Mode.** RADE V1 / V2 become receive modes in the same sense as DIGU:
+  mode change sets filter edges, AGC and panel; leaving the mode restores
+  panel `copy` and the normal filter.
 
-**Option T2: feed RADE audio into the existing WDSP SSB TX** (i.e. do
-what freedv-gui does: real audio into USB/LSB). Easiest, and the A/B
-reference for T1, but the real-audio form has an in-band image that WDSP's
-SSB filter then removes, and it makes the sideband a WDSP-mode question
-again. Kept as a fallback; it would be a day of work, not a design.
+### 4.3 TX design
+
+```
+ mic 48 kHz ─► decimate to 16 kHz ─► LPCNet features ─► rade_tx (8 kHz, complex)
+     ─► interpolate to 48 kHz ─► conj if invert ─► mic_input_buffer (I and Q)
+                                                          │
+ WDSP TXA:  panel(select 3, copy 0) · [phrot/eq/preemph/leveler/cfc/compressor bypassed]
+            bp0 = complex bandpass fc ± (0.8 | 0.5) kHz · osctrl · alc · uslew
+            · iqc (PureSignal, if it can be made to work) · cfir · rsmpout
+                                                          │
+                                           iq_output_buffer ─► protocol (unchanged)
+```
+
+- WDSP provides the TX bandpass (the **1.6 kHz / 1.0 kHz** filters are just
+  `SetTXABandpassFreqs` values, centred on `fc`, negative for invert),
+  the PTT up/down slew, ALC and overshoot control, `drive_scale` handling
+  in piHPSDR as today, and the TX panadapter data.
+- **Mic-path stages must be neutral.** EQ, leveler, CFC, compressor,
+  pre-emphasis and phase rotator are speech processors; they are bypassed
+  while a RADE TX mode is active, with the `Set*Run` calls and the saved
+  profile values left alone so that leaving the mode restores them. The
+  mic gain (panel gain1) becomes the single RADE level control; the
+  calibration is test T-10.
+- **ALC and overshoot control are the open item.** They were designed
+  for speech. On OFDM they may hold the level down on peaks and so raise
+  the in-band distortion; whether to leave ALC on, use it as a plain
+  peak guard, or set a threshold per waveform is decided by T-1 (peak
+  statistics) and T-10 (drive vs. distortion against the decoder).
+- **The RADE audio chain** (mic → 16 kHz → features → `rade_tx`) runs on
+  the TX thread's mic sample cadence. It produces 8 kHz complex samples
+  in 120 ms (V1) / 40 ms (V2) frames; a small FIFO smooths the burst
+  per frame into the steady 48 kHz stream WDSP wants.
+- **EOO.** On PTT release, `rade_tx_eoo()` is queued behind the last
+  frame, then zeros; the TX state machine holds the PTT/slew for
+  EOO length plus filter delay (V1 1152 samples = 144 ms, V2 960 =
+  120 ms) before ramping down. How piHPSDR sequences the end of an over
+  (VOX hang, `txrxcount`, radio relay) is **to verify** in
+  `radio_is_transmitting()` and the PTT path before the tail is added.
+- **PureSignal** is *possible* in principle, since the TXA siphon/iqc
+  stages see a complex signal. It is **not a goal**; treat as a later
+  experiment, not part of the first TX release.
+- **Chain input is complex.** `tx_add_mic_sample()` writes `Q = 0` today; the
+  RADE path writes both I and Q into the same buffer at the same place.
+  VOX, mic metering and TX-in-progress logic are untouched, except
+  that mic-driven VOX needs to be disabled or replaced by the PTT while
+  RADE speech is the source.
+
+### 4.4 Alternatives kept for the harness
+
+- **freedv-gui over an audio loopback.** Still the reference decoder and
+  transmitter for A/B tests (T-0, T-8).
+- **RADE audio into normal DIGU TX.** Real audio in a normal WDSP SSB
+  channel, as freedv-gui does. A quick comparison transmit for the
+  occupied-spectrum test, not a design.
 
 ## 5. Tuning indication
 
@@ -297,19 +354,19 @@ Known sources: `rade_snrdB_3k_est()` (both), `rade_sync()`,
 
 ## 7. Phases
 
-Per the working rule: each phase ends in something that runs and is
-measured before the next is planned in detail.
+Each phase ends in something that runs and is measured before the next
+is planned in detail.
 
 | Phase | Deliverable | Gate |
 |---|---|---|
-| 0 | `librade` + lpcnet/fargan building and linking in the pihpsdr Makefile, behind an option; headless "hello" decode of a WAV | builds on x86 and Pi; decodes a known clip |
-| 1 | **Harness first** (section 8): offline I/Q file → pihpsdr RADE RX chain → decoded audio + log | numbers reproduce freedv-gui's on the same clip |
-| 2 | RX V1 + V2 live, Invert, shift; audio replaces WDSP output; status line (sync/SNR/offset) | A/B vs freedv-gui loopback on the same recordings |
+| 0 | `librade` + lpcnet/fargan building and linking in the Makefile behind an option; headless decode of a WAV; **WDSP I/Q probe** (T-11) | builds on x86 and Pi; decodes a known clip; panel/TXA questions in 4.1 settled |
+| 1 | Harness (section 8): I/Q file → WDSP RXA at 48 kHz → decimate → `rade_rx`; and the reverse for TX | numbers match freedv-gui on the same clip |
+| 2 | RX V1 + V2 live: filter edges, invert, panel copy 0, tap, worker thread, speech back; status line | A/B vs freedv-gui on the same recordings |
 | 3 | Tuning aids, SNR meter, per-frame log, over tracking | log matches harness numbers |
-| 4 | TX: features → `rade_tx` → filter → I/Q; EOO; drive/limit; V1 then V2 | spectrum/mask and decode-loopback tests; on-air only after |
-| 5 | Auto-invert hint, per-band default overrides, text/reporting | |
+| 4 | TX V1 then V2: features, `rade_tx`, interpolate, TXA with neutral mic stages, EOO | spectrum/mask, decode loopback, dummy load; on-air only after |
+| 5 | Auto-invert hint, per-band defaults, text/reporting; PureSignal experiment | |
 
-Phases 0 and 1 first. Everything after rests on the harness being right.
+Phases 0 and 1 first.
 
 ## 8. Test harness
 
@@ -349,10 +406,11 @@ New pieces, in order of value:
 - **T-5 Acquisition and orientation detection.** Time-to-sync and false
   sync rate vs SNR and offset; both orientations, to settle the
   auto-invert question in section 5.
-- **T-6 Decimator/mixer.** Unit tests at every radio sample rate
-  (48 .. 1536 kHz): passband flatness, stopband, image rejection for
-  the mixer, and phase continuity across blocks (the existing
-  decimator's tests are the model).
+- **T-6 Rate changers.** Unit tests for the 48 kHz <-> 8 kHz and
+  48 kHz <-> 16 kHz converters we add: passband flatness, stopband,
+  image rejection, and phase continuity across blocks (the existing
+  decimator's tests are the model). The radio-rate to 48 kHz part is
+  WDSP's and is not retested here.
 - **T-7 CPU and latency.** Decoder and encoder cost per frame on x86 and
   the Pi 5 (target: the whole chain a small fraction of one core, not
   measured yet); end-to-end audio latency TX and RX.
@@ -360,6 +418,25 @@ New pieces, in order of value:
   made with the planned release, scored with the same log format, for
   regressions. Captures are taken from the desktop (project memory): the
   user records, we analyse.
+
+- **T-9 WDSP RX settings.** Over RXA with the real filter edges: AGC
+  off / slow / fast, filter width and window, notch/NB on and off, with
+  and without invert; measure decode quality against the T-2 channel and
+  find which settings leave RADE undamaged.
+- **T-10 WDSP TX settings.** Over TXA: mic-stage bypass check (output with
+  EQ/leveler/CFC/compressor at their stored values must be identical to
+  output with them off), ALC and overshoot control on/off, gain sweep;
+  measure occupied bandwidth, PAPR, in-band and adjacent-band distortion
+  and decode-loopback loss against drive level. This defines the RADE
+  level calibration.
+- **T-11 WDSP I/Q probe.** Settles the "to verify" items in 4.1 with a
+  small offline program linking the vendored `wdsp/`: push a known
+  complex tone and a `rade_tx` frame through RXA (panel select 3, copy 0)
+  and through TXA (panel select 3, copy 0), at 48 kHz, in each of
+  positive/negative filter edges; confirm I and Q survive, which side is
+  passed, group delay, and that output at the TX end is single-sideband.
+  Any behaviour that differs from upstream
+  (<https://github.com/TAPR/OpenHPSDR-wdsp>) is noted in this file.
 
 Output convention: every test writes the same per-frame CSV as the live
 logger (section 6), so the harness and the product share one format.
@@ -377,7 +454,18 @@ logger (section 6), so the harness and the product share one format.
   separately licensed from piHPSDR core.
 - **TX power and mask.** OFDM at amateur power into a PA that is not
   linear is the main practical hazard. Do not key a PA with RADE until
-  T-1 and a dummy-load spectrum check are done.
+  T-1, T-10 and a dummy-load spectrum check are done.
+- **WDSP stages that were built for speech.** AGC (RX), and ALC and
+  overshoot control (TX), act on a waveform whose envelope statistics they
+  were not designed for. Whether the stock settings are acceptable or
+  need RADE-specific values is a test result (T-9, T-10), not an
+  assumption. We change settings through the existing `Set*` calls, not
+  WDSP code.
+- **Vendored vs upstream WDSP.** Local `wdsp/` may differ from
+  <https://github.com/TAPR/OpenHPSDR-wdsp>. Behaviour we depend on (panel
+  select/copy, bandpass sideband handling, slew) is recorded in 4.1 with
+  the local source as the check, and upstream consulted when the local
+  copy is unclear.
 - **Sample-clock drift** between the radio's RX I/Q clock and the audio
   sink affects the RX speech FIFO.
 - **V2 acquisition range and V1 tolerance of the shift** are as stated by
@@ -386,15 +474,21 @@ logger (section 6), so the harness and the product share one format.
 - **Remote (client/server) operation** is deferred, as for diversity:
   keep the engine server-side and the state machine free of GTK so that
   it can be wired up later.
-- **Diversity interaction.** The V1 pilot correlator shares the 8 kHz
-  front end and the Invert/side idea. Decide in phase 1 whether the
-  native decoder reuses `rade_correlator.c`'s decimator, or both use one
-  new shared module. Prefer a shared module; do not fork the code.
+- **Diversity interaction.** The V1 pilot correlator works on raw radio
+  I/Q ahead of WDSP and has its own 8 kHz front end; the native decoder
+  works after WDSP at 48 kHz. They share the Invert/side idea but not a
+  signal path. Keep them separate; share only the rate-change helper if
+  it fits, and do not fork the code.
+- **Mode plumbing.** Adding RADE V1/V2 as modes touches mode tables,
+  profiles, filters, props and the remote protocol. Keep the list of
+  touch points in this file as phase 2 starts.
 
 ## 10. Immediate next step
 
-Phase 0 and the first harness pieces: link `librade` + lpcnet/fargan
-behind a `RADE_NATIVE` make option, a small `test/rade_native/` directory
-with T-0 (reference decode of the existing clips) and T-1 (TX spectrum).
-Both are offline, touch no engine code, and tell us whether the
-one-sided I/Q premise holds before any of the RX/TX design depends on it.
+Phase 0: link `librade` + lpcnet/fargan behind a `RADE_NATIVE` make
+option; a small `test/rade_native/` directory with T-0 (reference decode
+of the existing clips), T-1 (`rade_tx` spectrum and peak statistics) and
+T-11 (WDSP I/Q probe). All offline, none touching engine code. T-1 tells
+us whether the one-sided I/Q premise holds; T-11 tells us whether the
+WDSP chain carries complex RADE signals as section 4 assumes, before
+anything in the RX/TX design depends on either.
