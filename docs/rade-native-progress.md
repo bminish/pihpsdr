@@ -16,6 +16,24 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (capture): the RADE menu has a **Capture** toggle. It writes
+  to `rade-captures/` (created in the working directory, git-ignored):
+  `<date>-<time>_<kHz>kHz_RADE-V<n>[-inv]_` + `rx48.wav` (float32 stereo
+  48 kHz, L=I R=Q exactly as WDSP delivered it, includes the RX volume,
+  WDSP sign convention), `speech.wav` (decoded speech as played, 48 kHz
+  mono), `stats.csv` (one row per `rade_rx` call: sync, SNR, offset,
+  ring levels, underruns, V2 per-symbol stats; `rx48_pos` indexes into
+  `rx48.wav`), `events.log` (a line whenever dial, ctun, mode, filter,
+  RADE settings, AGC, volume, NB/NR/SNB/ANF, ADC att/preamp, or diversity
+  state changes), and `meta.txt` (the same, in full, at start and at the
+  end, plus build commit and duration). WAV headers are rewritten every
+  200 ms so a crashed capture is still readable. About 29 MB a minute.
+  Replay a capture offline, through the same engine:
+  `test/rade_native/test_rx_engine [--v2] [--invert] [--speed N] \
+  <stem>_rx48.wav out.wav` (use `--invert` if meta.txt says
+  `rade_effective_invert: 1`). Offline check: the recorded `rx48.wav` is
+  bit-identical to the input, no dropped data, replay decodes.
+
 - 2026-10-15 (RX engine, Phase 2 first cut): `rade_native.c` now has the
   receive engine: WDSP output (panel binaural = complex, 48 kHz) → conj
   unless invert → 48-tap decimator to 8 kHz → slow level normaliser →

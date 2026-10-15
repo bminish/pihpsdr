@@ -105,6 +105,25 @@ typedef struct {
 void rade_native_get_status(rade_native_status_t *st);
 
 //
+// ---- capture (for iterating on the receiver) ----
+//
+// Records, into dir/stem_*:
+//   _rx48.wav    the 48 kHz complex baseband WDSP delivered (float32,
+//                left = I, right = Q, as the engine received it)
+//   _speech.wav  the decoded speech as played (48 kHz mono, 16 bit)
+//   _stats.csv   one row per rade_rx() call: sync, SNR, offset, buffer
+//                levels, and the V2 per-symbol statistics
+//   _events.log  timestamped state changes, as reported by the caller
+//   _meta.txt    what the caller says about the radio at start and end
+// The directory must exist. Returns 0 on success.
+//
+int  rade_native_capture_start(const char *dir, const char *stem, const char *meta);
+void rade_native_capture_stop(const char *end_meta);
+int  rade_native_capture_active(void);
+void rade_native_capture_event(const char *text);
+void rade_native_capture_info(char *buf, size_t len);
+
+//
 // Opens a V1 and a V2 context, checks the library version, and writes a
 // one-line description to msg. Returns 0 on success.
 //
