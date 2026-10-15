@@ -16,6 +16,20 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (mode changes keep the energy still): built. `rade_native_plan()`
+  (`src/rade_native.c`, unit-tested in `test_geometry`) gives the sideband
+  and the dial for any change of waveform / Invert / RADE on-off such that
+  `Fe = dial + sign * 1500` does not move; the RADE window's `retune()` applies
+  it (dial via `vfo_id_set_frequency`, VFO mode DIGU/DIGL while RADE is on,
+  USB/LSB on the same carrier when it is switched off). The sideband is now
+  stored (`rade_native_get_invert()`), not recomputed from the dial; the
+  receiver, transmitter and menu read it. The dial used everywhere (state
+  file for the Reporter, logs, captures) is the CTUN frequency when CTUN is
+  on. Reporter frequency: the dial is the carrier of the sideband in use, so
+  V1 centred on 1985.5 is reported as 1987.0 and V2 as 1984.0 with no further
+  change. Tuning across 10 MHz by over 100 kHz with V1 on re-applies the
+  band default. Built and unit-tested; **not run on a radio**.
+
 - 2026-10-16 (filtering and mode changes, from the captures): see
   `docs/rade-native-filtering.md`. In short: (1) the three TX captures show
   the SSB profile's CFC post-equaliser and leveler active during RADE
