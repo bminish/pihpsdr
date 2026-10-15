@@ -20,9 +20,9 @@ centre 1500).
    give the same decode; even 1.0 kHz costs only 0.006 in vocoder-feature error. Widening gains nothing.
 3. **What limits tuning tolerance is librade, not the filter**: V1 decodes fully up to about +/-55..65 Hz off
    and not beyond, for any filter width from 0.9 to 2.4 kHz.
-4. **Changing mode at a fixed dial moves the transmitted energy by 3 kHz** in four of the common cases
-   (invert on/off, and V1 -> V2 below 10 MHz), which is the opposite of the principle. The behaviour needed to
-   hold the principle, and what I need from you before building it, is in "Mode changes".
+4. **Changing mode at a fixed dial moved the transmitted energy by 3 kHz** in four of the common cases
+   (invert on/off, and V1 -> V2 below 10 MHz), the opposite of the principle. Now the dial moves instead, and
+   RADE off hands back to USB or LSB on the same carrier; see "Mode changes".
 
 ## What was scored
 
@@ -148,26 +148,41 @@ means: toggle Invert because the station looks mirrored and it is now 3 kHz outs
 operator retunes by hand. Nothing couples the VFO's USB/LSB to the RADE invert state today (the 1.987 MHz
 captures happen to be LSB + inverted and the 14 MHz ones USB + normal because that is how they were set).
 
-**Needed to hold the principle** (the centre `Fe` of the energy stays put):
+**Built (2026-10-16, on your decisions).** The centre of the energy, `Fe = dial + sign * 1500 Hz`
+(sign +1 upper, -1 lower; V1 uses 1500 for this arithmetic and keeps its 1475 in the filter edges), does not
+move. On any change of waveform or Invert the dial moves so that it does not, and the VFO is put in DIGU or
+DIGL for the sideband in use (those profiles have no speech processing). Switching RADE off puts the radio
+in USB or LSB on the same dial, which is the carrier of the last RADE sideband. What it does
+(`modes_table`, from the same rule the code uses; the reporter is told the dial, which is the carrier):
 
-- the sideband sign `s` is +1 normal, -1 inverted; `Fe = dial + s * 1500`;
-- on any change of waveform or effective invert, `new dial = Fe - s_new * 1500` (so Invert, and V1 -> V2 below
-  10 MHz, move the dial by 3 kHz, and 14 MHz V1 -> V2 by 25 Hz, which is below the 60 Hz pull-in);
-- the VFO mode follows the sign (DIGU / DIGL), so that RADE off lands in SSB with the energy where it was:
-  no dial change, and the centre agrees to 25 Hz;
-- V1's 1475 Hz stays in the filter edges; 1500 is used only for the dial arithmetic.
+```
+160 m, energy centre 1985.5 kHz:
+  RADE V1                    LSB      1987.000 -> V1 lower  1987.000 kHz   dial    +0
+  V1 -> V2                   V1 lower 1987.000 -> V2 upper  1984.000 kHz   dial -3000
+  V2 -> V1                   V2 upper 1984.000 -> V1 lower  1987.000 kHz   dial +3000
+  Invert on / off            V1 lower 1987.000 -> V1 upper  1984.000 kHz   dial -3000 / +3000
+  RADE off                   V2 lower 1987.000 -> LSB       1987.000 kHz   dial    +0
+40 m, from USB at 7.053:     RADE V1 -> lower sideband, dial 7056.000 (+3000); V1 -> V2 7053.000 (-3000);
+                             RADE off: USB at 7053.000
+20 m, from USB at 14.236:    RADE V1 and V2 upper, dial unchanged; Invert +3000 (14239.000), off -3000
+```
 
-This changes the VFO frequency and mode by itself, so I have not built it. Two decisions for you:
-(a) is moving the dial by 3 kHz on Invert / V1 <-> V2 what you want, rather than keeping the dial and moving
-the filter (which is what happens now)? (b) when V1 is switched on at 7 MHz from USB, the band default says
-inverted: should that move the dial +3 kHz (energy stays), or keep the dial and take the sideband from the VFO
-mode (USB -> normal) and leave the 10 MHz default for when a net frequency is dialled?
+Details: the sideband is stored when it is chosen, not recomputed from the dial, so the 3 kHz moves can
+never flip the 10 MHz band default; tuning across 10 MHz by more than 100 kHz with V1 on re-applies the band
+default (sideband and VFO mode only, the dial stays where the operator put it). Invert is the user's
+exclusive-or on the default and is kept when the waveform changes (V2 with Invert on is lower sideband).
+The dial is the CTUN frequency when CTUN is on. From a mode with no sideband (AM, CW) the dial is taken as the
+centre. Entering a digital mode lowers the drive to the digital-mode maximum, as piHPSDR always does, and
+leaving RADE does not put it back. `test_geometry` checks the rule (the examples above, and that the centre is
+unchanged over a six-step sequence); the menu code that applies it, the VFO changes and the Reporter's
+frequency are **built but not run on a radio**.
 
 ## Reproduce
 
 ```
 test/rade_native/tx_shape.py 20261015-232319            # transmit spectrum; PASS/FAIL
-make -C test/rade_native modes_table && test/rade_native/modes_table
+make -C test/rade_native modes_table && test/rade_native/modes_table      # the mode-change rule
+make -C test/rade_native check                                              # and its unit test
 test/rade_native/filter_study.py 20261015-223028 --start 10 --dur 60 --widths 900,1200,1600,2000 --deltas -100,-50,0,50,100
 ```
 The offline reproduction of the tilt is `wdsp_probe tx --speech-stages-eq` (leveler, CFC with post-EQ and
