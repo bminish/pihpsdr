@@ -82,8 +82,8 @@ him in `menu-notes-dl1ycf.md` and recorded as LC-059.
 
 ## After the 2026-10-15 reconcile
 
-Nothing local is pending: the rebuilt `TEST` waits only for the owner's OK to
-force-push. The rest is settled:
+Nothing local is pending, and nothing waits on the owner: the rebuilt `TEST`
+was force-pushed on 2026-10-15 (`2a0dd63c`). The rest is settled:
 [upstream-reconcile.md](upstream-reconcile.md#decisions).
 
 ## Not carried

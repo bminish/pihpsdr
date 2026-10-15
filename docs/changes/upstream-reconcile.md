@@ -199,7 +199,8 @@ conflict except LT-027's, resolved by keeping his. Afterwards the 13 test
 stubs for `rx_panadapter_update()` were removed (LT-032), the register moved
 LC-048 to LC-058 to [accepted.md](accepted.md), and the docs were brought up
 to date. Both builds link (DIVCAP checked by symbol), the suite gives the same
-result as before (7 PASS, the known-gap lines).
+result as before (7 PASS, the known-gap lines). Force-pushed to `origin/TEST`
+with the owner's OK (`302a9149` to `2a0dd63c`).
 
 **Left on our side.** Only the local layer: `src/diversity_capture.[ch]`, the
 `Makefile` DIVCAP block, `.gitignore` lines, `test/`, `docs/`. Nothing in
