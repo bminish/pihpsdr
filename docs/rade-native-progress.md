@@ -16,6 +16,41 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (end of over, callsign, call log): 
+  **End of over / TX hold.** `radio_set_mox(0)` now asks the TX engine
+  (`rade_native_tx_end_request()`); while RADE TX is on it keeps the radio
+  keyed, lets the engine finish the speech in flight, pad the V1/V2 modem
+  frame with silence, send the EOO frame (with the callsign, V1) and wait
+  for WDSP's TX filters to put it out (8000 samples = 167 ms), and then
+  releases (`rade_native_tx_end_state() == 2`, polled every 20 ms from the
+  GTK loop in `radio.c`). Keying again meanwhile cancels the hold. Hold
+  measured offline: 576-619 ms for V1, 384 ms for V2, after the last mic
+  sample. Since the EOO was not reaching the receiver reliably in testing,
+  the TX output now starts only once two modem frames are queued (a hole
+  of zeros in the middle of the signal, from a late worker, made the EOO
+  fail to decode intermittently; with the prefill: 0 underruns and 12 of 12
+  V1 runs decode the call; before it, 2 in 5 batches failed one clip).
+  **Callsign.** The RADE window has a "My call" box (7 characters,
+  upper-cased, letters / digits / '/'), saved in the props file
+  (`rade_native.callsign`, also `rade_native.invert`). When it is not
+  empty it goes into the EOO frame. This is the V1 format freedv-gui uses
+  (LDPC(112,56) over 56 QPSK symbols, CRC-8, 6-bit characters, interleaved;
+  `src/rade_eoo_text.c`, a C port of freedv-gui's `rade_text.cpp` +
+  `ldpc_*.cpp`, BSD terms kept in the file). **Interop was tested against
+  freedv-gui's own code** (`make -C test/rade_native text_interop`,
+  built unmodified): the two encoders write identical symbols; each decodes
+  the other's, 7/7 clean and 139-140 of 140 at noise sigma 0.25 and 0.45.
+  **Not done: V2 callsign text.** V2 carries text in a different channel (a
+  stream of data symbols, framed by freedv-gui's newer `rade_text` with
+  blocks, CRC and LDPC); the box says so when V2 is selected and sends
+  nothing. **Receive.** Calls decoded from the EOO of a received V1 over
+  appear in the RADE window (last six, newest first) and are appended to
+  `rade-captures/rade-calls.csv`: utc, local, callsign, waveform, dial_hz,
+  mode, effective_invert, snr_db (smoothed over the over, before it ended),
+  foff_hz, rx_filter_low/high, agc, volume_db, adc, attenuation, preamp,
+  and the capture stem when a capture was running (the same line goes into
+  its `events.log`). Dial and mode are read up to 0.5 s after the decode.
+
 - 2026-10-15 (TX, Phase 4 first cut): `rade_native.c` has the transmit
   engine: mic (I slot of WDSP's TX input buffer, 48 kHz) → 36-tap
   decimator to 16 kHz → `lpcnet_compute_single_frame_features` →
@@ -31,8 +66,7 @@ Updated with every commit that moves the work. Newest entry first.
   slider does not scale the modem). Not allowed with PureSignal. Capture
   now also writes `_tx.wav` (the TXA output block, float32 stereo at the TX
   IQ rate) and `_txmic.wav` (16 kHz speech into the vocoder).
-  **Known gaps:** no EOO frame at the end of an over (the radio has left TX
-  by the time `tx_full_buffer` sees the end; needs a PTT-release hold);
+  **Known gaps:** (the EOO gap that was listed here is closed, see above)
   only tested at 48 kHz TX IQ (P1 rate; P2 runs WDSP at 96 kHz and
   resamples to 192 kHz, not exercised); the mic gain slider is ignored
   while RADE TX is on; the level is fixed (0.3 into WDSP, ALC idle,
@@ -259,6 +293,13 @@ the metric compared unaligned ends and wrongly failed clips, now aligned and
 trimmed by 0.5 s; (3) end-to-end latency TX engine + WDSP + RX engine is
 about 1.9 s on V1 (clip start to first decoded speech, measured on one
 clip; not broken down by stage). The WDSP TXA+RXA pair alone was 0.25 s.
+
+**End of over and callsign, offline** (`tx_validate.py`, TX engine with call
+EI6IZ → TXA → RXA → RX engine): V1 decodes `EI6IZ` from the EOO on all three
+clips, 12 of 12 runs; hold after release 576-619 ms (V1), 384 ms (V2); V2
+has no call. Harness note: the TX engine test runs at 3x real time
+(`--speed 3`); at 8x the worker is late and the test itself makes holes.
+The TX worker's cost on a Pi is not measured.
 
 ## Next
 

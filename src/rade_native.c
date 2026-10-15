@@ -28,6 +28,7 @@
 #include "rade_api.h"
 #include "fargan.h"
 #include "lpcnet.h"
+#include "rade_eoo_text.h"
 #include "rade_native.h"
 
 double rade_native_centre(int waveform) {
@@ -152,6 +153,11 @@ static struct {
   double ybuf[INT];
   // status
   rade_native_status_t st;
+  float snr_ema, foff_last;              // last in-sync values, for the call log
+  rade_native_call_t calls[16];
+  int ncalls;
+  double last_call_t;
+  char last_call[16];
 } E = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
 
 static void cap_row(long consumed, int nout);
@@ -227,6 +233,29 @@ static void *worker(void *arg) {
     E.st.sync = rade_sync(r);
     E.st.snr_db = rade_snrdB_3k_est(r);
     E.st.foff_hz = rade_freq_offset(r);
+    if (E.st.sync) {
+      E.snr_ema = E.snr_ema == 0.0f ? E.st.snr_db : 0.9f * E.snr_ema + 0.1f * E.st.snr_db;
+      E.foff_last = E.st.foff_hz;
+    }
+    if (has_eoo && neoo > 0) {
+      char call[16];
+      if (rade_eoo_text_decode(eoo, neoo / 2, call)) {
+        double t = (double)time(NULL);
+        // the EOO can be flagged on more than one call: log a call once per over
+        if (strcmp(call, E.last_call) != 0 || t - E.last_call_t > 5.0) {
+          if (E.ncalls < 16) {
+            rade_native_call_t *c = &E.calls[E.ncalls++];
+            snprintf(c->call, sizeof c->call, "%s", call);
+            c->t_unix = t;
+            c->snr_db = E.snr_ema;
+            c->foff_hz = E.foff_last;
+            c->waveform = E.waveform;
+          }
+          snprintf(E.last_call, sizeof E.last_call, "%s", call);
+        }
+        E.last_call_t = t;
+      }
+    }
     if (C.active) { cap_row(consumed, nout); }
     for (int i = 0; i < npcm; i++) { E.out_ring[(E.out_w + i) % OUT_RING] = pcm[i]; }
     E.out_w += npcm;
@@ -482,6 +511,12 @@ void rade_native_capture_stop(const char *end_meta) {
   C.iq_ring = C.sp_ring = C.tx_ring = C.mic_ring = NULL;
 }
 
+const char *rade_native_capture_stem(void) {
+  if (!C.active) { return ""; }
+  const char *slash = strrchr(C.stem, '/');
+  return slash ? slash + 1 : C.stem;
+}
+
 void rade_native_capture_info(char *buf, size_t len) {
   if (!C.active) { snprintf(buf, len, "not capturing"); return; }
   snprintf(buf, len, "%s  %.0f s  %.1f MB%s", strrchr(C.stem, '/') ? strrchr(C.stem, '/') + 1 : C.stem,
@@ -519,6 +554,7 @@ static void engine_stop(void) {
 #define TX_PCM_RING    8192              // 16 kHz int16
 #define TX_OUT_RING    65536             // 48 kHz complex
 #define TX_LEVEL       0.3               // modem amplitude into WDSP (T-11b)
+#define TX_TAIL        8000              // 48 kHz samples held after the EOO (167 ms)
 
 static struct {
   int enabled, running, flush;
@@ -538,6 +574,18 @@ static struct {
   int ipos;
   FILE *featdump;
   unsigned long underruns;
+  // worker-only
+  float *feat;
+  RADE_COMP *mod;
+  int nfeat, nmod, fidx;
+  // end of over
+  int active;                            // transmitting since the last reset
+  int started;                           // the prefill is in, output is flowing
+  int end_req;                           // asked for, not yet generated
+  int end_state;                         // 0 running, 1 ending, 2 done
+  long eoo_end_pos;                      // out_w after the EOO, -1 until generated
+  long tail;                             // samples delivered since then
+  char call[16];
 } T = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
 
 static void tx_design(void) {
@@ -555,67 +603,102 @@ static void tx_design(void) {
   }
 }
 
-static void *tx_worker(void *arg) {
-  struct rade *r = T.r;
-  int nfeat = rade_n_features_in_out(r), nout = rade_n_tx_out(r);
-  float *feat = malloc(sizeof(float) * nfeat);
-  RADE_COMP *mod = malloc(sizeof(RADE_COMP) * nout);
-  int fidx = 0;
-  const int per = TX_INT_TAPS / TX_INT;      // taps per polyphase branch
+// Interpolate 8 kHz modem samples to 48 kHz and queue them. Called without
+// T.mx held, from the worker only (which owns the interpolator history).
+static void tx_emit(const RADE_COMP *mod, int n) {
   static RADE_COMP up[1152 * TX_INT];
+  const int per = TX_INT_TAPS / TX_INT;
+  int nup = 0;
+  for (int i = 0; i < n && nup + TX_INT <= (int)(sizeof up / sizeof up[0]); i++) {
+    T.ihi[T.ipos] = mod[i].real * TX_LEVEL;
+    T.ihq[T.ipos] = mod[i].imag * TX_LEVEL;
+    T.ipos = (T.ipos + 1) % per;
+    for (int ph = 0; ph < TX_INT; ph++) {
+      double yi = 0.0, yq = 0.0;
+      for (int k = 0; k < per; k++) {
+        int idx = (T.ipos - 1 - k + 2 * per) % per;
+        yi += T.int_h[ph + TX_INT * k] * T.ihi[idx];
+        yq += T.int_h[ph + TX_INT * k] * T.ihq[idx];
+      }
+      up[nup].real = (float)yi;
+      up[nup].imag = (float)yq;
+      nup++;
+    }
+  }
+  pthread_mutex_lock(&T.mx);
+  if (!T.flush) {
+    for (int i = 0; i < nup && T.out_w - T.out_r < TX_OUT_RING; i++) {
+      T.out[T.out_w % TX_OUT_RING] = up[i];
+      T.out_w++;
+    }
+  }
+  pthread_mutex_unlock(&T.mx);
+}
+
+// One 10 ms speech frame in; a modem frame out when enough have arrived.
+static void tx_frame(const int16_t *pcm) {
+  lpcnet_compute_single_frame_features(T.enc, (int16_t *)pcm, &T.feat[T.fidx * NB_TOTAL_FEATURES], 0);
+  if (++T.fidx * NB_TOTAL_FEATURES == T.nfeat) {
+    T.fidx = 0;
+    if (T.featdump) { fwrite(T.feat, sizeof(float), T.nfeat, T.featdump); }
+    int n = rade_tx(T.r, T.mod, T.feat);
+    tx_emit(T.mod, n);
+  }
+}
+
+// The end of an over: what speech is left, silence to complete the modem
+// frame, then the EOO frame with the callsign in it (V1).
+static void tx_finish(void) {
+  int16_t zeros[LPCNET_FRAME_SIZE] = {0};
+  while (T.fidx != 0) { tx_frame(zeros); }
+  int ne = rade_n_tx_eoo_out(T.r);
+  RADE_COMP *eoo = malloc(sizeof(RADE_COMP) * ne);
+  int nb = rade_n_eoo_bits(T.r);
+  if (nb > 0 && T.call[0]) {
+    float *bits = calloc(nb, sizeof(float));
+    if (rade_eoo_text_encode(T.call, bits, nb) == 0) { rade_tx_set_eoo_bits(T.r, bits); }
+    free(bits);
+  }
+  int n = rade_tx_eoo(T.r, eoo);
+  tx_emit(eoo, n);
+  free(eoo);
+}
+
+static void *tx_worker(void *arg) {
+  T.nfeat = rade_n_features_in_out(T.r);
+  T.nmod = rade_n_tx_out(T.r);
+  T.feat = malloc(sizeof(float) * T.nfeat);
+  T.mod = malloc(sizeof(RADE_COMP) * T.nmod);
+  T.fidx = 0;
   pthread_mutex_lock(&T.mx);
   while (T.running) {
     if (T.flush) {
-      T.flush = 0; T.pcm_r = T.pcm_w; T.out_r = T.out_w; fidx = 0;
+      T.flush = 0; T.pcm_r = T.pcm_w; T.out_r = T.out_w; T.fidx = 0;
       memset(T.ihi, 0, sizeof T.ihi); memset(T.ihq, 0, sizeof T.ihq); T.ipos = 0;
     }
-    if (T.pcm_w - T.pcm_r < LPCNET_FRAME_SIZE) {
-      pthread_cond_wait(&T.cv, &T.mx);
-      continue;
-    }
     int16_t pcm[LPCNET_FRAME_SIZE];
-    for (int i = 0; i < LPCNET_FRAME_SIZE; i++) { pcm[i] = T.pcm[(T.pcm_r + i) % TX_PCM_RING]; }
-    T.pcm_r += LPCNET_FRAME_SIZE;
-    pthread_mutex_unlock(&T.mx);
-    lpcnet_compute_single_frame_features(T.enc, pcm, &feat[fidx * NB_TOTAL_FEATURES], 0);
-    fidx++;
-    if (fidx * NB_TOTAL_FEATURES == nfeat) {
-      fidx = 0;
-      if (T.featdump) { fwrite(feat, sizeof(float), nfeat, T.featdump); }
-      int n = rade_tx(r, mod, feat);
-      // 8 kHz -> 48 kHz, polyphase (the interpolator history belongs to this thread
-      // between flushes; a flush resets it above, under the lock)
-      int nup = 0;
-      for (int i = 0; i < n && nup + TX_INT <= (int)(sizeof up / sizeof up[0]); i++) {
-        T.ihi[T.ipos] = mod[i].real * TX_LEVEL;
-        T.ihq[T.ipos] = mod[i].imag * TX_LEVEL;
-        T.ipos = (T.ipos + 1) % per;
-        for (int ph = 0; ph < TX_INT; ph++) {
-          double yi = 0.0, yq = 0.0;
-          for (int k = 0; k < per; k++) {
-            int idx = (T.ipos - 1 - k + 2 * per) % per;
-            yi += T.int_h[ph + TX_INT * k] * T.ihi[idx];
-            yq += T.int_h[ph + TX_INT * k] * T.ihq[idx];
-          }
-          up[nup].real = (float)yi;
-          up[nup].imag = (float)yq;
-          nup++;
-        }
-      }
+    if (T.pcm_w - T.pcm_r >= LPCNET_FRAME_SIZE) {
+      for (int i = 0; i < LPCNET_FRAME_SIZE; i++) { pcm[i] = T.pcm[(T.pcm_r + i) % TX_PCM_RING]; }
+      T.pcm_r += LPCNET_FRAME_SIZE;
+      pthread_mutex_unlock(&T.mx);
+      tx_frame(pcm);
       pthread_mutex_lock(&T.mx);
-      if (!T.flush) {
-        for (int i = 0; i < nup; i++) {
-          if (T.out_w - T.out_r >= TX_OUT_RING) { break; }
-          T.out[T.out_w % TX_OUT_RING] = up[i];
-          T.out_w++;
-        }
-      }
       continue;
     }
-    pthread_mutex_lock(&T.mx);
+    if (T.end_req) {
+      // all queued speech has been processed (the branch above), finish the over
+      T.end_req = 0;
+      pthread_mutex_unlock(&T.mx);
+      tx_finish();
+      pthread_mutex_lock(&T.mx);
+      T.eoo_end_pos = T.out_w;
+      continue;
+    }
+    pthread_cond_wait(&T.cv, &T.mx);
   }
   pthread_mutex_unlock(&T.mx);
-  free(feat); free(mod);
+  free(T.feat); free(T.mod);
+  T.feat = NULL; T.mod = NULL;
   return NULL;
 }
 
@@ -652,11 +735,13 @@ void rade_native_tx_enable(int on) {
   T.r = rade_open("", flags);
   T.enc = lpcnet_encoder_create();
   if (!T.r || !T.enc) { tx_stop(); return; }
+  T.nmod = rade_n_tx_out(T.r);
   T.pcm_w = T.pcm_r = T.out_w = T.out_r = 0;
   memset(T.dec_hist, 0, sizeof T.dec_hist);
   T.dec_pos = T.dec_phase = 0;
   memset(T.ihi, 0, sizeof T.ihi); memset(T.ihq, 0, sizeof T.ihq); T.ipos = 0;
   T.flush = 0;
+  T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0;
   T.underruns = 0;
   T.running = 1;
   T.enabled = 1;
@@ -668,15 +753,17 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   pthread_mutex_lock(&T.mx);
   if (!transmitting) {
     // discard whatever is in flight so the next over starts clean
-    if (T.pcm_w != T.pcm_r || T.out_w != T.out_r) { T.flush = 1; pthread_cond_signal(&T.cv); }
+    if (T.active || T.pcm_w != T.pcm_r || T.out_w != T.out_r) { T.flush = 1; pthread_cond_signal(&T.cv); }
+    T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0;
     pthread_mutex_unlock(&T.mx);
     memset(buf, 0, sizeof(double) * 2 * n);
     return;
   }
-  // 48 kHz mic -> 16 kHz speech
+  T.active = 1;
+  // 48 kHz mic -> 16 kHz speech (not once the over is ending)
   int16_t blk[1024 / TX_DEC + 2];
   int nb = 0;
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n && T.end_state == 0; i++) {
     T.dec_hist[T.dec_pos] = buf[2 * i];
     T.dec_pos = (T.dec_pos + 1) % TX_DEC_TAPS;
     if (++T.dec_phase == TX_DEC) {
@@ -698,8 +785,16 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   }
   // modem signal back out; WDSP's convention needs the conjugate unless inverted
   const double sq = rade_native_conjugate(invert) ? -1.0 : 1.0;
+  //
+  // The worker produces the modem signal a frame at a time (V1 120 ms), and
+  // as fast as the mic delivers speech, so with one frame queued the next
+  // arrives just as that one runs out: any lateness puts a hole of zeros
+  // into the middle of the signal. Start the output once two frames are
+  // queued; after that a hole needs the worker to fall a frame behind.
+  //
+  if (!T.started && T.out_w - T.out_r >= 2L * T.nmod * TX_INT) { T.started = 1; }
   for (int i = 0; i < n; i++) {
-    if (T.out_r < T.out_w) {
+    if (T.started && T.out_r < T.out_w) {
       RADE_COMP c = T.out[T.out_r % TX_OUT_RING];
       T.out_r++;
       buf[2 * i] = c.real;
@@ -707,13 +802,76 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
     } else {
       buf[2 * i] = 0.0;
       buf[2 * i + 1] = 0.0;
-      T.underruns++;
+      if (T.started && T.end_state == 0) { T.underruns++; }
     }
+  }
+  // the over is finished once the EOO has gone into WDSP and WDSP has had
+  // time to put it out (its TX filters delay by about 0.13 s)
+  if (T.end_state == 1 && T.eoo_end_pos >= 0 && T.out_r >= T.eoo_end_pos) {
+    T.tail += n;
+    if (T.tail >= TX_TAIL) { T.end_state = 2; }
   }
   pthread_mutex_unlock(&T.mx);
   pthread_mutex_lock(&E.mx);
   cap_push_mic(blk, nb);
   pthread_mutex_unlock(&E.mx);
+}
+
+//
+// End of over. radio_set_mox(0) asks; as long as the answer is 1 it keeps
+// the transmitter keyed and asks again when rade_native_tx_end_state() is 2.
+//
+int rade_native_tx_end_request(void) {
+  if (!T.enabled) { return 0; }
+  int hold = 0;
+  pthread_mutex_lock(&T.mx);
+  if (T.end_state == 1) {
+    hold = 1;
+  } else if (T.end_state == 0 && T.active) {
+    T.end_state = 1;
+    T.end_req = 1;
+    T.eoo_end_pos = -1;
+    T.tail = 0;
+    pthread_cond_signal(&T.cv);
+    hold = 1;
+  }
+  pthread_mutex_unlock(&T.mx);
+  return hold;
+}
+
+int rade_native_tx_end_state(void) {
+  pthread_mutex_lock(&T.mx);
+  int st = T.end_state;
+  pthread_mutex_unlock(&T.mx);
+  return st;
+}
+
+// keyed again before the end of the over went out: carry on
+void rade_native_tx_end_cancel(void) {
+  if (!T.enabled) { return; }
+  pthread_mutex_lock(&T.mx);
+  T.end_state = 0; T.end_req = 0; T.eoo_end_pos = -1; T.tail = 0;
+  pthread_mutex_unlock(&T.mx);
+}
+
+void rade_native_set_callsign(const char *call) {
+  char c[16];
+  int n = 0;
+  for (int i = 0; call && call[i] && n < 7; i++) {
+    unsigned char ch = (unsigned char)call[i];
+    if (ch >= 'a' && ch <= 'z') { ch = ch - 'a' + 'A'; }
+    if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '/') { c[n++] = ch; }
+  }
+  c[n] = 0;
+  pthread_mutex_lock(&T.mx);
+  strcpy(T.call, c);
+  pthread_mutex_unlock(&T.mx);
+}
+
+unsigned long rade_native_tx_underruns(void) { return T.underruns; }
+
+const char *rade_native_get_callsign(void) {
+  return T.call;
 }
 
 int rade_native_waveform(void) { return E.waveform; }
@@ -725,6 +883,9 @@ void rade_native_configure(int waveform, int user_invert) {
   engine_stop();
   E.waveform = 0;
   memset(&E.st, 0, sizeof E.st);
+  E.snr_ema = E.foff_last = 0.0f;
+  E.ncalls = 0;
+  E.last_call[0] = 0;
   if (waveform == 0) { return; }
   design_filters();
   static int inited = 0;
@@ -748,6 +909,19 @@ void rade_native_configure(int waveform, int user_invert) {
   E.st.waveform = waveform;
   E.running = 1;
   pthread_create(&E.thread, NULL, worker, NULL);
+}
+
+int rade_native_call_pop(rade_native_call_t *c) {
+  int got = 0;
+  pthread_mutex_lock(&E.mx);
+  if (E.ncalls > 0) {
+    *c = E.calls[0];
+    memmove(&E.calls[0], &E.calls[1], sizeof(E.calls[0]) * (E.ncalls - 1));
+    E.ncalls--;
+    got = 1;
+  }
+  pthread_mutex_unlock(&E.mx);
+  return got;
 }
 
 void rade_native_get_status(rade_native_status_t *st) {
