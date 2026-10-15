@@ -48,11 +48,6 @@ struct _vfo vfo[MAX_VFOS];
 void t_print(const char *f, ...) { (void)f; }
 double myatof(const char *s) { return atof(s); }
 
-/*
- * The client's panadapter repaint, which diversity_client_set_status()
- * calls. There is no panadapter here.
- */
-void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 
 /* ------------------------------------------------------------------ */
 /* a property store the test drives directly                          */
