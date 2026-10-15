@@ -79,11 +79,6 @@ int div_indep_att = 1;
  * other.
  */
 #define SWAP_STEP_B 130
-/*
- * The client's panadapter repaint, which diversity_client_set_status()
- * calls. There is no panadapter here.
- */
-void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 struct _vfo vfo[MAX_VFOS];
 DISCOVERED *radio = NULL;
 
