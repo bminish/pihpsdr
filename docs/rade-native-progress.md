@@ -16,6 +16,26 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter: SNR and heard calls): piHPSDR's state file now also
+  carries the live receive state (`rx_sync`, `rx_snr`, `rx_foff`, rewritten
+  at least every 2 s) and the last call decoded from an end-of-over frame
+  (`heard_seq`, `heard_call`, `heard_snr`, `heard_t`; a call forces an
+  immediate write). The Reporter shows "Receiving: signal, SNR x dB, offset
+  y Hz" / "no signal" / "transmitting" and the last call heard, and when
+  reporting is on it sends each newly heard call as freedv-gui's `rx_report`
+  (`callsign`, `mode` RADEV1/RADEV2, `snr` rounded to a whole dB) on the
+  server of the active mode. Not sent: your own call, a call older than 60 s,
+  calls heard before reporting was turned on, anything while only watching.
+  **What it cannot do**: report "the current SNR" on its own every few
+  seconds, because `rx_report` is *about a callsign* and a V1 station's call
+  only arrives with the end-of-over frame; so the live SNR is displayed
+  (updating every couple of seconds) and the SNR sent to the server is the
+  over's, taken with the call. V2 callsigns are not decoded yet, so V2 sends
+  no `rx_report`. Tested against the mock server, not a real one (14
+  more checks, 54 in all; and the window driven through the whole sequence:
+  nothing sent while not reporting, the earlier call not replayed when
+  reporting went on, a new call sent as `rx_report`, our own not).
+
 - 2026-10-15 (Reporter would not launch): **cause**: `rade_reporter.py` died
   on import, `gi.repository.Gdk` was imported without `require_version`, so
   PyGObject loaded Gdk 4.0 against Gtk 3.0 (`Requiring namespace 'Gdk'

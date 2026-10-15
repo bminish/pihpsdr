@@ -156,6 +156,9 @@ class App(Gtk.Window):
         b.connect("clicked", self._on_clear)
         r3.pack_start(b, False, False, 0)
 
+        self.rxinfo = Gtk.Label(xalign=0)
+        v.pack_start(self.rxinfo, False, False, 0)
+
         self.store = Gtk.ListStore(str, str, str, str, str, str, str, str, str, str, str, str, str,
                                    str, str, float, float, float, float, float)
         self._fp = (0, "All", False, True, 0)
@@ -330,6 +333,7 @@ class App(Gtk.Window):
         self.current_key = next((k for k, s in self.cfg["servers"].items() if srv is s), None)
         self.link.software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
         self.link.set_target(srv, role, call, grid, freq, mode, tx, self.message)
+        self._rx_note(p, srv, role, mode, call)
         self.why.set_text(why)
         self.qsy_b.set_sensitive(role == "report")
         if self.dirty or True:
@@ -342,6 +346,43 @@ class App(Gtk.Window):
         self.status.set_text("%s    |    %s  %s    |    %d stations" % (
             link, where, self.state_text if srv else "", len(self.roster.snapshot())))
         return True
+
+    # ------------------------------------------------------------- receiving
+    _heard_seq = None
+    _heard_note = ""
+
+    def _rx_note(self, p, srv, role, mode, mycall):
+        """The live SNR, and the calls piHPSDR hears: shown, and reported while we are present."""
+        if not p or not p.get("linked"):
+            self.rxinfo.set_text("Receiving: piHPSDR is not running")
+            self._heard_seq = None
+            return
+        if int(p.get("waveform", 0)) == 0:
+            live = "RADE is off"
+        elif p.get("tx"):
+            live = "transmitting"
+        elif p.get("rx_sync"):
+            live = "signal, SNR %.1f dB, offset %+.1f Hz" % (p.get("rx_snr", 0.0), p.get("rx_foff", 0.0))
+        else:
+            live = "no signal"
+        due = core.rx_report_due(p, self._heard_seq, mycall)
+        if self._heard_seq is None or role != "report":
+            # not present: whatever is heard now is old news if we do become present
+            seq = int(p.get("heard_seq", 0))
+            if self._heard_seq is not None and seq != self._heard_seq and p.get("heard_call"):
+                self._heard_note = "last heard %s %s, SNR %.1f dB: not reported (%s)" % (
+                    time.strftime("%H:%M:%S"), p["heard_call"], p.get("heard_snr", 0.0), self.why.get_text())
+            self._heard_seq = seq
+            due = None
+        if due:
+            call, snr, seq = due
+            self._heard_seq = seq
+            ok = self.link.report_rx(call, mode, snr)
+            self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
+                time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
+        elif p.get("heard_call") and not self._heard_note:
+            self._heard_note = "last heard %s, SNR %.1f dB (not reported)" % (p["heard_call"], p.get("heard_snr", 0.0))
+        self.rxinfo.set_text("Receiving: %s    |    %s" % (live, self._heard_note or "no call heard yet"))
 
     def _fill(self):
         sel = self._selected()

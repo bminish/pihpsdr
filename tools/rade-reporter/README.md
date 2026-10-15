@@ -8,9 +8,14 @@ window; it is a separate program and keeps running when piHPSDR is closed.
     python3 tools/rade-reporter/rade_reporter.py      # needs PyGObject (GTK 3) and websocket-client
 
 - **Starts with reporting off, every time.** The tick box is never saved.
-- **Presence only**: callsign, grid, dial frequency, mode (`RADEV1` / `RADEV2`)
-  and whether you are transmitting, sent with freedv-gui's own events
-  (`freq_change`, `tx_report`, `message_update`). No receive reports.
+- **What is reported**, with freedv-gui's own events: your presence (callsign, grid, dial
+  frequency, mode `RADEV1` / `RADEV2`, transmitting: `freq_change`, `tx_report`,
+  `message_update`) and each callsign piHPSDR decodes from a received end-of-over frame
+  (`rx_report`: the call, the mode, the SNR to the whole dB). Only while reporting is on,
+  only in the active mode, never your own call, and not calls heard before you went on.
+  The window also shows the live receive state (SNR and offset, from piHPSDR every
+  couple of seconds) and the last call heard. A V1 call arrives only at the end of an
+  over, so there is no callsign to report with while the over is still going.
 - **Only in the active mode**: V1 goes to qso.freedv.org as `RADEV1`; V2 goes to
   the v3 reporter as `RADEV2`. RADE off in piHPSDR, or piHPSDR gone, takes you
   off the list at once. The address of the v3 reporter is set in *Settings*;
