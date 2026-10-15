@@ -125,6 +125,43 @@ void rade_native_tx_enable(int on);
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
 
 //
+// End of over. With RADE transmit on, releasing the transmitter has to wait
+// for the last speech, the end-of-over frame (with the callsign) and the
+// delay through WDSP's TX filters, about 0.4 s in all. radio_set_mox(0)
+// calls rade_native_tx_end_request(): a 1 means "hold the transmitter and
+// ask again"; rade_native_tx_end_state() is 1 while the over is ending and
+// 2 when it is safe to release. A key-down meanwhile calls
+// rade_native_tx_end_cancel().
+//
+unsigned long rade_native_tx_underruns(void);   // output samples the worker was late with, since enable
+int  rade_native_tx_end_request(void);
+int  rade_native_tx_end_state(void);
+void rade_native_tx_end_cancel(void);
+
+//
+// The callsign sent in the end-of-over frame (V1; V2 has no text yet).
+// Letters, digits and '/', upper-cased, at most 7 characters; anything else
+// is dropped. Empty means none is sent.
+//
+void rade_native_set_callsign(const char *call);
+const char *rade_native_get_callsign(void);
+
+//
+// Callsigns decoded from received end-of-over frames (V1). The engine
+// queues them; the caller takes them with rade_native_call_pop() and adds
+// what only it knows (dial frequency, mode).
+//
+typedef struct {
+  char   call[16];
+  double t_unix;
+  float  snr_db;       // smoothed SNR over the over, before it ended
+  float  foff_hz;
+  int    waveform;
+} rade_native_call_t;
+
+int rade_native_call_pop(rade_native_call_t *c);
+
+//
 // Test hook: write the vocoder features fed to rade_tx() (float32, 36 per
 // 10 ms frame, the layout rade_tx_wav -f writes) to path; NULL stops.
 //
@@ -155,6 +192,7 @@ void rade_native_capture_event(const char *text);
 //
 void rade_native_capture_tx(const double *iq, int n, int rate);
 void rade_native_capture_info(char *buf, size_t len);
+const char *rade_native_capture_stem(void);   // file stem of the running capture, else ""
 
 //
 // Opens a V1 and a V2 context, checks the library version, and writes a
