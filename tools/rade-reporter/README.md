@@ -14,10 +14,10 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   (`rx_report`: the call, the mode, the SNR to the whole dB). Only while reporting is on,
   only in the active mode, never your own call, and not calls heard before you went on.
   The window also shows the live receive state (SNR and offset, from piHPSDR every
-  couple of seconds) and the last call heard. **Regular SNR**: while a signal is in sync it also
-  sends the live SNR every few seconds (3-30 s, your choice) for the station it is taken to be:
-  the last call heard in the last 3 minutes, if the signal is within 5 Hz of where that over was.
-  The window shows when it is doing this, and why when it is not. A V1 call arrives only at the end of an
+  couple of seconds) and the last call heard. **Regular SNR**, as freedv-gui does it: while a signal is in sync it sends the live SNR every few
+  seconds (1-30 s, your choice; freedv-gui sends about once a second). No callsign is needed: until one has
+  been decoded the report carries a blank one; after that it carries the last call decoded, until sync has been
+  lost for 10 s. The window shows when it is doing this, and why when it is not. A V1 call arrives only at the end of an
   over, so there is no callsign to report with while the over is still going.
 - **Only in the active mode**: V1 goes to qso.freedv.org as `RADEV1`; V2 goes to
   the v3 reporter as `RADEV2`. RADE off in piHPSDR, or piHPSDR gone, takes you

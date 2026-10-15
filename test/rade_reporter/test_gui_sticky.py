@@ -43,7 +43,7 @@ put(running=1, waveform=1, dial_hz=7053000, tx=0, call="EI6IZ", rx_sync=0, rx_sn
     heard_call="", heard_snr=0, heard_foff=0, heard_t=0)
 import rade_reporter as rr
 print("restored from the last run")
-app = rr.App()
+app = rr.App(show=False)
 check(app.msg_e.get_text() == "QRV on 40" and app.message == "QRV on 40", "message is back")
 check(app.band.get_active_text() == "40 m", "band filter is back")
 check(app.track.get_active() and app.t_freq.get_active() and not app.t_band.get_active(), "Track on, by frequency")
@@ -56,22 +56,27 @@ def s1():
     app.rep_chk.set_active(True)       # callsign and grid came from the saved config
 def s2():
     check(any(e[1]["message"] == "QRV on 40" for e in msgs()), "the saved message is sent when it connects")
-    put(rx_sync=1, rx_snr=6.0, rx_foff=2.0, heard_seq=1, heard_call="OH2BCD", heard_snr=7.0, heard_foff=2.5, heard_t=time.time())
+    put(rx_sync=1, rx_snr=6.0, rx_foff=2.0)       # a signal comes into sync, nobody identified yet
 def s3():
-    r = rx(); print("  rx_reports so far:", [x[1] for x in r])
-    check(len(r) >= 1 and r[0][1] == {"callsign": "OH2BCD", "mode": "RADEV1", "snr": 7}, "the end-of-over call goes out first, with the over's SNR")
-    put(rx_snr=9.0)
+    r = [x[1] for x in rx()]
+    print("  rx_reports so far:", r)
+    check(len(r) >= 2 and all(x == {"callsign": "", "mode": "RADEV1", "snr": 6} for x in r),
+          "in sync with no call decoded: the SNR goes out every few seconds with no callsign (%d)" % len(r))
+    print("  indicator:", app.snr_ind.get_text())
+    check("no call decoded yet" in app.snr_ind.get_text(), "and the window says so")
+    put(rx_snr=9.0, heard_seq=1, heard_call="OH2BCD", heard_snr=7.0, heard_foff=2.5, heard_t=time.time())
 def s4():
     r = [x[1] for x in rx()]
-    check(sum(1 for x in r if x["callsign"] == "OH2BCD") >= 3, "then the SNR goes out every few seconds (%d reports)" % len(r))
-    check(any(x["snr"] == 9 for x in r), "with the SNR as it is now")
+    check({"callsign": "OH2BCD", "mode": "RADEV1", "snr": 7} in r, "the call decoded at the end of the over is reported with that over's SNR")
+    after = r[r.index({"callsign": "OH2BCD", "mode": "RADEV1", "snr": 7}):]
+    check(sum(1 for x in after if x["callsign"] == "OH2BCD") >= 3 and any(x["snr"] == 9 for x in after),
+          "then the live SNR goes out every few seconds with that call (%d)" % len(after))
     print("  indicator:", app.snr_ind.get_text())
-    check("sending for OH2BCD" in app.snr_ind.get_text(), "and the window says so")
-    n = len(rx()); put(rx_foff=40.0)
-    GLib.timeout_add(4500, lambda: (check(len(rx()) == n, "a signal 40 Hz away is not attributed to that station"), False)[1])
+    check("call OH2BCD" in app.snr_ind.get_text(), "and the window says so")
+    put(rx_sync=0)
 def s5():
     print("  indicator:", app.snr_ind.get_text())
-    put(rx_foff=2.0, tx=1)
+    put(rx_sync=1, tx=1)
 def s6():
     n = len(rx())
     GLib.timeout_add(4000, lambda: (check(len(rx()) == n, "nothing while transmitting"), False)[1])
@@ -86,12 +91,12 @@ def s7():
           and c["snr_interval"] == 10.0 and "reporting" not in c, "changes are written to the config")
     app._quit.__func__  # (the window is closed below)
     Gtk.main_quit()
-for t, f in ((2000, s1), (6000, s2), (12000, s3), (18000, s4), (24000, s5), (25000, s6), (31000, s7)):
+for t, f in ((2000, s1), (6000, s2), (14000, s3), (21000, s4), (24000, s5), (25000, s6), (31000, s7)):
     GLib.timeout_add(t, lambda f=f: (f(), False)[1])
 Gtk.main()
 app.link.close()
 print("a new start")
-app2 = rr.App()
+app2 = rr.App(show=False)
 check(app2.msg_e.get_text() == "QSY 40.5" and app2.band.get_active_text() == "All" and not app2.track.get_active()
       and app2.snr_spin.get_value() == 10 and app2.reporting is False and not app2.rep_chk.get_active(),
       "the changes are there next time, and reporting starts off")
