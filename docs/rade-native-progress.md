@@ -16,6 +16,36 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter: regular SNR, sticky settings): **Regular SNR
+  reports.** While a signal is in sync and reporting is on, the Reporter
+  sends `rx_report` (callsign, mode, live SNR to the whole dB) every N
+  seconds (3-30, default 5), and the window says so on its own line: a green
+  dot and "sending for OH2BCD every 5 s   last: OH2BCD +9.0 dB 2s ago", or
+  why not ("waiting for a signal", "paused while transmitting", "signal is
+  not where OH2BCD was (+2 Hz, now +40 Hz)", "waiting: not reporting").
+  **The attribution is an assumption and is stated in the tooltip**:
+  `rx_report` needs a callsign and a V1 station only sends its call in the
+  end-of-over frame, so during an over the station is taken to be the last
+  one heard, provided that was under 3 minutes ago and the signal's
+  frequency offset is within 5 Hz of where that station's over was
+  (piHPSDR now also writes `heard_foff`). A different station arriving
+  within 5 Hz and 3 minutes would be reported under the wrong call until
+  its own end-of-over report corrects things; reports already sent cannot be
+  withdrawn. The end-of-over report (the call actually decoded, the over's
+  SNR) is separate and always sent. **Sticky**: the message is kept in the
+  config and sent on every connection (also with the first, and again after a
+  reconnect or a change of server) until Clear; Track (on/off, band or
+  frequency), the Band filter, the Idle filter and the SNR settings are also
+  kept and restored. Reporting itself is still never kept. Tests: 70 checks
+  (`test_reporter.py`, mock server: the interval, the foff gate, staleness,
+  pause while transmitting, the message on each of four connections), and
+  `test_gui_sticky.py` drives the window (restore, first connection sends
+  the saved message, the call then repeated SNR reports at the live value,
+  a 40 Hz offset signal not attributed, nothing while transmitting, changes
+  saved, a new start restores them and reporting is off). Not tested
+  against a real reporter; the server's reaction to repeated `rx_report`s
+  for one station is not known.
+
 - 2026-10-15 (Reporter: CPU and slow close): **three causes, all mine**.
   (1) The first update was scheduled with `GLib.idle_add` and the update
   returns True (to keep its 0.5 s timer), so as an idle callback it ran
