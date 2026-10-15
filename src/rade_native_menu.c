@@ -79,6 +79,7 @@ static const char *agc_name(int a);
 static int heard_seq = 0;
 static char heard_call[16] = "";
 static float heard_snr = 0.0f;
+static float heard_foff = 0.0f;
 static double heard_t = 0.0;
 
 #define CAPTURE_DIR "rade-captures"
@@ -126,6 +127,7 @@ static void log_call(const rade_native_call_t *c) {
   fclose(f);
   snprintf(heard_call, sizeof heard_call, "%s", c->call);
   heard_snr = c->snr_db;
+  heard_foff = c->foff_hz;
   heard_t = c->t_unix;
   heard_seq++;
   if (rade_native_capture_active()) {
@@ -206,10 +208,10 @@ static void state_write(int running) {
            "{\"running\":%d,\"updated\":%.3f,\"pid\":%d,\"waveform\":%d,\"dial_hz\":%lld,"
            "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
            "\"rx_sync\":%d,\"rx_snr\":%.1f,\"rx_foff\":%.1f,"
-           "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_t\":%.0f}\n",
+           "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_foff\":%.1f,\"heard_t\":%.0f}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
            vfo[0].frequency, radio_is_transmitting() ? 1 : 0, call, ver,
-           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_t);
+           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_foff, heard_t);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
   if (!f) { return; }
