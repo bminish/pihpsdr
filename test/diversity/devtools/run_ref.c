@@ -317,7 +317,7 @@ int main(int argc, char **argv) {
    * of the option.
    */
   if (cohmin >= 0.0) { div_auto_coherence_min = cohmin; }
-  div_auto_mode = (mode >= 0) ? mode : m.auto_mode;
+  div_auto_mode = (mode >= 0) ? mode : divcap_mode(&h, m.auto_mode);
   div_auto_follow_filter = (follow >= 0) ? follow : m.follow;
   div_auto_weighting     = (weighting >= 0) ? weighting : m.weighting;
   div_auto_centre = (width > 0.0) ? centre : m.centre;
