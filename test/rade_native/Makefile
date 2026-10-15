@@ -52,8 +52,11 @@ test_tx_level: test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_te
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
+test_launch: test_launch.c $(ROOT)/src/rade_launch.c $(ROOT)/src/rade_launch.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ test_launch.c $(ROOT)/src/rade_launch.c `pkg-config --cflags --libs glib-2.0`
+
 check: test_geometry
 	./test_geometry
 
 clean:
-	rm -f test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry
+	rm -f test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry

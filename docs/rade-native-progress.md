@@ -16,6 +16,27 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter would not launch): **cause**: `rade_reporter.py` died
+  on import, `gi.repository.Gdk` was imported without `require_version`, so
+  PyGObject loaded Gdk 4.0 against Gtk 3.0 (`Requiring namespace 'Gdk'
+  version '3.0', but '4.0' is already loaded`). My tests had imported Gtk
+  first and so never saw it. piHPSDR's button did start the program, but with
+  its output sent to /dev/null and "started" printed as soon as the spawn
+  succeeded, so nothing showed; the one-line status was also overwritten
+  by the capture line every 250 ms. **Fixed**: Gdk 3.0 is now required
+  explicitly; the start goes through `src/rade_launch.c` (detached in its own
+  session, output appended to `~/.local/state/pihpsdr-rade/reporter.log`,
+  and if the program ends within 5 s the window says so with its status and
+  the log's name); messages have their own line at the bottom of the RADE
+  window; and the program uses `GLibUnix.signal_add` where PyGObject has it
+  (the old call is deprecated). `test_launch` checks: a program that fails
+  at once is reported with its output in the log, one that runs on is not, a
+  missing program fails cleanly, and the real Reporter started this way was
+  still running after the parent had exited. **The piHPSDR that was running
+  (started 22:39) is the older binary**: its button now works because the
+  fix is in the script, but it will not show the new messages until it is
+  restarted.
+
 - 2026-10-15 (mic level): RADE TX now has a mic **trim** (-20..+20 dB), an
   **AGC** (leveller, on by default) and a **meter**, all in the RADE window
   (row under Transmit); trim and AGC are saved in the props file
