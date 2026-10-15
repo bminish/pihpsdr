@@ -200,9 +200,10 @@ class App(Gtk.Window):
         numeric = {C_KM: C_KMV, C_HDG: C_HDGV, C_MHZ: C_MHZV, C_SNR: C_SNRV, C_UPD: C_UPDV}
         for i, name in enumerate(HEAD):
             cell = Gtk.CellRendererText()
-            cell.set_property("xalign", 0.5 if i else 0.0)
+            cell.set_property("xalign", 0.0)              # left justified, all columns
             col = Gtk.TreeViewColumn(name, cell, text=i, cell_background=C_BG)
             col.set_resizable(True)
+            col.set_alignment(0.0)                         # and the headings
             col.set_sort_column_id(numeric.get(i, i))
             self.tree.append_column(col)
         self.tree.connect("button-press-event", self._on_tree_click)
