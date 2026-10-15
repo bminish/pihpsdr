@@ -24,4 +24,10 @@
 
 void rade_native_menu(GtkWidget *parent);
 
+//
+// Starts publishing piHPSDR's RADE state for the separate RADE Reporter
+// program (see rade_native_menu.c). Call once the settings are restored.
+//
+void rade_native_state_start(void);
+
 #endif

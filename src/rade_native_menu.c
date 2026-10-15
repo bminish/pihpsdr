@@ -25,7 +25,9 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -162,6 +164,113 @@ static void call_changed_cb(GtkWidget *widget, gpointer data) {
     snprintf(text, sizeof text, "%s is sent in the end-of-over frame", c);
   }
   if (call_label != NULL) { gtk_label_set_text(GTK_LABEL(call_label), text); }
+}
+
+
+//
+// ---- the reporter ----
+//
+// The RADE Reporter (tools/rade-reporter) is a separate program with its own
+// window. piHPSDR does not own it: it starts it detached, in its own session,
+// so that it carries on when piHPSDR is closed. What it needs to know is in
+// $XDG_STATE_HOME/pihpsdr-rade/state.json (default ~/.local/state/...), which
+// is rewritten when it changes and at least every 2 s, atomically, and once
+// more with "running":0 when piHPSDR exits. A reporter that finds the file
+// older than 8 s takes it that piHPSDR has gone.
+//
+static char state_file[512];
+static guint state_timer_id = 0;
+
+static void state_write(int running) {
+  if (state_file[0] == 0) { return; }
+  char tmp[600], text[512], call[16], ver[64];
+  snprintf(call, sizeof call, "%s", rade_native_get_callsign());
+  snprintf(ver, sizeof ver, "%s", build_version);
+  for (char *c = ver; *c; c++) { if (*c == '"' || *c == '\\' || (unsigned char)*c < 32) { *c = '_'; } }
+  snprintf(text, sizeof text,
+           "{\"running\":%d,\"updated\":%.3f,\"pid\":%d,\"waveform\":%d,\"dial_hz\":%lld,"
+           "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\"}\n",
+           running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
+           vfo[0].frequency, radio_is_transmitting() ? 1 : 0, call, ver);
+  snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
+  FILE *f = fopen(tmp, "w");
+  if (!f) { return; }
+  fputs(text, f);
+  fclose(f);
+  rename(tmp, state_file);
+}
+
+static void state_exit(void) {
+  state_write(0);
+}
+
+static int state_cb(gpointer arg) {
+  static char last[160];
+  static gint64 last_t = 0;
+  char now[160];
+  snprintf(now, sizeof now, "%d %lld %d %s", rade_native_waveform(), vfo[0].frequency,
+           radio_is_transmitting() ? 1 : 0, rade_native_get_callsign());
+  gint64 t = g_get_monotonic_time();
+  if (strcmp(now, last) != 0 || t - last_t >= 2000000) {
+    state_write(1);
+    strcpy(last, now);
+    last_t = t;
+  }
+  return G_SOURCE_CONTINUE;
+}
+
+void rade_native_state_start(void) {
+  if (state_timer_id != 0) { return; }
+  const char *base = g_getenv("XDG_STATE_HOME");
+  char dir[480];
+  if (base && base[0]) {
+    snprintf(dir, sizeof dir, "%s/pihpsdr-rade", base);
+  } else {
+    snprintf(dir, sizeof dir, "%s/.local/state/pihpsdr-rade", g_get_home_dir());
+  }
+  g_mkdir_with_parents(dir, 0755);
+  snprintf(state_file, sizeof state_file, "%s/state.json", dir);
+  atexit(state_exit);
+  state_write(1);
+  state_timer_id = g_timeout_add(250, state_cb, NULL);
+}
+
+static void reporter_child_setup(gpointer data) {
+  setsid();                       // its own session: closing piHPSDR's terminal or window does not reach it
+}
+
+static void reporter_cb(GtkWidget *widget, gpointer data) {
+  char exe[512] = "", path[1024];
+  ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+  if (n > 0) { exe[n] = 0; }
+  char *dir = g_path_get_dirname(exe);
+  const char *rel = "tools/rade-reporter/rade_reporter.py";
+  const char *where[] = {".", dir, NULL};
+  int found = 0;
+  for (int i = 0; i < 2 && !found; i++) {
+    snprintf(path, sizeof path, "%s/%s", where[i], rel);
+    found = access(path, R_OK) == 0;
+  }
+  g_free(dir);
+  char msg[300];
+  if (!found) {
+    snprintf(msg, sizeof msg, "Reporter not found (looked for %s next to piHPSDR and in the current directory)", rel);
+  } else {
+    char *argv[] = {"python3", path, NULL};
+    GError *err = NULL;
+    // detached: not waited for, no standard files, none of piHPSDR's descriptors
+    if (g_spawn_async(NULL, argv, NULL,
+                      G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL |
+                      G_SPAWN_STDIN_FROM_DEV_NULL,
+                      reporter_child_setup, NULL, NULL, &err)) {
+      snprintf(msg, sizeof msg, "Reporter started (it keeps running when piHPSDR is closed)");
+    } else {
+      snprintf(msg, sizeof msg, "Could not start the reporter: %s", err ? err->message : "?");
+      if (err) { g_error_free(err); }
+    }
+  }
+  if (capture_label != NULL) { gtk_label_set_text(GTK_LABEL(capture_label), msg); }
+  t_print("%s: %s\n", __func__, msg);
 }
 
 //
@@ -540,6 +649,11 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(inv_b), rade_native_user_invert());
   g_signal_connect(inv_b, "toggled", G_CALLBACK(invert_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), inv_b, 4, 0, 1, 1);
+  GtkWidget *rep_b = gtk_button_new_with_label("Reporter");
+  gtk_widget_set_tooltip_text(rep_b, "Opens the RADE Reporter in its own window. It is a separate program: "
+                                     "it stays open when piHPSDR is closed, and starts with reporting off.");
+  g_signal_connect(rep_b, "clicked", G_CALLBACK(reporter_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), rep_b, 5, 0, 1, 1);
   edge_label = gtk_label_new("");
   gtk_widget_set_halign(edge_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), edge_label, 0, 1, 5, 1);
