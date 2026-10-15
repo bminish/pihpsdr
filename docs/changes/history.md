@@ -317,6 +317,7 @@ Newest first.
   panadapter repaint in `diversity_client_set_status()`. `TEST` rebuilt on it
   (backup tag `backup/TEST-pre-rebase-20261015`; tooling and docs replayed,
   the LC commits not); the 13 `rx_panadapter_update()` test stubs removed
-  (LT-032); the register moved LC-048 to LC-058 to accepted. Decided to keep
+  (LT-032); the register moved LC-048 to LC-058 to accepted. Force-pushed with
+  the owner's OK (`302a9149` to `2a0dd63c`, `--force-with-lease`). Decided to keep
   DIVCAP as a local option that never goes upstream. LC-059 (objective order
   Manual, Sum, Null, Best) discussed and recorded as a to-do.
