@@ -40,6 +40,7 @@ USBOZY=OFF
 SOAPYSDR=OFF
 PORTFORWARD=ON
 TCI=ON
+RADE_NATIVE=OFF
 ifeq ($(MACOS), YES)
 AUDIO=PORTAUDIO
 endif
@@ -395,6 +396,24 @@ endif
 
 ##############################################################################
 #
+# Native RADE V1/V2 (feature/rade-native). Needs librade, which
+# tools/rade/build_rade.sh fetches and builds into third_party/.
+# See docs/rade-native.md. Off by default.
+#
+##############################################################################
+
+ifeq ($(RADE_NATIVE),ON)
+RADE_SRC=./third_party/rade_c-src/src
+RADE_BLD=./third_party/rade_c-build
+RADE_OPUS=$(RADE_BLD)/build_opus-prefix/src/build_opus
+RADE_NATIVE_OPTIONS=-D RADE_NATIVE
+RADE_NATIVE_INCLUDE=-I$(RADE_SRC) -I$(RADE_OPUS) -I$(RADE_OPUS)/include \
+	-I$(RADE_OPUS)/celt -I$(RADE_OPUS)/dnn
+RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src)
+endif
+
+##############################################################################
+#
 # All the command-line options to compile the *.c files
 #
 ##############################################################################
@@ -408,6 +427,7 @@ OPTIONS=$(MIDI_OPTIONS) $(USBOZY_OPTIONS) \
 	$(AUDIO_OPTIONS) \
     $(TCI_OPTIONS) \
 	$(OPUS_OPTIONS) \
+	$(RADE_NATIVE_OPTIONS) \
 	$(ZLIB_OPTIONS) \
 	$(DXCLUSTER_OPTIONS) \
 	$(CURL_OPTIONS) \
@@ -435,7 +455,7 @@ COMPILE=$(CC) $(CFLAGS) $(OPTIONS) $(INCLUDES)
 LIBS=	$(LDFLAGS) $(AUDIO_LIBS) $(USBOZY_LIBS) $(GTK_LIBS) $(GPIO_LIBS) \
 	$(SOAPYSDR_LIBS) $(STEMLAB_LIBS) $(MIDI_LIBS) $(TTS_LIBS) $(OPUS_LIBS) \
 	$(ZLIB_LIBS) $(DXCLUSTER_LIBS) $(CURL_LIBS) $(PNP_LIBS) $(TCI_LIBS) \
-	$(OPENSSL_LIBS) $(WDSP_LIBS) -lm $(SYS_LIBS)
+	$(OPENSSL_LIBS) $(RADE_NATIVE_LIBS) $(WDSP_LIBS) -lm $(SYS_LIBS)
 
 ##############################################################################
 #
@@ -702,6 +722,10 @@ else
 DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
     rm -f src/.divcap-on src/diversity_auto.o src/diversity_menu.o \
           src/diversity_capture.o)
+endif
+
+ifeq ($(RADE_NATIVE),ON)
+OBJS    += src/rade_native.o
 endif
 
 ##############################################################################
@@ -1320,3 +1344,8 @@ src/tx_panadapter.o: src/transmitter.h
 src/vfo.o: src/receiver.h src/mode.h
 src/waterfall.o: src/receiver.h
 src/MacTTS.o: src/message.h
+
+src/rade_native.o: src/rade_native.h
+# librade's headers include a "nnet.h" of their own (opus), which clashes with
+# wdsp/nnet.h. Only this object sees librade, with its own include path.
+src/rade_native.o: INCLUDES=$(RADE_NATIVE_INCLUDE)
