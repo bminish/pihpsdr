@@ -16,6 +16,21 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (filtering and mode changes, from the captures): see
+  `docs/rade-native-filtering.md`. In short: (1) the three TX captures show
+  the SSB profile's CFC post-equaliser and leveler active during RADE
+  transmit (energy centre +1650 Hz instead of +1457, bottom third of the
+  carriers about 5 dB down); reproduced offline; guarded in
+  `tx_set_compressor/equalizer/phrot/dexp` so the profile cannot switch them
+  back on while RADE transmit is on (compiled, not run on a radio);
+  `tx_shape.py` is the check for the next capture; effect on decode is
+  small (feature error 0.041 vs 0.038 at 0 dB). (2) 1.6 kHz TX and RX
+  filters are the right size (TX leaves the end carriers at 0 dB and is 98 dB
+  down at 300/2700 Hz; RX decode is the same from 1.4 to 2.0 kHz). (3) V1
+  pull-in is about +/-60 Hz whatever the filter. (4) at a fixed dial, Invert
+  and V1 -> V2 below 10 MHz move the energy 3 kHz; the fix (dial and VFO
+  mode follow the sideband) is not built, two questions are in the document.
+
 - 2026-10-15 (Reporter: status, last TX, every call): checked against
   freedv-gui. It sends `tx_report` {mode, transmitting} when PTT changes
   and at start-up (`ongui.cpp`, `main.cpp`), and the server keeps the

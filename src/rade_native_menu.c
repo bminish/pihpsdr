@@ -589,10 +589,12 @@ static void tx_apply(int on) {
   if (transmitter == NULL || on == tx_applied) { return; }
   if (on) {
     tx_xmit_captured_data_start(transmitter);
+    SetTXAPHROTRun(transmitter->id, 0);          // the phase rotator too
     SetTXAPanelSelect(transmitter->id, 3);
   } else {
     SetTXAPanelSelect(transmitter->id, 2);
     tx_xmit_captured_data_end(transmitter);
+    SetTXAPHROTRun(transmitter->id, transmitter->phrot_enable);
   }
   tx_applied = on;
   tx_set_filter(transmitter);
