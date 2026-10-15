@@ -412,6 +412,7 @@ class App(Gtk.Window):
 
     # ------------------------------------------------------------- receiving
     _heard_seq = None
+    _tx_seen = None
     _heard_note = ""
 
     def _rx_note(self, p, srv, role, mode, mycall):
@@ -430,7 +431,7 @@ class App(Gtk.Window):
             live = "signal, SNR %.1f dB, offset %+.1f Hz" % (p.get("rx_snr", 0.0), p.get("rx_foff", 0.0))
         else:
             live = "no signal"
-        due = core.rx_report_due(p, self._heard_seq, mycall)
+        due = core.rx_reports_due(p, self._heard_seq, mycall)
         if self._heard_seq is None or role != "report":
             # not present: whatever is heard now is old news if we do become present
             seq = int(p.get("heard_seq", 0))
@@ -438,16 +439,23 @@ class App(Gtk.Window):
                 self._heard_note = "last heard %s %s, SNR %.1f dB: not reported (%s)" % (
                     time.strftime("%H:%M:%S"), p["heard_call"], p.get("heard_snr", 0.0), self.why.get_text())
             self._heard_seq = seq
-            due = None
-        if due:
-            call, snr, seq = due
-            self._heard_seq = seq
+            due = []
+        for call, snr, seq in due:                      # every call decoded, in order
+            self._heard_seq = max(self._heard_seq, seq)
             self.periodic.heard(call, time.time())
             ok = self.link.report_rx(call, mode, snr)
             self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
                 time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
-        elif p.get("heard_call") and not self._heard_note:
+        if not due and p.get("heard_call") and not self._heard_note:
             self._heard_note = "last heard %s, SNR %.1f dB (not reported)" % (p["heard_call"], p.get("heard_snr", 0.0))
+        # transmissions too short to have been seen as "transmitting": the server still wants them
+        txc = int(p.get("tx_count", 0))
+        if self._tx_seen is None or role != "report":
+            self._tx_seen = txc
+        elif txc > self._tx_seen:
+            if not p.get("tx"):
+                self.link.pulse_tx(mode)                # began and ended between two looks
+            self._tx_seen = txc                         # (if it is still on, tx_report transmitting goes as usual)
         self.rxinfo.set_text("Receiving: %s    |    %s" % (live, self._heard_note or "no call heard yet"))
         # the regular SNR report
         if role != "report":

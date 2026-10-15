@@ -76,7 +76,21 @@ def s4():
     put(rx_sync=0)
 def s5():
     print("  indicator:", app.snr_ind.get_text())
-    put(rx_sync=1, tx=1)
+    # two more calls decoded between two looks, the first the same station again, and a short transmission
+    d = json.load(open(core.state_path()))
+    n = len(rx())
+    put(heard_seq=3, heard_call="OH2BCD", heard_snr=8.0, heard_t=time.time(), tx_count=d.get("tx_count", 0) + 1,
+        heard=[{"seq": 2, "call": "OH2BCD", "snr": 6.0, "t": time.time()}, {"seq": 3, "call": "OH2BCD", "snr": 8.0, "t": time.time()}])
+    GLib.timeout_add(2500, lambda: (check(
+        [x[1]["snr"] for x in rx()[n:] if x[1]["callsign"] == "OH2BCD"][:2] == [6, 8],
+        "two calls arriving together, the same station again: both reported (%s)" % [x[1] for x in rx()[n:n+4]]), False)[1])
+    ntx = len([e for c in mock.clients for e in c["events"] if e[0] == "tx_report"])
+    def pulse_check():
+        tx = [e[1] for c in mock.clients for e in c["events"] if e[0] == "tx_report"][ntx:]
+        check(tx == [{"mode": "RADEV1", "transmitting": True}, {"mode": "RADEV1", "transmitting": False}],
+              "a transmission that came and went between two looks is told as on, then off (%s)" % tx)
+        put(rx_sync=1, tx=1)
+    GLib.timeout_add(2500, lambda: (pulse_check(), False)[1])
 def s6():
     n = len(rx())
     GLib.timeout_add(4000, lambda: (check(len(rx()) == n, "nothing while transmitting"), False)[1])
@@ -91,7 +105,7 @@ def s7():
           and c["snr_interval"] == 10.0 and "reporting" not in c, "changes are written to the config")
     app._quit.__func__  # (the window is closed below)
     Gtk.main_quit()
-for t, f in ((2000, s1), (6000, s2), (14000, s3), (21000, s4), (24000, s5), (25000, s6), (31000, s7)):
+for t, f in ((2000, s1), (6000, s2), (14000, s3), (21000, s4), (24000, s5), (29000, s6), (35000, s7)):
     GLib.timeout_add(t, lambda f=f: (f(), False)[1])
 Gtk.main()
 app.link.close()
