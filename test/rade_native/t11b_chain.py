@@ -45,7 +45,7 @@ def decode(x8, v2, tag):
             100.0 * ins.mean(), s["snr_db"][ins].mean() if ins.any() else float("nan"))
 
 
-def feature_error(tx, dec):
+def feature_error(tx, dec, clip=5):
     """Normalised MSE over the 20 used features, best frame alignment."""
     tx, dec = tx[:, :20], dec[:, :20]
     best = None
@@ -54,7 +54,7 @@ def feature_error(tx, dec):
         n = min(len(a), len(b)) - 10
         if n < 50:
             continue
-        a, b = a[5:5 + n - 5], b[5:5 + n - 5]
+        a, b = a[clip:n], b[clip:n]
         e = np.mean((a - b) ** 2) / np.mean(a ** 2)
         if best is None or e < best[0]:
             best = (e, lag, n)
@@ -69,17 +69,22 @@ def main():
     ap.add_argument("--rx-fixed", type=float, default=None)
     ap.add_argument("--no-alc", action="store_true")
     ap.add_argument("--tag", default=None)
+    ap.add_argument("--prefix", default="brian", help="out/PREFIX.vN.{iq.f32,feat}")
+    ap.add_argument("--clip-start", type=int, default=25,
+                    help="feature frames ignored at the start (as loss.py --clip_start)")
+    ap.add_argument("--tol", type=float, default=None,
+                    help="exit 1 if |error(WDSP) - error(direct)| exceeds this")
     a = ap.parse_args()
     v = "v2" if a.v2 else "v1"
     fc, bw = (1500.0, 1000.0) if a.v2 else (1475.0, 1600.0)
     lo, hi = fc - bw / 2, fc + bw / 2
-    d = np.fromfile(os.path.join(OUT, "brian.%s.iq.f32" % v), dtype=np.float32)
+    d = np.fromfile(os.path.join(OUT, "%s.%s.iq.f32" % (a.prefix, v)), dtype=np.float32)
     x8 = d[0::2] + 1j * d[1::2]
-    txf = np.fromfile(os.path.join(OUT, "brian.%s.feat" % v), dtype=np.float32).reshape(-1, 36)
+    txf = np.fromfile(os.path.join(OUT, "%s.%s.feat" % (a.prefix, v)), dtype=np.float32).reshape(-1, 36)
     tag = a.tag or "t11b_" + v
 
     d0, s0, n0 = decode(x8, a.v2, tag + "_direct")
-    e0 = feature_error(txf, d0)
+    e0 = feature_error(txf, d0, a.clip_start)
     print("direct (no WDSP):      sync %5.1f%%  snr %5.1f  feature error %.4f (lag %d)" %
           (s0, n0, e0[0], e0[1]))
 
@@ -105,9 +110,14 @@ def main():
     print("RX out rms %.4f" % rms)
     x8b = x8b / rms * 0.9               # level for the decoder, as an AGC would
     d1, s1, n1 = decode(x8b.astype(np.complex64), a.v2, tag + "_wdsp")
-    e1 = feature_error(txf, d1)
+    e1 = feature_error(txf, d1, a.clip_start)
     print("through WDSP TX+RX:    sync %5.1f%%  snr %5.1f  feature error %.4f (lag %d)" %
           (s1, n1, e1[0], e1[1]))
+    delta = abs(e1[0] - e0[0])
+    print("|delta|: %.4f" % delta + ("  (tolerance %.4f)" % a.tol if a.tol is not None else ""))
+    if a.tol is not None:
+        print("PASS" if delta <= a.tol else "FAIL: error through WDSP differs from direct")
+        raise SystemExit(0 if delta <= a.tol else 1)
 
 
 if __name__ == "__main__":
