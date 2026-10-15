@@ -33,6 +33,14 @@ struct divcap_result {
 extern FILE *divcap_open(const char *path, struct divcap_header *h, long *data_start);
 
 //
+// A block's `auto_mode` and `ref` as DIV_AUTO_* and DIV_REF_* values of
+// this build. Files of version 4 and below hold the numbering from before
+// LC-059 and LC-060; see diversity_capture.h.
+//
+extern int divcap_mode(const struct divcap_header *h, int recorded);
+extern int divcap_ref(const struct divcap_header *h, int recorded);
+
+//
 // Options that change what the replay does, as opposed to what the
 // correlator does with it. Zeroed by the caller; every field off means
 // "exactly as recorded".
