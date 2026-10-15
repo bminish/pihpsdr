@@ -33,6 +33,9 @@
 #include "cw_menu.h"
 #include "display_menu.h"
 #include "diversity_menu.h"
+#ifdef RADE_NATIVE
+#include "rade_native_menu.h"
+#endif
 #include "dxcluster_menu.h"
 #include "dxcluster_history_menu.h"
 #include "encoder_menu.h"
@@ -427,6 +430,15 @@ static gboolean diversity_cb (GtkWidget *widget, GdkEventButton *event, gpointer
   return TRUE;
 }
 
+#ifdef RADE_NATIVE
+// cppcheck-suppress constParameterCallback
+static gboolean rade_cb (GtkWidget *widget, GdkEventButton *event, gpointer data) {
+  cleanup();
+  rade_native_menu(top_window);
+  return TRUE;
+}
+#endif
+
 void start_vfo_menu(int vfo) {
   int old_menu = active_menu;
   cleanup();
@@ -685,7 +697,13 @@ void new_menu(void) {
       btn = gtk_button_new_with_label("DIV");
       g_signal_connect (btn, "button-press-event", G_CALLBACK(diversity_cb), NULL);
       gtk_grid_attach(GTK_GRID(grid), btn, col, row, 1, 1);
+      row++;
     }
+#ifdef RADE_NATIVE
+    btn = gtk_button_new_with_label("RADE");
+    g_signal_connect (btn, "button-press-event", G_CALLBACK(rade_cb), NULL);
+    gtk_grid_attach(GTK_GRID(grid), btn, col, row, 1, 1);
+#endif
     row = 2;
     col++;
     //

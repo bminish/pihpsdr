@@ -23,8 +23,12 @@ wdsp_probe: wdsp_probe.c $(WDSP)/libwdsp.a
 test_geometry: test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ test_geometry.c $(ROOT)/src/rade_native.c $(LDFLAGS)
 
+test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c \
+	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
+
 check: test_geometry
 	./test_geometry
 
 clean:
-	rm -f rade_tx_iq rade_rx_iq wdsp_probe test_geometry
+	rm -f test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry

@@ -9,12 +9,30 @@ Updated with every commit that moves the work. Newest entry first.
 |---|---|
 | 0 Build/link `librade`, T-0, T-1, T-11 | done: librade builds, T-0, T-1, T-11, `RADE_NATIVE` make option |
 | 1 Harness | started: T-11b chain test works; T-2 channels next |
-| 2 RX | not started |
+| 2 RX | first working version: engine + menu + receiver hooks, offline-tested; needs an on-air capture |
 | 3 Tuning, SNR, logging | not started |
 | 4 TX | not started |
 | 5 Extras | not started |
 
 ## Log
+
+- 2026-10-15 (RX engine, Phase 2 first cut): `rade_native.c` now has the
+  receive engine: WDSP output (panel binaural = complex, 48 kHz) → conj
+  unless invert → 48-tap decimator to 8 kHz → slow level normaliser →
+  ring → worker thread (`rade_rx` → FARGAN, with the 5-frame `fargan_cont`
+  warm-up as `rade_rx_wav` does) → 16 kHz speech ring → 3:1 interpolator →
+  replaces the block in `rx->audio_output_buffer`, at the RX volume.
+  Hooks (all `#ifdef RADE_NATIVE`): `rx_set_filter` (passband from the
+  waveform and effective invert), `rx_set_af_binaural` (forced on),
+  `rx_full_buffer` (calls the engine before `rx_process_buffer`),
+  `new_menu.c` (RADE button in the RX column), `rade_native_menu.c`
+  (Off / V1 / V2, Invert, edges, sync, SNR, offset, underruns).
+  AGC is left as the operator set it (medium by default); `loss_check.sh`
+  passes with medium AGC for V1 and V2. Receiver 0 only, state not saved
+  in props, no TX yet.
+  **How to try it:** `tools/rade/build_rade.sh` once, then
+  `make RADE_NATIVE=ON`, run `./pihpsdr`, set receiver 0 to DIGU, open
+  the RADE button, pick V1 or V2 (Invert to flip the default).
 
 - 2026-10-15 (make option): `make RADE_NATIVE=ON` compiles `src/rade_native.c`
   and links `librade` (rpath into `third_party/rade_c-build`); default is
@@ -161,8 +179,23 @@ involved), 5 s of speech.
   output peak stays below the ALC threshold; calibration to power is T-10
   proper.
 
+**RX engine, offline** (`test/rade_native/test_rx_engine.c`, 50 s of speech
+through the WDSP TX+RX chain, played in real time into
+`rade_native_rx_block()` in 1024-sample blocks):
+
+| | underruns | speech envelope vs original | latency incl. WDSP 0.25 s |
+|---|---|---|---|
+| V1 | 0 | corr 0.90 | 0.70 s |
+| V2 | 1 (start-up) | corr 0.92 | 0.41 s |
+
+Bugs found and fixed on the way: speech buffer truncated at 8 of 12 frames
+per V1 modem frame; play-out cushion shorter than a V1 frame (now 200 ms V1,
+100 ms V2). Speech was listened to by correlation only, not by ear.
+
 ## Next
 
-1. T-2: the same chain over AWGN and fading channels, with and without WDSP.
-2. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
-3. Listen to the mirrored V2 decode.
+1. Capture on air with the RADE button; report what happens.
+2. TX (Phase 4).
+3. T-2: the same chain over AWGN and fading channels, with and without WDSP.
+4. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
+5. Listen to the mirrored V2 decode.

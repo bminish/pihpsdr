@@ -3,3 +3,4 @@ out/
 wdsp_probe
 test_geometry
 rade_rx_iq
+test_rx_engine
