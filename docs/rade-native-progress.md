@@ -100,17 +100,21 @@ different. Listen to `out/*.dec.wav` from both runs before relying on it.
   negative numpy frequency (`I + jQ = exp(+jwt)`), on RX and TX.** So a
   conjugation is needed at both interfaces to and from `librade`, on top
   of Invert. Recorded in plan section 3.
+- **piHPSDR's RX panel copy (read from source):** it never calls
+  `SetRXAPanelCopy`; it calls `SetRXAPanelBinaural(binaural)` in
+  `rx_set_af_binaural()` (`receiver.c:1724`), and WDSP maps that to
+  `copy = 1 - binaural`. So normal audio is copy 1 (I to both
+  channels) and **binaural on gives copy 0, i.e. complex I/Q out on
+  L/R**. The RADE receive mode can use the existing binaural path
+  (`rx->binaural = 1` for the tap) and restore it on leaving the mode.
 - *Not yet done in T-11*: a `rade_tx` frame through TXA, a RADE signal
-  through RXA, group delay, the default `copy` value piHPSDR actually
-  leaves on the RX panel (WDSP creates the panel with copy 0, and
-  `SetRXAPanelCopy` is only called from mode changes: to check in
-  `receiver.c`/`rx_mode_changed`), and the AGC level behaviour (with top
-  gain 80 dB a 0.1 amplitude tone came out +31 dB, i.e. the AGC is
-  working on signals at ordinary IQ levels).
+  through RXA, group delay, and the AGC level behaviour (with top gain
+  80 dB a 0.1 amplitude tone came out +31 dB, i.e. the AGC is working on
+  signals at ordinary IQ levels).
 
 ## Next
 
 1. `RADE_NATIVE` make option linking librade (no engine code yet).
 2. T-11 second pass: RADE signals through RXA/TXA (T-2 round trip needs
-   this), group delay, piHPSDR's RX panel `copy`.
+   this), group delay.
 3. Listen to the mirrored V2 decode.
