@@ -32,3 +32,4 @@ src/.divcap-*
 
 # Fetched and built by tools/rade/build_rade.sh
 /third_party/
+/rade-captures/

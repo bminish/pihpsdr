@@ -20,7 +20,10 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "rade_api.h"
 #include "fargan.h"
@@ -101,6 +104,26 @@ int rade_native_probe(char *msg, size_t len) {
 #define MAX_EXTRA      4800              // 300 ms
 #define TARGET_RMS     0.9               // level handed to librade
 
+//
+// Capture: the receiver thread and the worker put their data into rings
+// (under E.mx); a writer thread takes it to disk.
+//
+#define CAP_IQ_RING    (1 << 22)         // 4 MB, ~10 s of 48 kHz complex float
+#define CAP_SP_RING    (1 << 20)
+
+static struct {
+  int active, run;
+  char stem[512];
+  FILE *iq, *sp, *csv, *ev;
+  uint32_t iq_bytes, sp_bytes;
+  uint8_t *iq_ring, *sp_ring;
+  long iq_w, iq_r, sp_w, sp_r;
+  long pos48;                            // 48 kHz samples captured
+  long dropped;                          // bytes lost to a full ring
+  double t0;
+  pthread_t thread;
+} C;
+
 static struct {
   int waveform, user_invert;
   struct rade *r;
@@ -125,6 +148,8 @@ static struct {
   // status
   rade_native_status_t st;
 } E = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
+
+static void cap_row(long consumed, int nout);
 
 static void design_filters(void) {
   // Windowed-sinc low-pass filters. Decimator: cutoff 3.2 kHz at 48 kHz;
@@ -154,6 +179,7 @@ static void *worker(void *arg) {
   RADE_COMP *blk = malloc(sizeof(RADE_COMP) * nmax);
   float *feat = malloc(sizeof(float) * nfeat);
   float *eoo = malloc(sizeof(float) * (neoo > 0 ? neoo : 1));
+  long consumed = 0;
   FARGANState fargan;
   float cont[5 * NB_TOTAL_FEATURES];
   int cont_n = 0, ready = 0;
@@ -167,6 +193,7 @@ static void *worker(void *arg) {
     }
     for (int i = 0; i < nin; i++) { blk[i] = E.in_ring[(E.in_r + i) % IN_RING]; }
     E.in_r += nin;
+    consumed += nin;
     pthread_mutex_unlock(&E.mx);
     int has_eoo = 0;
     int nout = rade_rx(r, feat, &has_eoo, neoo > 0 ? eoo : NULL, blk);
@@ -195,6 +222,7 @@ static void *worker(void *arg) {
     E.st.sync = rade_sync(r);
     E.st.snr_db = rade_snrdB_3k_est(r);
     E.st.foff_hz = rade_freq_offset(r);
+    if (C.active) { cap_row(consumed, nout); }
     for (int i = 0; i < npcm; i++) { E.out_ring[(E.out_w + i) % OUT_RING] = pcm[i]; }
     E.out_w += npcm;
   }
@@ -203,7 +231,193 @@ static void *worker(void *arg) {
   return NULL;
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Capture
+//
+//////////////////////////////////////////////////////////////////////////////
+
+static void wav_header(FILE *f, int format, int channels, int rate, int bits, uint32_t bytes) {
+  uint32_t v;
+  uint16_t h;
+  fseek(f, 0, SEEK_SET);
+  fwrite("RIFF", 1, 4, f); v = 36 + bytes; fwrite(&v, 4, 1, f);
+  fwrite("WAVEfmt ", 1, 8, f); v = 16; fwrite(&v, 4, 1, f);
+  h = format; fwrite(&h, 2, 1, f);
+  h = channels; fwrite(&h, 2, 1, f);
+  v = rate; fwrite(&v, 4, 1, f);
+  v = rate * channels * bits / 8; fwrite(&v, 4, 1, f);
+  h = channels * bits / 8; fwrite(&h, 2, 1, f);
+  h = bits; fwrite(&h, 2, 1, f);
+  fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
+  fseek(f, 0, SEEK_END);
+}
+
+static double now_sec(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + 1e-9 * ts.tv_nsec;
+}
+
+// called with E.mx held
+static void ring_put(uint8_t *ring, long size, long *w, long r, const void *src, long len) {
+  if (*w - r + len > size) { C.dropped += len; return; }
+  for (long i = 0; i < len; i++) { ring[(*w + i) % size] = ((const uint8_t *)src)[i]; }
+  *w += len;
+}
+
+static void cap_push_iq(const double *buf, int n) {
+  float f[2 * 1024];
+  for (int done = 0; done < n; done += 1024) {
+    int m = n - done < 1024 ? n - done : 1024;
+    for (int k = 0; k < 2 * m; k++) { f[k] = (float)buf[2 * done + k]; }
+    ring_put(C.iq_ring, CAP_IQ_RING, &C.iq_w, C.iq_r, f, m * 8);
+  }
+  C.pos48 += n;
+}
+
+static void cap_push_speech(const double *buf, int n) {
+  int16_t s[1024];
+  for (int done = 0; done < n; done += 1024) {
+    int m = n - done < 1024 ? n - done : 1024;
+    for (int k = 0; k < m; k++) {
+      double v = buf[2 * (done + k)] * 32768.0;
+      s[k] = (int16_t)(v > 32767.0 ? 32767 : v < -32767.0 ? -32767 : v);
+    }
+    ring_put(C.sp_ring, CAP_SP_RING, &C.sp_w, C.sp_r, s, m * 2);
+  }
+}
+
+// called with E.mx held, from the worker
+static void cap_row(long consumed, int nout) {
+  struct rade_stats rs;
+  rade_get_stats(E.r, &rs);
+  fprintf(C.csv, "%.4f,%ld,%d,%.2f,%.2f,%d,%ld,%ld,%lu,%lu,%.2f,%.2f,%.2f,%.2f\n",
+          consumed / 8000.0, C.pos48, E.st.sync, E.st.snr_db, E.st.foff_hz, nout,
+          E.in_w - E.in_r, E.out_w - E.out_r, E.st.underruns, E.st.overruns,
+          rs.delta_hat, rs.freq_offset, rs.gain, rs.snr_est);
+}
+
+static void drain(int final) {
+  static uint8_t tmp[1 << 16];
+  for (;;) {
+    long n;
+    pthread_mutex_lock(&E.mx);
+    n = C.iq_w - C.iq_r;
+    if (n > (long)sizeof tmp) { n = sizeof tmp; }
+    for (long i = 0; i < n; i++) { tmp[i] = C.iq_ring[(C.iq_r + i) % CAP_IQ_RING]; }
+    C.iq_r += n;
+    pthread_mutex_unlock(&E.mx);
+    if (n > 0) { fwrite(tmp, 1, n, C.iq); C.iq_bytes += n; }
+    if (n < (long)sizeof tmp) { break; }
+  }
+  for (;;) {
+    long n;
+    pthread_mutex_lock(&E.mx);
+    n = C.sp_w - C.sp_r;
+    if (n > (long)sizeof tmp) { n = sizeof tmp; }
+    for (long i = 0; i < n; i++) { tmp[i] = C.sp_ring[(C.sp_r + i) % CAP_SP_RING]; }
+    C.sp_r += n;
+    pthread_mutex_unlock(&E.mx);
+    if (n > 0) { fwrite(tmp, 1, n, C.sp); C.sp_bytes += n; }
+    if (n < (long)sizeof tmp) { break; }
+  }
+  // keep the headers valid at all times, not just at a clean stop
+  wav_header(C.iq, 3, 2, 48000, 32, C.iq_bytes);
+  wav_header(C.sp, 1, 1, 48000, 16, C.sp_bytes);
+  fflush(C.iq); fflush(C.sp);
+  pthread_mutex_lock(&E.mx);
+  if (C.csv) { fflush(C.csv); }
+  if (C.ev) { fflush(C.ev); }
+  pthread_mutex_unlock(&E.mx);
+  (void)final;
+}
+
+static void *cap_writer(void *arg) {
+  while (C.run) {
+    usleep(200000);
+    drain(0);
+  }
+  return NULL;
+}
+
+int rade_native_capture_active(void) { return C.active; }
+
+int rade_native_capture_start(const char *dir, const char *stem, const char *meta) {
+  if (C.active || !E.running) { return -1; }
+  char path[1024];
+  snprintf(C.stem, sizeof C.stem, "%s/%s", dir, stem);
+  snprintf(path, sizeof path, "%s_meta.txt", C.stem);
+  FILE *m = fopen(path, "w");
+  if (!m) { return -1; }
+  fputs(meta, m);
+  fclose(m);
+  snprintf(path, sizeof path, "%s_rx48.wav", C.stem); C.iq = fopen(path, "wb");
+  snprintf(path, sizeof path, "%s_speech.wav", C.stem); C.sp = fopen(path, "wb");
+  snprintf(path, sizeof path, "%s_stats.csv", C.stem); C.csv = fopen(path, "w");
+  snprintf(path, sizeof path, "%s_events.log", C.stem); C.ev = fopen(path, "w");
+  if (!C.iq || !C.sp || !C.csv || !C.ev) {
+    if (C.iq) { fclose(C.iq); }
+    if (C.sp) { fclose(C.sp); }
+    if (C.csv) { fclose(C.csv); }
+    if (C.ev) { fclose(C.ev); }
+    C.iq = C.sp = C.csv = C.ev = NULL;
+    return -1;
+  }
+  C.iq_bytes = C.sp_bytes = 0;
+  wav_header(C.iq, 3, 2, 48000, 32, 0);
+  wav_header(C.sp, 1, 1, 48000, 16, 0);
+  fputs("t_sec,rx48_pos,sync,snr_db,foff_hz,nout,in_fill,out_fill,underruns,overruns,"
+        "v2_delta_hat,v2_foff,v2_gain,v2_snr\n", C.csv);
+  C.iq_ring = malloc(CAP_IQ_RING);
+  C.sp_ring = malloc(CAP_SP_RING);
+  C.iq_w = C.iq_r = C.sp_w = C.sp_r = 0;
+  C.pos48 = 0; C.dropped = 0;
+  C.t0 = now_sec();
+  C.run = 1;
+  pthread_create(&C.thread, NULL, cap_writer, NULL);
+  pthread_mutex_lock(&E.mx);
+  C.active = 1;
+  pthread_mutex_unlock(&E.mx);
+  return 0;
+}
+
+void rade_native_capture_event(const char *text) {
+  pthread_mutex_lock(&E.mx);
+  if (C.active) { fprintf(C.ev, "%.3f %s\n", now_sec() - C.t0, text); }
+  pthread_mutex_unlock(&E.mx);
+}
+
+void rade_native_capture_stop(const char *end_meta) {
+  if (!C.active) { return; }
+  pthread_mutex_lock(&E.mx);
+  C.active = 0;
+  pthread_mutex_unlock(&E.mx);
+  C.run = 0;
+  pthread_join(C.thread, NULL);
+  drain(1);
+  char path[1024];
+  if (end_meta) {
+    snprintf(path, sizeof path, "%s_meta.txt", C.stem);
+    FILE *m = fopen(path, "a");
+    if (m) { fputs(end_meta, m); fprintf(m, "duration_s: %.1f\nrx48_samples: %ld\ndropped_bytes: %ld\n",
+                                         now_sec() - C.t0, C.pos48, C.dropped); fclose(m); }
+  }
+  fclose(C.iq); fclose(C.sp); fclose(C.csv); fclose(C.ev);
+  C.iq = C.sp = C.csv = C.ev = NULL;
+  free(C.iq_ring); free(C.sp_ring);
+  C.iq_ring = C.sp_ring = NULL;
+}
+
+void rade_native_capture_info(char *buf, size_t len) {
+  if (!C.active) { snprintf(buf, len, "not capturing"); return; }
+  snprintf(buf, len, "%s  %.0f s  %.1f MB%s", strrchr(C.stem, '/') ? strrchr(C.stem, '/') + 1 : C.stem,
+           now_sec() - C.t0, (C.iq_bytes + C.sp_bytes) / 1e6, C.dropped ? "  (DROPPED DATA)" : "");
+}
+
 static void engine_stop(void) {
+  rade_native_capture_stop(NULL);
   if (E.running) {
     pthread_mutex_lock(&E.mx);
     E.running = 0;
@@ -266,6 +480,7 @@ void rade_native_rx_block(double *buf, int n, int invert, double gain) {
     memset(buf, 0, sizeof(double) * 2 * n);
     return;
   }
+  if (C.active) { cap_push_iq(buf, n); }
   const double sq = rade_native_conjugate(invert) ? -1.0 : 1.0;   // sign of Q
   // 1. decimate to 8 kHz, normalise, queue
   RADE_COMP out8[n / DEC + 2];
@@ -329,5 +544,6 @@ void rade_native_rx_block(double *buf, int n, int invert, double gain) {
     buf[2 * i + 1] = y;
     E.int_phase = (E.int_phase + 1) % INT;
   }
+  if (C.active) { cap_push_speech(buf, n); }
   pthread_mutex_unlock(&E.mx);
 }
