@@ -59,6 +59,7 @@
 #include "radio.h"
 #ifdef RADE_NATIVE
 #include "rade_native.h"
+#include "rade_native_menu.h"
 #endif
 #include "receiver.h"
 #include "rigctl.h"
@@ -3128,6 +3129,7 @@ static void radio_restore_state(void) {
     GetPropI0("rade_native.invert", inv);
     rade_native_set_callsign(call);
     rade_native_configure(0, inv);
+    rade_native_state_start();
   }
 #endif
   //

@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""RADE Reporter - a FreeDV Reporter window for piHPSDR's native RADE.
+
+A separate program: piHPSDR starts it (RADE window, Reporter button) and does
+not own it, so it stays up when piHPSDR is closed. It shows who is on the
+FreeDV Reporter, like freedv-gui's Reporter window, and, only if you turn it
+on, reports that you are present: your callsign, grid square, dial frequency,
+the RADE mode piHPSDR has selected (RADEV1 or RADEV2) and whether you are
+transmitting. It does not send receive reports.
+
+  * It always starts with reporting OFF; the setting is not remembered.
+  * piHPSDR tells it the mode, frequency, transmit state and callsign through
+    ~/.local/state/pihpsdr-rade/state.json (rewritten every second or so).
+    RADE off, or piHPSDR gone, ends the report at once.
+  * RADEV1 is reported to qso.freedv.org. RADEV2 goes to the "v3" reporter,
+    whose address is set in Settings; until it is, nothing is sent for V2.
+"""
+import fcntl
+import os
+import signal
+import subprocess
+import sys
+import time
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import core  # noqa: E402
+
+HEAD = ["Callsign", "Locator", "km", "Hdg", "Version", "MHz", "Mode", "Status", "Msg", "Last TX",
+        "RX call", "SNR", "Last update"]
+(C_CALL, C_GRID, C_KM, C_HDG, C_VER, C_MHZ, C_MODE, C_STAT, C_MSG, C_LTX, C_RXC, C_SNR, C_UPD,
+ C_SID, C_BG, C_KMV, C_HDGV, C_MHZV, C_SNRV, C_UPDV) = range(20)
+
+
+def hhmm(iso):
+    return iso[11:19] if len(iso) >= 19 else ""
+
+
+def age_text(secs):
+    if secs < 90:
+        return "%ds" % secs
+    if secs < 5400:
+        return "%dm" % (secs // 60)
+    return "%dh%02dm" % (secs // 3600, (secs % 3600) // 60)
+
+
+def iso_to_epoch(iso):
+    try:
+        import datetime
+        return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+class App(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="RADE Reporter")
+        self.cfg = core.load_config()
+        self.roster = core.Roster()
+        self.dirty = True
+        self.state_text = "idle"
+        self.link = core.Link(self.roster, self._on_event, self._on_state, "pihpsdr-rade",
+                              )
+        self.reporting = False            # never remembered
+        self.message = ""
+        self.last_qsy = None
+        self.set_default_size(*self.cfg.get("size", [1100, 520]))
+        self.connect("delete-event", self._quit)
+        self._build()
+        GLib.timeout_add(500, self._tick)
+        GLib.idle_add(self._tick)
+
+    # ------------------------------------------------------------------ build
+    def _build(self):
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        v.set_border_width(8)
+        self.add(v)
+
+        r1 = Gtk.Box(spacing=8)
+        v.pack_start(r1, False, False, 0)
+        self.rep_chk = Gtk.CheckButton(label="Report my presence")
+        self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\n"
+                                      "Always off when this program starts.")
+        self.rep_chk.connect("toggled", self._on_report_toggled)
+        r1.pack_start(self.rep_chk, False, False, 0)
+        r1.pack_start(Gtk.Label(label="Callsign"), False, False, 0)
+        self.call_e = Gtk.Entry(width_chars=9, max_length=12, text=self.cfg.get("callsign", ""))
+        self.call_e.connect("changed", self._on_ident_changed)
+        r1.pack_start(self.call_e, False, False, 0)
+        r1.pack_start(Gtk.Label(label="Grid"), False, False, 0)
+        self.grid_e = Gtk.Entry(width_chars=8, max_length=8, text=self.cfg.get("grid", ""))
+        self.grid_e.connect("changed", self._on_ident_changed)
+        r1.pack_start(self.grid_e, False, False, 0)
+        self.why = Gtk.Label(xalign=0)
+        r1.pack_start(self.why, True, True, 6)
+
+        r2 = Gtk.Box(spacing=8)
+        v.pack_start(r2, False, False, 0)
+        r2.pack_start(Gtk.Label(label="Band"), False, False, 0)
+        self.band = Gtk.ComboBoxText()
+        for b in ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]:
+            self.band.append_text(b)
+        self.band.set_active(0)
+        self.band.connect("changed", lambda *_: self._refilter())
+        r2.pack_start(self.band, False, False, 0)
+        self.track = Gtk.CheckButton(label="Track")
+        self.track.set_tooltip_text("Show only stations on piHPSDR's band or frequency")
+        self.track.connect("toggled", lambda *_: self._refilter())
+        r2.pack_start(self.track, False, False, 0)
+        self.t_band = Gtk.RadioButton.new_with_label(None, "band")
+        self.t_freq = Gtk.RadioButton.new_with_label_from_widget(self.t_band, "freq.")
+        self.t_band.connect("toggled", lambda *_: self._refilter())
+        r2.pack_start(self.t_band, False, False, 0)
+        r2.pack_start(self.t_freq, False, False, 0)
+        r2.pack_start(Gtk.Label(label="Idle <"), False, False, 0)
+        self.idle = Gtk.ComboBoxText()
+        for t in ["off", "5 min", "15 min", "60 min", "180 min"]:
+            self.idle.append_text(t)
+        self.idle.set_active(0)
+        self.idle.connect("changed", lambda *_: self._refilter())
+        r2.pack_start(self.idle, False, False, 0)
+        r2.pack_start(Gtk.Label(label="Watching"), False, False, 12)
+        self.view = Gtk.ComboBoxText()
+        for k in ("v1", "v3"):
+            self.view.append(k, core.DEFAULT_SERVERS[k]["label"])
+        self.view.set_active_id(self.cfg.get("view", "v1"))
+        self.view.set_tooltip_text("Which reporter to show when piHPSDR has no RADE mode selected. "
+                                   "With a mode selected, the matching reporter is shown.")
+        self.view.connect("changed", self._on_view_changed)
+        r2.pack_start(self.view, False, False, 0)
+        self.qsy_b = Gtk.Button(label="Request QSY")
+        self.qsy_b.set_tooltip_text("Asks the selected station to move to your frequency")
+        self.qsy_b.connect("clicked", self._on_qsy)
+        r2.pack_end(self.qsy_b, False, False, 0)
+        web = Gtk.Button(label="Website")
+        web.connect("clicked", self._on_web)
+        r2.pack_end(web, False, False, 0)
+        st = Gtk.Button(label="Settings")
+        st.connect("clicked", self._on_settings)
+        r2.pack_end(st, False, False, 0)
+
+        r3 = Gtk.Box(spacing=8)
+        v.pack_start(r3, False, False, 0)
+        r3.pack_start(Gtk.Label(label="Message"), False, False, 0)
+        self.msg_e = Gtk.Entry(max_length=60, width_chars=40)
+        self.msg_e.connect("activate", self._on_send)
+        r3.pack_start(self.msg_e, False, False, 0)
+        b = Gtk.Button(label="Send")
+        b.connect("clicked", self._on_send)
+        r3.pack_start(b, False, False, 0)
+        b = Gtk.Button(label="Clear")
+        b.connect("clicked", self._on_clear)
+        r3.pack_start(b, False, False, 0)
+
+        self.store = Gtk.ListStore(str, str, str, str, str, str, str, str, str, str, str, str, str,
+                                   str, str, float, float, float, float, float)
+        self._fp = (0, "All", False, True, 0)
+        self.filt = self.store.filter_new()
+        self.filt.set_visible_func(self._visible, None)
+        self.sort = Gtk.TreeModelSort(model=self.filt)
+        self.tree = Gtk.TreeView(model=self.sort)
+        numeric = {C_KM: C_KMV, C_HDG: C_HDGV, C_MHZ: C_MHZV, C_SNR: C_SNRV, C_UPD: C_UPDV}
+        for i, name in enumerate(HEAD):
+            cell = Gtk.CellRendererText()
+            cell.set_property("xalign", 0.5 if i else 0.0)
+            col = Gtk.TreeViewColumn(name, cell, text=i, cell_background=C_BG)
+            col.set_resizable(True)
+            col.set_sort_column_id(numeric.get(i, i))
+            self.tree.append_column(col)
+        self.tree.connect("button-press-event", self._on_tree_click)
+        self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # newest first
+        sw = Gtk.ScrolledWindow()
+        sw.add(self.tree)
+        v.pack_start(sw, True, True, 0)
+
+        self.status = Gtk.Label(xalign=0)
+        v.pack_start(self.status, False, False, 0)
+        self.show_all()
+
+    # ------------------------------------------------------------- callbacks
+    def _on_state(self, st, msg):
+        GLib.idle_add(self._set_state, st, msg)
+
+    def _set_state(self, st, msg):
+        self.state_text = st + (": " + msg if msg else "")
+        self.dirty = True
+
+    def _on_event(self, name, data):
+        if name == "qsy_request" and isinstance(data, dict):
+            GLib.idle_add(self._qsy_request, data)
+        self.dirty = True
+
+    def _qsy_request(self, d):
+        dlg = Gtk.MessageDialog(transient_for=self, modal=False, message_type=Gtk.MessageType.INFO,
+                                buttons=Gtk.ButtonsType.CLOSE,
+                                text="QSY request from %s" % d.get("callsign", "?"))
+        dlg.format_secondary_text("%.4f MHz\n%s" % (d.get("frequency", 0) / 1e6, d.get("message", "")))
+        dlg.connect("response", lambda w, r: w.destroy())
+        dlg.show()
+
+    def _on_report_toggled(self, w):
+        self.reporting = w.get_active()
+        self._tick()
+
+    def _on_ident_changed(self, w):
+        self.call_e.set_text(self.call_e.get_text().upper())
+        self.grid_e.set_text(self.grid_e.get_text().upper())
+        self.cfg["callsign"] = self.call_e.get_text().strip()
+        self.cfg["grid"] = self.grid_e.get_text().strip()
+        core.save_config(self.cfg)
+        self._tick()
+
+    def _on_view_changed(self, w):
+        self.cfg["view"] = w.get_active_id() or "v1"
+        core.save_config(self.cfg)
+        self._tick()
+
+    def _on_send(self, *_):
+        self.message = self.msg_e.get_text().strip()
+        self._tick()
+
+    def _on_clear(self, *_):
+        self.msg_e.set_text("")
+        self.message = ""
+        self._tick()
+
+    def _on_web(self, *_):
+        k = self.current_key or self.cfg.get("view", "v1")
+        url = self.cfg["servers"][k].get("web") or ("https://%s/" % self.cfg["servers"][k]["host"]
+                                                    if self.cfg["servers"][k]["host"] else "")
+        if url:
+            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _selected(self):
+        model, it = self.tree.get_selection().get_selected()
+        return model[it] if it else None
+
+    def _on_qsy(self, *_):
+        row = self._selected()
+        if row is None or not self.pihpsdr or not self.pihpsdr.get("linked"):
+            return
+        self.link.emit("qsy_request", {"dest_sid": row[C_SID], "message": "",
+                                       "frequency": int(self.pihpsdr.get("dial_hz", 0))})
+
+    def _on_tree_click(self, tree, ev):
+        if ev.button != 3:
+            return False
+        hit = tree.get_path_at_pos(int(ev.x), int(ev.y))
+        if not hit:
+            return False
+        tree.get_selection().select_path(hit[0])
+        row = self._selected()
+        if row is None:
+            return True
+        menu = Gtk.Menu()
+        call = row[C_CALL].split("/")[0]
+        for label, url in (("Lookup via QRZ", "https://www.qrz.com/db/" + call),
+                           ("Lookup via HamQTH", "https://www.hamqth.com/" + call)):
+            it = Gtk.MenuItem(label=label)
+            it.connect("activate", lambda _w, u=url: subprocess.Popen(["xdg-open", u],
+                                                                        stdout=subprocess.DEVNULL,
+                                                                        stderr=subprocess.DEVNULL))
+            menu.append(it)
+        it = Gtk.MenuItem(label="Copy message")
+        it.connect("activate", lambda _w, m=row[C_MSG]: Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(m, -1))
+        menu.append(it)
+        menu.show_all()
+        menu.popup_at_pointer(ev)
+        return True
+
+    def _on_settings(self, *_):
+        dlg = Gtk.Dialog(title="Reporter servers", transient_for=self, modal=True)
+        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("OK", Gtk.ResponseType.OK)
+        g = Gtk.Grid(column_spacing=8, row_spacing=8, margin=12)
+        dlg.get_content_area().add(g)
+        entries = {}
+        for r, k in enumerate(("v1", "v3")):
+            s = self.cfg["servers"][k]
+            g.attach(Gtk.Label(label=s["label"] + "  (" + s["mode"] + ")", xalign=1), 0, r, 1, 1)
+            e = Gtk.Entry(width_chars=34)
+            e.set_text(("https://" if s["secure"] else "http://") + s["host"] + (":%d" % s["port"] if s["host"] else "")
+                       if s["host"] else "")
+            e.set_placeholder_text("host, host:port or https://host/  (empty: nothing is sent)")
+            g.attach(e, 1, r, 1, 1)
+            entries[k] = e
+        g.attach(Gtk.Label(label="RADEV1 is reported to qso.freedv.org. RADEV2 has its own (v3) reporter; "
+                                 "enter its address here.", xalign=0), 0, 2, 2, 1)
+        dlg.show_all()
+        if dlg.run() == Gtk.ResponseType.OK:
+            for k, e in entries.items():
+                host, port, secure = core.parse_server(e.get_text())
+                self.cfg["servers"][k].update(host=host, port=port, secure=secure)
+            core.save_config(self.cfg)
+            self.link.close()               # reconnect to what is now wanted
+        dlg.destroy()
+        self._tick()
+
+    def _quit(self, *_):
+        self.cfg["size"] = list(self.get_size())
+        core.save_config(self.cfg)
+        self.link.close()
+        Gtk.main_quit()
+        return False
+
+    # --------------------------------------------------------------- the loop
+    current_key = None
+    pihpsdr = None
+
+    def _tick(self):
+        self.pihpsdr = core.read_pihpsdr_state()
+        p = self.pihpsdr
+        if p and p.get("linked") and not self.call_e.get_text().strip() and p.get("call"):
+            self.call_e.set_text(p["call"])
+        # An identity that is still being typed is not announced: it has to stand still for 1.5 s,
+        # or the server would see a new station for every key press.
+        ident = (self.call_e.get_text().strip().upper(), self.grid_e.get_text().strip().upper())
+        now = time.time()
+        if ident != getattr(self, "_ident", None):
+            self._ident, self._ident_since = ident, now
+        if now - self._ident_since >= 1.5:
+            self._stable = ident
+        call, grid = getattr(self, "_stable", ("", ""))
+        srv, role, mode, freq, tx, why = core.decide(self.cfg, p, self.reporting, call, grid,
+                                                      self.cfg.get("view", "v1"))
+        self.current_key = next((k for k, s in self.cfg["servers"].items() if srv is s), None)
+        self.link.software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
+        self.link.set_target(srv, role, call, grid, freq, mode, tx, self.message)
+        self.why.set_text(why)
+        self.qsy_b.set_sensitive(role == "report")
+        if self.dirty or True:
+            self._fill()
+        link = ("piHPSDR: RADE %s%s, %.4f MHz%s" % (
+            {0: "off", 1: "V1", 2: "V2"}.get(int(p.get("waveform", 0)), "?"),
+            "", p.get("dial_hz", 0) / 1e6, ", transmitting" if p.get("tx") else "")
+            if p and p.get("linked") else "piHPSDR: not running")
+        where = "%s:%d" % (srv["host"], srv["port"]) if srv else "no server"
+        self.status.set_text("%s    |    %s  %s    |    %d stations" % (
+            link, where, self.state_text if srv else "", len(self.roster.snapshot())))
+        return True
+
+    def _fill(self):
+        sel = self._selected()
+        sid = sel[C_SID] if sel else None
+        now = time.time()
+        me = self.call_e.get_text().strip().upper()
+        mygrid = self.grid_e.get_text().strip()
+        self.store.clear()
+        dial = (self.pihpsdr or {}).get("dial_hz", 0)
+        for s in sorted(self.roster.snapshot(), key=lambda x: x.callsign):
+            dbg = core.distance_bearing(mygrid, s.grid)
+            ts = iso_to_epoch(s.last_update)
+            age = now - ts if ts else 0
+            bg = "#d6ecff" if me and s.callsign.upper() == me else ("#ffe7c2" if s.transmitting else None)
+            snr = "" if s.rx_snr is None else ("%+d" % round(s.rx_snr))
+            self.store.append([s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
+                               s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
+                               s.message, hhmm(s.last_tx), s.rx_call, snr, age_text(age) if ts else "",
+                               s.sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
+                               s.freq / 1e6 if s.freq else 0.0, s.rx_snr if s.rx_snr is not None else -99.0,
+                               age if ts else 1e9])
+        self._dial = dial
+        self._refilter()
+        if sid:
+            for r in self.sort:
+                if r[C_SID] == sid:
+                    self.tree.get_selection().select_iter(r.iter)
+                    break
+
+    def _visible(self, model, it, _d):
+        dial, band, tracking, by_band, idle = self._fp
+        f = model[it][C_MHZV] * 1e6
+        if band not in (None, "All") and core.band_of(f) != band:
+            return False
+        if tracking and dial:
+            if by_band and core.band_of(f) != core.band_of(dial):
+                return False
+            if not by_band and abs(f - dial) > 1000:
+                return False
+        if idle and model[it][C_UPDV] > idle:
+            return False
+        return True
+
+    def _refilter(self):
+        idle_t = self.idle.get_active_text()
+        self._fp = (getattr(self, "_dial", 0), self.band.get_active_text(), self.track.get_active(),
+                    self.t_band.get_active(), 0 if idle_t in (None, "off") else int(idle_t.split()[0]) * 60)
+        self.filt.refilter()
+
+
+def single_instance():
+    """Only one reporter window. A second start asks the first to show itself."""
+    d = os.path.dirname(core.state_path())
+    os.makedirs(d, exist_ok=True)
+    f = open(os.path.join(d, "reporter.lock"), "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.seek(0)
+        try:
+            os.kill(int(f.read().strip() or 0), signal.SIGUSR1)
+        except (ValueError, OSError):
+            pass
+        return None
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
+def main():
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)      # outlives the terminal / piHPSDR that started it
+    lock = single_instance()
+    if lock is None:
+        return 0
+    app = App()
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: (app.present(), True)[1])
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (app._quit(), False)[1])
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
