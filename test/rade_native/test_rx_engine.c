@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
   rade_native_status_t st; rade_native_get_status(&st);
   printf("blocks %lu  sync %d  snr %.1f  foff %.1f  underruns %lu  overruns %lu\n",
          st.blocks, st.sync, st.snr_db, st.foff_hz, st.underruns, st.overruns);
+  { rade_native_call_t c; while (rade_native_call_pop(&c)) printf("call: %s  snr %.1f  foff %.1f\n", c.call, c.snr_db, c.foff_hz); }
   printf("speech peak %.3f rms %.4f over %.1f s\n", peak, sqrt(sum / cnt), cnt / 48000.0);
   if (capdir) { char info[200]; rade_native_capture_info(info, sizeof info); printf("%s\n", info); rade_native_capture_stop("end\n"); }
   rade_native_configure(0, 0);
