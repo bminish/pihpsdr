@@ -43,6 +43,9 @@
 #include "property.h"
 #include "radio.h"
 #include "receiver.h"
+#ifdef RADE_NATIVE
+#include "rade_native.h"
+#endif
 #include "rx_panadapter.h"
 #include "sliders.h"
 #ifdef SOAPYSDR
@@ -1241,6 +1244,13 @@ static void rx_process_buffer(RECEIVER *rx) {
   }
 }
 
+#ifdef RADE_NATIVE
+static int rx_rade_invert(const RECEIVER *rx) {
+  return rade_native_effective_invert(rade_native_waveform(), vfo[rx->id].frequency,
+                                      rade_native_user_invert());
+}
+#endif
+
 static void rx_full_buffer(RECEIVER *rx) {
   ASSERT_SERVER();
   int error;
@@ -1273,6 +1283,17 @@ static void rx_full_buffer(RECEIVER *rx) {
       Spectrum0(1, rx->id, 0, 0, rx->iq_input_buffer);
       g_mutex_unlock(&rx->display_mutex);
     }
+#ifdef RADE_NATIVE
+    if (rx->id == 0 && rade_native_waveform() != 0) {
+      //
+      // The WDSP output is complex baseband (panel in binaural mode):
+      // replace it by decoded RADE speech, at the RX volume.
+      //
+      double volume = rx->volume;
+      double amplitude = volume <= -39.5 ? 0.0 : volume > 0.0 ? 1.0 : pow(10.0, 0.05 * volume);
+      rade_native_rx_block(rx->audio_output_buffer, rx->output_samples, rx_rade_invert(rx), amplitude);
+    }
+#endif
     rx_process_buffer(rx);
     g_mutex_unlock(&rx->mutex);
   }
@@ -1441,6 +1462,18 @@ void rx_set_filter(RECEIVER *rx) {
     rx->filter_high = filter->high;
     break;
   }
+#ifdef RADE_NATIVE
+  if (rx->id == 0 && rade_native_waveform() != 0) {
+    //
+    // Native RADE: the passband follows the waveform and the (effective)
+    // invert, not the filter menu.
+    //
+    double lo, hi;
+    rade_native_wdsp_edges(rade_native_waveform(), rx_rade_invert(rx), 0.0, &lo, &hi);
+    rx->filter_low = (int)lround(lo);
+    rx->filter_high = (int)lround(hi);
+  }
+#endif
   rx_set_deviation(rx);
   rx_set_bandpass(rx);
   rx_set_cw_peak(rx, have_peak, (double) cw_keyer_sidetone_frequency);
@@ -1721,6 +1754,13 @@ void rx_set_af_binaural(const RECEIVER *rx) {
     send_afbinaural(cl_sock_tcp, rx);
     return;
   }
+#ifdef RADE_NATIVE
+  // native RADE needs I and Q kept apart
+  if (rx->id == 0 && rade_native_waveform() != 0) {
+    SetRXAPanelBinaural(rx->id, 1);
+    return;
+  }
+#endif
   SetRXAPanelBinaural(rx->id, rx->binaural);
 }
 

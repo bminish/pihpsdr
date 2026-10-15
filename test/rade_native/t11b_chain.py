@@ -95,6 +95,7 @@ def main():
     rxargs = ["--low", str(lo), "--high", str(hi), "--copy", "0"]
     rxargs += ["--agc", "0", "--fixed", str(a.rx_fixed)] if a.rx_fixed is not None else ["--agc", str(a.rx_agc)]
     z = probe("rx", y.astype(np.complex64), rxargs)
+    np.stack([z.real, z.imag], 1).astype(np.float32).tofile(os.path.join(OUT, tag + ".rxout48.f32"))
 
     # delay through TXA+RXA: lag of z against x48 (both in the WDSP domain)
     n = min(len(x48), len(z)) // 2
