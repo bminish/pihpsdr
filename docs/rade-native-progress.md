@@ -257,8 +257,8 @@ even though the features agree to under 1 %: the vocoder output is not
 phase-reproducible, so only envelopes are compared; (2) the first version of
 the metric compared unaligned ends and wrongly failed clips, now aligned and
 trimmed by 0.5 s; (3) end-to-end latency TX engine + WDSP + RX engine is
-about 1.9 s on V1 (clip start to first decoded speech), dominated by the
-V1 frame, the WDSP linear-phase filters and the play-out cushion.
+about 1.9 s on V1 (clip start to first decoded speech, measured on one
+clip; not broken down by stage). The WDSP TXA+RXA pair alone was 0.25 s.
 
 ## Next
 
