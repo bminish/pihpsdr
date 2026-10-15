@@ -241,8 +241,9 @@ static void *worker(void *arg) {
       char call[16];
       if (rade_eoo_text_decode(eoo, neoo / 2, call)) {
         double t = (double)time(NULL);
-        // the EOO can be flagged on more than one call: log a call once per over
-        if (strcmp(call, E.last_call) != 0 || t - E.last_call_t > 5.0) {
+        // every call decoded is passed on, even the same one again; only the same frame flagged twice
+        // within a second is taken for one
+        if (strcmp(call, E.last_call) != 0 || t - E.last_call_t >= 1.0) {
           if (E.ncalls < 16) {
             rade_native_call_t *c = &E.calls[E.ncalls++];
             snprintf(c->call, sizeof c->call, "%s", call);
