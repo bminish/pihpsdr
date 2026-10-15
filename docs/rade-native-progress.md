@@ -16,6 +16,8 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (signal paths): `docs/rade-native-signal-paths.md` - RX and TX diagrams, stage tables, what each display/report item is measured from, taps, parameter register, and a change log of the signal path (add a line with every change to a stage).
+
 - 2026-10-16 (mode changes keep the energy still): built. `rade_native_plan()`
   (`src/rade_native.c`, unit-tested in `test_geometry`) gives the sideband
   and the dial for any change of waveform / Invert / RADE on-off such that
