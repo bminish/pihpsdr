@@ -66,7 +66,11 @@ class App(Gtk.Window):
         self.link = core.Link(self.roster, self._on_event, self._on_state, "pihpsdr-rade",
                               )
         self.reporting = False            # never remembered
-        self.message = ""
+        # these are remembered: the message goes to every connection, the view stays as it was left
+        self.message = self.cfg.get("message", "")
+        self.periodic = core.PeriodicSnr(float(self.cfg.get("snr_interval", 5.0)))
+        self.periodic.enabled = bool(self.cfg.get("snr_enabled", True))
+        self._loading = True
         self.last_qsy = None
         self.set_default_size(*self.cfg.get("size", [1100, 520]))
         self.connect("delete-event", self._quit)
@@ -104,24 +108,28 @@ class App(Gtk.Window):
         self.band = Gtk.ComboBoxText()
         for b in ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]:
             self.band.append_text(b)
-        self.band.set_active(0)
-        self.band.connect("changed", lambda *_: self._refilter())
+        names = ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]
+        self.band.set_active(names.index(self.cfg.get("band", "All")) if self.cfg.get("band", "All") in names else 0)
+        self.band.connect("changed", self._on_view_filter)
         r2.pack_start(self.band, False, False, 0)
         self.track = Gtk.CheckButton(label="Track")
         self.track.set_tooltip_text("Show only stations on piHPSDR's band or frequency")
-        self.track.connect("toggled", lambda *_: self._refilter())
+        self.track.set_active(bool(self.cfg.get("track", False)))
+        self.track.connect("toggled", self._on_view_filter)
         r2.pack_start(self.track, False, False, 0)
         self.t_band = Gtk.RadioButton.new_with_label(None, "band")
         self.t_freq = Gtk.RadioButton.new_with_label_from_widget(self.t_band, "freq.")
-        self.t_band.connect("toggled", lambda *_: self._refilter())
+        self.t_freq.set_active(self.cfg.get("track_mode", "band") == "freq")
+        self.t_band.connect("toggled", self._on_view_filter)
         r2.pack_start(self.t_band, False, False, 0)
         r2.pack_start(self.t_freq, False, False, 0)
         r2.pack_start(Gtk.Label(label="Idle <"), False, False, 0)
         self.idle = Gtk.ComboBoxText()
         for t in ["off", "5 min", "15 min", "60 min", "180 min"]:
             self.idle.append_text(t)
-        self.idle.set_active(0)
-        self.idle.connect("changed", lambda *_: self._refilter())
+        idles = ["off", "5 min", "15 min", "60 min", "180 min"]
+        self.idle.set_active(idles.index(self.cfg.get("idle", "off")) if self.cfg.get("idle", "off") in idles else 0)
+        self.idle.connect("changed", self._on_view_filter)
         r2.pack_start(self.idle, False, False, 0)
         r2.pack_start(Gtk.Label(label="Watching"), False, False, 12)
         self.view = Gtk.ComboBoxText()
@@ -147,6 +155,9 @@ class App(Gtk.Window):
         v.pack_start(r3, False, False, 0)
         r3.pack_start(Gtk.Label(label="Message"), False, False, 0)
         self.msg_e = Gtk.Entry(max_length=60, width_chars=40)
+        self.msg_e.set_text(self.message)
+        self.msg_e.set_tooltip_text("Sent to the reporter every time this program connects, and kept for next time, "
+                                    "until you Clear it")
         self.msg_e.connect("activate", self._on_send)
         r3.pack_start(self.msg_e, False, False, 0)
         b = Gtk.Button(label="Send")
@@ -155,6 +166,25 @@ class App(Gtk.Window):
         b = Gtk.Button(label="Clear")
         b.connect("clicked", self._on_clear)
         r3.pack_start(b, False, False, 0)
+
+        r4 = Gtk.Box(spacing=8)
+        v.pack_start(r4, False, False, 0)
+        self.snr_chk = Gtk.CheckButton(label="Report RADE SNR every")
+        self.snr_chk.set_active(self.periodic.enabled)
+        self.snr_chk.set_tooltip_text(
+            "While a signal is in sync, sends its SNR to the reporter every few seconds, as an rx_report.\n"
+            "The server wants a callsign with it, and V1 sends that only at the end of an over, so the\n"
+            "station is taken to be the last one heard (within 3 minutes, and within 5 Hz of where its over\n"
+            "was). The end-of-over report is separate and always sent, with the call actually decoded.")
+        self.snr_chk.connect("toggled", self._on_snr_changed)
+        r4.pack_start(self.snr_chk, False, False, 0)
+        self.snr_spin = Gtk.SpinButton.new_with_range(3, 30, 1)
+        self.snr_spin.set_value(self.periodic.interval)
+        self.snr_spin.connect("value-changed", self._on_snr_changed)
+        r4.pack_start(self.snr_spin, False, False, 0)
+        r4.pack_start(Gtk.Label(label="s"), False, False, 0)
+        self.snr_ind = Gtk.Label(xalign=0, use_markup=True)
+        r4.pack_start(self.snr_ind, True, True, 6)
 
         self.rxinfo = Gtk.Label(xalign=0)
         v.pack_start(self.rxinfo, False, False, 0)
@@ -183,6 +213,7 @@ class App(Gtk.Window):
         self.status = Gtk.Label(xalign=0)
         v.pack_start(self.status, False, False, 0)
         self.show_all()
+        self._loading = False
 
     # ------------------------------------------------------------- callbacks
     def _on_state(self, st, msg):
@@ -222,13 +253,36 @@ class App(Gtk.Window):
         core.save_config(self.cfg)
         self._tick()
 
+    def _remember(self, **kw):
+        self.cfg.update(kw)
+        core.save_config(self.cfg)
+
     def _on_send(self, *_):
         self.message = self.msg_e.get_text().strip()
+        self._remember(message=self.message)
         self._tick()
 
     def _on_clear(self, *_):
         self.msg_e.set_text("")
         self.message = ""
+        self._remember(message="")
+        self._tick()
+
+    def _on_view_filter(self, *_):
+        """Band, Track and Idle are kept for next time."""
+        if self._loading:
+            return
+        self._remember(band=self.band.get_active_text() or "All", track=self.track.get_active(),
+                       track_mode="band" if self.t_band.get_active() else "freq",
+                       idle=self.idle.get_active_text() or "off")
+        self._refilter()
+
+    def _on_snr_changed(self, *_):
+        if self._loading:
+            return
+        self.periodic.enabled = self.snr_chk.get_active()
+        self.periodic.interval = float(self.snr_spin.get_value())
+        self._remember(snr_enabled=self.periodic.enabled, snr_interval=self.periodic.interval)
         self._tick()
 
     def _on_web(self, *_):
@@ -335,8 +389,8 @@ class App(Gtk.Window):
         self.current_key = next((k for k, s in self.cfg["servers"].items() if srv is s), None)
         self.link.software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
         self.link.set_target(srv, role, call, grid, freq, mode, tx, self.message)
-        self._rx_note(p, srv, role, mode, call)
         self.why.set_text(why)
+        self._rx_note(p, srv, role, mode, call)
         self.qsy_b.set_sensitive(role == "report")
         if self.dirty or now_t - self._last_fill >= 3.0:
             self.dirty = False
@@ -360,6 +414,8 @@ class App(Gtk.Window):
         if not p or not p.get("linked"):
             self.rxinfo.set_text("Receiving: piHPSDR is not running")
             self._heard_seq = None
+            self.periodic.reset()
+            self.snr_ind.set_markup('<span foreground="#999999">\u25cf</span> waiting: piHPSDR is not running')
             return
         if int(p.get("waveform", 0)) == 0:
             live = "RADE is off"
@@ -381,12 +437,27 @@ class App(Gtk.Window):
         if due:
             call, snr, seq = due
             self._heard_seq = seq
+            self.periodic.heard(call, float(p.get("heard_foff", 0.0)), time.time())
             ok = self.link.report_rx(call, mode, snr)
             self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
                 time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
         elif p.get("heard_call") and not self._heard_note:
             self._heard_note = "last heard %s, SNR %.1f dB (not reported)" % (p["heard_call"], p.get("heard_snr", 0.0))
         self.rxinfo.set_text("Receiving: %s    |    %s" % (live, self._heard_note or "no call heard yet"))
+        # the regular SNR report
+        if role != "report":
+            self.periodic.reset()
+            status = "waiting: not reporting (%s)" % self.why.get_text()
+        else:
+            pc, psnr, status = self.periodic.step(p, time.time())
+            if pc and not self.link.report_rx(pc, mode, psnr):
+                status = "not connected yet"
+        lastp = self.periodic.last
+        lasttxt = "" if not lastp else "   last: %s %+.1f dB %ds ago" % (lastp[0], lastp[1], int(time.time() - lastp[2]))
+        sending = bool(role == "report" and lastp and time.time() - lastp[2] < 2 * self.periodic.interval + 1
+                       and self.periodic.enabled)
+        self.snr_ind.set_markup('<span foreground="%s">\u25cf</span> %s%s' % (
+            "#2e9e4a" if sending else "#999999", GLib.markup_escape_text(status), GLib.markup_escape_text(lasttxt)))
 
     def _fill(self):
         """Bring the list up to date, changing only what changed (rebuilding it, as before, re-sorted
