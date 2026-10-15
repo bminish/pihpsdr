@@ -12,28 +12,40 @@ rade_tx_iq: rade_tx_iq.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 WDSP := $(ROOT)/wdsp
-rade_rx_iq: rade_rx_iq.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+rade_rx_iq: rade_rx_iq.c $(ROOT)/src/rade_eoo_text.c
+	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ rade_rx_iq.c $(ROOT)/src/rade_eoo_text.c $(LDFLAGS)
 
 wdsp_probe: wdsp_probe.c $(WDSP)/libwdsp.a
 	$(CC) -O2 -Wall -pthread -I$(WDSP) -o $@ $< $(WDSP)/libwdsp.a \
 	  $(ROOT)/libspecbleach/libspecbleach.a \
 	  `pkg-config --libs fftw3` `pkg-config --libs fftw3f` -lm
 
-test_geometry: test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_geometry.c $(ROOT)/src/rade_native.c \
+test_geometry: test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
-test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c \
+test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
-test_tx_engine: test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_engine.c $(ROOT)/src/rade_native.c \
+test_tx_engine: test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_eoo_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
+
+# interoperability of src/rade_eoo_text.c with freedv-gui's own V1 text code,
+# built unmodified from a freedv-gui checkout (FREEDV_SRC = its src/ directory)
+FREEDV_SRC ?= $(HOME)/sdr/freedv-gui/build_linux/_deps/freedv_backend-src/src
+text_interop/interop: text_interop/interop.cpp $(ROOT)/src/rade_eoo_text.c
+	g++ -O1 -std=c++17 -I$(ROOT)/src -I$(FREEDV_SRC) -I$(FREEDV_SRC)/pipeline -I$(RSRC) -I$(OPUS) \
+	  -I$(OPUS)/include -I$(OPUS)/celt -I$(OPUS)/dnn -x c++ text_interop/interop.cpp \
+	  $(FREEDV_SRC)/pipeline/rade_text.cpp $(FREEDV_SRC)/pipeline/ldpc_encode.cpp \
+	  $(FREEDV_SRC)/pipeline/ldpc_decode.cpp -x c $(ROOT)/src/rade_eoo_text.c -o $@
+
+text_interop: text_interop/interop
+	./text_interop/interop
 
 check: test_geometry
 	./test_geometry
 
 clean:
-	rm -f test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry
+	rm -f text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry
