@@ -16,6 +16,25 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (RADE window as a working panel): from on-air use: (1) the
+  "Transmit RADE" toggle only switched RADE transmit processing on, it did
+  not key the radio. Now RADE transmit follows the waveform (V1/V2 selected
+  = transmit is RADE as well; a "RADE TX" check box turns that off), and
+  the window has a real **Transmit** button, which keys the radio the way
+  the space bar does; the **space bar in the RADE window** does the same
+  (also with the callsign box focused: it never contains a space). Both
+  refuse unless RADE transmit is on, so they cannot send ordinary speech by
+  mistake; the space bar in the main window is unchanged and, with RADE
+  transmit on, sends RADE. The waveform, Invert and RADE TX controls are
+  greyed while transmitting. (2) The window is no longer one of the
+  numbered menus: it is not `sub_menu`, so opening the main menu or any
+  other menu does not close it; it stays until the Close button or the
+  window's x. It is transient for the main window and kept above it, and
+  placed in its lower right corner (a window manager that refuses
+  placement, e.g. Wayland, ignores that; drag it). Opening the RADE button
+  again raises it. **Not exercised in the running GUI** (it needs a radio
+  connected); built clean with no warnings.
+
 - 2026-10-15 (end of over, callsign, call log): 
   **End of over / TX hold.** `radio_set_mox(0)` now asks the TX engine
   (`rade_native_tx_end_request()`); while RADE TX is on it keeps the radio
