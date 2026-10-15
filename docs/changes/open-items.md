@@ -27,31 +27,22 @@ changes it, we take upstream.
 - `diversity_menu_refresh()` and `div_populate_from_settings()` are gone
   upstream; nothing updates an open menu from a settings block.
 
-## To do: objective order (LC-059)
+## Objective and reference order: done as LC-059 and LC-060 (2026-10-15)
 
-Asked 2026-10-15: the Diversity menu should list the objectives as **Manual,
-Sum, Null, Best**. Today the combo is Manual, Null, Sum, Best, because the
-combo row is the `DIV_AUTO_*` enum value (`radio.h`). Direction: reorder the
-enum (`DIV_MANUAL` stays 0) rather than map rows, so the combo needs nothing
-but its four `append_text` lines in the new order. No code yet. What it costs,
-because the number is stored and sent:
+Both enums were reordered to the menu order, so no row mapping is left (the
+`div_ref_rows[]` table is gone). Decisions: **no props migration** (a test
+branch takes the one-time break; `reset_diversity_props.py` clears the
+settings), **capture format 5** with a conversion on read so no capture is
+rewritten, and the **wire is not bumped**. Still open, and his:
 
-| Where | Effect | Proposed |
-|---|---|---|
-| props: `diversity_auto_mode` and `diversity_group[N].mode` | an old file loads Null and Sum swapped | a marker key written on save; if absent on load, swap 1 and 2 in the global value and every group |
-| wire: `uint8` in the settings and status/setting commands | a radio and a client of different builds swap them | bump `CLIENT_SERVER_VERSION` (his file) |
-| `.divc` captures: `auto_mode` in each block header (155 Sum, 15 Null, 1 Best in the set) | `run_ref` replays the header mode by default | bump `DIVCAP_VERSION` 4 to 5; the reader swaps 1 and 2 for version 4 and below |
-
-Decisions still open: (1) also reorder `DIV_REF_*` so the table `div_ref_rows[]`
-in `diversity_menu.c` goes (the reference enum order is Band, Carrier, RADE V1,
-Digital, CW; the menu shows Band, CW, Digital, Carrier, RADE V1): same costs,
-four of five values move; recommended not now. (2) Migrate old props files, or
-accept a one-time reset (he dropped such migrations before: `GAP_REF_SCHEME`).
-(3) The version bump needs his agreement. Checks when done: a `test_props`
-case loading an old-order file, one old capture of each mode replayed to the
-same weights, each combo row against the running mode on screen. It would
-touch `radio.h` and `diversity_menu.c`, which he owns, so it is written up for
-him in `menu-notes-dl1ycf.md` and recorded as LC-059.
+- `CLIENT_SERVER_VERSION` (`client_server.h`) is unchanged, so a radio and a
+  client built on either side of LC-059/LC-060 silently swap Null and Sum and
+  move four reference numbers. Both ends of a TEST setup should be rebuilt
+  together; a bump would make a mismatch refuse instead.
+- A props file written before the change loads with Null and Sum, and four
+  references, read the other way until reset.
+- Not checked on screen: each row against the running objective and
+  reference.
 
 ## Flagged for a later patch
 

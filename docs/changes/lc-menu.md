@@ -113,7 +113,7 @@ regression was the FSK/Digital occupancy solve fitting to whatever was
 loudest in the passband. These captures therefore say nothing about RADE
 tracking; that still needs RADE captures taken with this fix in.
 
-**Change.** A row table, `div_ref_rows[]`, maps rows to references and
+**Change.** A row table, `div_ref_rows[]` (replaced by LC-060), maps rows to references and
 back, keeping the order the menu shows. `div_ref_to_row()` is the name
 the populate code under `#if 0` already calls. The objective and
 resolution combos were checked and are correct.
@@ -327,3 +327,66 @@ checked on screen:** that needs `DIVT` with the dialog open; the tick means
 the tick follows within a quarter of a second, not at once. Written up for
 dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
 
+---
+
+<a id="lc-059"></a>
+
+## LC-059 — The objective list reads Manual, Sum, Null, Best
+
+**Why.** Asked 2026-10-15. The combo was Manual, Null, Sum, Best, the order
+of the `DIV_AUTO_*` enum, because the combo row is the enum value.
+
+**Change.** The enum in `radio.h` is reordered to Manual (still 0), Sum, Null,
+Best, and the four `append_text` lines in `diversity_menu.c` follow it. A
+mapping between rows and values was considered and not needed: the combo
+never had one for this list. Nothing else changes: the engine compares by
+name, the range check `[DIV_MANUAL, DIV_AUTO_BEST]` still holds, and the
+Invert button's swap between Null and Sum uses the names.
+
+**What it breaks, and what was decided.** Sum is now 1 and Null is 2, so the
+stored number of those two swaps: in the props file (`diversity_auto_mode`,
+`diversity_group[N].mode`), on the wire (a `uint8`), and in a `.divc` capture.
+Decided 2026-10-15: no migration of props files; this is a test branch and
+the break is taken once. A saved Null reads as Sum and the reverse until the
+settings are reset (`reset_diversity_props.py`, LT-034). The capture format
+is bumped to 5 so old captures replay as recorded (LT-033). The wire is
+**not** bumped (`CLIENT_SERVER_VERSION` is his file): a radio and a client on
+different sides of this change swap Null and Sum; see
+[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+**Checked.** Plain and `make DIVCAP=1` builds, DIVCAP by symbol; the suite
+(`test_props` pins the numbering). **Not checked on screen:** each row
+against the running objective, and Invert.
+
+---
+
+<a id="lc-060"></a>
+
+## LC-060 — The "Measure on" list is the `DIV_REF_*` order, and the row table goes
+
+**Why.** The list needed `div_ref_rows[]` and two converters only because the
+enum order (Window, Carrier, RADE V1, FSK/Digital, CW) differed from the order
+shown (Window, CW, FSK/Digital, Carrier, RADE V1). With the enum in menu
+order the table is not needed.
+
+**Change.** `DIV_REF_*` in `diversity_auto.h` becomes Window (still 0), CW,
+FSK/Digital, Carrier, RADE V1. In `diversity_menu.c` the table and
+`div_ref_to_row()` / `div_row_to_ref()` go; a label array indexed by the enum
+(`div_ref_labels[]`) fills the combo, and a row is a reference. The handler
+keeps its guard for "nothing selected" (row -1). `div_settings_validate()`
+ended its range check at `DIV_REF_CW`, the old last value; it now ends at
+`DIV_REF_RADE_V1`, the new one. Without that, RADE V1 would have validated
+as out of range and been reset to Window on every load and every client
+block. The new comment in `diversity_auto.h` says the last enumerator is the
+one the check names.
+
+**What it breaks.** Four of five reference numbers move (Carrier 1 to 3, RADE
+V1 2 to 4, FSK/Digital 3 to 2, CW 4 to 1). Same decision as LC-059: props
+files are not migrated, the capture format is 5 (LT-033), the wire is not
+bumped. The per-reference settings are stored under names, not numbers
+(`diversity_band_*`, `diversity_cw_*` and so on), so only `diversity_auto_ref`
+and `diversity_group[N].ref` are affected.
+
+**Checked.** As LC-059; the `test_props` stored-reference cases now use the
+enum values, and a new case pins the numbering of both enums. **Not checked
+on screen:** each row against the reference it starts.
