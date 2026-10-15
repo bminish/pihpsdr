@@ -102,30 +102,32 @@ def heard():
 
 
 def periodic():
-    print("regular SNR reports")
-    pr = core.PeriodicSnr(interval=5.0, validity=180.0, foff_tol=5.0)
+    print("regular SNR reports (as freedv-gui sends them)")
+    pr = core.PeriodicSnr(interval=5.0, reset_s=10.0)
     p = {"linked": True, "tx": 0, "rx_sync": 1, "rx_snr": 7.4, "rx_foff": 1.0}
-    check(pr.step(p, 100.0)[0] is None and "no recent call" in pr.step(p, 100.0)[2], "no call heard yet: nothing to attribute it to")
-    pr.heard("VK5DGR", 1.5, 100.0)
-    check(pr.step(p, 102.0)[0] is None, "just after the end-of-over report: wait out the interval")
-    c = pr.step(p, 105.5)
-    check(c[:2] == ("VK5DGR", 7.4), "after 5 s, the live SNR goes out for the call just heard")
-    check(pr.step(p, 107.0)[0] is None and pr.step(p, 110.6)[0] == "VK5DGR", "then every 5 s")
-    check(pr.step(dict(p, rx_snr=-2.0), 116.0)[:2] == ("VK5DGR", -2.0), "with the SNR as it is then")
-    check(pr.step(dict(p, rx_sync=0), 130.0)[0] is None and "waiting for a signal" in pr.step(dict(p, rx_sync=0), 130.0)[2],
+    r = pr.step(p, 100.0)
+    check(r[0] is True and r[1] == "" and r[2] == 7.4, "in sync with no call decoded yet: sent at once, with no callsign")
+    check("no call decoded yet" in r[3], "  and the window says that")
+    check(pr.step(p, 103.0)[0] is False and pr.step(p, 105.1)[0] is True, "then every 5 s")
+    pr.heard("VK5DGR", 106.0)
+    check(pr.step(p, 108.0)[0] is False, "the end-of-over report has just gone: a full interval to the next")
+    r = pr.step(dict(p, rx_snr=-2.0), 111.5)
+    check(r[0] is True and r[1:3] == ("VK5DGR", -2.0), "afterwards the live SNR goes with the call last decoded")
+    check(pr.step(dict(p, rx_sync=0), 120.0)[0] is False and "waiting for a signal" in pr.step(dict(p, rx_sync=0), 120.0)[3],
           "no sync: nothing")
-    check(pr.step(dict(p, tx=1), 131.0)[0] is None, "transmitting: nothing")
-    check(pr.step(dict(p, rx_foff=30.0), 140.0)[0] is None and "not where VK5DGR was" in pr.step(dict(p, rx_foff=30.0), 140.0)[2],
-          "a signal 30 Hz from where that station was is not attributed to it")
-    check(pr.step(p, 100.0 + 181)[0] is None, "3 minutes after the call: stale")
+    check(pr.step(p, 125.0)[1] == "VK5DGR" or pr.step(p, 126.0)[1] == "VK5DGR",
+          "sync back after under 10 s: still the same call")
+    check(pr.step(dict(p, rx_sync=0), 140.0)[0] is False, "sync lost again")
+    r = pr.step(p, 151.0)
+    check(r[0] is True and r[1] == "", "sync lost for over 10 s: the call is forgotten, reports go blank")
+    check(pr.step(dict(p, tx=1), 160.0)[0] is False and "paused while transmitting" in pr.step(dict(p, tx=1), 160.0)[3],
+          "transmitting: nothing")
     pr.enabled = False
-    check(pr.step(p, 150.0)[0] is None, "switched off: nothing")
+    check(pr.step(p, 170.0)[0] is False, "switched off: nothing")
     pr.enabled = True
-    pr.heard("OH2BCD", -3.0, 200.0)
-    check(pr.step(dict(p, rx_foff=-2.5), 206.0)[0] == "OH2BCD", "a new call takes over")
     pr.reset()
-    check(pr.step(p, 300.0)[0] is None, "reset (not reporting): forgets the station")
-    check(core.PeriodicSnr(3.0).interval == 3.0, "interval is settable")
+    check(pr.call == "" and pr.last is None, "reset (not reporting): forgets the call")
+    check(core.PeriodicSnr(1.0).interval == 1.0, "interval is settable (freedv-gui itself sends about once a second)")
 
 
 def link_flow():
@@ -189,8 +191,11 @@ def link_flow():
           "reported as RADEV2")
     check(["message_update", {"message": "QRV for a CQ"}] in s2.clients[0]["events"], "the message goes to the second reporter too")
     check(link.report_rx("VK5DGR", "RADEV2", -3.6) and wait(
-        lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV2", "snr": -4}] in s2.clients[0]["events"]),
-        "V2: reported on the v3 reporter, negative SNR rounded")
+        lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV2", "snr": -3}] in s2.clients[0]["events"]),
+        "V2: reported on the v3 reporter; SNR as freedv-gui rounds it, int(snr + 0.5)")
+    check(link.report_rx("", "RADEV2", 4.2) and wait(
+        lambda: ["rx_report", {"callsign": "", "mode": "RADEV2", "snr": 4}] in s2.clients[0]["events"]),
+        "a report with no callsign goes out as it is")
     go(dict(live, waveform=0))
     check(wait(lambda: s2.clients[0]["closed"] or s2.clients[0]["left"]), "RADE off: no longer present on v3")
     check(link.report_rx("VK5DGR", "RADEV1", 5.0) is False, "watching only: a heard call is not reported")
