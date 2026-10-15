@@ -182,3 +182,18 @@ from the removed text only in the lines named above.
 still pushes settings to a watching client (`div_send_settings()`), and the
 radio drops the settings a client sends.
 
+---
+
+<a id="lc-061"></a>
+
+## LC-061 — A fresh install seeds AM on Carrier and the digital modes on FSK/Digital
+
+**Status.** Local (2026-10-15). Not sent to dl1ycf.
+
+**Why.** A props file with no diversity settings gave every mode group the Window reference except CW, which had a seed from a sweep (LC-019). Nothing was recorded as a reason for leaving AM and the digital modes on Window; they were simply not seeded. A new user in AM, SAM or DSB has a carrier to lock to, and a new user in DIGU or DIGL has the occupied-bin reference built for them, so Window was the wrong first choice in both.
+
+**Change.** `div_group_seed()` in `diversity_auto.c` is a switch: AM, SAM and DSB take the Carrier reference with its own threshold and hand-placed window (400 Hz); DIGU and DIGL take FSK/Digital with its own threshold and window (2600 Hz). Follow RX Filter stays ticked in every group, so the windows apply only once an operator unticks it; the threshold is live at once. Averaging stays at 2.0 s. SSB, FM and Other still start on Window. The seed applies only when the props file holds no diversity settings; a file with settings of its own keeps them in every mode, as before.
+
+**Not measured.** These two seeds are chosen by what the modes carry. No capture sweep supports them the way CW's 0.2 s does, and neither is a claim about which reference scores best.
+
+**Test.** `test_modal.c` section 6 checks the reference, window and threshold for AM and DIGU on a fresh install.
