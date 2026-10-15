@@ -137,6 +137,24 @@ at all, which is better than the real-part-then-SSB-modulator path
 freedv-gui relies on. A spectrum capture of a `rade_tx` frame settles it
 (test T-1). **Result (2026-10-15, progress file): V2 is one-sided (99.9 % of power at positive frequency, 1070..1898 Hz). V1 is 98.8 % positive but its time-domain soft limiter spreads about 10 % of the power outside 750..2200 Hz, so the V1 TX bandpass is required, not optional.**
 
+### WDSP's sign convention (measured, T-11)
+
+With a complex tone `I + jQ = exp(+j w t)` (numpy's convention), WDSP's
+positive filter edges pass the tone at **negative** `w`, on both RXA and
+TXA. In WDSP's convention a USB signal is `I - jQ`. `librade` is in the
+numpy convention (carriers at positive `w`). So there is always one
+conjugation at each interface in addition to Invert:
+
+```
+  RX:  x_lib = conj( x_wdsp_out )  XOR-conj if Invert
+  TX:  x_wdsp_in = conj( x_lib_out ) XOR-conj if Invert
+```
+
+and in the RX/TX designs below "conj if invert" reads as "conj unless
+invert" (the filter edges are positive for the normal case). The
+filter-edge sign and the conjugation must always change together; T-2 and
+T-3 test that they do.
+
 ### Centre frequency as the operator's number
 
 Presenting "LSB / USB" is the thing to avoid. Proposal:
