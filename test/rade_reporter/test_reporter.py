@@ -88,6 +88,19 @@ def decisions():
           "reporting is never saved: always starts off")
 
 
+def heard():
+    print("calls heard (rx_report)")
+    now = 1000.0
+    p = {"linked": True, "heard_seq": 3, "heard_call": "vk5dgr", "heard_snr": 7.4, "heard_t": 990.0}
+    check(core.rx_report_due(p, None, "EI6IZ", now) is None, "first look: what is there is old news")
+    check(core.rx_report_due(p, 3, "EI6IZ", now) is None, "already dealt with: not again")
+    check(core.rx_report_due(p, 2, "EI6IZ", now) == ("VK5DGR", 7.4, 3), "a new call is due, upper case")
+    check(core.rx_report_due(dict(p, heard_t=900.0), 2, "EI6IZ", now) is None, "a stale call is not reported")
+    check(core.rx_report_due(dict(p, heard_call="EI6IZ"), 2, "EI6IZ", now) is None, "our own call is not reported")
+    check(core.rx_report_due(dict(p, heard_call=""), 2, "EI6IZ", now) is None, "no call, nothing to report")
+    check(core.rx_report_due(dict(p, linked=False), 2, "EI6IZ", now) is None, "piHPSDR gone: nothing")
+
+
 def link_flow():
     print("link to a (mock) reporter")
     s1, s2 = MockServer().start(), MockServer().start()
@@ -125,7 +138,7 @@ def link_flow():
     check(wait(lambda: len(ev) >= 2), "sends its state once the server says connection_successful")
     check(["freq_change", {"freq": 7053000}] in ev and ["tx_report", {"mode": "RADEV1", "transmitting": False}] in ev,
           "freq_change 7053000 and tx_report RADEV1/not transmitting")
-    check(not any(e[0] == "rx_report" for e in ev), "no receive reports")
+    check(not any(e[0] == "rx_report" for e in ev), "no receive reports until a call is heard")
     go(dict(live, tx=True))
     check(wait(lambda: ["tx_report", {"mode": "RADEV1", "transmitting": True}] in ev), "transmit start is reported")
     go(dict(live, tx=True, dial_hz=7054000))
@@ -137,14 +150,21 @@ def link_flow():
     go(dict(live, tx=False, dial_hz=7054000))
     check(wait(lambda: ev.count(["tx_report", {"mode": "RADEV1", "transmitting": False}]) == 2), "transmit end is reported")
 
+    check(link.report_rx("VK5DGR", "RADEV1", 7.4) is True, "a heard call is reported while present")
+    check(wait(lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV1", "snr": 7}] in ev),
+          "as rx_report with callsign, mode and whole-dB SNR")
     go(dict(live, waveform=2, dial_hz=14236000))
     check(wait(lambda: s1.clients[1]["closed"] or s1.clients[1]["left"]), "V2 selected: left the V1 reporter")
     check(wait(lambda: s2.clients and s2.clients[0]["auth"] is not None), "joined the v3 reporter")
     check(s2.clients[0]["auth"].get("role") == "report", "as a reporter")
     check(wait(lambda: ["tx_report", {"mode": "RADEV2", "transmitting": False}] in s2.clients[0]["events"]),
           "reported as RADEV2")
+    check(link.report_rx("VK5DGR", "RADEV2", -3.6) and wait(
+        lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV2", "snr": -4}] in s2.clients[0]["events"]),
+        "V2: reported on the v3 reporter, negative SNR rounded")
     go(dict(live, waveform=0))
     check(wait(lambda: s2.clients[0]["closed"] or s2.clients[0]["left"]), "RADE off: no longer present on v3")
+    check(link.report_rx("VK5DGR", "RADEV1", 5.0) is False, "watching only: a heard call is not reported")
     check(wait(lambda: len(s1.clients) == 3 and s1.clients[2]["auth"] is not None
                and s1.clients[2]["auth"].get("role") == "view"), "watching again, no identity")
     go(dict(live, waveform=1))
@@ -172,6 +192,7 @@ def live():
 if __name__ == "__main__":
     places()
     decisions()
+    heard()
     link_flow()
     if "--live" in sys.argv:
         live()

@@ -75,6 +75,12 @@ static char last_state[1024];
 
 static const char *agc_name(int a);
 
+// the last call heard in an end-of-over frame, for the Reporter (seq counts them)
+static int heard_seq = 0;
+static char heard_call[16] = "";
+static float heard_snr = 0.0f;
+static double heard_t = 0.0;
+
 #define CAPTURE_DIR "rade-captures"
 
 
@@ -118,6 +124,10 @@ static void log_call(const rade_native_call_t *c) {
           rx->filter_low, rx->filter_high, agc_name(rx->agc), rx->volume, rx->adc,
           adc[rx->adc].attenuation, adc[rx->adc].preamp, rade_native_capture_stem());
   fclose(f);
+  snprintf(heard_call, sizeof heard_call, "%s", c->call);
+  heard_snr = c->snr_db;
+  heard_t = c->t_unix;
+  heard_seq++;
   if (rade_native_capture_active()) {
     char line[200];
     snprintf(line, sizeof line, "call %s snr=%.1f foff=%.1f", c->call, c->snr_db, c->foff_hz);
@@ -186,15 +196,20 @@ static guint state_timer_id = 0;
 
 static void state_write(int running) {
   if (state_file[0] == 0) { return; }
-  char tmp[600], text[512], call[16], ver[64];
+  char tmp[600], text[900], call[16], ver[64];
+  rade_native_status_t st;
+  rade_native_get_status(&st);
   snprintf(call, sizeof call, "%s", rade_native_get_callsign());
   snprintf(ver, sizeof ver, "%s", build_version);
   for (char *c = ver; *c; c++) { if (*c == '"' || *c == '\\' || (unsigned char)*c < 32) { *c = '_'; } }
   snprintf(text, sizeof text,
            "{\"running\":%d,\"updated\":%.3f,\"pid\":%d,\"waveform\":%d,\"dial_hz\":%lld,"
-           "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\"}\n",
+           "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
+           "\"rx_sync\":%d,\"rx_snr\":%.1f,\"rx_foff\":%.1f,"
+           "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_t\":%.0f}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
-           vfo[0].frequency, radio_is_transmitting() ? 1 : 0, call, ver);
+           vfo[0].frequency, radio_is_transmitting() ? 1 : 0, call, ver,
+           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_t);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
   if (!f) { return; }
@@ -208,11 +223,11 @@ static void state_exit(void) {
 }
 
 static int state_cb(gpointer arg) {
-  static char last[160];
+  static char last[200];
   static gint64 last_t = 0;
-  char now[160];
-  snprintf(now, sizeof now, "%d %lld %d %s", rade_native_waveform(), vfo[0].frequency,
-           radio_is_transmitting() ? 1 : 0, rade_native_get_callsign());
+  char now[200];
+  snprintf(now, sizeof now, "%d %lld %d %s %d", rade_native_waveform(), vfo[0].frequency,
+           radio_is_transmitting() ? 1 : 0, rade_native_get_callsign(), heard_seq);
   gint64 t = g_get_monotonic_time();
   if (strcmp(now, last) != 0 || t - last_t >= 2000000) {
     state_write(1);
