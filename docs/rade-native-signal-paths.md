@@ -216,6 +216,7 @@ flowchart LR
 | Is the transmitted spectrum what the modem makes? | `tx_shape.py` (centre, tilt, edges, skirts) |
 | How does the chain behave offline? | `tx_validate.py`, `loss_check.sh`, `wdsp_probe` |
 | Does a mistuned or narrower signal still decode? | `filter_study.py` |
+| How close to the ALC ceiling can the level go? | `alc_sweep.py capture_stem` (offline, 48 kHz TXA; uses the capture's `_txmic.wav`) |
 | Is the mic level meter right? | `test_tx_level.py` |
 | Does the mode-change rule hold? | `test_geometry` (`make check`), `modes_table` |
 | Did it arrive properly off air? | `kiwi_rx.py` |
@@ -270,6 +271,8 @@ Newest first. One line per change that can move a measurement. "Check" is the sc
 | 2026-10-15 | 2f12e43c | WDSP sign convention measured (conjugate of librade's) | conj at both interfaces | `t11_wdsp_probe.py` | measured |
 
 ### Open measurements to add when seen
+
+- 2026-10-16 `alc_sweep.py` (speech of capture 20261016-005144, 30 s, offline at 48 kHz): at the current levels the ALC is already at its ceiling (peak -0.02 dBFS); raising the level further only lowers the TXA gain one for one (+5.7 dB at the current level, -2.8 dB at +9 dB), output rms does not rise, and ferr / SNR do not get worse; the live capture peaked at -0.97 dBFS at 192 kHz, a ~1 dB difference not explained.
 
 - the first TX capture after 73c3925c: `tx_shape.py` PASS?
 - the first off-air Kiwi capture of one of our overs: SNR / loss / end-of-over / call against the local numbers
