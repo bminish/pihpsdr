@@ -259,11 +259,11 @@ class Link:
         return False
 
     def report_rx(self, callsign, mode, snr):
-        """Tell the server we heard callsign (freedv-gui's rx_report). Only while reporting."""
+        """freedv-gui's rx_report: callsign (may be empty: something is being received but nobody is
+        identified yet), mode, SNR as it rounds it, int(snr + 0.5). Only while reporting."""
         with self.lock:
-            if (self.client is not None and self.fully and getattr(self, "role", "view") == "report"
-                    and callsign and mode):
-                self.client.emit("rx_report", {"callsign": callsign, "mode": mode, "snr": int(round(snr))})
+            if (self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode):
+                self.client.emit("rx_report", {"callsign": callsign or "", "mode": mode, "snr": int(snr + 0.5)})
                 return True
         return False
 
@@ -393,52 +393,57 @@ def rx_report_due(p, last_seq, mycall, now=None, max_age=60.0):
 
 
 class PeriodicSnr:
-    """The RADE SNR, sent every few seconds while a signal is in sync.
+    """The RADE SNR, sent every few seconds while a signal is in sync - what freedv-gui does.
 
-    The server's rx_report is "I heard <callsign> at <snr>", and a V1 station's callsign only
-    arrives in its end-of-over frame. So while an over is in progress the station is *assumed*: it is
-    the last one heard, if that was recently (validity seconds) and the signal now is within foff_tol Hz
-    of where that station's over was. The end-of-over report, with the call actually decoded, is
-    separate and always sent. Nothing is sent without such a station, while transmitting, without
-    sync, or when switched off.
+    In freedv-gui's timer (main.cpp, "Special case for RADE"), while the modem is in sync and no new
+    callsign has just been decoded, it sends an rx_report with the callsign last reported in this
+    reception, or an empty one if none has been decoded yet, the mode, and the SNR - so that the
+    reporter shows that something is being received even before anyone is identified. The callsign is
+    forgotten when sync has been lost for 10 s (its "Stats / ResetTime"). No callsign is needed.
     """
 
-    def __init__(self, interval=5.0, validity=180.0, foff_tol=5.0):
-        self.interval, self.validity, self.foff_tol = interval, validity, foff_tol
+    def __init__(self, interval=5.0, reset_s=10.0):
+        self.interval, self.reset_s = interval, reset_s
         self.enabled = True
-        self.station = None          # (call, foff, time heard)
+        self.call = ""               # last call decoded in this reception
+        self.lost_since = None
         self.last_sent = 0.0
         self.last = None             # (call, snr, time) of the last report sent
 
-    def heard(self, call, foff, now):
-        self.station = (call, foff, now)
-        self.last_sent = now         # the end-of-over report has just gone: next one a full interval later
+    def heard(self, call, now):
+        """A call was decoded from an end-of-over frame (and reported separately)."""
+        self.call = call
+        self.last_sent = now         # that report has just gone: the next one a full interval later
 
     def reset(self):
-        self.station = None
+        self.call = ""
+        self.lost_since = None
         self.last = None
 
     def step(self, p, now):
-        """-> (call, snr, status). call/snr are set when a report is due; status says what is going on."""
+        """-> (send, call, snr, status). send is True when a report is due."""
         if not self.enabled:
-            return None, None, "off"
+            return False, "", 0.0, "off"
         if not p or not p.get("linked"):
-            return None, None, "waiting: piHPSDR is not running"
+            return False, "", 0.0, "waiting: piHPSDR is not running"
+        if p.get("rx_sync"):
+            if self.lost_since is not None and now - self.lost_since >= self.reset_s:
+                self.call = ""       # back in sync after a long gap: a new reception, as freedv-gui sees it
+            self.lost_since = None
+        elif self.lost_since is None:
+            self.lost_since = now
         if p.get("tx"):
-            return None, None, "paused while transmitting"
+            return False, "", 0.0, "paused while transmitting"
         if not p.get("rx_sync"):
-            return None, None, "waiting for a signal"
-        if self.station is None or now - self.station[2] > self.validity:
-            return None, None, "signal in sync, but no recent call to attribute it to"
-        call, foff, t = self.station
-        if abs(float(p.get("rx_foff", 0.0)) - foff) > self.foff_tol:
-            return None, None, "signal is not where %s was (%+.0f Hz, now %+.0f Hz)" % (call, foff, p.get("rx_foff", 0.0))
+            return False, "", 0.0, "waiting for a signal"
+        what = "call %s" % self.call if self.call else "no call decoded yet, sent blank"
+        status = "sending the SNR every %g s (%s)" % (self.interval, what)
         if now - self.last_sent < self.interval:
-            return None, None, "sending for %s every %g s" % (call, self.interval)
+            return False, "", 0.0, status
         self.last_sent = now
         snr = float(p.get("rx_snr", 0.0))
-        self.last = (call, snr, now)
-        return call, snr, "sending for %s every %g s" % (call, self.interval)
+        self.last = (self.call, snr, now)
+        return True, self.call, snr, status
 
 
 def load_config(path=None):

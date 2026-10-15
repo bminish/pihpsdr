@@ -57,8 +57,9 @@ def iso_to_epoch(iso):
 
 
 class App(Gtk.Window):
-    def __init__(self):
+    def __init__(self, show=True):
         super().__init__(title="RADE Reporter")
+        self._show = show                 # tests build the window without putting it on the screen
         self.cfg = core.load_config()
         self.roster = core.Roster()
         self.dirty = True
@@ -172,13 +173,13 @@ class App(Gtk.Window):
         self.snr_chk = Gtk.CheckButton(label="Report RADE SNR every")
         self.snr_chk.set_active(self.periodic.enabled)
         self.snr_chk.set_tooltip_text(
-            "While a signal is in sync, sends its SNR to the reporter every few seconds, as an rx_report.\n"
-            "The server wants a callsign with it, and V1 sends that only at the end of an over, so the\n"
-            "station is taken to be the last one heard (within 3 minutes, and within 5 Hz of where its over\n"
-            "was). The end-of-over report is separate and always sent, with the call actually decoded.")
+            "While a signal is in sync, sends its SNR to the reporter every few seconds, as an rx_report,\n"
+            "the way freedv-gui does. No callsign is needed: until one has been decoded the report goes\n"
+            "without one; after that it carries the last call decoded, until sync has been lost for 10 s.\n"
+            "The call decoded at the end of an over is reported when it arrives.")
         self.snr_chk.connect("toggled", self._on_snr_changed)
         r4.pack_start(self.snr_chk, False, False, 0)
-        self.snr_spin = Gtk.SpinButton.new_with_range(3, 30, 1)
+        self.snr_spin = Gtk.SpinButton.new_with_range(1, 30, 1)
         self.snr_spin.set_value(self.periodic.interval)
         self.snr_spin.connect("value-changed", self._on_snr_changed)
         r4.pack_start(self.snr_spin, False, False, 0)
@@ -212,7 +213,11 @@ class App(Gtk.Window):
 
         self.status = Gtk.Label(xalign=0)
         v.pack_start(self.status, False, False, 0)
-        self.show_all()
+        if self._show:
+            self.show_all()
+        else:
+            for child in self.get_children():
+                child.show_all()          # the widgets are made, the window is not mapped
         self._loading = False
 
     # ------------------------------------------------------------- callbacks
@@ -437,7 +442,7 @@ class App(Gtk.Window):
         if due:
             call, snr, seq = due
             self._heard_seq = seq
-            self.periodic.heard(call, float(p.get("heard_foff", 0.0)), time.time())
+            self.periodic.heard(call, time.time())
             ok = self.link.report_rx(call, mode, snr)
             self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
                 time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
@@ -449,11 +454,12 @@ class App(Gtk.Window):
             self.periodic.reset()
             status = "waiting: not reporting (%s)" % self.why.get_text()
         else:
-            pc, psnr, status = self.periodic.step(p, time.time())
-            if pc and not self.link.report_rx(pc, mode, psnr):
+            send, pc, psnr, status = self.periodic.step(p, time.time())
+            if send and not self.link.report_rx(pc, mode, psnr):
                 status = "not connected yet"
         lastp = self.periodic.last
-        lasttxt = "" if not lastp else "   last: %s %+.1f dB %ds ago" % (lastp[0], lastp[1], int(time.time() - lastp[2]))
+        lasttxt = "" if not lastp else "   last: %s%+d dB %ds ago" % (
+            lastp[0] + " " if lastp[0] else "(no call) ", int(lastp[1] + 0.5), int(time.time() - lastp[2]))
         sending = bool(role == "report" and lastp and time.time() - lastp[2] < 2 * self.periodic.interval + 1
                        and self.periodic.enabled)
         self.snr_ind.set_markup('<span foreground="%s">\u25cf</span> %s%s' % (
