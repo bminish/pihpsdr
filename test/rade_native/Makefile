@@ -6,7 +6,7 @@ OPUS  := $(ROOT)/third_party/rade_c-build/build_opus-prefix/src/build_opus
 CFLAGS := -O2 -Wall -std=gnu11 -I$(RSRC) -I$(OPUS) -I$(OPUS)/include -I$(OPUS)/celt -I$(OPUS)/dnn
 LDFLAGS := -L$(RBLD) -lrade -lm -Wl,-rpath,$(abspath $(RBLD))
 
-all: rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_rx_engine test_tx_engine
+all: rade_tx_iq rade_rx_iq rade_decode_iq wdsp_probe test_geometry test_rx_engine test_tx_engine
 
 rade_tx_iq: rade_tx_iq.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
@@ -14,6 +14,10 @@ rade_tx_iq: rade_tx_iq.c
 WDSP := $(ROOT)/wdsp
 rade_rx_iq: rade_rx_iq.c $(ROOT)/src/rade_eoo_text.c
 	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ rade_rx_iq.c $(ROOT)/src/rade_eoo_text.c $(LDFLAGS)
+
+rade_decode_iq: rade_decode_iq.c $(ROOT)/src/rade_eoo_text.c
+	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ rade_decode_iq.c $(ROOT)/src/rade_eoo_text.c $(LDFLAGS) \
+	  $(OPUS)/.libs/libopus.a
 
 wdsp_probe: wdsp_probe.c $(WDSP)/libwdsp.a
 	$(CC) -O2 -Wall -pthread -I$(WDSP) -o $@ $< $(WDSP)/libwdsp.a \
@@ -48,4 +52,4 @@ check: test_geometry
 	./test_geometry
 
 clean:
-	rm -f text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry
+	rm -f rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry

@@ -16,6 +16,46 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Kiwi receive harness): `test/rade_native/kiwi_rx.py` records
+  our transmissions off air from the KiwiSDR at `kiwi.minish.org:8074`
+  (connection details as given; no password needed) and checks them.
+  **Several connections at once work**: three in parallel were run
+  against it (the status page says `users_max=1`, but 3 connections were
+  accepted). Profiles, one `kiwiclient/kiwirecorder.py` each: `iq` (12 kHz
+  complex, never compressed, Kiwi AGC), `iq-fixed` (IQ with the AGC off,
+  `--gain`), `usb` / `lsb` (audio, `--ncomp`, uncompressed). **Kiwi IQ
+  convention measured**: tuned 2 kHz below WWV on 5, 10 and 15 MHz, the
+  carrier appears at +2000 Hz, i.e. positive frequency is above the tuned
+  frequency (I + jQ), the same as librade; so an inverted signal (V1
+  below 10 MHz) is conjugated, a normal one is not. Commands:
+  `kiwi_rx.py record|analyze|run|selftest` (`--help` for the options:
+  `--freq` the dial in kHz, `--wave v1|v2`, `--duration`, `--call`,
+  `--ref speech.wav`, `--tx-freq` if the Kiwi is not on the dial,
+  `--min-snr`, `--max-loss`). Per over it reports sync %, SNR (librade's
+  estimate, dB in 3 kHz) mean/min/max, frequency offset, the EOO frame
+  (how many, where, how long after sync ended), the V1 callsign decoded
+  from it against `--call`, and with `--ref` the vocoder-feature loss and
+  the speech-envelope correlation against the ideal decode. Output:
+  `rade-captures/kiwi/<utc>_<kHz>_<wave>/` (`<profile>.wav` as recorded,
+  8 kHz baseband, stats, events, decoded speech, `session.json`,
+  `analysis.json`, `report.txt`). Decoder: `rade_decode_iq` (librade +
+  FARGAN, writes the stats, EOO events, features and speech).
+  **Checked without a transmitter** (`kiwi_rx.py selftest`: our TX engine's
+  over with call EI6IZ, dressed as a Kiwi recording, noise added, Kiwi
+  tuned off the dial): V1 inverted at 7053 and normal at 14236, V2 at
+  7053 and 14236, IQ and audio profiles, all PASS at 12-20 dB SNR; a
+  Kiwi tuned 0.3, 1.0 and 2.5 kHz away from the dial is handled. **Where
+  the V1 callsign gives out: the speech stays in sync down to at least 2 dB
+  but the EOO call decodes only from about 10 dB** (librade SNR estimate;
+  tests at 8-10 dB injected: EOO flagged, call not decoded; 11 dB and
+  above: decoded), because the EOO is one 144 ms frame. Against the
+  real Kiwi: recorded 3 profiles in parallel for 10 s at 7053 kHz, no
+  transmission on, correctly reported "no over found". **Not yet done:
+  an actual transmission through it**; and the audio-quality figures need
+  the transmitted speech to be known (`--ref`), which means feeding a known
+  wav to the transmitter, which the RADE window cannot do yet (it takes the
+  mic): a test-wav source in the TX path is the next piece for that.
+
 - 2026-10-15 (RADE window as a working panel): from on-air use: (1) the
   "Transmit RADE" toggle only switched RADE transmit processing on, it did
   not key the radio. Now RADE transmit follows the waveform (V1/V2 selected
