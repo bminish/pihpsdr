@@ -4754,7 +4754,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
     s->mode = DIV_MANUAL;
   }
 
-  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_CW) {
+  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_RADE_V1) {
     s->ref = DIV_REF_BAND;
   }
 
