@@ -251,6 +251,15 @@ class Link:
                 return True
         return False
 
+    def report_rx(self, callsign, mode, snr):
+        """Tell the server we heard callsign (freedv-gui's rx_report). Only while reporting."""
+        with self.lock:
+            if (self.client is not None and self.fully and getattr(self, "role", "view") == "report"
+                    and callsign and mode):
+                self.client.emit("rx_report", {"callsign": callsign, "mode": mode, "snr": int(round(snr))})
+                return True
+        return False
+
     def close(self):
         with self.lock:
             self._close()
@@ -351,6 +360,24 @@ def read_pihpsdr_state(path=None, now=None):
     now = time.time() if now is None else now
     d["linked"] = bool(d.get("running")) and (now - float(d.get("updated", 0))) < 8.0
     return d
+
+
+def rx_report_due(p, last_seq, mycall, now=None, max_age=60.0):
+    """A call piHPSDR has decoded from an end-of-over frame that should be reported.
+
+    Returns (call, snr, seq) or None. last_seq is the count of calls already dealt with
+    (None before the first look: whatever is there is old news). A call is not reported
+    if it is stale, empty or our own."""
+    if not p or not p.get("linked"):
+        return None
+    seq = int(p.get("heard_seq", 0))
+    if last_seq is None or seq <= last_seq:
+        return None
+    now = time.time() if now is None else now
+    call = (p.get("heard_call") or "").strip().upper()
+    if not call or call == (mycall or "").strip().upper() or now - float(p.get("heard_t", 0)) > max_age:
+        return None
+    return call, float(p.get("heard_snr", 0.0)), seq
 
 
 def load_config(path=None):
