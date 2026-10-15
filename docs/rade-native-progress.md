@@ -163,7 +163,6 @@ involved), 5 s of speech.
 
 ## Next
 
-1. `RADE_NATIVE` make option linking librade (no engine code yet).
-2. T-2: the same chain over AWGN and fading channels, with and without WDSP.
-3. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
-4. Listen to the mirrored V2 decode.
+1. T-2: the same chain over AWGN and fading channels, with and without WDSP.
+2. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
+3. Listen to the mirrored V2 decode.
