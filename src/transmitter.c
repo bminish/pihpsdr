@@ -2538,6 +2538,21 @@ void tx_set_compressor(TRANSMITTER *tx) {
     RXTXprofile[txmode].tx.cfc_post[i] = tx->cfc_post[i];
   }
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {
+    //
+    // Native RADE transmit: the modem signal must reach the PA unprocessed. The profile values are kept
+    // (above) for when RADE transmit ends, but the speech processors stay off: this function is called
+    // whenever a mode profile is loaded and when TUNE ends, which used to switch the CFC (with its
+    // post-equaliser) and the leveler back on and tilted the RADE spectrum by 8 dB.
+    //
+    SetTXALevelerSt(tx->id, 0);
+    SetTXACFCOMPRun(tx->id, 0);
+    SetTXAosctrlRun(tx->id, 0);
+    SetTXACompressorRun(tx->id, 0);
+    return;
+  }
+#endif
   //
   // - Although I see not much juice therein, the
   //   usage of CFC alongside with the speech processor
@@ -2608,6 +2623,12 @@ void tx_set_phrot(const TRANSMITTER *tx) {
   RXTXprofile[txmode].tx.phrot_stages = tx->phrot_stages;
   RXTXprofile[txmode].tx.phrot_corner = tx->phrot_corner;
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetTXAPHROTRun(tx->id, 0);
+    return;
+  }
+#endif
   SetTXAPHROTCorner(tx->id, tx->phrot_corner);
   SetTXAPHROTNstages(tx->id, tx->phrot_stages);
   SetTXAPHROTReverse(tx->id, tx->phrot_reverse);
@@ -2637,6 +2658,12 @@ void tx_set_dexp(const TRANSMITTER *tx) {
   RXTXprofile[txmode].tx.dexp_filter_high = tx->dexp_filter_high;
   RXTXprofile[txmode].tx.dexp_exp         = tx->dexp_exp;
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetDEXPRun(0, 0);
+    return;
+  }
+#endif
   //
   // Set all the parameters of the Downward Expander
   // Note the DEXP number must be between 0 and 3, so
@@ -2700,6 +2727,12 @@ void tx_set_equalizer(TRANSMITTER *tx) {
   }
   profiles_copy_rxtxprofile(txmode);
   g_idle_add(ext_vfo_update, NULL);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetTXAEQRun(tx->id, 0);
+    return;
+  }
+#endif
   SetTXAEQProfile(tx->id, 10, tx->eq_freq, tx->eq_gain);
   SetTXAEQRun(tx->id, tx->eq_enable);
 }
