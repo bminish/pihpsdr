@@ -1502,8 +1502,7 @@ gpointer client_sidetone_thread(gpointer arg) {
 
 #ifdef RADE_NATIVE
 static int tx_rade_invert(void) {
-  return rade_native_effective_invert(rade_native_waveform(), vfo[vfo_get_tx_vfo()].frequency,
-                                      rade_native_user_invert());
+  return rade_native_get_invert();
 }
 #endif
 
