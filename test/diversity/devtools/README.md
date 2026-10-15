@@ -117,6 +117,17 @@ untouched.
 
 LC-012 was assessed this way; the results are in `docs/changes.md`.
 
+### Resetting the diversity settings in a props file
+
+`reset_diversity_props.py FILE.props` lists, and with `--do` removes, every
+`diversity_*` line (the live settings and the per-mode-group blocks) from a
+props file, keeping a copy as `FILE.props.pre-divreset`. The next start then
+comes up with the defaults, as a new user's would, and a file written before
+the objective and reference numbering changed (LC-059, LC-060) does not leave
+the menu on the wrong row. Local only, never sent upstream; it takes the path
+from you and guesses none, and the program must be closed first because it
+rewrites the file on exit.
+
 ### Scoring the output level
 
 `py/score_level.py` scores `run_ref` weight series for what an operator
