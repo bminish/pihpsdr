@@ -16,6 +16,28 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter: CPU and slow close): **three causes, all mine**.
+  (1) The first update was scheduled with `GLib.idle_add` and the update
+  returns True (to keep its 0.5 s timer), so as an idle callback it ran
+  flat out, forever: reading the state file, deciding, and rebuilding the
+  station list each time. Measured with 60 stations: **99 % of a core**.
+  (2) That rebuild cleared and refilled the list, which re-sorted and
+  re-filtered the whole list for every row added. It now changes only the
+  cells that differ, refilters only when rows, frequencies or filters
+  changed, refreshes the list when something changed or every 3 s, and sorts
+  newest-first on the update *time* rather than an age that changed every
+  second. (3) **Slow close**: `Link` held its lock while it waited for the
+  connection's thread to end, and that thread needed the same lock to say
+  it was stopping, so every close waited out the 1-3 s join timeout. The
+  connection is now stopped with the lock released; the socket is also shut
+  down so a read in progress ends at once; and the window is hidden first.
+  After: the Reporter alone idles at **2 % of a core** (no server; GTK's own
+  cost is most of that), SIGTERM to exit **0.00 s**, closing the window in
+  the test **0.00 s** (was 3.00 s, then 1.00 s). `test_gui_idle.py` guards
+  this: the update runs about twice a second (9 times in 4 s) and the
+  window closes in under 1.5 s. Not measured: the cost with the live
+  server's traffic over a long run.
+
 - 2026-10-15 (Reporter: SNR and heard calls): piHPSDR's state file now also
   carries the live receive state (`rx_sync`, `rx_snr`, `rx_foff`, rewritten
   at least every 2 s) and the last call decoded from an end-of-over frame

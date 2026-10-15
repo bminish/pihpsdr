@@ -230,19 +230,26 @@ class Link:
     # ---- public
     def set_target(self, server, role, callsign="", grid="", freq=0, mode="", tx=False, message=""):
         """server: a DEFAULT_SERVERS-style dict with host/port/secure, or None to be disconnected."""
+        old, reopen = None, False
         with self.lock:
             if server is None or not server.get("host"):
-                self._close()
-                return
-            key = (server["host"], server["port"], server["secure"], role,
-                   callsign if role == "report" else "", grid if role == "report" else "")
-            self.want = {"freq": int(freq), "mode": mode, "tx": bool(tx), "message": message}
-            if key != self.key:
-                self._close()
+                old = self._detach()
+            else:
+                key = (server["host"], server["port"], server["secure"], role,
+                       callsign if role == "report" else "", grid if role == "report" else "")
+                self.want = {"freq": int(freq), "mode": mode, "tx": bool(tx), "message": message}
+                if key != self.key:
+                    old = self._detach()
+                    reopen = True
+                else:
+                    self._push()
+        # The old connection is stopped without our lock held: its thread reports back through it, and
+        # waiting for that thread while holding the lock made every close wait out the join timeout.
+        self._finish(old)
+        if reopen:
+            with self.lock:
                 self._open(server, role, callsign, grid)
                 self.key = key
-            else:
-                self._push()
 
     def emit(self, event, data):
         with self.lock:
@@ -262,7 +269,8 @@ class Link:
 
     def close(self):
         with self.lock:
-            self._close()
+            old = self._detach()
+        self._finish(old)
 
     # ---- internal
     def _open(self, server, role, callsign, grid):
@@ -281,11 +289,15 @@ class Link:
                                    self._event, self._state)
         self.client.start()
 
-    def _close(self):
+    def _detach(self):
+        """Forget the connection (lock held); the caller stops it with _finish(), lock released."""
         c, self.client = self.client, None
         self.key = None
         self.fully = False
         self.sent = {}
+        return c
+
+    def _finish(self, c):
         if c is not None:
             c.stop()
             self.roster.clear()
