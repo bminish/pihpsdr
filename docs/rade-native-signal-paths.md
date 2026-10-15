@@ -51,7 +51,7 @@ flowchart LR
 | Kiwi IQ | positive frequency is above the tuned frequency (measured on WWV) | `kiwi_rx.py` conjugates an inverted signal, not a normal one |
 | Dial | the suppressed carrier of the sideband in use (CTUN frequency when CTUN is on) | what the VFO shows, what the Reporter is told, what captures record |
 | Energy centre `Fe` | `dial + sign * 1500`; V1's carrier centre is 1475 and stays in the filter edges | does not move when waveform or Invert changes: the dial moves instead (section 4) |
-| Levels | WDSP audio is +-1.0 full scale; the engine hands librade rms 0.9 (RX) and gives WDSP 0.378 (V1) / 0.534 (V2) (TX); loudness is LUFS (ITU-R BS.1770) | |
+| Levels | WDSP audio is +-1.0 full scale; the engine hands librade rms 0.9 (RX) and gives WDSP 0.357 (V1) / 0.504 (V2) (TX); loudness is LUFS (ITU-R BS.1770) | |
 
 ## 2. Receive path
 
@@ -121,7 +121,7 @@ flowchart TB
     D --> TM([TAP txmic.wav])
     D --> FE[LPCNet features, 10 ms\n36 floats]
     FE --> RT[rade_tx\nV1 12 frames -> 960 samples = 120 ms\nV2 4 frames -> 320 = 40 ms\nlast frame padded, then EOO with call]
-    RT --> LV[x 0.378 V1 / 0.534 V2]
+    RT --> LV[x 0.357 V1 / 0.504 V2]
     LV --> UP[1:6 polyphase, 48 taps\ncutoff 3.9 kHz, 8 kHz -> 48 kHz]
     UP --> RG[(out ring, starts after 2 modem frames)]
     RG --> CJ[conjugate unless inverted]
@@ -148,7 +148,7 @@ flowchart TB
 | 4 | decimate to 16 kHz | | `rade_native_tx_block` | 36 taps, cutoff 7.2 kHz | `TX_DEC`, `TX_DEC_TAPS` |
 | 5 | **tap `txmic.wav`** | 16 kHz int16 | `cap_push_mic` | | |
 | 6 | LPCNet, `rade_tx`, EOO | 10 ms frames -> 8 kHz | `tx_worker`, `tx_frame`, `tx_finish` | the modem signal; at the end the EOO frame with the callsign (V1, LDPC) | |
-| 7 | level and interpolate | 8 kHz -> 48 kHz | `tx_emit` | x 0.378 V1 / 0.534 V2; 48-tap polyphase | `TX_LEVEL_V1/V2`, `TX_INT_TAPS` |
+| 7 | level and interpolate | 8 kHz -> 48 kHz | `tx_emit` | x 0.357 V1 / 0.504 V2; 48-tap polyphase | `TX_LEVEL_V1/V2`, `TX_INT_TAPS` |
 | 8 | jitter cushion | 48 kHz | `rade_native_tx_block` | output starts once two modem frames are queued | |
 | 9 | conjugate | | same | -1 on Q unless inverted | |
 | 10 | WDSP TXA | 48 -> 48 or 192 kHz | `wdsp/TXA.c` `xtxa` order above | **bp0 = the RADE passband**; ALC; resample out. The speech stages are held off by `tx_xmit_captured_data_start` and by the guards in `tx_set_compressor/equalizer/phrot/dexp` | `tx_set_filter` |
@@ -246,7 +246,7 @@ flowchart LR
 | | `INT`, `INT_TAPS` | 3, 24 (cutoff 7.4 kHz) |
 | `rade_native.c` TX | `TX_DEC`, `TX_DEC_TAPS` | 3, 36 (cutoff 7.2 kHz) |
 | | `TX_INT`, `TX_INT_TAPS` | 6, 48 (cutoff 3.9 kHz) |
-| | `TX_LEVEL_V1`, `_V2` | 0.378, 0.534 (was 0.3 both) |
+| | `TX_LEVEL_V1`, `_V2` | 0.357, 0.504 (was 0.3 both) |
 | | `TX_TAIL` | 8000 samples |
 | | leveller | up 0.5..2 dB/s, down 1 dB/s, 6 dB/s for a shout > 8 dB over, range -20..+30 dB, holds under -55 LUFS |
 | | limiter | knee 0.9, ceiling 1.0 |
@@ -260,7 +260,7 @@ Newest first. One line per change that can move a measurement. "Check" is the sc
 
 | Date | Commit | Change | Expected effect | Check | Status |
 |---|---|---|---|---|---|
-| 2026-10-16 | (this commit) | TX level into WDSP per waveform: V1 0.3 -> 0.378 (+2 dB), V2 0.3 -> 0.534 (+5 dB) | ALC meter peaks at 0 dB for both (was -2 V1, -5 V2, as read by the operator) | ALC meter on the next TX; `tx_shape.py` peak | compiled; **not on a radio**; ALC clamp at 1.0 will clip any overshoot, watch SNR |
+| 2026-10-16 | (this commit) | TX level into WDSP per waveform: V1 0.3 -> 0.357 (+1.5 dB), V2 0.3 -> 0.504 (+4.5 dB), 0.5 dB under the ALC ceiling on request | ALC meter peaks at -0.5 dB for both (was -2 V1, -5 V2, as read by the operator) | ALC meter on the next TX; `tx_shape.py` peak | compiled; **not on a radio**; ALC clamp at 1.0 will clip any overshoot, watch SNR |
 | 2026-10-16 | 1e4c3404 | Sideband stored; dial and VFO mode follow it (`rade_native_plan`); RADE off returns to USB/LSB on the same carrier; dial = CTUN freq | `Fe` constant across waveform / Invert / Off; Reporter frequency = carrier | `test_geometry`, `modes_table` | unit-tested; not on a radio |
 | 2026-10-16 | 73c3925c | Speech stages kept off while RADE TX is on (`tx_set_compressor/equalizer/phrot/dexp` guards, phase rotator off) | TX energy centre +1650 -> about +1457 Hz; tilt +4.8 -> 0 dB | `tx_shape.py` on the next TX capture | compiled; **next capture decides** |
 | 2026-10-15 | f1d7af06 | Mic trim (+-20 dB), leveller, soft limiter, LUFS meter | mic level adjustable, meter reads dB re -20 LUFS | `test_tx_level.py` | tested offline; not with a real mic |
