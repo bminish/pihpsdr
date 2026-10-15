@@ -70,6 +70,41 @@ void rade_native_wdsp_edges(int waveform, int invert, double shift_hz,
 int rade_native_conjugate(int invert);
 
 //
+// ---- receive engine (one receiver) ----
+//
+// The WDSP receive chain, set up with the RADE passband and its panel in
+// binaural mode, delivers complex baseband at 48 kHz in the audio buffer
+// (left = I, right = Q). rade_native_rx_block() takes that block, hands
+// the signal to librade on a worker thread, and replaces the block with
+// the decoded speech (left = right) at 48 kHz.
+//
+// waveform 0 switches the engine off. Changing the waveform closes and
+// reopens the decoder, so call it from the menu thread, not the receiver
+// thread.
+//
+int  rade_native_waveform(void);
+int  rade_native_user_invert(void);
+void rade_native_configure(int waveform, int user_invert);
+
+//
+// invert: the effective invert (see rade_native_effective_invert());
+// gain: the RX volume as an amplitude.
+//
+void rade_native_rx_block(double *buf, int n, int invert, double gain);
+
+typedef struct {
+  int           waveform;
+  int           sync;
+  float         snr_db;      // librade's estimate, dB in 3 kHz
+  float         foff_hz;     // librade's frequency offset
+  unsigned long blocks;      // rade_rx() calls
+  unsigned long underruns;   // 48 kHz speech samples not available in time
+  unsigned long overruns;    // 8 kHz input samples dropped
+} rade_native_status_t;
+
+void rade_native_get_status(rade_native_status_t *st);
+
+//
 // Opens a V1 and a V2 context, checks the library version, and writes a
 // one-line description to msg. Returns 0 on success.
 //
