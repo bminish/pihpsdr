@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Tests of the RADE Reporter's parts that are not the window (tools/rade-reporter/core.py, sio.py)
+against a mock reporter server, and - with --live - a read-only look at the real one.
+
+  test_reporter.py [--live]
+"""
+import json
+import os
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "tools", "rade-reporter"))
+sys.path.insert(0, HERE)
+import core  # noqa: E402
+from mock_server import MockServer  # noqa: E402
+
+fails = 0
+
+
+def check(cond, what):
+    global fails
+    print("  %-4s %s" % ("ok" if cond else "FAIL", what))
+    if not cond:
+        fails += 1
+
+
+def wait(pred, secs=5.0):
+    t = time.time()
+    while time.time() - t < secs:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def places():
+    print("places and bands")
+    d = core.distance_bearing("IO53HU", "JN58")
+    check(d is not None and 1400 < d[0] < 1700, "Castlebar to Munich about 1500 km (%.0f)" % d[0])
+    check(abs(core.distance_bearing("IO53", "IO53")[0]) < 1, "same square is 0 km")
+    check(core.grid_valid("io53hu") and core.grid_valid("IO53") and not core.grid_valid("ZZ99")
+          and not core.grid_valid("IO5"), "grid validation")
+    check(core.band_of(7053000) == "40 m" and core.band_of(14236000) == "20 m" and core.band_of(1000) == "Other",
+          "band_of")
+    check(core.parse_server("https://qso.freedv.org/") == ("qso.freedv.org", 443, True), "parse https")
+    check(core.parse_server("http://h:8080") == ("h", 8080, False), "parse http:port")
+    check(core.parse_server("example.org") == ("example.org", 443, True), "parse bare host")
+
+
+def decisions():
+    print("what gets reported")
+    cfg = core.load_config(os.path.join(tempfile.mkdtemp(), "none.json"))
+    live = {"linked": True, "waveform": 1, "dial_hz": 7053000, "tx": False, "call": "EI6IZ"}
+    d = core.decide(cfg, live, False, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "view" and d[2] == "", "reporting off: only watching")
+    d = core.decide(cfg, live, True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "report" and d[2] == "RADEV1" and d[3] == 7053000 and d[0]["host"] == "qso.freedv.org",
+          "V1 on: reported as RADEV1 on qso.freedv.org at the dial frequency")
+    d = core.decide(cfg, dict(live, tx=True), True, "EI6IZ", "IO53hu", "v1")
+    check(d[4] is True, "transmitting is passed on")
+    d = core.decide(cfg, dict(live, waveform=2), True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "view" and "no server set" in d[5], "V2 with no v3 server: not reported, says why")
+    cfg2 = json.loads(json.dumps(cfg))
+    cfg2["servers"]["v3"].update(host="v3.example.org")
+    d = core.decide(cfg2, dict(live, waveform=2), True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "report" and d[2] == "RADEV2" and d[0]["host"] == "v3.example.org", "V2 with a v3 server: RADEV2")
+    d = core.decide(cfg, dict(live, waveform=0), True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "view" and "RADE is off" in d[5], "RADE off: not present")
+    d = core.decide(cfg, dict(live, linked=False), True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "view" and "not running" in d[5], "piHPSDR gone: not present")
+    d = core.decide(cfg, live, True, "", "IO53hu", "v1")
+    check(d[1] == "view", "no callsign: not present")
+    d = core.decide(cfg, live, True, "EI6IZ", "nonsense", "v1")
+    check(d[1] == "view", "bad grid: not present")
+    d = core.decide(cfg, None, False, "", "", "v3")
+    check(d[1] == "view" and d[0] is None, "watching a server with no address: nothing")
+    p = os.path.join(tempfile.mkdtemp(), "state.json")
+    json.dump({"running": 1, "updated": 1000.0, "waveform": 1}, open(p, "w"))
+    check(core.read_pihpsdr_state(p, now=1003.0)["linked"] is True, "state 3 s old: linked")
+    check(core.read_pihpsdr_state(p, now=1020.0)["linked"] is False, "state 20 s old: piHPSDR gone")
+    json.dump({"running": 0, "updated": 1000.0}, open(p, "w"))
+    check(core.read_pihpsdr_state(p, now=1001.0)["linked"] is False, "running=0: gone at once")
+    cp = os.path.join(tempfile.mkdtemp(), "c.json")
+    core.save_config(dict(cfg, reporting=True, callsign="X"), cp)
+    check("reporting" not in json.load(open(cp)) and "reporting" not in core.load_config(cp),
+          "reporting is never saved: always starts off")
+
+
+def link_flow():
+    print("link to a (mock) reporter")
+    s1, s2 = MockServer().start(), MockServer().start()
+    cfg = core.load_config(os.path.join(tempfile.mkdtemp(), "none.json"))
+    cfg["servers"]["v1"].update(host="127.0.0.1", port=s1.port, secure=False)
+    cfg["servers"]["v3"].update(host="127.0.0.1", port=s2.port, secure=False)
+    roster = core.Roster()
+    states = []
+    link = core.Link(roster, lambda n, d: None, lambda st, m: states.append(st), "pihpsdr-rade test")
+    live = {"linked": True, "waveform": 1, "dial_hz": 7053000, "tx": False}
+
+    def go(p, reporting=True, view="v1"):
+        srv, role, mode, freq, tx, why = core.decide(cfg, p, reporting, "EI6IZ", "IO53hu", view)
+        link.set_target(srv, role, "EI6IZ", "IO53hu", freq, mode, tx, "")
+        return why
+
+    go(live, reporting=False)
+    check(wait(lambda: s1.clients and s1.clients[0]["auth"] is not None), "watching: connects")
+    check(s1.clients[0]["auth"].get("role") == "view" and "callsign" not in s1.clients[0]["auth"],
+          "watching sends no identity")
+    check(wait(lambda: len(roster.snapshot()) == 1), "stations from the server appear")
+    st = roster.snapshot()[0]
+    check((st.callsign, st.freq, st.mode, st.transmitting, st.status) == ("VK5DGR", 7053000, "RADEV1", True, "Transmitting"),
+          "station data and status")
+    time.sleep(0.4)
+    check(s1.clients[0]["events"] == [], "watching emits nothing")
+
+    go(live, reporting=True)
+    check(wait(lambda: len(s1.clients) == 2 and s1.clients[1]["auth"] is not None), "reporting on: reconnects as reporter")
+    a = s1.clients[1]["auth"]
+    check(a.get("role") == "report" and a.get("callsign") == "EI6IZ" and a.get("grid_square") == "IO53hu"
+          and a.get("rx_only") is False and a.get("protocol_version") == 2 and a.get("version") == "pihpsdr-rade test",
+          "reporter identity: " + json.dumps(a))
+    ev = s1.clients[1]["events"]
+    check(wait(lambda: len(ev) >= 2), "sends its state once the server says connection_successful")
+    check(["freq_change", {"freq": 7053000}] in ev and ["tx_report", {"mode": "RADEV1", "transmitting": False}] in ev,
+          "freq_change 7053000 and tx_report RADEV1/not transmitting")
+    check(not any(e[0] == "rx_report" for e in ev), "no receive reports")
+    go(dict(live, tx=True))
+    check(wait(lambda: ["tx_report", {"mode": "RADEV1", "transmitting": True}] in ev), "transmit start is reported")
+    go(dict(live, tx=True, dial_hz=7054000))
+    check(wait(lambda: ["freq_change", {"freq": 7054000}] in ev), "frequency change is reported")
+    n = len(ev)
+    go(dict(live, tx=True, dial_hz=7054000))
+    time.sleep(0.3)
+    check(len(ev) == n, "unchanged state is not sent again")
+    go(dict(live, tx=False, dial_hz=7054000))
+    check(wait(lambda: ev.count(["tx_report", {"mode": "RADEV1", "transmitting": False}]) == 2), "transmit end is reported")
+
+    go(dict(live, waveform=2, dial_hz=14236000))
+    check(wait(lambda: s1.clients[1]["closed"] or s1.clients[1]["left"]), "V2 selected: left the V1 reporter")
+    check(wait(lambda: s2.clients and s2.clients[0]["auth"] is not None), "joined the v3 reporter")
+    check(s2.clients[0]["auth"].get("role") == "report", "as a reporter")
+    check(wait(lambda: ["tx_report", {"mode": "RADEV2", "transmitting": False}] in s2.clients[0]["events"]),
+          "reported as RADEV2")
+    go(dict(live, waveform=0))
+    check(wait(lambda: s2.clients[0]["closed"] or s2.clients[0]["left"]), "RADE off: no longer present on v3")
+    check(wait(lambda: len(s1.clients) == 3 and s1.clients[2]["auth"] is not None
+               and s1.clients[2]["auth"].get("role") == "view"), "watching again, no identity")
+    go(dict(live, waveform=1))
+    check(wait(lambda: len(s1.clients) == 4), "V1 again with reporting still on: present again")
+    go(None)
+    check(wait(lambda: s1.clients[3]["closed"] or s1.clients[3]["left"]), "piHPSDR gone: no longer present")
+    link.close()
+    s1.stop(); s2.stop()
+
+
+def live():
+    print("real reporter, watching only")
+    roster = core.Roster()
+    st = []
+    link = core.Link(roster, lambda n, d: None, lambda s, m: st.append(s), "pihpsdr-rade test")
+    link.set_target(core.DEFAULT_SERVERS["v1"], "view")
+    ok = wait(lambda: len(roster.snapshot()) > 0, 15)
+    check(ok, "qso.freedv.org lists stations (%d)" % len(roster.snapshot()))
+    if ok:
+        s = roster.snapshot()[0]
+        print("       e.g. %s %s %.4f MHz %s %s" % (s.callsign, s.grid, s.freq / 1e6, s.mode, s.status))
+    link.close()
+
+
+if __name__ == "__main__":
+    places()
+    decisions()
+    link_flow()
+    if "--live" in sys.argv:
+        live()
+    print("FAILED %d" % fails if fails else "all passed")
+    sys.exit(1 if fails else 0)
