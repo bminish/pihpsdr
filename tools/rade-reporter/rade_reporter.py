@@ -72,7 +72,7 @@ class App(Gtk.Window):
         self.connect("delete-event", self._quit)
         self._build()
         GLib.timeout_add(500, self._tick)
-        GLib.idle_add(self._tick)
+        GLib.idle_add(lambda: (self._tick(), False)[1])      # once, now; a callback returning True here would run forever
 
     # ------------------------------------------------------------------ build
     def _build(self):
@@ -175,7 +175,7 @@ class App(Gtk.Window):
             col.set_sort_column_id(numeric.get(i, i))
             self.tree.append_column(col)
         self.tree.connect("button-press-event", self._on_tree_click)
-        self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # newest first
+        self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # C_UPDV is minus the update time: newest first
         sw = Gtk.ScrolledWindow()
         sw.add(self.tree)
         v.pack_start(sw, True, True, 0)
@@ -304,6 +304,7 @@ class App(Gtk.Window):
         self._tick()
 
     def _quit(self, *_):
+        self.hide()                       # gone from the screen at once; the rest is tidying up
         self.cfg["size"] = list(self.get_size())
         core.save_config(self.cfg)
         self.link.close()
@@ -313,6 +314,7 @@ class App(Gtk.Window):
     # --------------------------------------------------------------- the loop
     current_key = None
     pihpsdr = None
+    _last_fill = 0.0
 
     def _tick(self):
         self.pihpsdr = core.read_pihpsdr_state()
@@ -322,7 +324,7 @@ class App(Gtk.Window):
         # An identity that is still being typed is not announced: it has to stand still for 1.5 s,
         # or the server would see a new station for every key press.
         ident = (self.call_e.get_text().strip().upper(), self.grid_e.get_text().strip().upper())
-        now = time.time()
+        now = now_t = time.time()
         if ident != getattr(self, "_ident", None):
             self._ident, self._ident_since = ident, now
         if now - self._ident_since >= 1.5:
@@ -336,7 +338,9 @@ class App(Gtk.Window):
         self._rx_note(p, srv, role, mode, call)
         self.why.set_text(why)
         self.qsy_b.set_sensitive(role == "report")
-        if self.dirty or True:
+        if self.dirty or now_t - self._last_fill >= 3.0:
+            self.dirty = False
+            self._last_fill = now_t
             self._fill()
         link = ("piHPSDR: RADE %s%s, %.4f MHz%s" % (
             {0: "off", 1: "V1", 2: "V2"}.get(int(p.get("waveform", 0)), "?"),
@@ -385,32 +389,44 @@ class App(Gtk.Window):
         self.rxinfo.set_text("Receiving: %s    |    %s" % (live, self._heard_note or "no call heard yet"))
 
     def _fill(self):
-        sel = self._selected()
-        sid = sel[C_SID] if sel else None
+        """Bring the list up to date, changing only what changed (rebuilding it, as before, re-sorted
+        and re-filtered the whole list for every row, several times a second)."""
         now = time.time()
         me = self.call_e.get_text().strip().upper()
         mygrid = self.grid_e.get_text().strip()
-        self.store.clear()
-        dial = (self.pihpsdr or {}).get("dial_hz", 0)
-        for s in sorted(self.roster.snapshot(), key=lambda x: x.callsign):
+        self._dial = (self.pihpsdr or {}).get("dial_hz", 0)
+        rows = {r[C_SID]: r.iter for r in self.store}
+        seen = set()
+        structural = False
+        filter_cols = False
+        for s in self.roster.snapshot():
             dbg = core.distance_bearing(mygrid, s.grid)
             ts = iso_to_epoch(s.last_update)
-            age = now - ts if ts else 0
             bg = "#d6ecff" if me and s.callsign.upper() == me else ("#ffe7c2" if s.transmitting else None)
             snr = "" if s.rx_snr is None else ("%+d" % round(s.rx_snr))
-            self.store.append([s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
-                               s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
-                               s.message, hhmm(s.last_tx), s.rx_call, snr, age_text(age) if ts else "",
-                               s.sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
-                               s.freq / 1e6 if s.freq else 0.0, s.rx_snr if s.rx_snr is not None else -99.0,
-                               age if ts else 1e9])
-        self._dial = dial
-        self._refilter()
-        if sid:
-            for r in self.sort:
-                if r[C_SID] == sid:
-                    self.tree.get_selection().select_iter(r.iter)
-                    break
+            vals = [s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
+                    s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
+                    s.message, hhmm(s.last_tx), s.rx_call, snr, age_text(now - ts) if ts else "",
+                    s.sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
+                    s.freq / 1e6 if s.freq else 0.0, s.rx_snr if s.rx_snr is not None else -99.0,
+                    -ts if ts else 0.0]            # newest update sorts first; a time, not an age, so it keeps still
+            seen.add(s.sid)
+            it = rows.get(s.sid)
+            if it is None:
+                self.store.append(vals)
+                structural = True
+                continue
+            cur = self.store[it]
+            for i, v in enumerate(vals):
+                if cur[i] != v:
+                    self.store.set_value(it, i, v)
+                    if i in (C_MHZV, C_UPDV):
+                        filter_cols = True
+        for sid, it in rows.items():
+            if sid not in seen:
+                self.store.remove(it)
+                structural = True
+        self._refilter(structural or filter_cols)
 
     def _visible(self, model, it, _d):
         dial, band, tracking, by_band, idle = self._fp
@@ -422,15 +438,17 @@ class App(Gtk.Window):
                 return False
             if not by_band and abs(f - dial) > 1000:
                 return False
-        if idle and model[it][C_UPDV] > idle:
+        if idle and model[it][C_UPDV] and time.time() + model[it][C_UPDV] > idle:
             return False
         return True
 
-    def _refilter(self):
+    def _refilter(self, force=True):
         idle_t = self.idle.get_active_text()
-        self._fp = (getattr(self, "_dial", 0), self.band.get_active_text(), self.track.get_active(),
-                    self.t_band.get_active(), 0 if idle_t in (None, "off") else int(idle_t.split()[0]) * 60)
-        self.filt.refilter()
+        fp = (getattr(self, "_dial", 0), self.band.get_active_text(), self.track.get_active(),
+              self.t_band.get_active(), 0 if idle_t in (None, "off") else int(idle_t.split()[0]) * 60)
+        if force or fp != self._fp or fp[4]:
+            self._fp = fp
+            self.filt.refilter()
 
 
 def single_instance():

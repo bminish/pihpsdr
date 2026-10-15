@@ -9,6 +9,7 @@ auth data to open the default namespace, "42[event, data]" for events.
 Callbacks run on the client's own thread; hand work to the GUI thread yourself.
 """
 import json
+import socket
 import ssl
 import threading
 import time
@@ -44,11 +45,16 @@ class SioClient:
             except Exception:
                 pass
             try:
-                ws.close()
+                # wake the thread that is waiting in recv() now, rather than after its long timeout
+                ws.sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                ws.close(timeout=0.3)
             except Exception:
                 pass
         if self._thread is not None and self._thread is not threading.current_thread():
-            self._thread.join(timeout=3)
+            self._thread.join(timeout=1.0)
 
     def emit(self, event, data=None):
         msg = [event] if data is None else [event, data]
