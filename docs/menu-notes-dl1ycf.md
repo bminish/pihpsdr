@@ -219,10 +219,17 @@ LC-056, a pure move:
 - `diversity_auto.c` now includes `client_server.h` and `rx_panadapter.h`;
   `diversity_menu.c` drops `rx_panadapter.h` (it was used only by the status
   adopter).
+- **Settled 2026-10-15:** you took this with the repaint in
+  `diversity_client_set_status()` removed (a panadapter redraw has to wait for
+  complete pixel samples, on the radio and on a client). We have taken your
+  form, so `rx_panadapter.h` is no longer included there either and our test
+  stubs for `rx_panadapter_update()` are gone. One consequence, not measured:
+  a client that gets no further spectrum packet after diversity goes off shows
+  the last frame, overlay included, until one arrives.
 - Dropped from the text: the commented-out `//div_populate_from_settings();`
   and "and show them" in the first comment.
-- Our test programs, which link `diversity_auto.c` on their own, get a stub
-  for `rx_panadapter_update()`. Nothing else in the tree is affected.
+- Our test programs, which link `diversity_auto.c` on their own, had a stub
+  for `rx_panadapter_update()` (gone since 2026-10-15). Nothing else in the tree is affected.
 
 **What the menu does on this path: nothing.** An open menu is not repainted
 when a settings block arrives (`diversity_menu_refresh()` went with

@@ -27,6 +27,32 @@ changes it, we take upstream.
 - `diversity_menu_refresh()` and `div_populate_from_settings()` are gone
   upstream; nothing updates an open menu from a settings block.
 
+## To do: objective order (LC-059)
+
+Asked 2026-10-15: the Diversity menu should list the objectives as **Manual,
+Sum, Null, Best**. Today the combo is Manual, Null, Sum, Best, because the
+combo row is the `DIV_AUTO_*` enum value (`radio.h`). Direction: reorder the
+enum (`DIV_MANUAL` stays 0) rather than map rows, so the combo needs nothing
+but its four `append_text` lines in the new order. No code yet. What it costs,
+because the number is stored and sent:
+
+| Where | Effect | Proposed |
+|---|---|---|
+| props: `diversity_auto_mode` and `diversity_group[N].mode` | an old file loads Null and Sum swapped | a marker key written on save; if absent on load, swap 1 and 2 in the global value and every group |
+| wire: `uint8` in the settings and status/setting commands | a radio and a client of different builds swap them | bump `CLIENT_SERVER_VERSION` (his file) |
+| `.divc` captures: `auto_mode` in each block header (155 Sum, 15 Null, 1 Best in the set) | `run_ref` replays the header mode by default | bump `DIVCAP_VERSION` 4 to 5; the reader swaps 1 and 2 for version 4 and below |
+
+Decisions still open: (1) also reorder `DIV_REF_*` so the table `div_ref_rows[]`
+in `diversity_menu.c` goes (the reference enum order is Band, Carrier, RADE V1,
+Digital, CW; the menu shows Band, CW, Digital, Carrier, RADE V1): same costs,
+four of five values move; recommended not now. (2) Migrate old props files, or
+accept a one-time reset (he dropped such migrations before: `GAP_REF_SCHEME`).
+(3) The version bump needs his agreement. Checks when done: a `test_props`
+case loading an old-order file, one old capture of each mode replayed to the
+same weights, each combo row against the running mode on screen. It would
+touch `radio.h` and `diversity_menu.c`, which he owns, so it is written up for
+him in `menu-notes-dl1ycf.md` and recorded as LC-059.
+
 ## Flagged for a later patch
 
 - **Upstream text still says ADC0/ADC1** (for dl1ycf, not changed
@@ -50,14 +76,14 @@ changes it, we take upstream.
   menu open. Taken from upstream for now (decided 2026-10-01). The
   intended cure is E5 in [ownership.md](ownership.md#review-e1-to-e8): the per-group settings move
   into `profiles.c`.
-- Upstream leftovers from `f5a0ce9c`, removed by LC-058: the declarations of
-  `diversity_auto_ref_store()` / `_recall()` and the mention of `DIV_REF_SCHEME`
-  in `diversity_auto.h`.
+- Upstream leftovers from `f5a0ce9c`, removed by LC-058 (in his tree since
+  `07ae1f56`): the declarations of `diversity_auto_ref_store()` / `_recall()`
+  and the mention of `DIV_REF_SCHEME` in `diversity_auto.h`.
 
-## After the 2026-10-08 reconcile
+## After the 2026-10-15 reconcile
 
-Nothing waits on the owner: the rebuilt `TEST` was force-pushed on
-2026-10-14 after the second rebase. The rest is settled:
+Nothing local is pending: the rebuilt `TEST` waits only for the owner's OK to
+force-push. The rest is settled:
 [upstream-reconcile.md](upstream-reconcile.md#decisions).
 
 ## Not carried
@@ -117,7 +143,7 @@ as done in the findings but are on `feature/auto-diversity` only:
 
 Features and documentation will be brought in from
 `feature/auto-diversity` one at a time. Each one gets the next `LC`
-number (LC-056 onwards), a commit (or a short run of commits) that follows the
+number (LC-059 onwards), a commit (or a short run of commits) that follows the
 [house rules](rules.md), a row in the register and a write-up in the
 matching topic file, all in the same push.
 
