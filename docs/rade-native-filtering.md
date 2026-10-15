@@ -26,7 +26,7 @@ centre 1500).
 
 ## What was scored
 
-13 receive captures (`_rx48.wav`, 9 to 628 s each; 14.236 and 18.118 MHz normal, 1.987 MHz inverted) and
+13 receive captures (`_rx48.wav`, 55 to 628 s each; 14.236 and 18.118 MHz normal, 1.987 MHz inverted) and
 the 3 transmit captures (`_tx.wav` at 192 kHz, 3 s, 144 s and 195 s of transmitting, all 1.987 MHz LSB,
 inverted). Receive, from the capture's own stats: sync 37 to 100 % of the capture, median SNR -2.3 to 11.7 dB,
 callsigns decoded from an end-of-over frame in 3 of the 13 (that needs about 10 dB). The off-air Kiwi sessions
@@ -73,8 +73,8 @@ above fail it, a clean offline run passes at +1468 Hz and -0.1 dB).
 
 **1b. How much it mattered**: little. The same 40 s of speech, flat vs tilted, noise added, decoded by librade:
 feature error 0.038 vs 0.041 at 0 dB SNR, 0.027 vs 0.028 at 6 dB, 0.025 vs 0.026 at 9 dB (in 3 kHz); sync 97 %
-either way. White noise only; a fading channel could be less forgiving. It does break the principle (190 Hz of
-centre, and it costs the station nothing but is wrong for anyone listening with a narrower filter).
+either way. White noise only; a fading channel could be less forgiving. It still breaks the principle (190 Hz
+of centre) and should not be there.
 
 ## 2. Is 1.6 kHz right?
 
@@ -115,9 +115,9 @@ Same method, shifting the station by a whole number of Hz and keeping the 1.6 kH
 | 14.236 MHz sync % | 3 | 3 | 30 | | 62 | 65 | **99** | **99** | **99** | 66 | 56 | 13 |
 | 1.987 MHz sync % | | 5 | 48 | 59 | **99** | **99** | **99** | 59 | 53 | 34 | 5 | |
 
-(+/-50 Hz and the middle: 99 % with feature error 0.000 in both.) The edge sits at about 55 to 65 Hz on the
-side where it is cleanest and 55 to 60 on the other; beyond it the decode is partial and wrong (feature error
-1.0 to 1.9, i.e. garbage). **The same cliff at 900, 1000, 1200, 1400, 1600 and 2000 Hz**, so it is the modem's
+(+/-50 Hz and the middle: 99 % with feature error 0.000 in both.) Full decode runs from about -50 to +65 Hz on
+the 14.236 MHz capture and -60 to +55 Hz on the 1.987 MHz one; beyond that the decode is partial and wrong
+(feature error 1.0 to 1.9, i.e. garbage). **The same cliff at 900, 1000, 1200, 1400, 1600 and 2000 Hz**, so it is the modem's
 acquisition (`RADE_ACQ_FRANGE` is 100 Hz, in practice 60), not our filter. A station more than about 60 Hz off
 will not decode at all; the tuning indication matters, and a search over frequency while out of sync
 (parallel offsets of +/-100 Hz) would extend the reach; not built.
