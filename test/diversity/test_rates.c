@@ -67,11 +67,6 @@ void t_print(const char *fmt, ...) {
 const char *getProperty(const char *n) { (void)n; return NULL; }
 void setProperty(const char *n, const char *v) { (void)n; (void)v; }
 double myatof(const char *s) { return atof(s); }
-/*
- * The client's panadapter repaint, which diversity_client_set_status()
- * calls. There is no panadapter here.
- */
-void rx_panadapter_update(RECEIVER *rx) { (void)rx; }
 
 static int fails = 0;
 
