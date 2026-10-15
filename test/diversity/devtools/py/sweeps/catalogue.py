@@ -11,7 +11,7 @@ for p in sorted(glob.glob('captures/*.divc')):
         size=os.path.getsize(p)
         nb=(size-HDR)//(BLK+h['block_bytes']) if h['block_bytes'] else 0
         dur=nb*h['nfft']/h['rate']
-        rows.append((os.path.basename(p),h['rate'],h['nfft'],nb,round(dur,1),REFS.get(m['ref'],m['ref']),m['mode'],m['auto_mode'],round(m['tau'],2)))
+        rows.append((os.path.basename(p),h['rate'],h['nfft'],nb,round(dur,1),ref_name(m['ref'],h['version']),m['mode'],mode_name(m['auto_mode'],h['version']),round(m['tau'],2)))
     except Exception as e:
         print('ERR',p,e,file=sys.stderr)
 for r in rows: print(*r,sep='\t')

@@ -94,7 +94,7 @@ static int check(const char *what, int stored, int scheme, int want) {
   snprintf(schemeval, sizeof(schemeval), "%d", scheme);
   div_auto_ref = -1;
   diversity_auto_restore_state();
-  const char *names[] = { "Window", "Carrier", "RADE V1", "Digital I/Q", "CW" };
+  const char *names[] = { "Window", "CW", "Digital I/Q", "Carrier", "RADE V1" };
   const int got = div_auto_ref;
   const int ok = (got == want);
   char sch[8];
@@ -394,6 +394,35 @@ static int test_averaging_and_bins(void) {
   return bad + pol == 0;
 }
 
+/*
+ * The numbers are what the props file and a client hold, and the Diversity
+ * menu's rows are these values in order (LC-059, LC-060), so the order is
+ * pinned: a change here is a change to every stored file and to both lists
+ * in the menu, and has to be made on purpose.
+ */
+static int test_numbering(void) {
+  int ok = 1;
+  const struct { const char *name; int got, want; } n[] = {
+    { "Manual",      DIV_MANUAL,         0 },
+    { "Sum",         DIV_AUTO_SUM,       1 },
+    { "Null",        DIV_AUTO_NULL,      2 },
+    { "Best",        DIV_AUTO_BEST,      3 },
+    { "Window",      DIV_REF_BAND,       0 },
+    { "CW",          DIV_REF_CW,         1 },
+    { "FSK/Digital", DIV_REF_DIGITAL_IQ, 2 },
+    { "Carrier",     DIV_REF_CARRIER,    3 },
+    { "RADE V1",     DIV_REF_RADE_V1,    4 },
+  };
+
+  for (size_t i = 0; i < sizeof(n) / sizeof(n[0]); i++) {
+    const int good = (n[i].got == n[i].want);
+    printf("  %-12s %d (want %d) %s\n", n[i].name, n[i].got, n[i].want, good ? "OK" : "FAIL");
+    ok &= good;
+  }
+
+  return ok;
+}
+
 int main(void) {
   memset(&rx0, 0, sizeof(rx0));
   memset(vfo, 0, sizeof(vfo));
@@ -414,11 +443,15 @@ int main(void) {
 #endif
   }
   printf("\n");
+  printf("numbering (the menu order)\n");
+  ok &= test_numbering();
+  printf("\n");
   /* scheme 2: values mean themselves */
-  ok &= check("new window",   0, 2, DIV_REF_BAND);
-  ok &= check("new carrier",  1, 2, DIV_REF_CARRIER);
-  ok &= check("new radev1",   2, 2, DIV_REF_RADE_V1);
-  ok &= check("new digital",  3, 2, DIV_REF_DIGITAL_IQ);
+  ok &= check("new window",   DIV_REF_BAND,       2, DIV_REF_BAND);
+  ok &= check("new cw",        DIV_REF_CW,         2, DIV_REF_CW);
+  ok &= check("new digital",  DIV_REF_DIGITAL_IQ, 2, DIV_REF_DIGITAL_IQ);
+  ok &= check("new carrier",  DIV_REF_CARRIER,    2, DIV_REF_CARRIER);
+  ok &= check("new radev1",   DIV_REF_RADE_V1,    2, DIV_REF_RADE_V1);
   printf("\ncarrier follow-filter migration (scheme 3)\n");
 #ifdef GAP_CARRIER_FOLLOW
   ok &= known_gap(0, GAP_CARRIER_FOLLOW);
