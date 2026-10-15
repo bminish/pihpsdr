@@ -409,7 +409,8 @@ RADE_OPUS=$(RADE_BLD)/build_opus-prefix/src/build_opus
 RADE_NATIVE_OPTIONS=-D RADE_NATIVE
 RADE_NATIVE_INCLUDE=-I$(RADE_SRC) -I$(RADE_OPUS) -I$(RADE_OPUS)/include \
 	-I$(RADE_OPUS)/celt -I$(RADE_OPUS)/dnn
-RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src)
+RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src) \
+	$(RADE_OPUS)/.libs/libopus.a
 endif
 
 ##############################################################################
@@ -725,7 +726,7 @@ DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
 endif
 
 ifeq ($(RADE_NATIVE),ON)
-OBJS    += src/rade_native.o
+OBJS    += src/rade_native.o src/rade_native_menu.o
 endif
 
 ##############################################################################
@@ -1346,6 +1347,8 @@ src/waterfall.o: src/receiver.h
 src/MacTTS.o: src/message.h
 
 src/rade_native.o: src/rade_native.h
+src/rade_native_menu.o: src/rade_native.h src/rade_native_menu.h
+src/receiver.o: src/rade_native.h
 # librade's headers include a "nnet.h" of their own (opus), which clashes with
 # wdsp/nnet.h. Only this object sees librade, with its own include path.
 src/rade_native.o: INCLUDES=$(RADE_NATIVE_INCLUDE)
