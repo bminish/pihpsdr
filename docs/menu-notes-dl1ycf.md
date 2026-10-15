@@ -274,3 +274,40 @@ because `DIVT` starts from exactly that state. It follows within one tick
 (250 ms). No call from `radio.c` into the menu was added; that is the route
 that went with `f5a0ce9c`.
 
+---
+
+## The objective and reference lists are in enum order (LC-059, LC-060)
+
+Two small changes, one request (the objectives read Manual, Sum, Null, Best),
+for you to take or not. They touch `radio.h`, `diversity_auto.h`,
+`diversity_auto.c` (one line) and `diversity_menu.c`.
+
+- **LC-059.** `DIV_AUTO_*` in `radio.h` is Manual (0), Sum, Null, Best. The
+  four `append_text` lines in the objective combo are in the same order. The
+  combo already used the enum value as its row, so nothing is mapped.
+- **LC-060.** `DIV_REF_*` in `diversity_auto.h` is Window (0), CW, FSK/Digital,
+  Carrier, RADE V1, which is the order the "Measure on" list already showed.
+  That removes `div_ref_rows[]`, `div_ref_to_row()` and `div_row_to_ref()`: a
+  label array indexed by the enum fills the combo and a row is a reference.
+  `ref_changed_cb()` keeps a guard for "no row selected".
+- **The one line in the engine:** `div_settings_validate()` checked
+  `s->ref > DIV_REF_CW`, written when CW was the last value. It is
+  `DIV_REF_RADE_V1` now. Anyone reordering the enum again has to move that
+  check, which is why the comment in the header says the last enumerator is the
+  one it names.
+
+**What changes for stored data.** Sum and Null swap numbers (1 and 2), and
+four reference numbers move (Carrier 1 to 3, RADE V1 2 to 4, FSK/Digital 3 to
+2, CW 4 to 1). We did not migrate: a props file written before this loads
+with those read the other way until it is reset, and we accept that on TEST.
+You may want the same, or a marker key; it is your file format.
+
+**The question that is yours.** `CLIENT_SERVER_VERSION` is unchanged, so a
+radio and a client built on either side of this change swap Null and Sum and
+move four references without either noticing. If you take the change, bumping
+`CLIENT_SERVER_VERSION` makes a mismatched pair refuse to connect instead. We
+have not touched `client_server.h`.
+
+Not checked on screen: each row of both lists against the objective or
+reference it starts, and the Invert button's Null/Sum swap.
+

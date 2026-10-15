@@ -321,3 +321,8 @@ Newest first.
   the owner's OK (`302a9149` to `2a0dd63c`, `--force-with-lease`). Decided to keep
   DIVCAP as a local option that never goes upstream. LC-059 (objective order
   Manual, Sum, Null, Best) discussed and recorded as a to-do.
+- 2026-10-15: LC-059 and LC-060: the objective list (Manual, Sum, Null, Best)
+  and the "Measure on" list are the enum order, so the menu needs no row
+  mapping and `div_ref_rows[]` is gone. No props migration (decided: a test
+  branch takes the break once); capture format 5 (LT-033); the wire is not
+  bumped (his file, open). `reset_diversity_props.py` added (LT-034).
