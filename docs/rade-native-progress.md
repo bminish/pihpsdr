@@ -7,7 +7,7 @@ Updated with every commit that moves the work. Newest entry first.
 
 | Phase | State |
 |---|---|
-| 0 Build/link `librade`, T-0, T-1, T-11 | in progress: librade builds, T-0 and T-1 done, make option and T-11 to do |
+| 0 Build/link `librade`, T-0, T-1, T-11 | in progress: librade builds, T-0, T-1, T-11 (first pass) done; `RADE_NATIVE` make option to do |
 | 1 Harness | not started |
 | 2 RX | not started |
 | 3 Tuning, SNR, logging | not started |
@@ -15,6 +15,13 @@ Updated with every commit that moves the work. Newest entry first.
 | 5 Extras | not started |
 
 ## Log
+
+- 2026-10-15 (T-11): `wdsp_probe.c` + `t11_wdsp_probe.py` run tones through
+  the vendored WDSP RXA/TXA channels set up as piHPSDR does it. Results
+  below. Needed: `WDSPwisdom()` (without wisdom FFT planning takes
+  minutes), `dsp_size = 2 * buffer_size`, `RXASetPassband` (not
+  `SetRXABandpassFreqs` alone: it leaves `nbp0` at its default and the
+  output is ~ -130 dB).
 
 - 2026-10-15 (Phase 0): `tools/rade/build_rade.sh` builds `librade`
   from `freedv/rade_c` pinned at `b3e3748` into `third_party/rade_c-*`
@@ -80,8 +87,30 @@ different. Listen to `out/*.dec.wav` from both runs before relying on it.
 - V2's library BPF (300..2700 Hz) is on by default; with it off the
   signal is already within 1070..1898 Hz.
 
+**T-11, WDSP RXA/TXA with complex tones** (`test/rade_native/out/t11.txt` after a run)
+
+- RX panel select 3, copy 0: output stays complex and one-sided. With
+  copy 1 (I copied to Q) it collapses to a real signal (50/50 split).
+- TX panel select 3: a complex input passes through TXA as a complex,
+  one-sided output; bp0 gain is 6.0 dB (the 2.0 in `TXASetupBPFilters`).
+  The speech stages being on or off, and ALC on or off, made no
+  difference at this single-tone level; the level and OFDM behaviour of
+  ALC / overshoot control is T-10, not done.
+- **Sign convention: WDSP's positive passband selects the tone at
+  negative numpy frequency (`I + jQ = exp(+jwt)`), on RX and TX.** So a
+  conjugation is needed at both interfaces to and from `librade`, on top
+  of Invert. Recorded in plan section 3.
+- *Not yet done in T-11*: a `rade_tx` frame through TXA, a RADE signal
+  through RXA, group delay, the default `copy` value piHPSDR actually
+  leaves on the RX panel (WDSP creates the panel with copy 0, and
+  `SetRXAPanelCopy` is only called from mode changes: to check in
+  `receiver.c`/`rx_mode_changed`), and the AGC level behaviour (with top
+  gain 80 dB a 0.1 amplitude tone came out +31 dB, i.e. the AGC is
+  working on signals at ordinary IQ levels).
+
 ## Next
 
 1. `RADE_NATIVE` make option linking librade (no engine code yet).
-2. T-11: WDSP I/Q probe against the vendored `wdsp/`.
+2. T-11 second pass: RADE signals through RXA/TXA (T-2 round trip needs
+   this), group delay, piHPSDR's RX panel `copy`.
 3. Listen to the mirrored V2 decode.
