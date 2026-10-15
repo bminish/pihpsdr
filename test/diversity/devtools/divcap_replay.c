@@ -19,6 +19,8 @@
 #include <string.h>
 #include <math.h>
 
+#include "radio.h"
+#include "diversity_auto.h"
 #include "rade_correlator.h"
 #include "divcap_replay.h"
 
@@ -322,6 +324,29 @@ done:
   return 1;
 }
 
+
+int divcap_mode(const struct divcap_header *h, int recorded) {
+  if (h->version >= 5u) { return recorded; }
+
+  switch (recorded) {            /* Manual 0, Null 1, Sum 2, Best 3 */
+  case 1:  return DIV_AUTO_NULL;
+  case 2:  return DIV_AUTO_SUM;
+  case 3:  return DIV_AUTO_BEST;
+  default: return DIV_MANUAL;
+  }
+}
+
+int divcap_ref(const struct divcap_header *h, int recorded) {
+  if (h->version >= 5u) { return recorded; }
+
+  switch (recorded) {            /* Window 0, Carrier 1, RADE V1 2, Digital 3, CW 4 */
+  case 1:  return DIV_REF_CARRIER;
+  case 2:  return DIV_REF_RADE_V1;
+  case 3:  return DIV_REF_DIGITAL_IQ;
+  case 4:  return DIV_REF_CW;
+  default: return DIV_REF_BAND;
+  }
+}
 
 FILE *divcap_open(const char *path, struct divcap_header *h, long *data_start) {
   FILE *f = fopen(path, "rb");

@@ -48,7 +48,15 @@
 // rather than pretending to be portable.
 //
 #define DIVCAP_MAGIC        "PIHPDIVC"
-#define DIVCAP_VERSION      4u
+#define DIVCAP_VERSION      5u
+//
+// Version 5 renumbered two enums the block record holds, with no change to
+// the layout (LC-059, LC-060). `auto_mode` was Manual 0, Null 1, Sum 2,
+// Best 3 and is Manual 0, Sum 1, Null 2, Best 3; `ref` was Window 0, Carrier
+// 1, RADE V1 2, FSK/Digital 3, CW 4 and is Window 0, CW 1, FSK/Digital 2,
+// Carrier 3, RADE V1 4. A file of version 4 or below holds the old numbers:
+// a reader converts them by the version (divcap_mode(), divcap_ref() in the
+// replay tool; py/divc.py), and the files themselves are never rewritten.
 //
 // Version 1 had no attenuator fields: att0/att1 occupied the pad after
 // weighting and read as zero. A v1 file is still replayable - the block
@@ -200,7 +208,7 @@ struct divcap_block {
   // would be testing that derivation rather than the correlator.
   //
   int32_t  expect_bank;
-  int32_t  auto_mode;      // DIV_AUTO_NULL / DIV_AUTO_SUM, the objective
+  int32_t  auto_mode;      // DIV_AUTO_*, the objective (numbering by file version)
   double   frame_off;
   double   tau;
   double   hang;

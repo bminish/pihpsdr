@@ -17,7 +17,23 @@ OFF_OFFSET, OFF_SIDETONE, OFF_MODE = 32, 40, 48
 OFF_FILTER_LOW, OFF_FILTER_HIGH, OFF_REF = 52, 56, 60
 OFF_WEIGHTING, OFF_AUTO_MODE, OFF_TAU = 68, 100, 112
 
-REFS = {0: 'band', 1: 'carrier', 2: 'rade', 3: 'digital', 4: 'cw'}
+# DIV_REF_* by number as the engine has them now (version 5 and later) ...
+REFS = {0: 'band', 1: 'cw', 2: 'digital', 3: 'carrier', 4: 'rade'}
+# ... and as they were in a capture of version 4 or below (before LC-060).
+REFS_V4 = {0: 'band', 1: 'carrier', 2: 'rade', 3: 'digital', 4: 'cw'}
+# DIV_AUTO_* as names: now, and in a capture of version 4 or below (LC-059).
+MODES = {0: 'manual', 1: 'sum', 2: 'null', 3: 'best'}
+MODES_V4 = {0: 'manual', 1: 'null', 2: 'sum', 3: 'best'}
+
+
+def ref_name(ref, version):
+    """The reference's name; `version` is the capture's format version."""
+    return (REFS_V4 if version < 5 else REFS).get(ref, ref)
+
+
+def mode_name(mode, version):
+    """The objective's name; `version` is the capture's format version."""
+    return (MODES_V4 if version < 5 else MODES).get(mode, mode)
 
 
 def open_divc(path):
