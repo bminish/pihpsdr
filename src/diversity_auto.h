@@ -41,19 +41,25 @@
 //
 // div_auto_ref: what part of the spectrum the decision is taken from
 //
+// The order is the order of the "Measure on" list in the Diversity menu,
+// whose rows are these values: general purpose Window first, then the
+// references for particular signals in the order an operator tends to meet
+// them.
+//
 enum {
   DIV_REF_BAND = 0,   // all bins in the analysis window ("A")
-  DIV_REF_CARRIER,    // the carrier bin only, found by our own tracker ("B")
-  DIV_REF_RADE_V1,    // RADE V1 pilot correlation + MVDR
+  DIV_REF_CW,         // CW / Morse: the keyed tone in the passband
   DIV_REF_DIGITAL_IQ, // occupied bins in the window, split, then MVDR
-  DIV_REF_CW          // CW / Morse: the keyed tone in the passband
+  DIV_REF_CARRIER,    // the carrier bin only, found by our own tracker ("B")
+  DIV_REF_RADE_V1     // RADE V1 pilot correlation + MVDR; the last one
 };
 
 //
-// New references go on the end. The value is what is written to the
-// props file, so inserting one in the middle - or removing one, as the
-// RADE passband reference was - silently changes what an existing file
-// means.
+// The value is what is written to the props file and goes over the wire, so
+// a reference that is added goes on the end, and the menu and the range
+// check in div_settings_validate() follow it. Inserting one in the middle -
+// or removing one, as the RADE passband reference was - silently changes
+// what an existing file means.
 //
 
 extern int    div_auto_ref;
