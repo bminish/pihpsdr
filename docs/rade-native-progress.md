@@ -7,8 +7,8 @@ Updated with every commit that moves the work. Newest entry first.
 
 | Phase | State |
 |---|---|
-| 0 Build/link `librade`, T-0, T-1, T-11 | in progress: librade builds, T-0, T-1, T-11 (first pass) done; `RADE_NATIVE` make option done |
-| 1 Harness | not started |
+| 0 Build/link `librade`, T-0, T-1, T-11 | done: librade builds, T-0, T-1, T-11, `RADE_NATIVE` make option |
+| 1 Harness | started: T-11b chain test works; T-2 channels next |
 | 2 RX | not started |
 | 3 Tuning, SNR, logging | not started |
 | 4 TX | not started |
@@ -124,9 +124,46 @@ different. Listen to `out/*.dec.wav` from both runs before relying on it.
   80 dB a 0.1 amplitude tone came out +31 dB, i.e. the AGC is working on
   signals at ordinary IQ levels).
 
+**T-11 second pass: a RADE signal through WDSP TX and RX** (`t11b_chain.py`, no noise yet)
+
+Chain: features, `rade_tx`, x6 up, conj, TXA (DIGU, panel select 3,
+speech stages off, filter 675..2275 Hz V1 / 1000..2000 Hz V2), RXA (same
+edges, panel copy 0, AGC medium/top 80 dB), conj, /6, `rade_rx`. Measure:
+decoded-vs-transmitted vocoder features, normalised error (no vocoder
+involved), 5 s of speech.
+
+| | sync % | SNR est dB | feature error |
+|---|---|---|---|
+| V1 direct (no WDSP) | 96.3 | 30.9 | 0.0174 |
+| V1 through WDSP | 92.7 | 29.1 | 0.0177 |
+| V2 direct | 96.6 | 17.5 | 0.0239 |
+| V2 through WDSP | 94.5 | 17.1 | 0.0114 |
+
+- Through WDSP TX+RX with the planned filters the link is transparent in a
+  noiseless channel: V1 feature error 0.0174 vs 0.0177. (The V2 figure
+  being lower than direct is within what the alignment search and a 5 s
+  clip can give; read it as "no worse", not as "better".) Sync
+  percentage is a little lower (starts later through the pipeline delay).
+- Same result for RX AGC long / medium / fast / fixed 0 dB (V1): the
+  decoder was handed the RX output re-levelled to rms 0.9, so this does
+  **not** yet say what the AGC does to a fading signal; that is T-9 with a
+  channel.
+- **Delay through TXA + RXA: 11934 samples = 248.6 ms** at the default
+  filter lengths (linear-phase FIR filters). Large against V2's 40 ms
+  frame; `TXASetNC` / `RXASetNC` can shorten it. Not tuned yet.
+- **TX level and ALC (first look, V1 and V2 behave alike):** the TX chain
+  has +6 dB gain; ALC is idle up to an output of about rms 0.53 (V1,
+  input rms 0.27) and then clamps the output to rms 0.67 / PAPR 3.5 dB,
+  i.e. a peak limit at 1.0. With ALC off, output scales without limit
+  (rms 3.5 at input rms 1.8). Link quality with the ALC clamping at input
+  rms 0.9 was unchanged on features (0.0177) but the SNR estimate dropped
+  from 29 to 25 dB. A sensible operating point is an input where the
+  output peak stays below the ALC threshold; calibration to power is T-10
+  proper.
+
 ## Next
 
 1. `RADE_NATIVE` make option linking librade (no engine code yet).
-2. T-11 second pass: RADE signals through RXA/TXA (T-2 round trip needs
-   this), group delay.
-3. Listen to the mirrored V2 decode.
+2. T-2: the same chain over AWGN and fading channels, with and without WDSP.
+3. T-3: orientation matrix (Invert set right and wrong, V1 and V2).
+4. Listen to the mirrored V2 decode.
