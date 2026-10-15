@@ -33,7 +33,7 @@ def _counted(self):
     ticks[0] += 1
     return _orig_tick(self)
 rr.App._tick = _counted
-app = rr.App()
+app = rr.App(show=False)
 for i in range(60):
     app.roster.event("new_connection", {"sid": "s%d" % i, "last_update": "2026-10-15T20:00:00+00:00",
                                         "callsign": "K%dABC" % i, "grid_square": "FN31", "version": "x",

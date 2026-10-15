@@ -16,6 +16,33 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter: regular SNR, corrected to freedv-gui): the
+  previous version needed a callsign to send the SNR and invented a rule to
+  guess one (last call, within 3 min, within 5 Hz). **That was wrong**:
+  freedv-gui does not need one. Its timer (freedv-gui3 `src/main.cpp`,
+  "Special case for RADE--report '--' for callsign so we can at least report
+  that we're receiving *something*") sends, while the modem is in sync and no
+  new callsign has just been decoded, an `rx_report` with the callsign last
+  reported in this reception - **blank if none yet** - the mode and
+  `(int)(snr + 0.5)`, once every 10 timer ticks (about a second), and forgets
+  the callsign when sync has been lost for the stats reset time (10 s).
+  The Reporter now does exactly that: `PeriodicSnr` has no attribution
+  rule; the interval is 1-30 s (default 5); rx_report SNR is `int(snr +
+  0.5)` (so -3.6 goes as -3, as freedv-gui sends it; the end-of-over report
+  uses the same). The window's line says what it is doing ("sending the SNR
+  every 5 s (no call decoded yet, sent blank)" / "(call OH2BCD)").
+  **One thing to check**: the freedv-gui comment says '--' but its code
+  passes the combo box's text, which is empty until a call is decoded, so
+  that is what is sent; whether the server shows or accepts an empty
+  callsign is freedv-gui's behaviour, not tested here. Tests: 70 checks
+  (`test_reporter.py`) and `test_gui_sticky.py` (the SNR goes out with a blank
+  call before any is decoded, the end-of-over call goes out with the over's
+  SNR, the live SNR then carries that call, nothing without sync or
+  while transmitting). **Also**: the GUI tests ran with the window on the
+  desktop and I think one was closed by hand part-way through, which looked
+  like a failure; the window can now be built unmapped (`App(show=False)`)
+  and the tests use that.
+
 - 2026-10-15 (Reporter: regular SNR, sticky settings): **Regular SNR
   reports.** While a signal is in sync and reporting is on, the Reporter
   sends `rx_report` (callsign, mode, live SNR to the whole dB) every N
