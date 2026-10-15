@@ -17,7 +17,8 @@ Reported per clip:
           (waveform, and 10 ms energy envelope)
   vs in  envelope correlation of each decode with the input speech
 Envelope correlations are taken after aligning in time, over the overlap,
-ignoring 0.5 s at each end. PASS when our TX features are within 5 % of the
+ignoring 0.5 s at each end. PASS when the end-of-over callsign is decoded (V1), the hold after release is
+under a second, and our TX features are within 5 % of the
 reference's (normalised error) and the envelope of our decoded speech
 correlates 0.90 or better with the reference decode. The correlation with
 the input is shown for information (the alignment against the raw input is
@@ -38,6 +39,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 OUT = os.path.join(HERE, "out")
 B = os.path.join(ROOT, "third_party/rade_c-build/src")
 PROBE = os.path.join(HERE, "wdsp_probe")
+CALL = "EI6IZ"
 
 
 def run(cmd):
@@ -115,7 +117,12 @@ def one(clip, v2, secs):
     m48 = os.path.join(OUT, tag + ".mic48.f32")
     np.stack([mic, np.zeros_like(mic)], 1).astype(np.float32).tofile(m48)
     iq, feat = os.path.join(OUT, tag + ".txeng.f32"), os.path.join(OUT, tag + ".our.feat")
-    run([os.path.join(HERE, "test_tx_engine")] + opt + ["--speed", "8", "--features", feat, m48, iq])
+    r = subprocess.run([os.path.join(HERE, "test_tx_engine")] + opt + ["--speed", "3", "--features", feat,
+                                                                  "--call", CALL, m48, iq], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit("test_tx_engine failed: " + r.stderr[-300:])
+    hold = [l for l in r.stdout.splitlines() if l.startswith("held")]
+    hold_ms = float(hold[0].split()[1]) if hold and "NOT DONE" not in hold[0] else -1
     our_feat = np.fromfile(feat, dtype=np.float32)
 
     fc, bw = (1500.0, 1000.0) if v2 else (1475.0, 1600.0)
@@ -125,7 +132,12 @@ def one(clip, v2, secs):
     rxo = os.path.join(OUT, tag + ".rxout48.f32")
     run([PROBE, "rx", "--wisdom", ROOT + "/", "--low", str(lo), "--high", str(hi), "--copy", "0", "--agc", "3", cap, rxo])
     dec = os.path.join(OUT, tag + ".decoded.wav")
-    run([os.path.join(HERE, "test_rx_engine")] + opt + ["--speed", "8", rxo, dec])
+    r = subprocess.run([os.path.join(HERE, "test_rx_engine")] + opt + ["--speed", "8", rxo, dec],
+                       capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit("test_rx_engine failed")
+    calls = [l.split()[1] for l in r.stdout.splitlines() if l.startswith("call:")]
+    got_call = calls[0] if calls else "-"
     _, d48 = wavfile.read(dec)
     od = resample_poly(d48.astype(float), 1, 3)
 
@@ -143,11 +155,13 @@ def one(clip, v2, secs):
     our_in = envcorr(xf, od)
     wr = wavcorr(rd.astype(float), od)
     er = envcorr(rd.astype(float), od)
-    ok = fe[0] < 0.05 and er >= 0.90
+    # the callsign rides in the V1 end-of-over frame; V2 has no text yet
+    call_ok = v2 or got_call == CALL
+    ok = fe[0] < 0.05 and er >= 0.90 and call_ok and 0 < hold_ms < 1000
     print("%-26s feat %.3f | vs ref: wave %.2f env %.2f | vs in: ours %.2f ref %.2f | TXA out rms %.2f PAPR %.1f dB "
-          "band %.0f..%.0f Hz | %s" %
+          "band %.0f..%.0f Hz | call %s hold %.0f ms | %s" %
           (tag[:26], fe[0], wr, er, our_in, ref_in, np.sqrt(pw.mean()),
-           10 * np.log10(pw.max() / pw.mean()), b0, b1, "PASS" if ok else "FAIL"))
+           10 * np.log10(pw.max() / pw.mean()), b0, b1, got_call, hold_ms, "PASS" if ok else "FAIL"))
     return ok
 
 

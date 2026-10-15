@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "agc.h"
@@ -45,6 +46,13 @@
 static GtkWidget *dialog = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *edge_label = NULL;
+static GtkWidget *call_e = NULL;
+static GtkWidget *call_label = NULL;
+static GtkWidget *recv_label = NULL;
+static guint calls_timer_id = 0;
+#define RECENT_CALLS 6
+static char recent[RECENT_CALLS][160];
+static int n_recent = 0;
 static GtkWidget *tx_b = NULL;
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
@@ -53,8 +61,101 @@ static guint timer_id = 0;
 static guint event_timer_id = 0;
 static char last_state[1024];
 
+static const char *agc_name(int a);
+
 #define CAPTURE_DIR "rade-captures"
 
+
+
+//
+// ---- callsigns ----
+//
+// Decoded from the end-of-over frame (V1) and logged, with what the radio
+// was doing, to rade-captures/rade-calls.csv.
+//
+static void show_recent(void) {
+  if (recv_label == NULL) { return; }
+  char text[RECENT_CALLS * 164 + 32];
+  text[0] = 0;
+  if (n_recent == 0) { snprintf(text, sizeof text, "none yet"); }
+  for (int i = 0; i < n_recent; i++) {
+    strcat(text, recent[i]);
+    strcat(text, "\n");
+  }
+  gtk_label_set_text(GTK_LABEL(recv_label), text);
+}
+
+static void log_call(const rade_native_call_t *c) {
+  const RECEIVER *rx = receiver[0];
+  mkdir(CAPTURE_DIR, 0755);
+  const char *path = CAPTURE_DIR "/rade-calls.csv";
+  int fresh = access(path, F_OK) != 0;
+  FILE *f = fopen(path, "a");
+  if (!f) { return; }
+  if (fresh) {
+    fputs("utc,local,callsign,waveform,dial_hz,mode,effective_invert,snr_db,foff_hz,"
+          "rx_filter_low,rx_filter_high,agc,volume_db,adc,attenuation,preamp,capture\n", f);
+  }
+  time_t t = (time_t)c->t_unix;
+  char utc[40], loc[40];
+  strftime(utc, sizeof utc, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+  strftime(loc, sizeof loc, "%Y-%m-%d %H:%M:%S", localtime(&t));
+  int inv = rade_native_effective_invert(c->waveform, vfo[0].frequency, rade_native_user_invert());
+  fprintf(f, "%s,%s,%s,V%d,%lld,%s,%d,%.1f,%.1f,%d,%d,%s,%.1f,%d,%d,%d,%s\n", utc, loc, c->call,
+          c->waveform, vfo[0].frequency, mode_string[vfo[0].mode], inv, c->snr_db, c->foff_hz,
+          rx->filter_low, rx->filter_high, agc_name(rx->agc), rx->volume, rx->adc,
+          adc[rx->adc].attenuation, adc[rx->adc].preamp, rade_native_capture_stem());
+  fclose(f);
+  if (rade_native_capture_active()) {
+    char line[200];
+    snprintf(line, sizeof line, "call %s snr=%.1f foff=%.1f", c->call, c->snr_db, c->foff_hz);
+    rade_native_capture_event(line);
+  }
+  // newest first for the display
+  if (n_recent < RECENT_CALLS) { n_recent++; }
+  memmove(recent[1], recent[0], sizeof recent[0] * (n_recent - 1));
+  char hms[16];
+  strftime(hms, sizeof hms, "%H:%M:%S", localtime(&t));
+  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  SNR %.1f dB  %+.1f Hz  %.4f MHz", hms, c->call,
+           c->waveform, c->snr_db, c->foff_hz, vfo[0].frequency / 1e6);
+  t_print("%s: RADE call %s\n", __func__, recent[0]);
+}
+
+static int calls_cb(gpointer arg) {
+  rade_native_call_t c;
+  int any = 0;
+  while (rade_native_call_pop(&c)) {
+    log_call(&c);
+    any = 1;
+  }
+  if (any) { show_recent(); }
+  if (rade_native_waveform() == 0) {
+    calls_timer_id = 0;
+    return G_SOURCE_REMOVE;
+  }
+  return G_SOURCE_CONTINUE;
+}
+
+static void call_changed_cb(GtkWidget *widget, gpointer data) {
+  static int busy = 0;
+  if (busy || widget == NULL) { return; }
+  rade_native_set_callsign(gtk_entry_get_text(GTK_ENTRY(widget)));
+  const char *c = rade_native_get_callsign();
+  if (strcmp(c, gtk_entry_get_text(GTK_ENTRY(widget))) != 0) {
+    busy = 1;                                   // show what will really be sent
+    gtk_entry_set_text(GTK_ENTRY(widget), c);
+    busy = 0;
+  }
+  char text[160];
+  if (c[0] == 0) {
+    snprintf(text, sizeof text, "no callsign: none is sent");
+  } else if (rade_native_waveform() == RADE_NATIVE_V2) {
+    snprintf(text, sizeof text, "%s: V2 callsign text is not implemented yet, nothing is sent", c);
+  } else {
+    snprintf(text, sizeof text, "%s is sent in the end-of-over frame", c);
+  }
+  if (call_label != NULL) { gtk_label_set_text(GTK_LABEL(call_label), text); }
+}
 
 //
 // ---- capture ----
@@ -199,6 +300,7 @@ static void cleanup(void) {
     g_source_remove(timer_id);
     timer_id = 0;
   }
+  recv_label = call_label = call_e = NULL;
   if (dialog != NULL) {
     GtkWidget *tmp = dialog;
     dialog = NULL;
@@ -278,6 +380,10 @@ static void tx_cb(GtkWidget *widget, gpointer data) {
 static void waveform_cb(GtkWidget *widget, gpointer data) {
   if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) { return; }
   rade_native_configure(GPOINTER_TO_INT(data), rade_native_user_invert());
+  if (rade_native_waveform() != 0 && calls_timer_id == 0) {
+    calls_timer_id = g_timeout_add(500, calls_cb, NULL);
+  }
+  call_changed_cb(call_e, NULL);              // the note depends on the waveform
   if (!rade_native_tx_enabled()) {
     tx_apply(0);                 // changing waveform switches the TX engine off
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), FALSE);
@@ -363,9 +469,31 @@ void rade_native_menu(GtkWidget *parent) {
   capture_label = gtk_label_new("not capturing");
   gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 3, 4, 1);
+  GtkWidget *call_l = gtk_label_new("My call");
+  gtk_widget_set_halign(call_l, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 5, 1, 1);
+  call_e = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
+  gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
+  gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
+  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 5, 1, 1);
+  call_label = gtk_label_new("");
+  gtk_widget_set_halign(call_label, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 5, 3, 1);
+  g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
+  call_changed_cb(call_e, NULL);
+  GtkWidget *recv_l = gtk_label_new("Received calls");
+  gtk_widget_set_halign(recv_l, GTK_ALIGN_END);
+  gtk_widget_set_valign(recv_l, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 6, 1, 1);
+  recv_label = gtk_label_new("");
+  gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
+  gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
+  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 6, 4, 1);
+  show_recent();
   GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never.");
   gtk_widget_set_halign(hint, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), hint, 0, 5, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), hint, 0, 7, 5, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   show_edges();

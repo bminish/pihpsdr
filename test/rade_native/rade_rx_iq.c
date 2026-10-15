@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rade_api.h"
+#include "rade_eoo_text.h"
 
 int main(int argc, char **argv) {
   int flags = RADE_USE_C_ENCODER | RADE_USE_C_DECODER | RADE_VERBOSE_0, i = 1;
@@ -39,6 +40,11 @@ int main(int argc, char **argv) {
     int has_eoo = 0;
     int nout = rade_rx(r, feat, &has_eoo, neoo > 0 ? eoo : NULL, in);
     consumed += nin;
+    if (has_eoo) {
+      char call[16] = "";
+      int ok = neoo > 0 && rade_eoo_text_decode(eoo, neoo / 2, call);
+      fprintf(stderr, "EOO at %.3f s: call %s\n", consumed / 8000.0, ok ? call : "(not decoded)");
+    }
     if (nout > 0) { fwrite(feat, sizeof(float), nout, ff); }
     fprintf(fs, "%.4f,%d,%.2f,%.2f,%d\n", consumed / 8000.0, rade_sync(r),
             rade_snrdB_3k_est(r), rade_freq_offset(r), nout);
