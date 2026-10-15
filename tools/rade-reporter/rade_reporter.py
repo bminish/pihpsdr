@@ -24,6 +24,7 @@ import time
 
 import gi
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -418,8 +419,14 @@ def main():
     if lock is None:
         return 0
     app = App()
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: (app.present(), True)[1])
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (app._quit(), False)[1])
+    try:                                # newer PyGObject moved this
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+        sigadd = GLibUnix.signal_add
+    except (ValueError, ImportError):
+        sigadd = GLib.unix_signal_add
+    sigadd(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: (app.present(), True)[1])
+    sigadd(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (app._quit(), False)[1])
     Gtk.main()
     return 0
 

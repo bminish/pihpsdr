@@ -35,6 +35,7 @@
 #include "diversity_auto.h"
 #include "message.h"
 #include "new_menu.h"
+#include "rade_launch.h"
 #include "rade_native.h"
 #include "rade_native_menu.h"
 #include "ext.h"
@@ -57,6 +58,7 @@ static guint calls_timer_id = 0;
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
 static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_text = NULL;
+static GtkWidget *note_label = NULL;     // messages that must stay: the reporter's start, failures
 static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
 static GtkWidget *mox_b = NULL;         // the transmit button
 static GtkWidget *tx_label = NULL;
@@ -236,11 +238,24 @@ void rade_native_state_start(void) {
   state_timer_id = g_timeout_add(250, state_cb, NULL);
 }
 
-static void reporter_child_setup(gpointer data) {
-  setsid();                       // its own session: closing piHPSDR's terminal or window does not reach it
+static void say(const char *msg) {
+  if (note_label != NULL) { gtk_label_set_text(GTK_LABEL(note_label), msg); }
+  t_print("%s: %s\n", __func__, msg);
+}
+
+static void reporter_done(int early, int status, void *data) {
+  char msg[900];
+  if (early) {
+    snprintf(msg, sizeof msg, "The Reporter stopped at once (status %d). See %s", status,
+             (const char *)data);
+  } else {
+    snprintf(msg, sizeof msg, "The Reporter was closed");
+  }
+  say(msg);
 }
 
 static void reporter_cb(GtkWidget *widget, gpointer data) {
+  static char logfile[600];
   char exe[512] = "", path[1024];
   ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
   if (n > 0) { exe[n] = 0; }
@@ -253,25 +268,24 @@ static void reporter_cb(GtkWidget *widget, gpointer data) {
     found = access(path, R_OK) == 0;
   }
   g_free(dir);
-  char msg[300];
+  char msg[900];
   if (!found) {
     snprintf(msg, sizeof msg, "Reporter not found (looked for %s next to piHPSDR and in the current directory)", rel);
-  } else {
-    char *argv[] = {"python3", path, NULL};
-    GError *err = NULL;
-    // detached: not waited for, no standard files, none of piHPSDR's descriptors
-    if (g_spawn_async(NULL, argv, NULL,
-                      G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL |
-                      G_SPAWN_STDIN_FROM_DEV_NULL,
-                      reporter_child_setup, NULL, NULL, &err)) {
-      snprintf(msg, sizeof msg, "Reporter started (it keeps running when piHPSDR is closed)");
-    } else {
-      snprintf(msg, sizeof msg, "Could not start the reporter: %s", err ? err->message : "?");
-      if (err) { g_error_free(err); }
-    }
+    say(msg);
+    return;
   }
-  if (capture_label != NULL) { gtk_label_set_text(GTK_LABEL(capture_label), msg); }
-  t_print("%s: %s\n", __func__, msg);
+  // next to the state file, whatever XDG_STATE_HOME says
+  char *sdir = g_path_get_dirname(state_file[0] ? state_file : "/tmp/x");
+  snprintf(logfile, sizeof logfile, "%s/reporter.log", sdir);
+  g_free(sdir);
+  char *argv[] = {"python3", path, NULL};
+  char err[200];
+  if (rade_launch(argv, logfile, 5, reporter_done, logfile, err, sizeof err) == 0) {
+    snprintf(msg, sizeof msg, "Reporter starting (log: %s). It keeps running when piHPSDR is closed", logfile);
+  } else {
+    snprintf(msg, sizeof msg, "Could not start the reporter: %s", err);
+  }
+  say(msg);
 }
 
 
@@ -478,7 +492,7 @@ static void cleanup(void) {
   recv_label = call_label = call_e = NULL;
   tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
-  mic_scale = mic_agc_b = mic_bar = mic_text = NULL;
+  mic_scale = mic_agc_b = mic_bar = mic_text = note_label = NULL;
   if (dialog != NULL) {
     //
     // This window is deliberately not "sub_menu": the main menu and the
@@ -803,6 +817,12 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_widget_set_halign(hint, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), hint, 0, 11, 5, 1);
+  note_label = gtk_label_new("");
+  gtk_label_set_line_wrap(GTK_LABEL(note_label), TRUE);
+  gtk_label_set_max_width_chars(GTK_LABEL(note_label), 60);
+  gtk_label_set_selectable(GTK_LABEL(note_label), TRUE);
+  gtk_widget_set_halign(note_label, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), note_label, 0, 12, 6, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();

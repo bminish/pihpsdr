@@ -726,7 +726,7 @@ DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
 endif
 
 ifeq ($(RADE_NATIVE),ON)
-OBJS    += src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o
+OBJS    += src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_launch.o
 endif
 
 ##############################################################################
@@ -1348,7 +1348,8 @@ src/MacTTS.o: src/message.h
 
 src/rade_native.o: src/rade_native.h src/rade_eoo_text.h
 src/rade_eoo_text.o: src/rade_eoo_text.h src/rade_eoo_text_hra.h
-src/rade_native_menu.o: src/rade_native.h src/rade_native_menu.h
+src/rade_native_menu.o: src/rade_native.h src/rade_native_menu.h src/rade_launch.h
+src/rade_launch.o: src/rade_launch.h
 src/receiver.o: src/rade_native.h
 # librade's headers include a "nnet.h" of their own (opus), which clashes with
 # wdsp/nnet.h. Only this object sees librade, with its own include path.
