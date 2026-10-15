@@ -89,16 +89,23 @@ def decisions():
 
 
 def heard():
-    print("calls heard (rx_report)")
+    print("calls heard (rx_report): every one, every time")
     now = 1000.0
-    p = {"linked": True, "heard_seq": 3, "heard_call": "vk5dgr", "heard_snr": 7.4, "heard_t": 990.0}
-    check(core.rx_report_due(p, None, "EI6IZ", now) is None, "first look: what is there is old news")
-    check(core.rx_report_due(p, 3, "EI6IZ", now) is None, "already dealt with: not again")
-    check(core.rx_report_due(p, 2, "EI6IZ", now) == ("VK5DGR", 7.4, 3), "a new call is due, upper case")
-    check(core.rx_report_due(dict(p, heard_t=900.0), 2, "EI6IZ", now) is None, "a stale call is not reported")
-    check(core.rx_report_due(dict(p, heard_call="EI6IZ"), 2, "EI6IZ", now) is None, "our own call is not reported")
-    check(core.rx_report_due(dict(p, heard_call=""), 2, "EI6IZ", now) is None, "no call, nothing to report")
-    check(core.rx_report_due(dict(p, linked=False), 2, "EI6IZ", now) is None, "piHPSDR gone: nothing")
+    h = lambda seq, call, t=990.0, snr=7.4: {"seq": seq, "call": call, "snr": snr, "t": t}
+    p = {"linked": True, "heard": [h(3, "vk5dgr")]}
+    check(core.rx_reports_due(p, None, "EI6IZ", now) == [], "first look: what is there is old news")
+    check(core.rx_reports_due(p, 3, "EI6IZ", now) == [], "already dealt with: not again")
+    check(core.rx_reports_due(p, 2, "EI6IZ", now) == [("VK5DGR", 7.4, 3)], "a new call is due, upper case")
+    p2 = {"linked": True, "heard": [h(4, "VK5DGR"), h(5, "OH2BCD", snr=-3.0), h(6, "VK5DGR")]}
+    check(core.rx_reports_due(p2, 3, "EI6IZ", now) == [("VK5DGR", 7.4, 4), ("OH2BCD", -3.0, 5), ("VK5DGR", 7.4, 6)],
+          "three calls since the last look, the same station twice: all three, in order")
+    check(core.rx_reports_due(p2, 5, "EI6IZ", now) == [("VK5DGR", 7.4, 6)], "only those after the last one dealt with")
+    check(core.rx_reports_due({"linked": True, "heard": [h(7, "VK5DGR", t=900.0)]}, 6, "EI6IZ", now) == [], "a stale call is not reported")
+    check(core.rx_reports_due({"linked": True, "heard": [h(7, "EI6IZ")]}, 6, "EI6IZ", now) == [], "our own call is not reported")
+    check(core.rx_reports_due({"linked": True, "heard": [h(7, "")]}, 6, "EI6IZ", now) == [], "no call, nothing to report")
+    check(core.rx_reports_due(dict(p2, linked=False), 3, "EI6IZ", now) == [], "piHPSDR gone: nothing")
+    old = {"linked": True, "heard_seq": 9, "heard_call": "g4abc", "heard_snr": 5.0, "heard_t": 990.0}
+    check(core.rx_reports_due(old, 8, "EI6IZ", now) == [("G4ABC", 5.0, 9)], "an older piHPSDR (latest call only) still works")
 
 
 def periodic():
@@ -190,6 +197,10 @@ def link_flow():
     check(wait(lambda: ["tx_report", {"mode": "RADEV2", "transmitting": False}] in s2.clients[0]["events"]),
           "reported as RADEV2")
     check(["message_update", {"message": "QRV for a CQ"}] in s2.clients[0]["events"], "the message goes to the second reporter too")
+    check(link.pulse_tx("RADEV2") and wait(
+        lambda: s2.clients[0]["events"].count(["tx_report", {"mode": "RADEV2", "transmitting": True}]) == 1
+        and s2.clients[0]["events"][-1] == ["tx_report", {"mode": "RADEV2", "transmitting": False}]),
+        "a transmission that came and went between two looks is told as on, then off")
     check(link.report_rx("VK5DGR", "RADEV2", -3.6) and wait(
         lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV2", "snr": -3}] in s2.clients[0]["events"]),
         "V2: reported on the v3 reporter; SNR as freedv-gui rounds it, int(snr + 0.5)")

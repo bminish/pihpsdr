@@ -16,6 +16,28 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (Reporter: status, last TX, every call): checked against
+  freedv-gui. It sends `tx_report` {mode, transmitting} when PTT changes
+  and at start-up (`ongui.cpp`, `main.cpp`), and the server keeps the
+  last-TX time and tells everyone (the `last_tx` the Reporter shows in its
+  Last TX column, for us too); it sends `rx_report` for a call each time one
+  is decoded. The Reporter already sent `tx_report` on each change and
+  showed Status and Last TX; **what was missing was robustness**:
+  (1) a transmission that began and ended between two looks at piHPSDR's
+  state (the Reporter looks twice a second) would never have been reported,
+  so the server's last-TX would be stale: piHPSDR now counts transmissions
+  (`tx_count`, `tx_last_t` in the state file) and the Reporter, finding the
+  count up with nothing transmitting, sends `tx_report` on then off;
+  (2) of several calls decoded between two looks only the latest was
+  reported: piHPSDR now keeps the last five (`heard` list) and the Reporter
+  reports every one, oldest first, the same station again included;
+  (3) piHPSDR's engine suppressed a call repeated within 5 s, now only the
+  same frame flagged twice within a second. Tests: 75 checks
+  (`test_reporter.py`) and `test_gui_sticky.py` (two calls arriving
+  together, the same station twice: both sent; a short transmission: on,
+  then off). Not known: whether the server's own last-TX needs anything
+  more than `tx_report`.
+
 - 2026-10-15 (Reporter: regular SNR, corrected to freedv-gui): the
   previous version needed a callsign to send the SNR and invented a rule to
   guess one (last call, within 3 min, within 5 Hz). **That was wrong**:
