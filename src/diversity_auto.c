@@ -4936,14 +4936,40 @@ static void div_group_save(int g, const DIV_SETTINGS *s) {
 // window and threshold are the CW reference's own, as a reference change
 // would bring them in.
 //
+// AM, SAM and DSB start on the Carrier reference: a carrier is what those
+// modes have to lock to. The digital modes start on FSK/Digital. Both
+// take the reference's own threshold and hand-placed window, as CW does,
+// and keep the 2.0 s averaging. Follow RX Filter stays ticked in every
+// group, so the window only takes effect once an operator unticks it. These two are chosen by what the modes carry, not by a
+// sweep (LC-061).
+//
 static void div_group_seed(int g, DIV_SETTINGS *s) {
-  if (g != DIV_GROUP_CW) { return; }
+  switch (g) {
+  case DIV_GROUP_CW:
+    s->ref           = DIV_REF_CW;
+    s->tau           = 0.2;
+    s->centre        = s->cw_centre;
+    s->width         = s->cw_width;
+    s->coherence_min = s->cw_cohmin;
+    break;
 
-  s->ref           = DIV_REF_CW;
-  s->tau           = 0.2;
-  s->centre        = s->cw_centre;
-  s->width         = s->cw_width;
-  s->coherence_min = s->cw_cohmin;
+  case DIV_GROUP_AM:
+    s->ref           = DIV_REF_CARRIER;
+    s->centre        = s->carrier_centre;
+    s->width         = s->carrier_width;
+    s->coherence_min = s->carrier_cohmin;
+    break;
+
+  case DIV_GROUP_DIGITAL:
+    s->ref           = DIV_REF_DIGITAL_IQ;
+    s->centre        = s->digital_centre;
+    s->width         = s->digital_width;
+    s->coherence_min = s->digital_cohmin;
+    break;
+
+  default:
+    break;
+  }
 }
 
 static void div_group_restore(int g, DIV_SETTINGS *s) {
