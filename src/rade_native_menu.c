@@ -35,6 +35,7 @@
 #include "new_menu.h"
 #include "rade_native.h"
 #include "rade_native_menu.h"
+#include "ext.h"
 #include "radio.h"
 #include "transmitter.h"
 #include <wdsp.h>
@@ -53,7 +54,13 @@ static guint calls_timer_id = 0;
 #define RECENT_CALLS 6
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
-static GtkWidget *tx_b = NULL;
+static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
+static GtkWidget *mox_b = NULL;         // the transmit button
+static GtkWidget *tx_label = NULL;
+static GtkWidget *wave_b[3] = {NULL, NULL, NULL};
+static GtkWidget *inv_b = NULL;
+static int want_tx = 1;                 // RADE transmit follows the waveform unless switched off
+static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
 static GtkWidget *capture_label = NULL;
@@ -281,6 +288,7 @@ static void capture_start(void) {
 }
 
 static void capture_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
     if (rade_native_waveform() == 0) {
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
@@ -301,12 +309,17 @@ static void cleanup(void) {
     timer_id = 0;
   }
   recv_label = call_label = call_e = NULL;
+  tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
+  wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   if (dialog != NULL) {
+    //
+    // This window is deliberately not "sub_menu": the main menu and the
+    // other menus come and go (new_menu.c destroys sub_menu whenever one
+    // is opened) but this one stays until it is closed.
+    //
     GtkWidget *tmp = dialog;
     dialog = NULL;
     gtk_widget_destroy(tmp);
-    sub_menu = NULL;
-    active_menu = NO_MENU;
   }
 }
 
@@ -358,23 +371,81 @@ static void tx_apply(int on) {
   tx_set_filter(transmitter);
 }
 
+static int tx_ready(void) {
+  return transmitter != NULL && rade_native_waveform() != 0 && rade_native_tx_enabled();
+}
+
+static void show_tx_state(void) {
+  if (tx_label == NULL) { return; }
+  const char *t;
+  if (rade_native_waveform() == 0) {
+    t = "Select V1 or V2";
+  } else if (transmitter == NULL) {
+    t = "No transmitter";
+  } else if (transmitter->puresignal) {
+    t = "RADE transmit is not available with PureSignal";
+  } else if (!tx_ready()) {
+    t = "TX is NOT RADE: the transmit button here is disabled, other TX buttons send ordinary speech";
+  } else {
+    t = rade_native_waveform() == RADE_NATIVE_V1 ? "TX: RADE V1" : "TX: RADE V2";
+  }
+  gtk_label_set_text(GTK_LABEL(tx_label), t);
+}
+
+//
+// Switch RADE transmit on if it is wanted and possible (a waveform is set,
+// there is a transmitter, no PureSignal).
+//
+static void tx_enable_now(void) {
+  if (!want_tx || transmitter == NULL || transmitter->puresignal || rade_native_waveform() == 0) {
+    show_tx_state();
+    return;
+  }
+  if (!rade_native_tx_enabled()) { rade_native_tx_enable(1); }
+  if (rade_native_tx_enabled()) { tx_apply(1); }
+  show_tx_state();
+}
+
 static void tx_cb(GtkWidget *widget, gpointer data) {
-  int on = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
-  if (on) {
-    if (transmitter == NULL || transmitter->puresignal || rade_native_waveform() == 0) {
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
-      return;
-    }
-    rade_native_tx_enable(1);
-    if (!rade_native_tx_enabled()) {
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
-      return;
-    }
-    tx_apply(1);
+  if (updating) { return; }
+  want_tx = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  if (want_tx) {
+    tx_enable_now();
   } else {
     rade_native_tx_enable(0);
     tx_apply(0);
+    show_tx_state();
   }
+}
+
+//
+// Transmit, from the button or the space bar in this window. The same as the
+// space bar in the main window, except that it refuses unless RADE transmit
+// is on, so that it cannot send ordinary speech by mistake.
+//
+static void rade_ptt(void) {
+  if (radio_is_transmitting()) {
+    g_timeout_add(ptt_delay, ext_radio_set_mox, GINT_TO_POINTER(0));
+  } else if (tx_ready()) {
+    radio_set_mox(1);
+  } else {
+    show_tx_state();
+  }
+}
+
+static void mox_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  int want = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  if (want != radio_is_transmitting()) { rade_ptt(); }
+  // the real state is shown by update_cb() a moment later
+}
+
+static gboolean key_cb(GtkWidget *widget, GdkEventKey *event, gpointer data) {
+  if (event->keyval == GDK_KEY_space) {
+    rade_ptt();
+    return TRUE;              // not typed into the callsign box
+  }
+  return FALSE;
 }
 
 static void waveform_cb(GtkWidget *widget, gpointer data) {
@@ -385,10 +456,12 @@ static void waveform_cb(GtkWidget *widget, gpointer data) {
   }
   call_changed_cb(call_e, NULL);              // the note depends on the waveform
   if (!rade_native_tx_enabled()) {
-    tx_apply(0);                 // changing waveform switches the TX engine off
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), FALSE);
+    tx_apply(0);                 // changing waveform switches the TX engine off ...
+    tx_enable_now();             // ... and it is switched on again for the new one
   }
+  updating = 1;
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
+  updating = 0;
   apply();
   show_edges();
 }
@@ -413,22 +486,39 @@ static int update_cb(gpointer arg) {
   gtk_label_set_text(GTK_LABEL(status_label), text);
   rade_native_capture_info(text, sizeof text);
   gtk_label_set_text(GTK_LABEL(capture_label), text);
+  updating = 1;
   if (!rade_native_capture_active() &&
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(capture_b))) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), FALSE);
   }
+  int tx = radio_is_transmitting();
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mox_b), tx);
+  gtk_button_set_label(GTK_BUTTON(mox_b), tx ? "TRANSMITTING - click or space to stop" : "Transmit (space bar)");
+  // the waveform and the TX processing are not changed in mid-over
+  for (int i = 0; i < 3; i++) { gtk_widget_set_sensitive(wave_b[i], !tx); }
+  gtk_widget_set_sensitive(inv_b, !tx);
+  gtk_widget_set_sensitive(tx_b, !tx);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
+  updating = 0;
+  show_tx_state();
   return G_SOURCE_CONTINUE;
 }
 
 void rade_native_menu(GtkWidget *parent) {
+  if (dialog != NULL) {
+    gtk_window_present(GTK_WINDOW(dialog));
+    return;
+  }
   dialog = gtk_dialog_new();
   gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(parent));
+  gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
   GtkWidget *headerbar = gtk_header_bar_new();
   gtk_window_set_titlebar(GTK_WINDOW(dialog), headerbar);
   gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(headerbar), TRUE);
   gtk_header_bar_set_title(GTK_HEADER_BAR(headerbar), "piHPSDR - RADE");
   g_signal_connect (dialog, "delete_event", G_CALLBACK (close_cb), NULL);
   g_signal_connect (dialog, "destroy", G_CALLBACK (close_cb), NULL);
+  g_signal_connect (dialog, "key-press-event", G_CALLBACK (key_cb), NULL);
   GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
   GtkWidget *grid = gtk_grid_new();
   gtk_grid_set_column_spacing (GTK_GRID(grid), 10);
@@ -438,17 +528,15 @@ void rade_native_menu(GtkWidget *parent) {
   g_signal_connect (close_b, "button-press-event", G_CALLBACK(close_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), close_b, 0, 0, 1, 1);
   int w = rade_native_waveform();
-  GtkWidget *off_b = gtk_radio_button_new_with_label(NULL, "Off");
-  GtkWidget *v1_b = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(off_b), "RADE V1");
-  GtkWidget *v2_b = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(off_b), "RADE V2");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w == RADE_NATIVE_V1 ? v1_b : w == RADE_NATIVE_V2 ? v2_b : off_b), TRUE);
-  g_signal_connect(off_b, "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(0));
-  g_signal_connect(v1_b, "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V1));
-  g_signal_connect(v2_b, "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V2));
-  gtk_grid_attach(GTK_GRID(grid), off_b, 1, 0, 1, 1);
-  gtk_grid_attach(GTK_GRID(grid), v1_b, 2, 0, 1, 1);
-  gtk_grid_attach(GTK_GRID(grid), v2_b, 3, 0, 1, 1);
-  GtkWidget *inv_b = gtk_check_button_new_with_label("Invert");
+  wave_b[0] = gtk_radio_button_new_with_label(NULL, "Off");
+  wave_b[1] = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(wave_b[0]), "RADE V1");
+  wave_b[2] = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(wave_b[0]), "RADE V2");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(wave_b[w == RADE_NATIVE_V1 ? 1 : w == RADE_NATIVE_V2 ? 2 : 0]), TRUE);
+  g_signal_connect(wave_b[0], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(0));
+  g_signal_connect(wave_b[1], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V1));
+  g_signal_connect(wave_b[2], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V2));
+  for (int i = 0; i < 3; i++) { gtk_grid_attach(GTK_GRID(grid), wave_b[i], 1 + i, 0, 1, 1); }
+  inv_b = gtk_check_button_new_with_label("Invert");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(inv_b), rade_native_user_invert());
   g_signal_connect(inv_b, "toggled", G_CALLBACK(invert_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), inv_b, 4, 0, 1, 1);
@@ -458,45 +546,66 @@ void rade_native_menu(GtkWidget *parent) {
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, 2, 5, 1);
-  tx_b = gtk_toggle_button_new_with_label("Transmit RADE");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), rade_native_tx_enabled());
+  mox_b = gtk_toggle_button_new_with_label("Transmit (space bar)");
+  g_signal_connect(mox_b, "toggled", G_CALLBACK(mox_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), mox_b, 0, 3, 3, 1);
+  tx_b = gtk_check_button_new_with_label("RADE TX");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
   g_signal_connect(tx_b, "toggled", G_CALLBACK(tx_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), tx_b, 0, 4, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), tx_b, 3, 3, 1, 1);
+  tx_label = gtk_label_new("");
+  gtk_widget_set_halign(tx_label, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), tx_label, 0, 4, 5, 1);
   capture_b = gtk_toggle_button_new_with_label("Capture");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
   g_signal_connect(capture_b, "toggled", G_CALLBACK(capture_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 3, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 5, 1, 1);
   capture_label = gtk_label_new("not capturing");
   gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 3, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 5, 4, 1);
   GtkWidget *call_l = gtk_label_new("My call");
   gtk_widget_set_halign(call_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 6, 1, 1);
   call_e = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
   gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
   gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
-  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 6, 1, 1);
   call_label = gtk_label_new("");
   gtk_widget_set_halign(call_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 5, 3, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 6, 3, 1);
   g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
   call_changed_cb(call_e, NULL);
   GtkWidget *recv_l = gtk_label_new("Received calls");
   gtk_widget_set_halign(recv_l, GTK_ALIGN_END);
   gtk_widget_set_valign(recv_l, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 6, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 7, 1, 1);
   recv_label = gtk_label_new("");
   gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
-  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 6, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 7, 4, 1);
   show_recent();
-  GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never.");
+  GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never. This window stays open while you use other menus.");
+  gtk_label_set_line_wrap(GTK_LABEL(hint), TRUE);
+  gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_widget_set_halign(hint, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), hint, 0, 7, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), hint, 0, 8, 5, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
-  sub_menu = dialog;
   show_edges();
+  show_tx_state();
   gtk_widget_show_all(dialog);
+  gtk_widget_grab_focus(mox_b);                 // not the callsign box
+  //
+  // Park the window in the lower right corner of the main window, out of
+  // the way of the menus, which open at the top. (A window manager that
+  // does not allow programs to place windows, such as Wayland's, will
+  // ignore this; the window can be dragged.)
+  //
+  gint x, y, mw, mh;
+  GtkRequisition nat;
+  gtk_window_get_position(GTK_WINDOW(parent), &x, &y);
+  gtk_window_get_size(GTK_WINDOW(parent), &mw, &mh);
+  gtk_widget_get_preferred_size(dialog, NULL, &nat);
+  gtk_window_move(GTK_WINDOW(dialog), x + mw - nat.width - 10, y + mh - nat.height - 10);
   timer_id = g_timeout_add(250, update_cb, NULL);
 }
