@@ -4,6 +4,8 @@ The Averaging slider's range, the bin width, and Auto, which sets the bin width 
 
 Part of the local-change register: [changes.md](../changes.md).
 
+> **2026-10-15:** every change in this file is in `upstream/TEST`, except any listed as deferred or dropped in the [register](../changes.md#register): LC-001 to LC-047 since `f05546e3` (2026-10-08) and LC-048 to LC-058 since `07ae1f56` (2026-10-15). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+
 ---
 
 <a id="lc-050"></a>
