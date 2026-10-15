@@ -56,6 +56,7 @@ static guint calls_timer_id = 0;
 #define RECENT_CALLS 6
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
+static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_text = NULL;
 static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
 static GtkWidget *mox_b = NULL;         // the transmit button
 static GtkWidget *tx_label = NULL;
@@ -273,6 +274,63 @@ static void reporter_cb(GtkWidget *widget, gpointer data) {
   t_print("%s: %s\n", __func__, msg);
 }
 
+
+//
+// ---- mic level ----
+//
+static void trim_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  rade_native_tx_set_trim_db(gtk_range_get_value(GTK_RANGE(widget)));
+}
+
+static void agc_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  rade_native_tx_set_agc(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
+}
+
+//
+// The bar runs from 20 dB under the ideal to 10 dB over it, so the ideal is
+// two thirds of the way along; "about right" is 3 dB either side of it.
+//
+static void show_mic(void) {
+  if (mic_bar == NULL) { return; }
+  char text[200];
+  if (!rade_native_tx_enabled()) {
+    gtk_level_bar_set_value(GTK_LEVEL_BAR(mic_bar), 0.0);
+    gtk_label_set_text(GTK_LABEL(mic_text), "RADE TX is off: the mic is not measured");
+    return;
+  }
+  rade_native_txlevel_t l;
+  rade_native_tx_level(&l);
+  double d = l.valid ? l.delta_db : l.momentary - RADE_NATIVE_TARGET_LUFS;
+  double f = (d + 20.0) / 30.0;
+  gtk_level_bar_set_value(GTK_LEVEL_BAR(mic_bar), f < 0.0 ? 0.0 : f > 1.0 ? 1.0 : f);
+  if (!l.valid) {
+    snprintf(text, sizeof text, "Mic: speak normally for a few seconds to measure (now %.0f LUFS, peak %.0f dBFS)",
+             l.momentary, l.peak_dbfs);
+  } else {
+    const char *verdict;
+    char v[48];
+    if (l.delta_db < -RADE_NATIVE_RIGHT_DB) {
+      snprintf(v, sizeof v, "%.1f dB TOO LOW", -l.delta_db);
+      verdict = v;
+    } else if (l.delta_db > RADE_NATIVE_RIGHT_DB) {
+      snprintf(v, sizeof v, "%.1f dB TOO HIGH", l.delta_db);
+      verdict = v;
+    } else {
+      verdict = "about right";
+    }
+    snprintf(text, sizeof text, "Mic %.1f LUFS (ideal %.0f): %s   peak %.0f dBFS%s", l.loud_avg,
+             RADE_NATIVE_TARGET_LUFS, verdict, l.peak_dbfs, l.limiting ? "   CLIPPING" : "");
+    if (rade_native_tx_get_agc()) {
+      char a[40];
+      snprintf(a, sizeof a, "   AGC %+.1f dB", l.agc_gain_db);
+      strncat(text, a, sizeof text - strlen(text) - 1);
+    }
+  }
+  gtk_label_set_text(GTK_LABEL(mic_text), text);
+}
+
 //
 // ---- capture ----
 //
@@ -420,6 +478,7 @@ static void cleanup(void) {
   recv_label = call_label = call_e = NULL;
   tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
+  mic_scale = mic_agc_b = mic_bar = mic_text = NULL;
   if (dialog != NULL) {
     //
     // This window is deliberately not "sub_menu": the main menu and the
@@ -610,6 +669,7 @@ static int update_cb(gpointer arg) {
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
   updating = 0;
   show_tx_state();
+  show_mic();
   return G_SOURCE_CONTINUE;
 }
 
@@ -670,40 +730,79 @@ void rade_native_menu(GtkWidget *parent) {
   tx_label = gtk_label_new("");
   gtk_widget_set_halign(tx_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), tx_label, 0, 4, 5, 1);
+  GtkWidget *mic_l = gtk_label_new("Mic trim");
+  gtk_widget_set_halign(mic_l, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), mic_l, 0, 5, 1, 1);
+  mic_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -20.0, 20.0, 0.5);
+  gtk_scale_set_value_pos(GTK_SCALE(mic_scale), GTK_POS_RIGHT);
+  gtk_scale_add_mark(GTK_SCALE(mic_scale), 0.0, GTK_POS_BOTTOM, NULL);
+  gtk_range_set_value(GTK_RANGE(mic_scale), rade_native_tx_get_trim_db());
+  gtk_widget_set_hexpand(mic_scale, TRUE);
+  gtk_widget_set_tooltip_text(mic_scale, "dB added to the mic before RADE. Set the mic itself in the system mixer or "
+                                         "on the radio; use this to finish the job. (The Mic Gain slider has no effect on RADE.)");
+  g_signal_connect(mic_scale, "value-changed", G_CALLBACK(trim_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), mic_scale, 1, 5, 3, 1);
+  mic_agc_b = gtk_check_button_new_with_label("AGC");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), rade_native_tx_get_agc());
+  gtk_widget_set_tooltip_text(mic_agc_b, "Slowly moves the level to the ideal (about 1 dB a second, faster for a shout). "
+                                         "It holds when you stop talking.");
+  g_signal_connect(mic_agc_b, "toggled", G_CALLBACK(agc_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), mic_agc_b, 4, 5, 1, 1);
+  mic_bar = gtk_level_bar_new_for_interval(0.0, 1.0);
+  gtk_widget_set_name(mic_bar, "radelevel");
+  gtk_level_bar_add_offset_value(GTK_LEVEL_BAR(mic_bar), GTK_LEVEL_BAR_OFFSET_LOW, 17.0 / 30.0);    // 3 dB under the ideal
+  gtk_level_bar_add_offset_value(GTK_LEVEL_BAR(mic_bar), GTK_LEVEL_BAR_OFFSET_HIGH, 23.0 / 30.0);   // 3 dB over
+  gtk_level_bar_add_offset_value(GTK_LEVEL_BAR(mic_bar), GTK_LEVEL_BAR_OFFSET_FULL, 27.0 / 30.0);   // 7 dB over
+  gtk_widget_set_size_request(mic_bar, -1, 14);
+  {
+    GtkCssProvider *css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css,
+        "#radelevel block.filled { background-color: #2e9e4a; }"
+        "#radelevel block.filled.low { background-color: #e08a00; }"
+        "#radelevel block.filled.high { background-color: #e0a000; }"
+        "#radelevel block.filled.full { background-color: #d03030; }", -1, NULL);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(css),
+                                              GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
+  }
+  gtk_grid_attach(GTK_GRID(grid), mic_bar, 0, 6, 5, 1);
+  mic_text = gtk_label_new("");
+  gtk_widget_set_halign(mic_text, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), mic_text, 0, 7, 5, 1);
   capture_b = gtk_toggle_button_new_with_label("Capture");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
   g_signal_connect(capture_b, "toggled", G_CALLBACK(capture_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 8, 1, 1);
   capture_label = gtk_label_new("not capturing");
   gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 5, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 8, 4, 1);
   GtkWidget *call_l = gtk_label_new("My call");
   gtk_widget_set_halign(call_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 6, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 9, 1, 1);
   call_e = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
   gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
   gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
-  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 6, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 9, 1, 1);
   call_label = gtk_label_new("");
   gtk_widget_set_halign(call_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 6, 3, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 9, 3, 1);
   g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
   call_changed_cb(call_e, NULL);
   GtkWidget *recv_l = gtk_label_new("Received calls");
   gtk_widget_set_halign(recv_l, GTK_ALIGN_END);
   gtk_widget_set_valign(recv_l, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 7, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 10, 1, 1);
   recv_label = gtk_label_new("");
   gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
-  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 7, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 10, 4, 1);
   show_recent();
   GtkWidget *hint = gtk_label_new("Receiver 0. Use DIGU or USB; the passband is set by RADE. Invert flips the default: V1 below 10 MHz is inverted, V2 never. This window stays open while you use other menus.");
   gtk_label_set_line_wrap(GTK_LABEL(hint), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
   gtk_widget_set_halign(hint, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), hint, 0, 8, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), hint, 0, 11, 5, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();

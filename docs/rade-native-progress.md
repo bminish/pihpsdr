@@ -16,6 +16,47 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-15 (mic level): RADE TX now has a mic **trim** (-20..+20 dB), an
+  **AGC** (leveller, on by default) and a **meter**, all in the RADE window
+  (row under Transmit); trim and AGC are saved in the props file
+  (`rade_native.mic_trim_db`, `rade_native.mic_agc`). The meter works when
+  the radio is not keyed, so the level can be set before transmitting. It
+  measures ITU-R BS.1770 loudness (K-weighted, mono, 48 kHz) of what goes
+  into the vocoder, gated as the standard says and averaged over the last
+  10 s so pauses do not count, and shows it against the **ideal of -20
+  LUFS**: a bar from 20 dB under to 10 dB over (ideal two thirds along,
+  green within 3 dB), and a line "Mic -22.4 LUFS (ideal -20): 2.4 dB ...
+  about right / x dB TOO LOW / x dB TOO HIGH, peak, CLIPPING, AGC +x dB".
+  **Where -20 comes from**: the integrated loudness of the speech clips
+  that ship with rade_c (`wav/`): -24.7 to -17.1 LUFS, median -19.9. It is
+  a reference level, not a tuned optimum. **What librade does with level**
+  (David and Mel clips, nominal -18.5 / -21.1 LUFS, scaled from -40 to +10
+  dB): the output follows the input 1.5 to 2.7 dB lower; the speech
+  envelope stays within 0.95 (David) / 0.99 (Mel) of the nominal decode
+  from 10 dB under to 3 dB over, 0.88-0.92 at 30-40 dB under (envelope only:
+  how noisy quiet speech sounds was not judged), and from +3 dB over the
+  clip starts to clip (0.4 % of samples at +10 dB on Mel, 2 % on David),
+  so the penalty is on the loud side. **The leveller**: acts on the gated
+  average, 0.5 to 2 dB/s up (faster the further under), 1 dB/s down, 6
+  dB/s for a shout more than 8 dB over, range -20..+30 dB, holds when the
+  mic is quiet (nothing under -55 LUFS is lifted) so it does not pump
+  noise. It follows the meter, so it settles slowly from a very quiet mic:
+  in the test a mic 24 dB too quiet reached within 3 dB in well under the
+  97 s run. A gentle limiter (0.9 to 1.0 of full scale) stops the audio
+  clipping; the meter reports the peak before it and CLIPPING when it
+  acted. The Mic Gain slider still has no effect on RADE; the trim
+  replaces it. Tests (`test_tx_level.py`, 15 checks): the meter agrees with
+  an independent BS.1770 calculation to within 0.4 dB (it reads 0.4 dB
+  high at every level), the trim moves it by exactly the dB set, the
+  limiter reports, and the leveller brings mics at -24, -10 and +8 dB to
+  within 1 dB of the ideal. `tx_validate.py` (V1 and V2) still passes with
+  the leveller off, which the test engine now does by default; with it on,
+  the TX features no longer equal the unprocessed reference's, as they
+  should not. **Not done / not known**: the meter has never seen a real
+  microphone or the radio's mic input; the 3 dB "about right" band and
+  the -20 target are judgement; the meter shows nothing while RADE TX is
+  off.
+
 - 2026-10-15 (RADE Reporter): `tools/rade-reporter/` is a standalone
   FreeDV-Reporter-style window (GTK 3 via PyGObject, our own small
   Socket.IO client over `websocket-client`, so nothing new to install),
