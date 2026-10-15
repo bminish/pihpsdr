@@ -101,6 +101,33 @@ def heard():
     check(core.rx_report_due(dict(p, linked=False), 2, "EI6IZ", now) is None, "piHPSDR gone: nothing")
 
 
+def periodic():
+    print("regular SNR reports")
+    pr = core.PeriodicSnr(interval=5.0, validity=180.0, foff_tol=5.0)
+    p = {"linked": True, "tx": 0, "rx_sync": 1, "rx_snr": 7.4, "rx_foff": 1.0}
+    check(pr.step(p, 100.0)[0] is None and "no recent call" in pr.step(p, 100.0)[2], "no call heard yet: nothing to attribute it to")
+    pr.heard("VK5DGR", 1.5, 100.0)
+    check(pr.step(p, 102.0)[0] is None, "just after the end-of-over report: wait out the interval")
+    c = pr.step(p, 105.5)
+    check(c[:2] == ("VK5DGR", 7.4), "after 5 s, the live SNR goes out for the call just heard")
+    check(pr.step(p, 107.0)[0] is None and pr.step(p, 110.6)[0] == "VK5DGR", "then every 5 s")
+    check(pr.step(dict(p, rx_snr=-2.0), 116.0)[:2] == ("VK5DGR", -2.0), "with the SNR as it is then")
+    check(pr.step(dict(p, rx_sync=0), 130.0)[0] is None and "waiting for a signal" in pr.step(dict(p, rx_sync=0), 130.0)[2],
+          "no sync: nothing")
+    check(pr.step(dict(p, tx=1), 131.0)[0] is None, "transmitting: nothing")
+    check(pr.step(dict(p, rx_foff=30.0), 140.0)[0] is None and "not where VK5DGR was" in pr.step(dict(p, rx_foff=30.0), 140.0)[2],
+          "a signal 30 Hz from where that station was is not attributed to it")
+    check(pr.step(p, 100.0 + 181)[0] is None, "3 minutes after the call: stale")
+    pr.enabled = False
+    check(pr.step(p, 150.0)[0] is None, "switched off: nothing")
+    pr.enabled = True
+    pr.heard("OH2BCD", -3.0, 200.0)
+    check(pr.step(dict(p, rx_foff=-2.5), 206.0)[0] == "OH2BCD", "a new call takes over")
+    pr.reset()
+    check(pr.step(p, 300.0)[0] is None, "reset (not reporting): forgets the station")
+    check(core.PeriodicSnr(3.0).interval == 3.0, "interval is settable")
+
+
 def link_flow():
     print("link to a (mock) reporter")
     s1, s2 = MockServer().start(), MockServer().start()
@@ -114,7 +141,7 @@ def link_flow():
 
     def go(p, reporting=True, view="v1"):
         srv, role, mode, freq, tx, why = core.decide(cfg, p, reporting, "EI6IZ", "IO53hu", view)
-        link.set_target(srv, role, "EI6IZ", "IO53hu", freq, mode, tx, "")
+        link.set_target(srv, role, "EI6IZ", "IO53hu", freq, mode, tx, "QRV for a CQ")
         return why
 
     go(live, reporting=False)
@@ -139,6 +166,7 @@ def link_flow():
     check(["freq_change", {"freq": 7053000}] in ev and ["tx_report", {"mode": "RADEV1", "transmitting": False}] in ev,
           "freq_change 7053000 and tx_report RADEV1/not transmitting")
     check(not any(e[0] == "rx_report" for e in ev), "no receive reports until a call is heard")
+    check(["message_update", {"message": "QRV for a CQ"}] in ev, "the stored message goes out with the connection")
     go(dict(live, tx=True))
     check(wait(lambda: ["tx_report", {"mode": "RADEV1", "transmitting": True}] in ev), "transmit start is reported")
     go(dict(live, tx=True, dial_hz=7054000))
@@ -159,6 +187,7 @@ def link_flow():
     check(s2.clients[0]["auth"].get("role") == "report", "as a reporter")
     check(wait(lambda: ["tx_report", {"mode": "RADEV2", "transmitting": False}] in s2.clients[0]["events"]),
           "reported as RADEV2")
+    check(["message_update", {"message": "QRV for a CQ"}] in s2.clients[0]["events"], "the message goes to the second reporter too")
     check(link.report_rx("VK5DGR", "RADEV2", -3.6) and wait(
         lambda: ["rx_report", {"callsign": "VK5DGR", "mode": "RADEV2", "snr": -4}] in s2.clients[0]["events"]),
         "V2: reported on the v3 reporter, negative SNR rounded")
@@ -169,6 +198,8 @@ def link_flow():
                and s1.clients[2]["auth"].get("role") == "view"), "watching again, no identity")
     go(dict(live, waveform=1))
     check(wait(lambda: len(s1.clients) == 4), "V1 again with reporting still on: present again")
+    check(wait(lambda: ["message_update", {"message": "QRV for a CQ"}] in s1.clients[3]["events"]),
+          "the message is sent again on the new connection")
     go(None)
     check(wait(lambda: s1.clients[3]["closed"] or s1.clients[3]["left"]), "piHPSDR gone: no longer present")
     link.close()
@@ -193,6 +224,7 @@ if __name__ == "__main__":
     places()
     decisions()
     heard()
+    periodic()
     link_flow()
     if "--live" in sys.argv:
         live()
