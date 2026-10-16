@@ -27,7 +27,7 @@ from scipy.signal import resample_poly
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
-import rade_ctl, kiwi_rx
+import rade_ctl, kiwi_rx, air_weak
 
 DEFAULT_CLIP = os.path.join(ROOT, "third_party", "rade_c-src", "wav", "david_vk5dgr.wav")
 
@@ -97,7 +97,7 @@ def local_side(stem, log=None):
 
 def kiwi_namespace(a, wave, duration, out):
     return types.SimpleNamespace(
-        host=a.host, port=a.port, password=None, freq=a.freq, wave=wave, duration=int(duration), profiles=None, gain=50,
+        host=a.host, port=a.port, password=None, freq=a.freq, wave=wave, duration=int(duration), profiles=None, gain=a.kiwi_gain,
         launch_delay=1.0, kiwiclient="~/sdr/kiwiclient", out=out, call=a.call, ref=None, tx_freq=None, invert=None,
         min_snr=None, max_loss=None, try_other=False, session=None)
 
@@ -153,6 +153,15 @@ def run_one(a, ctl, wave, level_db, n, p16, p48, clip_s, work):
             meta = json.load(open(os.path.join(sess, "session.json")))
         except OSError:
             res, meta = [], {}
+        try:                                   # band power on / off from the fixed-gain recording: SNR independent of librade's estimate
+            ov = air_weak.over_of(sess, "iq-fixed")
+            z, fs = air_weak.load_iq(os.path.join(sess, "iq-fixed.wav"))
+            lv = air_weak.band_levels(z, ov, wave, bool(meta["expected_invert"]), fs) if ov else None
+            if lv:
+                row.update(band_snr_db=round(lv["band_snr_db"], 1), band_sig_dbfs=round(lv["sig_dbfs"], 1),
+                           band_noise_dbfs=round(lv["noise_dbfs"], 1))
+        except Exception as e:
+            row["band_error"] = str(e)
         t0 = datetime.datetime.strptime(meta["start_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp() if meta else 0
         for r in res:
             if not r["profile"].startswith("iq"):
@@ -209,6 +218,7 @@ def main():
     ap.add_argument("--call", default="EI6IZ")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--margin", type=float, default=22.0, help="Kiwi recording seconds beyond the clip")
+    ap.add_argument("--kiwi-gain", type=int, default=50, help="manual gain (dB) of the fixed-gain Kiwi profile")
     ap.add_argument("--host", default="kiwi.minish.org")
     ap.add_argument("--port", type=int, default=8074)
     ap.add_argument("--out", default=os.path.join(ROOT, "rade-captures", "air"))
@@ -240,7 +250,7 @@ def main():
             print("--- run %d/%d: %s at %+g dB" % (n, len(plan), w.upper(), lv))
             row = run_one(a, ctl, w, lv, n, p16, p48, clip_s, session)
             rows.append(row)
-            print("    %s" % {k: row[k] for k in row if k in ("done", "tx_peak_dbfs", "iq_sync_pct", "iq_snr_mean", "iq_snr_min",
+            print("    %s" % {k: row[k] for k in row if k in ("done", "tx_peak_dbfs", "band_snr_db", "iq_sync_pct", "iq_snr_mean", "iq_snr_min",
                                                                "iq_eoo_ok", "iq_call_ok", "error")})
     except KeyboardInterrupt:
         print("stopped")

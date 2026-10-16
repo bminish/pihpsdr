@@ -975,7 +975,7 @@ int rade_native_tx_inject_state(double *t0, double *t1, double *fraction) {
 }
 
 void rade_native_tx_set_drive_db(double db) {
-  if (db < -30.0) { db = -30.0; }          // the window's slider stops at -6; the test harness goes lower
+  if (db < -60.0) { db = -60.0; }          // the window's slider stops at -6; the test harness goes lower
   if (db > 6.0) { db = 6.0; }
   T.drive_db = db;
 }

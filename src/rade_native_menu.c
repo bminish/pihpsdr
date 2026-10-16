@@ -1078,7 +1078,7 @@ void rade_native_menu(GtkWidget *parent) {
 //
 //////////////////////////////////////////////////////////////////////////////
 
-#define TEST_MAX_DRIVE_PCT   1             // the transmitter's drive setting, percent: more than this is refused
+#define TEST_MAX_DRIVE_PCT   20            // the transmitter's drive setting, percent: more than this is refused (was 1)
 #define TEST_MIN_HZ          28000000LL    // the 10 m band, and only that
 #define TEST_MAX_HZ          29700000LL
 #define TEST_MAX_OVER_S      90.0
