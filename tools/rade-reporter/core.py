@@ -518,7 +518,12 @@ class PeriodicSnr:
             return False, "", 0.0, "off"
         if not p or not p.get("linked"):
             return False, "", 0.0, "waiting: piHPSDR is not running"
-        if p.get("rx_sync"):
+        if p.get("waveform") == 2 and isinstance(p.get("rx_call"), str):
+            # V2: piHPSDR knows which reception a lock belongs to (a drop-out of the same sender keeps the call, another
+            # sender starts afresh), so its call is used and the 10 s rule below is not
+            self.call = p["rx_call"]
+            self.lost_since = None
+        elif p.get("rx_sync"):
             if self.lost_since is not None and now - self.lost_since >= self.reset_s:
                 self.call = ""       # back in sync after a long gap: a new reception, as freedv-gui sees it
             self.lost_since = None

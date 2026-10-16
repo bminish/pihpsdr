@@ -136,6 +136,7 @@ typedef struct {
   unsigned long blocks;      // rade_rx() calls
   unsigned long underruns;   // 48 kHz speech samples not available in time
   unsigned long overruns;    // 8 kHz input samples dropped
+  char          rx_call[40]; // V2: the callsign of the reception in progress ("" if none yet, or while a new lock is being checked against the last)
 } rade_native_status_t;
 
 void rade_native_get_status(rade_native_status_t *st);
