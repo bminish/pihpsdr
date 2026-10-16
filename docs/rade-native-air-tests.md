@@ -57,7 +57,8 @@ Single commands: `rade_ctl.py status | set wave=1 dial=28645000 drive_db=-6 | ca
 | `tx_peak_dbfs`, `tx_rms`, `tx_crest_db`, `tx_at_ceiling_pct` | the WDSP TX output block (192 kHz on P2): how close to, and how much of the over was against, the ALC ceiling |
 | `tx_shape`, `tx_shape_pass` | `tx_shape.py`: energy centre and tilt |
 | `iq_*`, `iq_fixed_*` | the Kiwi (AGC on / fixed gain): `sync_pct`, `snr_mean`, `snr_min`, `snr_max`, `foff`, `eoo_ok`, `call_ok`, `feature_loss` and `speech_env_corr_vs_ideal` against the speech sent |
-| `delay_keyed_to_sync_s` | key to the Kiwi's sync start (the Kiwi's recording start is known to 1 s, so about that) |
+| `kiwi_over_start_s` | where the over starts in the Kiwi recording (not tied to the key: the recordings have no time stamps, so the air delay is not measured) |
+| `mic_lufs`, `mic_peak_dbfs`, `mic_limiting_pct`, `tx_underruns`, `agc_db_max` | from the parameter log, while keyed: the mic as the engine measured it (gated LUFS, peak before the limiter, share of 100 ms blocks in which the mic limiter had acted in the last second), transmit underruns |
 
 ## Reading a level sweep
 
