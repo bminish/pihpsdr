@@ -171,7 +171,12 @@ class Roster:
                     s.rx_call = d.get("callsign", "")
                     s.rx_mode = d.get("mode", "")
                     snr = d.get("snr")
-                    s.rx_snr = snr if isinstance(snr, (int, float)) else None
+                    s.rx_snr = snr if isinstance(snr, (int, float)) and not isinstance(snr, bool) else None
+                    if not s.rx_call and not s.rx_mode:
+                        # The server sends this (with an snr of 0) to everyone when a station changes frequency or connects: it
+                        # means "nothing heard now", not an SNR of 0. freedv-gui blanks the call, mode and SNR for it
+                        # (FreeDVReporterDataModel::onReceiveUpdateFn_); so do we.
+                        s.rx_snr = None
                     return name
         return None
 
