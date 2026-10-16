@@ -25,7 +25,7 @@ def check(c, what):
 mock = MockServer().start()
 cfg = core.load_config()
 cfg["servers"]["v1"].update(host="127.0.0.1", port=mock.port, secure=False)
-cfg["servers"]["v3"].update(host="127.0.0.1", port=mock.port, secure=False)
+cfg["servers"]["v2"].update(host="127.0.0.1", port=mock.port, secure=False)
 cfg.update(callsign="EI6IZ", grid="IO53hu", message="QRV on 40", band="40 m", track=True, track_mode="freq",
            idle="15 min", snr_enabled=True, snr_interval=3.0)
 core.save_config(cfg)
@@ -108,12 +108,12 @@ def s7():
 for t, f in ((2000, s1), (6000, s2), (14000, s3), (21000, s4), (24000, s5), (29000, s6), (35000, s7)):
     GLib.timeout_add(t, lambda f=f: (f(), False)[1])
 Gtk.main()
-app.link.close()
+[lk.close() for lk in app.links.values()]
 print("a new start")
 app2 = rr.App(show=False)
 check(app2.msg_e.get_text() == "QSY 40.5" and app2.band.get_active_text() == "All" and not app2.track.get_active()
       and app2.snr_spin.get_value() == 10 and app2.reporting is False and not app2.rep_chk.get_active(),
       "the changes are there next time, and reporting starts off")
-app2.link.close(); mock.stop()
+[lk.close() for lk in app2.links.values()]; mock.stop()
 print("FAILED %d" % fails if fails else "all passed")
 sys.exit(1 if fails else 0)

@@ -285,9 +285,9 @@ sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync en
 | | `INT`, `INT_TAPS` | 3, 24 (cutoff 7.4 kHz) |
 | `rade_native.c` TX | `TX_DEC`, `TX_DEC_TAPS` | 3, 36 (cutoff 7.2 kHz) |
 | | `TX_INT`, `TX_INT_TAPS` | 6, 48 (cutoff 3.9 kHz) |
-| | `TX_LEVEL_V1`, `_V2` | 0.357, 0.504 (was 0.3 both) |
+| | `TX_LEVEL_V1`, `_V2` | 0.357, 0.504 (was 0.3 both), times the Drive slider (-6..+6 dB) |
 | | `TX_TAIL` | 8000 samples |
-| | leveller | up 0.5..2 dB/s, down 1 dB/s, 6 dB/s for a shout > 8 dB over, range -20..+30 dB, holds under -55 LUFS |
+| | leveller | only while transmitting, 0 dB at key-down; up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB, holds under -55 LUFS |
 | | limiter | knee 0.9, ceiling 1.0 |
 | WDSP (operator) | RX AGC | medium, top 80 dB |
 | WDSP (ours) | TX panel | select 3, copy 0, gain 1; EQ, leveler, CFC, compressor, DEXP, phase rotator off |
