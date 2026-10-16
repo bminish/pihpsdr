@@ -149,8 +149,8 @@ def over_text(run, o):
              o.get("foff_mean", math.nan), o.get("foff_sd", math.nan)),
          "SNR              mean %.1f dB, min %.1f, max %.1f   (sync %.0f %% of the over)" % (
              o.get("snr_mean", math.nan), o.get("snr_min", math.nan), o.get("snr_max", math.nan), o.get("sync_pct", math.nan)),
-         "End-of-over      %s" % ("seen" if o.get("eoo", 0) == 1 else "not seen"),
-         "Call             %s" % ((o.get("call") or "(none decoded)") +
+         "End-of-over      %s" % ("not recorded (old-format log)" if math.isnan(o.get("eoo", math.nan)) else "seen" if o["eoo"] == 1 else "not seen"),
+         "Call             %s" % ((o.get("call") or ("(not recorded)" if math.isnan(o.get("eoo", math.nan)) else "(none decoded)")) +
                                    ("   (SNR %.1f dB)" % o["call_snr"] if o.get("call") and not math.isnan(o.get("call_snr", math.nan)) else ""))]
     return "\n".join(L)
 
