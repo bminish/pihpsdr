@@ -29,6 +29,7 @@
 #include "fargan.h"
 #include "lpcnet.h"
 #include "rade_eoo_text.h"
+#include "rade_v2_text.h"
 #include "rade_native.h"
 #include "rade_native_log.h"
 
@@ -670,6 +671,9 @@ static struct {
   long eoo_end_pos;                      // out_w after the EOO, -1 until generated
   long tail;                             // samples delivered since then
   char call[16];
+  int v2;                                // this engine is V2: the callsign goes on the data symbol channel
+  rade_v2_text_t text;                   // the stream for text_call (worker thread only)
+  char text_call[16];
   // mic level
   double trim_db, trim_g;                // asked for / smoothed linear
   double drive_db;                       // level into WDSP relative to the defined one, -6 .. +6
@@ -755,6 +759,17 @@ static void tx_frame(const int16_t *pcm) {
   if (++T.fidx * NB_TOTAL_FEATURES == T.nfeat) {
     T.fidx = 0;
     if (T.featdump) { fwrite(T.feat, sizeof(float), T.nfeat, T.featdump); }
+    if (T.v2) {
+      char c[16];
+      pthread_mutex_lock(&T.mx);
+      memcpy(c, T.call, sizeof c);
+      pthread_mutex_unlock(&T.mx);
+      if (strcmp(c, T.text_call) != 0) {             // a new callsign: a new stream, from the start
+        memcpy(T.text_call, c, sizeof c);
+        rade_v2_text_init(&T.text, c);
+      }
+      rade_tx_set_data_symbol(T.r, rade_v2_text_next(&T.text));
+    }
     int n = rade_tx(T.r, T.mod, T.feat);
     tx_emit(T.mod, n);
   }
@@ -851,6 +866,8 @@ void rade_native_tx_enable(int on) {
   T.enc = lpcnet_encoder_create();
   if (!T.r || !T.enc) { tx_stop(); return; }
   T.nmod = rade_n_tx_out(T.r);
+  T.v2 = (E.waveform == RADE_NATIVE_V2);
+  T.text_call[0] = 1;                    // differs from any callsign: the stream is built on the first frame
   T.pcm_w = T.pcm_r = T.out_w = T.out_r = 0;
   memset(T.dec_hist, 0, sizeof T.dec_hist);
   T.dec_pos = T.dec_phase = 0;
