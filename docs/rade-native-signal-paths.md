@@ -231,6 +231,44 @@ flowchart LR
 | End of over hold | 0.58 to 0.62 s V1, 0.38 s V2 | |
 | TX engine + WDSP + RX engine, clip start to first decoded speech | about 1.9 s (V1, one clip) | not broken down by stage |
 
+## 7a. TX level and the ALC (measured 2026-10-16)
+
+**Question:** how close to the WDSP ALC ceiling can the modem level go without hurting? **Method:**
+`test/rade_native/alc_sweep.py 20261016-005144`: the first 30 s of the speech that went into the vocoder
+(`_txmic.wav` of the capture) through `rade_tx`, scaled, WDSP TXA (neutral, ALC on, 48 kHz), optional white
+noise, WDSP RXA (medium AGC), librade RX. Levels in dB around the engine's (V1 0.357, V2 0.504).
+
+| level re current | V1 peak out dBFS | V1 TXA gain | V1 clean SNR est. | V2 peak out dBFS | V2 TXA gain | V2 clean SNR est. |
+|---|---|---|---|---|---|---|
+| -3.0 | -2.02 | +5.70 | 32.2 | -2.51 | +6.00 | 18.2 |
+| -1.5 | -0.52 | +5.70 | 32.2 | -1.01 | +6.00 | 18.2 |
+| 0 | -0.02 | +5.69 | 32.3 | -0.02 | +5.98 | 18.2 |
+| +1.5 | -0.02 | +4.71 | 29.4 | -0.02 | +4.75 | 18.0 |
+| +3 | -0.02 | +3.22 | 28.4 | -0.02 | +3.26 | 18.0 |
+| +6 | -0.02 | +0.22 | 28.4 | -0.02 | +0.26 | 18.0 |
+| +9 | -0.02 | -2.78 | 28.4 | -0.02 | -2.74 | 18.0 |
+
+Feature error (fraction of variance) is flat: V1 0.0206-0.0207, V2 0.0146-0.0151 at all levels; with noise added
+(white, 48 kHz, level fixed in absolute terms) neither feature error, sync nor SNR got worse with level.
+
+**Reading:** at the current levels the ALC is already at its ceiling for this speech; above that every dB of extra
+level is taken back as a dB less TXA gain, so the output power does not rise, and the decode is not measurably
+harmed. The ceiling is therefore the limit, and the best level is where peaks just reach it. V1's clean SNR
+estimate falls 3.9 dB where it first touches the ceiling (clipping noise of the ALC), V2's 0.2 dB; the
+decoded features do not change.
+
+**Not explained:** the live capture 20261016-005144 peaked at -0.97 dBFS at the 192 kHz TXA output
+(rms 0.55, nothing within 1 % of 1.0) where this offline run peaks at -0.02 dBFS. The offline run is 48 kHz
+and has no CFIR or 192 kHz resampler; I have not tested whether that accounts for it, and I do not know which
+build the radio was running (the binary on disk was built before the capture). **Not measured:** weak-signal
+SNR (the noise used gives 16-20 dB, not the 0-10 dB where this would matter), fading, the live leveller, other
+speech, the effect on the PA.
+
+**Off-air check, same session** (Kiwi, 14250.0 kHz, V1, 37.8 s over, iq / iq-fixed / usb profiles agree): 100 % in
+sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync ended, call EI6IZ decoded. Locally
+(`tx_shape.py`): centre +1467 Hz (modem +1457), tilt -0.2 dB, PASS; this confirms the speech-stage fix. An earlier
+45 s over (before the capture) read the same, 25.2 dB.
+
 ## 8. Parameter register (current values)
 
 | Where | Name | Value |
