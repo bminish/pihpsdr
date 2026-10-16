@@ -622,6 +622,11 @@ static struct {
   double trim_db, trim_g;                // asked for / smoothed linear
   double drive_db;                       // level into WDSP relative to the defined one, -6 .. +6
   int keyed;                             // transmitting, for the leveller and the log
+  // test harness: a file of speech standing in for the mic
+  float *inj;                            // 48 kHz mono, owned here
+  long inj_n, inj_pos;
+  int inj_on;                            // armed: consumed only while keyed, zeros before
+  double inj_t0, inj_t1;                 // unix time of the first and the last sample consumed
   double pk_ref;                         // loudest speech this over (400 ms, before the leveller's gain), LUFS
   int log_blocks;                        // 100 ms blocks since the loudness average was last logged
   int agc_on;
@@ -943,8 +948,34 @@ void rade_native_tx_set_trim_db(double db) {
 
 double rade_native_tx_get_trim_db(void) { return T.trim_db; }
 
+int rade_native_tx_inject(const float *samples, long n) {
+  pthread_mutex_lock(&T.mx);
+  free(T.inj);
+  T.inj = NULL; T.inj_n = T.inj_pos = 0; T.inj_on = 0; T.inj_t0 = T.inj_t1 = 0.0;
+  if (samples != NULL && n > 0) {
+    T.inj = malloc(sizeof(float) * n);
+    if (T.inj == NULL) { pthread_mutex_unlock(&T.mx); return -1; }
+    memcpy(T.inj, samples, sizeof(float) * n);
+    T.inj_n = n;
+    T.inj_on = 1;
+  }
+  pthread_mutex_unlock(&T.mx);
+  return 0;
+}
+
+int rade_native_tx_inject_state(double *t0, double *t1, double *fraction) {
+  pthread_mutex_lock(&T.mx);
+  int on = T.inj_on;
+  if (t0) { *t0 = T.inj_t0; }
+  if (t1) { *t1 = T.inj_t1; }
+  if (fraction) { *fraction = T.inj_n > 0 ? (double)T.inj_pos / T.inj_n : 0.0; }
+  int done = T.inj_n > 0 && T.inj_pos >= T.inj_n;
+  pthread_mutex_unlock(&T.mx);
+  return on ? (done ? 2 : 1) : 0;
+}
+
 void rade_native_tx_set_drive_db(double db) {
-  if (db < -6.0) { db = -6.0; }
+  if (db < -30.0) { db = -30.0; }          // the window's slider stops at -6; the test harness goes lower
   if (db > 6.0) { db = 6.0; }
   T.drive_db = db;
 }
@@ -977,6 +1008,18 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
     T.pk_ref = -200.0;
   }
   T.keyed = transmitting != 0;
+  if (T.inj_on) {
+    // the test harness: speech from a file in place of the mic, started with the key and ended with its last sample
+    for (int i = 0; i < n; i++) {
+      if (T.keyed && T.inj_pos < T.inj_n) {
+        if (T.inj_pos == 0) { struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); T.inj_t0 = ts.tv_sec + ts.tv_nsec * 1e-9; }
+        buf[2 * i] = T.inj[T.inj_pos++];
+        if (T.inj_pos == T.inj_n) { struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); T.inj_t1 = ts.tv_sec + ts.tv_nsec * 1e-9; }
+      } else {
+        buf[2 * i] = 0.0;
+      }
+    }
+  }
   lv_process(buf, n);               // trim, level, limit and measure the mic, keyed or not
   if (!transmitting) {
     // discard whatever is in flight so the next over starts clean
