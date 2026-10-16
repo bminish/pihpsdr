@@ -3,7 +3,7 @@
 No GUI here, so it can be tested without a display. Times in a Run are absolute UTC
 seconds (Unix time); the files hold seconds since the start of the run.
 """
-import csv, os, tarfile, tempfile, math
+import csv, io, os, tarfile, tempfile, math
 import numpy as np
 
 DIAL_OFFSET_HZ = 1500        # the dial is the suppressed carrier; the energy centre is 1500 Hz from it
@@ -23,6 +23,8 @@ class Run:
         self.events = []          # (t_abs, kind, value)
         self.overs = []           # dicts, t_start / t_end absolute
         self.tx_overs = []
+        self.source = path        # what it was opened from (a directory, or a .tar.gz)
+        self.live = False         # a directory whose run has not ended (no ended_utc in meta.txt): it can be updated
 
 
 def _num(s):
@@ -36,7 +38,10 @@ def _rows(path):
     if not os.path.exists(path):
         return []
     with open(path, newline="") as f:
-        return list(csv.DictReader(f))
+        text = f.read()
+    if text and not text.endswith("\n"):          # a run that is still being written: the last line may be half there
+        text = text[:text.rfind("\n") + 1]
+    return list(csv.DictReader(io.StringIO(text, newline="")))
 
 
 def _columns(rows, t0):
@@ -71,9 +76,46 @@ def resolve(path):
     raise ValueError("%s is not a run of the new log format (a directory with meta.txt, rx.csv ...)" % path)
 
 
+def signature(path):
+    """What changes when a run directory is written to: the size and time of its tables and meta.txt."""
+    d = path if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
+    sig = []
+    for n in ("meta.txt", "rx.csv", "tx.csv", "events.csv", "overs.csv", "tx_overs.csv"):
+        try:
+            st = os.stat(os.path.join(d, n))
+            sig.append((n, st.st_size, st.st_mtime_ns))
+        except OSError:
+            sig.append((n, 0, 0))
+    return tuple(sig)
+
+
+def find_runs(path):
+    """The runs in path: the run itself if it is one, else every run directory and .tar.gz directly inside it
+    (a directory is taken in place of the .tar.gz made from it)."""
+    if os.path.isfile(os.path.join(path, "meta.txt")):
+        return [path]
+    out, dirs = [], set()
+    try:
+        names = sorted(os.listdir(path))
+    except OSError:
+        return []
+    for n in names:
+        q = os.path.join(path, n)
+        if os.path.isdir(q) and os.path.isfile(os.path.join(q, "meta.txt")):
+            out.append(q)
+            dirs.add(n)
+    for n in names:
+        if n.endswith(".tar.gz") and n[:-len(".tar.gz")] not in dirs:
+            out.append(os.path.join(path, n))
+    return out
+
+
 def load_run(path):
     d = resolve(path)
     run = Run(d)
+    is_tar = path.endswith((".tar.gz", ".tgz"))
+    run.source = path if is_tar else d             # a file in a run directory stands for the directory
+    run.sig = None if is_tar else signature(d)
     if path.endswith((".tar.gz", ".tgz")):
         run.name = os.path.basename(path)[:-len(".tar.gz")] if path.endswith(".tar.gz") else os.path.basename(path)[:-4]
     mp = os.path.join(d, "meta.txt")
@@ -84,6 +126,7 @@ def load_run(path):
             if ":" in line:
                 k, v = line.split(":", 1)
                 run.meta[k.strip()] = v.strip()
+    run.live = not is_tar and "ended_utc" not in run.meta
     run.t0 = _num(run.meta.get("started_unix"))
     if math.isnan(run.t0):
         raise ValueError("meta.txt has no started_unix")

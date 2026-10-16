@@ -50,6 +50,31 @@ try:
 except ValueError:
     check("bad path raises", True)
 
+
+# several runs in a folder; live runs
+folder = os.path.join(d, "folder"); os.makedirs(folder)
+import shutil
+for n in ("20261016-120000", "20261016-130000"):
+    shutil.copytree(run_dir, os.path.join(folder, n))
+shutil.copy(tgz, os.path.join(folder, "20261016-120000.tar.gz"))      # the .tar.gz of a run that is also there as a directory
+shutil.copy(tgz, os.path.join(folder, "20261015-090000.tar.gz"))
+fr = ld.find_runs(folder)
+check("find_runs: directories, and a .tar.gz only when its directory is not there",
+      [os.path.basename(x) for x in fr] == ["20261016-120000", "20261016-130000", "20261015-090000.tar.gz"], str([os.path.basename(x) for x in fr]))
+check("find_runs: a run is itself", ld.find_runs(run_dir) == [run_dir])
+check("a directory run without ended_utc is live, a .tar.gz is not", ld.load_run(run_dir).live and not ld.load_run(tgz).live)
+sig0 = ld.signature(run_dir)
+assert ld.signature(run_dir) == sig0
+with open(run_dir + "/rx.csv", "a") as f:
+    f.write("%.2f,%.1f,%.1f,-2.0,25,,,,\n" % (40.0, 7, 5))
+    f.write("40.5,7.0,5")                                        # half a line, as when read while the log is writing
+check("a write changes the signature", ld.signature(run_dir) != sig0)
+r2 = ld.load_run(run_dir)
+check("the half-written last line is left out, the whole one is read", len(r2.rx["t"]) == 21 and abs(r2.rx["t"][-1] - (T0 + 40.0)) < 1e-6, str(len(r2.rx["t"])))
+with open(run_dir + "/rx.csv", "a") as f:
+    f.write(",25,,,,\n")                                         # the rest arrives
+check("and the line read once it is complete", len(ld.load_run(run_dir).rx["t"]) == 22)
+
 if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     import tkinter as tk
     import rade_logview as rv
@@ -74,6 +99,30 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     check("window: seconds axis", len(v.axes) == 3)
     v.remove_run if False else None
     root.destroy()
+    # several at once, live runs, update
+    root2 = tk.Tk(); root2.withdraw()
+    v2 = rv.Viewer(root2, [folder, tgz])
+    v2.quiet = True
+    root2.update()
+    check("window: a folder of runs opens all of them (the .tar.gz of an open directory is the same run)", len(v2.runs) == 3, str([r.name for r in v2.runs]))
+    check("window: live runs are marked", v2.runlist.get(0).startswith("● ") and not v2.runlist.get(2).startswith("●"), v2.runlist.get(0))
+    check("window: nothing changed, nothing reloaded", v2.update_live() == 0)
+    n0 = len(v2.runs[0].rx["t"])
+    with open(os.path.join(folder, "20261016-120000", "rx.csv"), "a") as f:
+        for i in range(8):
+            f.write("%.2f,%.1f,%.1f,-2.0,25,,,,\n" % (60 + 0.5 * i, 6, 4))
+    v2.axes and v2.set_xlim(T0 + 0, T0 + 30)
+    check("window: update picks up the new rows", v2.update_live() == 1 and len(v2.runs[0].rx["t"]) == n0 + 8)
+    x0, x1 = v2.axes[0].get_xlim()
+    check("window: following puts the right edge on the newest data, same width",
+          abs((x1 - x0) * 86400 - 30) < 0.5 and abs(v2.from_x(x1) - (T0 + 63.5 + 0.9)) < 1.5, str((v2.from_x(x1) - T0, (x1 - x0) * 86400)))
+    open(os.path.join(folder, "20261016-120000", "meta.txt"), "a").write("ended_utc: x\ndropped_rows: 0\n")
+    v2.update_live()
+    check("window: a run that has ended is no longer live", not v2.runs[0].live and not v2.runlist.get(0).startswith("●"))
+    check("window: Update with nothing live changed does nothing", v2.update_live() == 0)
+    v2.auto.set(True); v2.auto_changed(); root2.update(); v2.auto.set(False); v2.auto_changed()
+    root2.destroy()
+
 else:
     print("  no display: window tests skipped")
 sys.exit(1 if fails else 0)
