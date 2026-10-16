@@ -31,7 +31,8 @@
 // codeword (CRC-8, last-block flag, block number, 8 characters packed in base 38), interleaved, one bit per frame;
 // after the last block the stream starts again at block 0.
 //
-// Single owner: the transmit worker thread calls next(). No allocation, no locks.
+// Single owner: the transmit worker thread calls next(), the receive worker thread the rx functions below (each
+// on its own object). No allocation, no locks.
 //
 
 #define RADE_V2_TEXT_MAXCHARS  32

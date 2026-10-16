@@ -40,7 +40,6 @@ USBOZY=OFF
 SOAPYSDR=OFF
 PORTFORWARD=ON
 TCI=ON
-RADE_NATIVE=OFF
 ifeq ($(MACOS), YES)
 AUDIO=PORTAUDIO
 endif
@@ -396,25 +395,6 @@ endif
 
 ##############################################################################
 #
-# Native RADE V1/V2 (feature/rade-native). Needs librade, which
-# tools/rade/build_rade.sh fetches and builds into third_party/.
-# See docs/rade-native.md. Off by default.
-#
-##############################################################################
-
-ifeq ($(RADE_NATIVE),ON)
-RADE_SRC=./third_party/rade_c-src/src
-RADE_BLD=./third_party/rade_c-build
-RADE_OPUS=$(RADE_BLD)/build_opus-prefix/src/build_opus
-RADE_NATIVE_OPTIONS=-D RADE_NATIVE
-RADE_NATIVE_INCLUDE=-I$(RADE_SRC) -I$(RADE_OPUS) -I$(RADE_OPUS)/include \
-	-I$(RADE_OPUS)/celt -I$(RADE_OPUS)/dnn
-RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src) \
-	$(RADE_OPUS)/.libs/libopus.a
-endif
-
-##############################################################################
-#
 # All the command-line options to compile the *.c files
 #
 ##############################################################################
@@ -428,7 +408,6 @@ OPTIONS=$(MIDI_OPTIONS) $(USBOZY_OPTIONS) \
 	$(AUDIO_OPTIONS) \
     $(TCI_OPTIONS) \
 	$(OPUS_OPTIONS) \
-	$(RADE_NATIVE_OPTIONS) \
 	$(ZLIB_OPTIONS) \
 	$(DXCLUSTER_OPTIONS) \
 	$(CURL_OPTIONS) \
@@ -725,9 +704,7 @@ DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
           src/diversity_capture.o)
 endif
 
-ifeq ($(RADE_NATIVE),ON)
-OBJS    += src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o src/rade_launch.o src/rade_native_log.o src/rade_native_test.o
-endif
+include rade_native.mk
 
 ##############################################################################
 #
@@ -1345,16 +1322,3 @@ src/tx_panadapter.o: src/transmitter.h
 src/vfo.o: src/receiver.h src/mode.h
 src/waterfall.o: src/receiver.h
 src/MacTTS.o: src/message.h
-
-src/rade_native.o: src/rade_native.h src/rade_eoo_text.h src/rade_v2_text.h src/rade_native_log.h
-src/rade_native_log.o: src/rade_native_log.h
-src/rade_native_test.o: src/rade_native_test.h
-src/rade_native_menu.o: src/rade_native_test.h
-src/rade_eoo_text.o: src/rade_eoo_text.h src/rade_eoo_text_hra.h
-src/rade_v2_text.o: src/rade_v2_text.h src/rade_eoo_text_hra.h
-src/rade_native_menu.o: src/rade_native.h src/rade_native_menu.h src/rade_launch.h
-src/rade_launch.o: src/rade_launch.h
-src/receiver.o: src/rade_native.h
-# librade's headers include a "nnet.h" of their own (opus), which clashes with
-# wdsp/nnet.h. Only this object sees librade, with its own include path.
-src/rade_native.o: INCLUDES=$(RADE_NATIVE_INCLUDE)

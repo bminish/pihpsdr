@@ -1244,13 +1244,6 @@ static void rx_process_buffer(RECEIVER *rx) {
   }
 }
 
-#ifdef RADE_NATIVE
-static int rx_rade_invert(const RECEIVER *rx) {
-  (void)rx;
-  return rade_native_get_invert();
-}
-#endif
-
 static void rx_full_buffer(RECEIVER *rx) {
   ASSERT_SERVER();
   int error;
@@ -1291,7 +1284,7 @@ static void rx_full_buffer(RECEIVER *rx) {
       //
       double volume = rx->volume;
       double amplitude = volume <= -39.5 ? 0.0 : volume > 0.0 ? 1.0 : pow(10.0, 0.05 * volume);
-      rade_native_rx_block(rx->audio_output_buffer, rx->output_samples, rx_rade_invert(rx), amplitude);
+      rade_native_rx_block(rx->audio_output_buffer, rx->output_samples, rade_native_get_invert(), amplitude);
     }
 #endif
     rx_process_buffer(rx);
@@ -1469,7 +1462,7 @@ void rx_set_filter(RECEIVER *rx) {
     // invert, not the filter menu.
     //
     double lo, hi;
-    rade_native_wdsp_edges(rade_native_waveform(), rx_rade_invert(rx), 0.0, &lo, &hi);
+    rade_native_wdsp_edges(rade_native_waveform(), rade_native_get_invert(), 0.0, &lo, &hi);
     rx->filter_low = (int)lround(lo);
     rx->filter_high = (int)lround(hi);
   }
