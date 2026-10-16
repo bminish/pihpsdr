@@ -46,6 +46,7 @@
 #include "mode.h"
 #include "version.h"
 #include "rade_native_log.h"
+#include "rade_native_test.h"
 #include "vfo.h"
 
 static GtkWidget *dialog = NULL;
@@ -70,6 +71,10 @@ static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
 static GtkWidget *drive_scale = NULL, *log_b = NULL, *log_label = NULL;
+static GtkWidget *test_b = NULL, *test_label = NULL;
+static int test_armed = 0;              // the operator has ticked Test harness: a script may key the transmitter
+static int test_keyed = 0;              // ... and it has done so, and so is the one to release
+static char test_stem[160] = "";
 static GtkWidget *capture_label = NULL;
 static guint timer_id = 0;
 static guint event_timer_id = 0;
@@ -327,8 +332,11 @@ static int state_cb(gpointer arg) {
   return G_SOURCE_CONTINUE;
 }
 
+static int test_exec(const char *verb, const char *args, char *reply, size_t n);
+
 void rade_native_state_start(void) {
   if (state_timer_id != 0) { return; }
+  rade_test_start(test_exec);
   const char *base = g_getenv("XDG_STATE_HOME");
   char dir[480];
   if (base && base[0]) {
@@ -604,6 +612,7 @@ static void capture_start(void) {
     t_print("%s: could not start capture in %s\n", __func__, CAPTURE_DIR);
     return;
   }
+  snprintf(test_stem, sizeof test_stem, "%s", stem);
   state_line(last_state, sizeof last_state);
   rade_native_capture_event(last_state);
   if (event_timer_id == 0) { event_timer_id = g_timeout_add(500, event_cb, NULL); }
@@ -625,7 +634,11 @@ static void capture_cb(GtkWidget *widget, gpointer data) {
   }
 }
 
+static void test_disarm(void);
+static void test_cb(GtkWidget *widget, gpointer data);
+
 static void cleanup(void) {
+  test_disarm();
   if (timer_id != 0) {
     g_source_remove(timer_id);
     timer_id = 0;
@@ -634,7 +647,7 @@ static void cleanup(void) {
   tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   mic_scale = mic_agc_b = mic_bar = mic_text = note_label = NULL;
-  drive_scale = log_b = log_label = NULL;
+  drive_scale = log_b = log_label = test_b = test_label = NULL;
   if (dialog != NULL) {
     //
     // This window is deliberately not "sub_menu": the main menu and the
@@ -1028,6 +1041,16 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_halign(log_label, GTK_ALIGN_START);
   gtk_label_set_selectable(GTK_LABEL(log_label), TRUE);
   gtk_grid_attach(GTK_GRID(grid), log_label, 1, 9, 4, 1);
+  gtk_grid_insert_row(GTK_GRID(grid), 10);
+  test_b = gtk_check_button_new_with_label("Test harness");
+  gtk_widget_set_tooltip_text(test_b, "Lets a script (test/rade_native/rade_ctl.py) key the transmitter and send a file as the "
+                                      "mic, for repeatable over-the-air tests. Off when piHPSDR starts and when this window closes. "
+                                      "Limits: drive TEST_MAX_DRIVE_PCT, the 10 m band, 90 s an over. Untick to stop at once.");
+  g_signal_connect(test_b, "toggled", G_CALLBACK(test_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), test_b, 0, 10, 1, 1);
+  test_label = gtk_label_new("off: a script can read the status only");
+  gtk_widget_set_halign(test_label, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(grid), test_label, 1, 10, 4, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();
@@ -1046,4 +1069,175 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_get_preferred_size(dialog, NULL, &nat);
   gtk_window_move(GTK_WINDOW(dialog), x + mw - nat.width - 10, y + mh - nat.height - 10);
   timer_id = g_timeout_add(250, update_cb, NULL);
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Test harness (see rade_native_test.h). Everything here runs on the GTK main thread.
+//
+//////////////////////////////////////////////////////////////////////////////
+
+#define TEST_MAX_DRIVE_PCT   1             // the transmitter's drive setting, percent: more than this is refused
+#define TEST_MIN_HZ          28000000LL    // the 10 m band, and only that
+#define TEST_MAX_HZ          29700000LL
+#define TEST_MAX_OVER_S      90.0
+
+static void test_release(void) {
+  rade_native_tx_inject(NULL, 0);
+  if (test_keyed) {
+    test_keyed = 0;
+    if (radio_is_transmitting()) { radio_set_mox(0); }
+  }
+}
+
+static void test_disarm(void) {
+  if (!test_armed && !test_keyed) { return; }
+  test_release();
+  test_armed = 0;
+  if (test_b != NULL && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(test_b))) {
+    updating = 1;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(test_b), FALSE);
+    updating = 0;
+  }
+  if (test_label != NULL) { gtk_label_set_text(GTK_LABEL(test_label), "off: a script can read the status only"); }
+}
+
+static void test_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    test_armed = 1;
+    char text[300];
+    snprintf(text, sizeof text, "ARMED: a script can key the transmitter (drive <= %d %%, 10 m, <= %.0f s). Untick to stop.",
+             TEST_MAX_DRIVE_PCT, TEST_MAX_OVER_S);
+    gtk_label_set_text(GTK_LABEL(test_label), text);
+  } else {
+    test_disarm();
+  }
+}
+
+// why the transmitter may not be keyed by a script now, or NULL
+static const char *test_refusal(void) {
+  if (!test_armed) { return "the operator has not enabled the test harness (RADE window, Test harness)"; }
+  if (rade_native_waveform() == 0) { return "RADE is off"; }
+  if (transmitter == NULL) { return "no transmitter"; }
+  if (transmitter->puresignal) { return "PureSignal is on"; }
+  if (!tx_ready()) { return "RADE transmit is not on"; }
+  if (transmitter->drive > TEST_MAX_DRIVE_PCT) { return "drive is above the test limit"; }
+  long long d = rade_dial();
+  if (d < TEST_MIN_HZ || d > TEST_MAX_HZ) { return "the dial is outside the 10 m band"; }
+  if (transmitter->tune || transmitter->twotone) { return "tune or two-tone is on"; }
+  return NULL;
+}
+
+static void test_status(char *r, size_t n) {
+  double t0 = 0, t1 = 0, fr = 0;
+  int inj = rade_native_tx_inject_state(&t0, &t1, &fr);
+  rade_native_status_t st;
+  rade_native_get_status(&st);
+  rade_native_txlevel_t lv;
+  rade_native_tx_level(&lv);
+  char why[120] = "";
+  if (test_refusal() != NULL) {
+    snprintf(why, sizeof why, "%s", test_refusal());
+    for (char *c = why; *c; c++) { if (*c == ' ') { *c = '_'; } }
+  }
+  snprintf(r, n, "armed=%d wave=%d dial=%lld mode=%s invert=%d user_invert=%d drive_db=%.1f trim_db=%.1f agc=%d agc_db=%.2f "
+                 "rade_tx=%d tx=%d tx_drive_pct=%d capture=%d log=%d sync=%d snr=%.1f foff=%.1f mic_lufs=%.1f mic_peak_dbfs=%.1f "
+                 "inj=%d inj_frac=%.3f t0=%.3f t1=%.3f can_key=%d refusal=%s",
+           test_armed, rade_native_waveform(), rade_dial(), mode_string[vfo[0].mode], rade_native_get_invert(),
+           rade_native_user_invert(), rade_native_tx_get_drive_db(), rade_native_tx_get_trim_db(), rade_native_tx_get_agc(),
+           lv.agc_gain_db, rade_native_tx_enabled(), radio_is_transmitting() ? 1 : 0,
+           transmitter ? transmitter->drive : -1, rade_native_capture_active(), rade_log_active(), st.sync, st.snr_db,
+           st.foff_hz, lv.valid ? lv.loud_avg : -99.0, lv.peak_dbfs, inj, fr, t0, t1, why[0] == 0,
+           why[0] ? why : "none");
+}
+
+static void wset(GtkWidget *w, int on) {
+  if (w != NULL) { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w), on ? TRUE : FALSE); }
+}
+
+static int test_exec(const char *verb, const char *args, char *reply, size_t n) {
+  char v[300];
+  reply[0] = 0;
+  if (!strcmp(verb, "status") || !strcmp(verb, "poll")) { test_status(reply, n); return 0; }
+  if (!strcmp(verb, "abort") || !strcmp(verb, "unkey")) {
+    int was = test_keyed;
+    if (!strcmp(verb, "abort")) { rade_native_tx_inject(NULL, 0); }
+    if (test_keyed) { test_keyed = 0; if (radio_is_transmitting()) { radio_set_mox(0); } }
+    snprintf(reply, n, "released=%d", was);
+    return 0;
+  }
+  if (!test_armed) { snprintf(reply, n, "%s", test_refusal()); return -1; }
+  if (!strcmp(verb, "set")) {
+    if (rade_test_arg(args, "wave", v, sizeof v)) {
+      int w = atoi(v);
+      if (w < 0 || w > 2 || wave_b[w] == NULL) { snprintf(reply, n, "wave must be 0, 1 or 2 (and the RADE window open)"); return -1; }
+      if (radio_is_transmitting()) { snprintf(reply, n, "not while transmitting"); return -1; }
+      wset(wave_b[w], 1);
+    }
+    if (rade_test_arg(args, "invert", v, sizeof v)) { if (inv_b == NULL) { snprintf(reply, n, "window"); return -1; } wset(inv_b, atoi(v)); }
+    if (rade_test_arg(args, "dial", v, sizeof v)) {
+      long long d = atoll(v);
+      if (d < TEST_MIN_HZ || d > TEST_MAX_HZ) { snprintf(reply, n, "dial outside the 10 m band"); return -1; }
+      if (radio_is_transmitting()) { snprintf(reply, n, "not while transmitting"); return -1; }
+      vfo_id_set_frequency(0, d);
+    }
+    if (rade_test_arg(args, "drive_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_drive_db(d); if (drive_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(drive_scale), d < -6.0 ? -6.0 : d); updating = 0; } rade_log_event("drive %.1f dB (harness)", rade_native_tx_get_drive_db()); }
+    if (rade_test_arg(args, "trim_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_trim_db(d); if (mic_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(mic_scale), d); updating = 0; } }
+    if (rade_test_arg(args, "agc", v, sizeof v)) { int a = atoi(v); rade_native_tx_set_agc(a); if (mic_agc_b) { updating = 1; gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), a); updating = 0; } }
+    if (rade_test_arg(args, "tx", v, sizeof v)) { wset(tx_b, atoi(v)); }
+    test_status(reply, n);
+    return 0;
+  }
+  if (!strcmp(verb, "capture")) {
+    if (!strncmp(args, "on", 2)) {
+      if (rade_native_waveform() == 0) { snprintf(reply, n, "RADE is off"); return -1; }
+      if (!rade_native_capture_active()) { capture_start(); }
+      if (!rade_native_capture_active()) { snprintf(reply, n, "could not start the capture"); return -1; }
+      wset(capture_b, 1);
+      snprintf(reply, n, "stem=%s", rade_native_capture_stem());
+    } else {
+      capture_stop();
+      wset(capture_b, 0);
+      snprintf(reply, n, "stem=%s", test_stem);
+    }
+    return 0;
+  }
+  if (!strcmp(verb, "log")) {
+    if (!strncmp(args, "on", 2)) {
+      wset(log_b, 0); wset(log_b, 1);                          // a new file each time
+      if (!rade_log_active()) { snprintf(reply, n, "could not start the log"); return -1; }
+      snprintf(reply, n, "file=%s", rade_log_path());
+    } else {
+      wset(log_b, 0);
+      snprintf(reply, n, "file=%s", rade_log_path());
+    }
+    return 0;
+  }
+  if (!strcmp(verb, "inject")) {
+    char path[300], err[200], g[32];
+    if (!rade_test_arg(args, "file", path, sizeof path)) { snprintf(reply, n, "file= is needed"); return -1; }
+    double gain = rade_test_arg(args, "gain_db", g, sizeof g) ? atof(g) : 0.0;
+    float *buf = NULL;
+    long len = 0;
+    if (rade_test_load_wav(path, gain, TEST_MAX_OVER_S, &buf, &len, err, sizeof err) != 0) { snprintf(reply, n, "%s", err); return -1; }
+    int rc = rade_native_tx_inject(buf, len);
+    free(buf);
+    if (rc != 0) { snprintf(reply, n, "out of memory"); return -1; }
+    snprintf(reply, n, "duration_s=%.3f samples=%ld", len / 48000.0, len);
+    return 0;
+  }
+  if (!strcmp(verb, "key")) {
+    const char *why = test_refusal();
+    if (why) { snprintf(reply, n, "%s", why); return -1; }
+    if (radio_is_transmitting()) { snprintf(reply, n, "already transmitting"); return -1; }
+    if (rade_native_tx_inject_state(NULL, NULL, NULL) == 0) { snprintf(reply, n, "nothing injected: use inject first"); return -1; }
+    test_keyed = 1;
+    radio_set_mox(1);
+    snprintf(reply, n, "keyed=1");
+    return 0;
+  }
+  snprintf(reply, n, "unknown request %s", verb);
+  return -1;
 }

@@ -153,6 +153,15 @@ void rade_native_get_status(rade_native_status_t *st);
 // Needs a waveform to be set with rade_native_configure(). Not for use
 // with PureSignal.
 //
+//
+// Test harness: speech from memory in place of the mic. rade_native_tx_inject() takes n samples of 48 kHz
+// mono (copied; NULL stops and frees). They are consumed from the first mic block after the key goes down,
+// zeros before that, and the mic is silent again after the last. _state() returns 0 not armed, 1 armed or
+// running, 2 all consumed, and the unix times of the first and last sample and how much has gone.
+//
+int  rade_native_tx_inject(const float *samples, long n);
+int  rade_native_tx_inject_state(double *t0, double *t1, double *fraction);
+
 int  rade_native_tx_enabled(void);
 void rade_native_tx_enable(int on);
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
@@ -179,7 +188,7 @@ double rade_native_tx_get_trim_db(void);
 // Level into the WDSP TX chain, in dB around the defined one (which is 0: the level at which the
 // ALC peaks just below its ceiling). -6 .. +6; above 0 the ALC starts to compress.
 //
-void rade_native_tx_set_drive_db(double db);
+void rade_native_tx_set_drive_db(double db);        // -30 .. +6 (the slider in the window: -6 .. +6)
 double rade_native_tx_get_drive_db(void);
 void rade_native_tx_set_agc(int on);              // slow leveller towards the target
 int  rade_native_tx_get_agc(void);
