@@ -16,6 +16,16 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (TX level and ALC, first on-air captures at 14250 kHz): TX levels
+  into WDSP set per waveform (V1 0.357, V2 0.504; were 0.3) so the ALC peaks
+  at about 0 dB, 0.5 dB backed off on request. Capture 20261016-005144 (V1,
+  39 s): `tx_shape.py` PASS (centre +1467 Hz, tilt -0.2 dB), confirming the
+  speech-stage fix; Kiwi shows 100 % sync, SNR 25.3 dB, EOO and call EI6IZ
+  decoded. `alc_sweep.py` (offline): at the current levels the ALC is already
+  at its ceiling, more level only lowers the TXA gain, decode not harmed; the
+  live peak (-0.97 dBFS) is about 1 dB below the offline one, unexplained.
+  Write-up in `docs/rade-native-signal-paths.md` section 7a.
+
 - 2026-10-16 (signal paths): `docs/rade-native-signal-paths.md` - RX and TX diagrams, stage tables, what each display/report item is measured from, taps, parameter register, and a change log of the signal path (add a line with every change to a stage).
 
 - 2026-10-16 (mode changes keep the energy still): built. `rade_native_plan()`
