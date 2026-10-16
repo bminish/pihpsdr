@@ -16,6 +16,13 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (air run 2, ALC strong/weak): `docs/rade-native-air-run2-20261016.md`. The ALC costs nothing measurable
+  on weak signals and does not lower the strong-signal power: received power stops rising at about +1.5 dB (V1 +1.0 dB, V2
+  +0.4 dB over the 0 dB level); decode quality at +3..+6 dB equals or beats 0 dB at every noise level tested. V1's own SNR
+  estimate falls ~5 dB above the knee (clip distortion at ~-26 dB); the decode does not. Sweet spot +1.5..+3 dB; suggested
+  working level +3 dB (not applied). Thresholds: V1 sync ~0 dB, EOO ~+1.7 dB, call ~+8.5 dB; V2 sync ~-1 dB, EOO ~+6-7 dB.
+  Emulation agrees with the real weak runs. V2 real -24 dB run contaminated by interference.
+
 - 2026-10-16 (second air run planned): harness drive cap 1 % -> 20 % (rebuild), `drive_db` down to -60,
   `air_test.py --kiwi-gain`, band-power SNR in the results, and `air_weak.py` (emulated path loss on the
   Kiwi's fixed-gain recording: same noise floor for every transmit level) to answer whether the ALC costs
