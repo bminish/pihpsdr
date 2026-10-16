@@ -17,7 +17,7 @@ import core  # noqa: E402
 from mock_server import MockServer  # noqa: E402
 
 REAL_GAP, REAL_STABLE = core.Link.MIN_GAP_S, core.Link.STABLE_S
-core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0     # the flow tests run on real sockets and real time; the pacing has its own test
+core.Link.MIN_GAP_S = core.Link.STABLE_S = core.Link.RX_GAP_S = 0.0     # the flow tests run on real sockets and real time; the pacing has its own test
 
 fails = 0
 
@@ -225,7 +225,7 @@ def periodic():
 
 def pacing():
     print("pacing: nothing while tuning, at most one event of a kind per 5 s, nothing that is not new")
-    core.Link.MIN_GAP_S, core.Link.STABLE_S = REAL_GAP, REAL_STABLE
+    core.Link.MIN_GAP_S, core.Link.STABLE_S, core.Link.RX_GAP_S = REAL_GAP, REAL_STABLE, 1.0
     check((REAL_GAP, REAL_STABLE) == (5.0, 5.0), "the real limits are 5 s and 5 s")
     now = [1000.0]
 
@@ -267,13 +267,29 @@ def pacing():
     t_last = ev("rx_report")[-1][0]
     tick(5.0, freq=7065000)
     rr = ev("rx_report")
-    check(all(b[0] - a[0] >= 5.0 for a, b in zip(rr, rr[1:])), "reception reports are at least 5 s apart (%s)" % [round(x[0]) for x in rr])
+    check(all(b[0] - a[0] >= 1.0 for a, b in zip(rr, rr[1:])), "reception reports are at least 1 s apart (%s)" % [round(x[0]) for x in rr])
     check(rr[-1][2]["snr"] == 7, "only the newest live SNR goes out when its turn comes")
     # a call is not lost to a live report
     now[0] += 6; link.report_rx("", "RADEV1", 8); link.report_rx("DL1ABC", "RADEV1", 9); tick(0, freq=7065000)
     tick(5.1, freq=7065000); tick(5.1, freq=7065000)
     sent = [e[2] for e in ev("rx_report")][-3:]
     check({"callsign": "DL1ABC", "mode": "RADEV1", "snr": 9} in sent, "a decoded call is sent (calls first)")
+    # changing SNR: once a second; steady SNR and really in sync: every 20 s; steady but not in sync: nothing
+    link.client.events.clear()
+    for i in range(6):
+        link.report_rx("", "RADEV1", 10 + i); tick(1.0, freq=7065000, live=True)
+    ch = [e for e in ev("rx_report")]
+    check(len(ch) >= 5 and all(b[0] - a[0] >= 1.0 for a, b in zip(ch, ch[1:])) and [e[2]["snr"] for e in ch][-1] == 15,
+          "SNR changing every second: a report every second (%d in 6 s)" % len(ch))
+    link.client.events.clear()
+    for i in range(50):
+        link.report_rx("", "RADEV1", 15); tick(1.0, freq=7065000, live=True)
+    st = [round(e[0] - 1000) for e in ev("rx_report")]
+    check(len(st) in (2, 3) and all(b - a >= 20 for a, b in zip(st, st[1:])), "steady SNR, in sync: repeated every 20 s (%s)" % st)
+    link.client.events.clear()
+    for i in range(50):
+        link.report_rx("", "RADEV1", 15); tick(1.0, freq=7065000, live=False)
+    check(not ev("rx_report"), "steady SNR but not in sync (e.g. just a decoded call): not repeated")
     # tx on / off: each change goes out, but not more often than 5 s
     tick(6.0, freq=7065000, tx=True)
     tick(1.0, freq=7065000, tx=False)
@@ -287,7 +303,7 @@ def pacing():
     check([e[2] for e in ev("freq_change")] == [{"freq": 7071000}], "lock + SNR while tuning: new information, frequency sent without waiting")
     tick(0.5, freq=7072000, live=True)
     check(len(ev("freq_change")) == 1, "...and not again within 5 s")
-    core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0
+    core.Link.MIN_GAP_S = core.Link.STABLE_S = core.Link.RX_GAP_S = 0.0
 
 
 def link_flow():

@@ -103,7 +103,7 @@ class App(Gtk.Window):
         self.reporting = False            # never remembered
         # these are remembered: the message goes to every connection, the view stays as it was left
         self.message = self.cfg.get("message", "")
-        self.periodic = core.PeriodicSnr(5.0)      # always on: sent whenever reporting and in sync with an SNR
+        self.periodic = core.PeriodicSnr(1.0)      # always on: offered every second while reporting and in sync with an SNR; Link decides what goes
         self._loading = True
         self.last_qsy = None
         # list filters set from the headings (right click km: distance, MHz: frequency range); 0 = no limit on that side
@@ -126,7 +126,7 @@ class App(Gtk.Window):
         v.pack_start(r1, False, False, 0)
         self.rep_chk = Gtk.CheckButton(label="Reporting")
         self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected, with the callsign "
-                                      "from piHPSDR's RADE window,\nand sends the SNR of a signal in sync every 5 s.\n"
+                                      "from piHPSDR's RADE window,\nand sends the SNR of a signal in sync: when it changes (up to once a second), or every 20 s if it is steady.\n"
                                       "Always off when this program starts.")
         self.rep_chk.connect("toggled", self._on_report_toggled)
         r1.pack_start(self.rep_chk, False, False, 0)
