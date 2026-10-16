@@ -22,7 +22,7 @@ static int exec_stub(const char *verb, const char *args, char *r, size_t n) {
     inj = frac >= 1.0 ? 2 : 1;
   } else if (loaded) inj = 1;
   if (!strcmp(verb, "status") || !strcmp(verb, "poll")) {
-    snprintf(r, n, "armed=%d tx=%d inj=%d inj_frac=%.3f t0=%.3f t1=%.3f aborts=%d", armed, tx, inj, frac, t0, t1, aborts);
+    snprintf(r, n, "armed=%d tx=%d inj=%d inj_frac=%.3f t0=%.3f t1=%.3f aborts=%d tx_drive_pct=1 dial=28645000 can_key=1 refusal=none", armed, tx, inj, frac, t0, t1, aborts);
     return 0;
   }
   if (!strcmp(verb, "abort") || !strcmp(verb, "unkey")) {
@@ -32,7 +32,11 @@ static int exec_stub(const char *verb, const char *args, char *r, size_t n) {
     return 0;
   }
   if (!strcmp(verb, "set") && rade_test_arg(args, "armed", v, sizeof v)) { armed = atoi(v); snprintf(r, n, "armed=%d", armed); return 0; }
+  if (!strcmp(verb, "arm")) { armed = 1; snprintf(r, n, "armed=1"); return 0; }
   if (!armed) { snprintf(r, n, "not armed"); return -1; }
+  if (!strcmp(verb, "set")) { snprintf(r, n, "set=1"); return 0; }
+  if (!strcmp(verb, "capture")) { snprintf(r, n, "stem=/nonexistent/stem"); return 0; }
+  if (!strcmp(verb, "log")) { snprintf(r, n, "file=/nonexistent/log.csv"); return 0; }
   if (!strcmp(verb, "inject")) {
     char path[200], err[100], g[20];
     float *b; long len;
