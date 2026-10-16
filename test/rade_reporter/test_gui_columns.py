@@ -48,6 +48,13 @@ feed(app, "a", "EI7AAA", "IO63", 7.1); feed(app, "b", "G4BBB", "IO91", 14.236); 
 feed(app, "d", "VK5DDD", "QF56", 14.236); feed(app, "e", "NOGRID", "", 14.236); feed(app, "f", "NOFREQ", "IO91", 0)
 check(len(shown(app)) == 6, "no filter: all six: %s" % shown(app))
 
+print("headings")
+for n, c in app.cols.items():
+    b = app.labels[n].get_ancestor(Gtk.Button)
+    check(b is not None, "heading %s has a button of its own to take the right click" % n) if n in ("km", "MHz", "Callsign") else None
+mv = app._header_menu(None)
+labs = [i.get_label() for i in mv.get_children() if i.get_label()]
+check(labs[:2] == ["Distance filter...", "Frequency range filter..."] and "Callsign" in labs, "the Columns / filters button's menu has both filters and the columns")
 print("distance filter (right click km)")
 m_km = app._header_menu("km")          # keep the menu alive: its items go with it
 check(m_km.get_children()[0].get_label() == "Distance filter...", "the km heading menu starts with the distance filter")
@@ -56,13 +63,13 @@ check(not any("filter" in (i.get_label() or "") for i in m_cs.get_children() if 
       "another heading's menu has no filter item")
 app._set_dist(0, 1000)
 check(shown(app) == ["EI7AAA", "G4BBB", "NOFREQ"], "within 1000 km: %s (the station with no locator is hidden)" % shown(app))
-check(app.cols["km"].get_title() == "km *", "the heading carries a star while it is on")
+check(app.labels["km"].get_text() == "km *", "the heading carries a star while it is on")
 app._set_dist(500, 5000)
 check(shown(app) == ["G4BBB", "K1CCC", "NOFREQ"], "between 500 and 5000 km: %s" % shown(app))
 app._set_dist(10000, 0)
 check(shown(app) == ["VK5DDD"], "beyond 10000 km: %s" % shown(app))
 app._set_dist(0, 0)
-check(len(shown(app)) == 6 and app.cols["km"].get_title() == "km", "cleared: everything again, no star")
+check(len(shown(app)) == 6 and app.labels["km"].get_text() == "km", "cleared: everything again, no star")
 
 print("frequency range filter (right click MHz)")
 m_f = app._header_menu("MHz")
@@ -108,7 +115,7 @@ print("a new start")
 app2 = make()
 check(app2._col_names()[:3] == ["SNR", "Callsign", "Status"], "the order is back: %s" % app2._col_names()[:4])
 check(not app2.cols["Msg"].get_visible() and not app2.cols["Version"].get_visible() and app2.cols["Callsign"].get_visible(), "the hidden columns are back")
-check(app2._dist == (0, 2500) and app2._frng == (14.0, 14.5) and app2.cols["km"].get_title() == "km *" and app2.cols["MHz"].get_title() == "MHz *",
+check(app2._dist == (0, 2500) and app2._frng == (14.0, 14.5) and app2.labels["km"].get_text() == "km *" and app2.labels["MHz"].get_text() == "MHz *",
       "the filters are back, with their stars")
 for lk in app2.links.values():
     lk.close()
