@@ -192,7 +192,8 @@ flowchart LR
 | Mic meter, "x dB too low / high" | RADE window | TX stage 3: **after** trim, leveller and limiter, K-weighted | LUFS, gated, 10 s average; ideal -20; peak in dBFS before the limiter | the VOX bar |
 | ALC meter | TX panel | WDSP ALC (stage 10) | idle by design at our level | the mic level |
 | TX panadapter | TX panel | TX stage 11: TXA output | | what the PA radiates |
-| Transmitting / Status | RADE window, Reporter `tx_report` | `radio_is_transmitting()` (held through the end of over) | | |
+| Transmitting / Status | RADE window | `radio_is_transmitting()` (held through the end of over) | | |
+| Transmitting, as reported | Reporter `tx_report`, `tx_count`, state.json `tx` | `rade_is_tx()`: keyed **and** a RADE waveform on **and** the RADE transmit engine in use **and** not TUNE or two-tone | an SSB over or a tune in RADE mode is not reported | `radio_is_transmitting()` |
 | Frequency | VFO; Reporter `freq_change`; logs | the dial = carrier of the sideband in use | Hz | the energy centre `Fe` (state.json `centre_hz`) |
 | Received call | RADE window, `rade-calls.csv`, Reporter `rx_report` | end-of-over frame, LDPC decode | SNR with it is the over's smoothed SNR | |
 | Regular SNR report | Reporter `rx_report` every N s | librade SNR (live), call = last decoded or blank | `int(snr + 0.5)` | |
