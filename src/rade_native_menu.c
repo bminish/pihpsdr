@@ -83,6 +83,16 @@ static long long rade_dial(void) {
   return vfo[0].ctun ? vfo[0].ctun_frequency : vfo[0].frequency;
 }
 
+//
+// Transmitting RADE: keyed, a RADE waveform on and its transmit engine in use, and not a TUNE or two-tone
+// (which key the radio too but are not RADE). This, not radio_is_transmitting(), is what the Reporter is told:
+// an SSB over, or a tune, in RADE mode is not reported as a RADE transmission.
+//
+static int rade_is_tx(void) {
+  return radio_is_transmitting() && rade_native_waveform() != 0 && rade_native_tx_enabled() &&
+         transmitter != NULL && !transmitter->tune && !transmitter->twotone;
+}
+
 static int vfo_mode_sign(void) {
   switch (vfo[0].mode) {
   case modeUSB:
@@ -254,7 +264,7 @@ static void state_write(int running) {
            "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
            "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"heard\":[%s]}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
-           rade_dial(), radio_is_transmitting() ? 1 : 0, call, ver,
+           rade_dial(), rade_is_tx() ? 1 : 0, call, ver,
            st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_foff, heard_t, tx_count, tx_last_t,
            rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, hist);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
@@ -291,7 +301,7 @@ static int state_cb(gpointer arg) {
   } else {
     hf_side = -1;
   }
-  int tx_now = radio_is_transmitting() ? 1 : 0;
+  int tx_now = rade_is_tx() ? 1 : 0;
   if (tx_now && !prev_tx) {
     tx_count++;
     tx_last_t = g_get_real_time() / 1e6;
