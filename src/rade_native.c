@@ -191,7 +191,7 @@ static struct {
   rade_native_call_t calls[16];
   int ncalls;
   double last_call_t;
-  char last_call[16];
+  char last_call[40];
 } E = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER };
 
 static void cap_row(long consumed, int nout);
@@ -229,6 +229,9 @@ static void *worker(void *arg) {
   float cont[5 * NB_TOTAL_FEATURES];
   int cont_n = 0, ready = 0;
   fargan_init(&fargan);
+  rade_v2_text_rx_t *vrx = E.waveform == RADE_NATIVE_V2 ? malloc(sizeof *vrx) : NULL;   // the V2 callsign decoder
+  if (vrx) { rade_v2_text_rx_init(vrx); }
+  int v2_was_sync = 0;
   pthread_mutex_lock(&E.mx);
   while (E.running) {
     int nin = rade_nin(r);
@@ -242,6 +245,11 @@ static void *worker(void *arg) {
     pthread_mutex_unlock(&E.mx);
     int has_eoo = 0;
     int nout = rade_rx(r, feat, &has_eoo, neoo > 0 ? eoo : NULL, blk);
+    char v2_call[RADE_V2_TEXT_MAXCHARS + 1];
+    int v2_got = 0;
+    if (vrx && nout > 0) {                                     // one data symbol per modem frame, as freedv-gui feeds it
+      v2_got = rade_v2_text_rx_symbol(vrx, rade_rx_get_data_symbol(r), v2_call);
+    }
     float pcm[LPCNET_FRAME_SIZE * 16];
     int npcm = 0;
     for (int fi = 0; fi < nout / NB_TOTAL_FEATURES && npcm + LPCNET_FRAME_SIZE <= (int)(sizeof pcm / sizeof pcm[0]); fi++) {
@@ -266,6 +274,13 @@ static void *worker(void *arg) {
     E.st.blocks++;
     E.st.sync = rade_sync(r);
     E.st.snr_db = rade_snrdB_3k_est(r);
+    if (vrx) {
+      if (v2_was_sync && !E.st.sync) {                         // the place in the sender's cycle is lost with the sync
+        rade_v2_text_rx_reset(vrx);
+        E.last_call[0] = 0;
+      }
+      v2_was_sync = E.st.sync;
+    }
     E.st.foff_hz = rade_freq_offset(r);
     if (E.st.sync) {
       // a new reception (sync back after 1.5 s without) starts the average afresh; an estimate with no lock is never used
@@ -276,6 +291,19 @@ static void *worker(void *arg) {
     } else {
       E.nosync += nin;
       if (E.nosync > 12000) { E.snr_n = 0; }
+    }
+    if (v2_got && E.st.sync) {
+      // the call arrives once per pass through the sender's cycle; it is passed on when it is new in this reception
+      if (strcmp(v2_call, E.last_call) != 0 && E.ncalls < 16) {
+        rade_native_call_t *c = &E.calls[E.ncalls++];
+        snprintf(c->call, sizeof c->call, "%s", v2_call);
+        c->t_unix = (double)time(NULL);
+        c->snr_db = E.snr_ema;
+        c->snr_valid = E.snr_n > 0;
+        c->foff_hz = E.foff_last;
+        c->waveform = E.waveform;
+        snprintf(E.last_call, sizeof E.last_call, "%s", v2_call);
+      }
     }
     if (has_eoo && neoo > 0) {
       char call[16];
@@ -320,7 +348,7 @@ static void *worker(void *arg) {
     E.out_w += npcm;
   }
   pthread_mutex_unlock(&E.mx);
-  free(blk); free(feat); free(eoo);
+  free(blk); free(feat); free(eoo); free(vrx);
   return NULL;
 }
 

@@ -59,6 +59,22 @@ def decode(y48, conj, snr_db, tag, want, seed=1):
     return r.returncode == 0, (line[0] if line else r.stdout[-200:] + r.stderr[-200:])
 
 
+def rx_engine(y48, snr_db, tag):
+    """the receive engine of piHPSDR (src/rade_native.c) on the 48 kHz signal as WDSP delivers it: the calls it reports"""
+    x = y48.copy()
+    if snr_db is not None:
+        act = x[np.abs(x) > 1e-4]
+        p = np.mean(np.abs(act) ** 2)
+        sig = np.sqrt(p * (48000 / 3000) / 10 ** (snr_db / 10) / 2)
+        rng = np.random.default_rng(3)
+        x = x + sig * (rng.standard_normal(len(x)) + 1j * rng.standard_normal(len(x)))
+    f = os.path.join(OUT, tag + ".rxin.f32")
+    np.stack([x.real, x.imag], 1).astype(np.float32).tofile(f)
+    r = subprocess.run([os.path.join(HERE, "test_rx_engine"), "--v2", "--speed", "8", f, os.path.join(OUT, tag + ".rx.wav")],
+                       capture_output=True, text=True)
+    return [l.split()[1] for l in r.stdout.splitlines() if l.startswith("call: ")], r.stdout
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--call", default="EI6IZ")
@@ -84,6 +100,16 @@ def main():
     y3 = engine("", a.seconds, "v2txt3")
     ok, info = decode(y3, conj, None, "v2txt3", "")
     check("delivered ''" in info and "(0 times)" in info, "no callsign: nothing is delivered (%s)" % info[:90])
+    if not os.path.exists(os.path.join(HERE, "test_rx_engine")):
+        sys.exit("build first: make test_rx_engine")
+    # the receive engine: the callsign comes out of the engine, once per reception
+    for snr in (None, 9.0, 6.0):
+        calls, out = rx_engine(y, snr, "v2rx%s" % snr)
+        check(calls == [a.call], "receive engine%s: calls reported %s" % ("" if snr is None else " at %.0f dB" % snr, calls))
+    calls, out = rx_engine(y2, None, "v2rx2")
+    check(calls == ["W1AW/P"], "receive engine, another callsign: %s" % calls)
+    calls, out = rx_engine(y3, None, "v2rx3")
+    check(calls == [], "receive engine, no callsign sent: nothing reported (%s)" % calls)
     print("FAILED %d" % len(fails) if fails else "all passed")
     return 1 if fails else 0
 
