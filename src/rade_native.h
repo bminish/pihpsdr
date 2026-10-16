@@ -171,6 +171,8 @@ int  rade_native_tx_inject_state(double *t0, double *t1, double *fraction);
 void rade_native_tx_times(double t[7]);
 
 int  rade_native_tx_enabled(void);
+#define RADE_LIVE_SAMPLES 8192      // 170 ms at 48 kHz, whatever the block size
+int  rade_native_tx_live(void);      // a RADE over is being sent (not TUNE, two-tone, noise or SSB); what the Reporter is told
 void rade_native_tx_enable(int on);
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
 

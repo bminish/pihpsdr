@@ -708,6 +708,7 @@ static struct {
   double trim_db, trim_g;                // asked for / smoothed linear
   double drive_db;                       // level into WDSP relative to the defined one, -6 .. +6
   int keyed;                             // transmitting, for the leveller and the log
+  int live_samples;                      // 48 kHz samples in a row keyed for a RADE over (0 for TUNE, two-tone, noise)
   // test harness: a file of speech standing in for the mic
   float *inj;                            // 48 kHz mono, owned here
   long inj_n, inj_pos;
@@ -864,6 +865,11 @@ static void *tx_worker(void *arg) {
 
 int rade_native_tx_enabled(void) { return T.enabled; }
 
+// A RADE over is on the air: the engine has been given the key for real speech (the caller passes transmitting = 0 for TUNE,
+// two-tone and noise) for RADE_LIVE_SAMPLES samples (170 ms) running, and still has it, the end-of-over frame included. The few blocks
+// at the edge of a TUNE (its flag clears slightly before the key does) never get there.
+int rade_native_tx_live(void) { return T.enabled && T.live_samples >= RADE_LIVE_SAMPLES; }
+
 void rade_native_tx_feature_dump(const char *path) {
   pthread_mutex_lock(&T.mx);
   if (T.featdump) { fclose(T.featdump); T.featdump = NULL; }
@@ -903,7 +909,7 @@ void rade_native_tx_enable(int on) {
   T.dec_pos = T.dec_phase = 0;
   memset(T.ihi, 0, sizeof T.ihi); memset(T.ihq, 0, sizeof T.ihq); T.ipos = 0;
   T.flush = 0;
-  T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0;
+  T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0; T.live_samples = 0;
   T.underruns = 0;
   memset(T.k1x, 0, sizeof T.k1x); memset(T.k1y, 0, sizeof T.k1y);
   memset(T.k2x, 0, sizeof T.k2x); memset(T.k2y, 0, sizeof T.k2y);
@@ -1124,6 +1130,7 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
     T.ev_end_req = T.ev_eoo_gen = T.ev_eoo_out = T.ev_done = T.ev_unkey = T.ev_out0 = 0.0;
   }
   T.keyed = transmitting != 0;
+  if (transmitting) { if (T.live_samples < 100000000) { T.live_samples += n; } } else { T.live_samples = 0; }
   if (T.inj_on) {
     // the test harness: speech from a file in place of the mic, started with the key and ended with its last sample
     for (int i = 0; i < n; i++) {
