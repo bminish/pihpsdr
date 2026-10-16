@@ -509,6 +509,25 @@ def save_config(c, path=None):
     os.replace(tmp, path)
 
 
+FREQ_MIN_HZ, FREQ_MAX_HZ = 100_000, 450_000_000      # what can be a dial frequency worth reporting
+
+
+def valid_freq(hz):
+    """A frequency that may be reported: a real number of Hz inside the radio's range (never 0, negative, NaN or a string)."""
+    return (isinstance(hz, (int, float)) and not isinstance(hz, bool) and hz == hz and FREQ_MIN_HZ <= hz <= FREQ_MAX_HZ)
+
+
+def report_gate(pihpsdr):
+    """May anything be reported at all? -> (True, "") or (False, why). Needs piHPSDR running and telling us now (its state file is
+    fresh), and a valid dial frequency. When this is False reporting is switched off, not just paused: a station must never be listed
+    with a bad frequency or a state that is not known to be true."""
+    if not pihpsdr or not pihpsdr.get("linked"):
+        return False, "piHPSDR is not running (no current state from it)"
+    if not valid_freq(pihpsdr.get("dial_hz")):
+        return False, "no valid frequency from piHPSDR"
+    return True, ""
+
+
 def plan(cfg, pihpsdr, reporting, callsign, grid, view):
     """Which servers to be connected to, and in what role.
 
@@ -540,8 +559,11 @@ def decide(cfg, pihpsdr, reporting, callsign, grid, view_key):
     linked = bool(pihpsdr and pihpsdr.get("linked"))
     wave = int(pihpsdr.get("waveform", 0)) if linked else 0
     key = WAVE_KEY.get(wave)
+    ok_gate, why_gate = report_gate(pihpsdr)
     if reporting:
-        if not linked:
+        if not ok_gate:
+            why = "not reporting: " + why_gate
+        elif not linked:
             why = "not reporting: piHPSDR is not running"
         elif key is None:
             why = "not reporting: RADE is off in piHPSDR"

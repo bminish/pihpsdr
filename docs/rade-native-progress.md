@@ -16,6 +16,11 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (RADE window layout, reporting gate): the "TX: RADE V1" line is gone - the transmit button carries it: `TX (Select Mode)`, `TX (RADE V1)`, `TX (RADE V2)` (and `TX (RADE TX off)`, `TX (PureSignal: not RADE)`, `TX (no transmitter)`, `ON AIR (stop)`);
+  the Drive slider is short and sits to the right of the RADE TX tick; Log, Capture and Test harness are on one line with no state text (the button / tick is the state; the log file is Log's tooltip); the calls list has no heading and a
+  compact fixed line (`HH:MM:SS CALL V1 17.6 dB +2.9 Hz 5.368`); label widths reduced so the window is narrower, not wider. **Reporter: reporting is switched off (untick, greyed, stays off until ticked again) whenever piHPSDR is not connected
+  (no fresh state) or the dial frequency is not valid (a real number, 100 kHz-450 MHz)**; `decide()` also refuses to report without one. Built; layout not looked at on a screen.
+
 - 2026-10-16 (parameter log redesigned): `rade-logs/<time>/` with `meta.txt`, `rx.csv` (in sync only, 2 Hz mean + min SNR; V2 columns for V2), `tx.csv` (keyed only, 2 Hz),
   `events.csv`, `overs.csv` (one row per heard over with dial, mode, waveform, SNR/offset statistics, end-of-over seen and the call), `tx_overs.csv`, and a `.tar.gz` copy on stop.
   Aggregation in the writer thread; audio threads unchanged. `test_log.py` (scripted scene) in `make check`; `log_analysis.py` and `air_test.py` read the new tables. Design and numbers: `rade-native-logging.md`. Not yet run live.
