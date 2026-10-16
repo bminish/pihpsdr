@@ -11,10 +11,12 @@ RADE window, and the harness will not key above its drive / band / length limits
   and of the local side (the TX output: peak, rms, crest, how much of the over was against the ALC ceiling)
 
 Results go to rade-captures/air/<session>/results.csv and results.json, with each run's piHPSDR capture stem,
-parameter log and Kiwi session named. Timing: t_keyed -> Kiwi over start gives the end-to-end delay (the Kiwi's
-recording start is known to 1 s, so that figure is to about that).
+parameter log and Kiwi session named. Timing: the harness gives key / first-sample / last-sample / release times; the Kiwi
+recordings carry no time stamps, so the air delay is NOT measured (an earlier attempt to infer it
+from the recorder's start time was wrong by the connect time and was removed).
 
   air_test.py --freq 28645 --wave v1,v2 --levels -24,-18,-12,-6,-3,0,3,6 [--clip FILE] [--seconds 20] [--call EI6IZ]
+  air_test.py --reanalyze SESSION_DIR   recompute the local-side columns of a finished session
   air_test.py --dry-run ...        everything except the harness: no piHPSDR, no transmission (checks the Kiwi side)
 """
 import argparse, csv, datetime, glob, json, os, subprocess, sys, tempfile, threading, time, types
@@ -45,9 +47,34 @@ def prepare(clip, seconds, out_dir):
     return p16, p48, len(x16) / 16000.0
 
 
-def local_side(stem):
-    """What left the transmitter: from the capture's _tx.wav (WDSP TX output) and the parameter log."""
+def resolve(path, folder):
+    """Paths come back as piHPSDR sees them: relative to its working directory (the repo), or just a stem."""
+    for p in (path, os.path.join(ROOT, path), os.path.join(ROOT, folder, os.path.basename(path))):
+        if p and (os.path.exists(p) or os.path.exists(p + "_tx.wav")):
+            return p
+    return path
+
+
+def log_side(log):
+    """The parameter log of a run: the mic as the engine saw it, the buffers, whether the transmitter underran."""
     out = {}
+    if not (log and os.path.exists(log)):
+        return out
+    rows = [r for r in csv.DictReader(l for l in open(log) if not l.startswith("#")) if r["kind"] == "tx" and r["tx"] == "1"]
+    if not rows:
+        return out
+    f = lambda k: [float(r[k]) for r in rows if r[k] not in ("", None)]
+    avg = f("loud_avg")
+    out.update(mic_lufs=round(avg[-1], 1) if avg else None, mic_peak_dbfs=round(max(f("peak_dbfs")), 2),
+               mic_limiting_pct=round(100.0 * sum(1 for r in rows if r["limiting"] == "1") / len(rows), 1),
+               tx_underruns=int(max(f("tx_underruns"))), tx_out_fill_min=int(min(f("tx_out_fill"))),
+               agc_db_max=round(max(f("agc_db")), 2), keyed_s=round(0.1 * len(rows), 1))
+    return out
+
+
+def local_side(stem, log=None):
+    """What left the transmitter: from the capture's _tx.wav (WDSP TX output) and the parameter log."""
+    out = log_side(log)
     f = stem + "_tx.wav"
     if os.path.exists(f):
         r, x = wavfile.read(f)
@@ -55,8 +82,8 @@ def local_side(stem):
         m = m[m > 1e-3]
         if len(m):
             pk, rms = m.max(), np.sqrt(np.mean(m ** 2))
-            out.update(tx_peak_dbfs=round(20 * np.log10(pk), 2), tx_rms=round(float(rms), 4),
-                       tx_crest_db=round(20 * np.log10(pk / rms), 2),
+            out.update(tx_peak_dbfs=round(float(20 * np.log10(pk)), 2), tx_rms=round(float(rms), 4),
+                       tx_crest_db=round(float(20 * np.log10(pk / rms)), 2),
                        tx_at_ceiling_pct=round(100.0 * float(np.mean(m >= 0.98)), 3))
     shape = subprocess.run([sys.executable, os.path.join(HERE, "tx_shape.py"), os.path.basename(stem).split("_")[0]],
                            capture_output=True, text=True, env=dict(os.environ, RADE_CAPTURES=os.path.dirname(stem)))
@@ -111,7 +138,9 @@ def run_one(a, ctl, wave, level_db, n, p16, p48, clip_s, work):
     sess = getattr(ns, "session", None)
     row["kiwi_session"] = sess or ""
     if ctl and row.get("capture_stem"):
-        row.update(local_side(row["capture_stem"]))
+        row["capture_stem"] = resolve(row["capture_stem"], "rade-captures")
+        row["log_file"] = resolve(row.get("log_file", ""), "rade-logs")
+        row.update(local_side(row["capture_stem"], row["log_file"]))
     if sess:
         ns.ref = p16
         ns.session = sess
@@ -137,14 +166,38 @@ def run_one(a, ctl, wave, level_db, n, p16, p48, clip_s, work):
                 for k in ("feature_loss", "speech_env_corr_vs_ideal"):
                     if k in o:
                         row[tag + "_" + k] = o[k]
-                if tag == "iq" and row.get("t_keyed"):
-                    row["delay_keyed_to_sync_s"] = round(t0 + o["start_s"] - row["t_keyed"], 1)
+                if tag == "iq":
+                    row["kiwi_over_start_s"] = o["start_s"]        # from the start of the recording, not tied to the key
             else:
                 row.update({tag + "_sync_pct": 0.0, tag + "_overs": 0})
     return row
 
 
+def reanalyze(session):
+    """Recompute the local side of every run of a session (paths resolved, parameter log read) and rewrite the results."""
+    try:
+        rows = json.load(open(os.path.join(session, "results.json")))
+    except ValueError:
+        rows = list(csv.DictReader(open(os.path.join(session, "results.csv"))))
+    for r in rows:
+        if r.get("capture_stem"):
+            r["capture_stem"] = resolve(r["capture_stem"], "rade-captures")
+            r["log_file"] = resolve(r.get("log_file", ""), "rade-logs")
+            r.update(local_side(r["capture_stem"], r["log_file"]))
+    cols = []
+    for r in rows:
+        cols += [k for k in r if k not in cols]
+    with open(os.path.join(session, "results.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rows)
+    open(os.path.join(session, "results.json"), "w").write(json.dumps(rows, indent=1, default=float))
+    print("rewrote", os.path.join(session, "results.csv"))
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--reanalyze":
+        return reanalyze(sys.argv[2])
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--freq", type=float, required=True, help="dial, kHz (the Kiwi is tuned to it too)")
     ap.add_argument("--wave", default="v1,v2")
@@ -188,7 +241,7 @@ def main():
             row = run_one(a, ctl, w, lv, n, p16, p48, clip_s, session)
             rows.append(row)
             print("    %s" % {k: row[k] for k in row if k in ("done", "tx_peak_dbfs", "iq_sync_pct", "iq_snr_mean", "iq_snr_min",
-                                                               "iq_eoo_ok", "iq_call_ok", "delay_keyed_to_sync_s", "error")})
+                                                               "iq_eoo_ok", "iq_call_ok", "error")})
     except KeyboardInterrupt:
         print("stopped")
     finally:
@@ -205,7 +258,7 @@ def main():
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         w.writerows(rows)
-    json.dump(rows, open(os.path.join(session, "results.json"), "w"), indent=1)
+    open(os.path.join(session, "results.json"), "w").write(json.dumps(rows, indent=1, default=float))
     print("results:", os.path.join(session, "results.csv"))
 
 
