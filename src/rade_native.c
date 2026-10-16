@@ -144,6 +144,11 @@ static struct {
   FILE *txf, *micf;                      // opened by the writer when data comes
   uint32_t tx_bytes, mic_bytes;
   int tx_rate;
+  // when each block of the TX capture reached us (unix seconds) and how many TX samples had been offered before it, for the
+  // GPS timing analysis: the n-th sample of _tx.wav left WDSP at about the time of the block it is in
+  double *txt_unix;
+  long *txt_idx;
+  long txt_n, txt_samples;
   long pos48;                            // 48 kHz samples captured
   long dropped;                          // bytes lost to a full ring
   double t0;
@@ -363,10 +368,19 @@ static void cap_row(long consumed, int nout) {
           rs.delta_hat, rs.freq_offset, rs.gain, rs.snr_est);
 }
 
+#define CAP_TXT_MAX 200000                  // blocks: over an hour
+
 void rade_native_capture_tx(const double *iq, int n, int rate) {
   pthread_mutex_lock(&E.mx);
   if (C.active) {
     C.tx_rate = rate;
+    if (C.txt_unix && C.txt_n < CAP_TXT_MAX) {
+      struct timespec ts;
+      clock_gettime(CLOCK_REALTIME, &ts);
+      C.txt_unix[C.txt_n] = ts.tv_sec + ts.tv_nsec * 1e-9;
+      C.txt_idx[C.txt_n++] = C.txt_samples;
+    }
+    C.txt_samples += n;
     float f[2 * 1024];
     for (int done = 0; done < n; done += 1024) {
       int m = n - done < 1024 ? n - done : 1024;
@@ -501,6 +515,9 @@ int rade_native_capture_start(const char *dir, const char *stem, const char *met
   C.mic_ring = malloc(CAP_MIC_RING);
   C.iq_w = C.iq_r = C.sp_w = C.sp_r = C.tx_w = C.tx_r = C.mic_w = C.mic_r = 0;
   C.tx_bytes = C.mic_bytes = 0;
+  C.txt_unix = malloc(sizeof(double) * CAP_TXT_MAX);
+  C.txt_idx = malloc(sizeof(long) * CAP_TXT_MAX);
+  C.txt_n = C.txt_samples = 0;
   C.txf = C.micf = NULL;
   C.pos48 = 0; C.dropped = 0;
   C.t0 = now_sec();
@@ -533,6 +550,17 @@ void rade_native_capture_stop(const char *end_meta) {
     if (m) { fputs(end_meta, m); fprintf(m, "duration_s: %.1f\nrx48_samples: %ld\ndropped_bytes: %ld\n",
                                          now_sec() - C.t0, C.pos48, C.dropped); fclose(m); }
   }
+  if (C.txt_unix && C.txt_n > 0) {            // _txblocks.csv: when each TX block arrived, for lining _tx.wav up with the clock
+    snprintf(path, sizeof path, "%s_txblocks.csv", C.stem);
+    FILE *m = fopen(path, "w");
+    if (m) {
+      fprintf(m, "unix,sample_index,rate\n");
+      for (long i = 0; i < C.txt_n; i++) { fprintf(m, "%.6f,%ld,%d\n", C.txt_unix[i], C.txt_idx[i], C.tx_rate); }
+      fclose(m);
+    }
+  }
+  free(C.txt_unix); free(C.txt_idx);
+  C.txt_unix = NULL; C.txt_idx = NULL;
   fclose(C.iq); fclose(C.sp); fclose(C.csv); fclose(C.ev);
   if (C.txf) { fclose(C.txf); }
   if (C.micf) { fclose(C.micf); }
@@ -627,6 +655,8 @@ static struct {
   long inj_n, inj_pos;
   int inj_on;                            // armed: consumed only while keyed, zeros before
   double inj_t0, inj_t1;                 // unix time of the first and the last sample consumed
+  // event times of the over, unix seconds (0 = not yet), for lining the engine up with what was heard off air
+  double ev_key, ev_end_req, ev_eoo_gen, ev_eoo_out, ev_done, ev_unkey, ev_out0;
   double pk_ref;                         // loudest speech this over (400 ms, before the leveller's gain), LUFS
   int log_blocks;                        // 100 ms blocks since the loudness average was last logged
   int agc_on;
@@ -640,6 +670,12 @@ static struct {
   int limit_hold;                        // blocks since the limiter acted
   int pk_blocks;
 } T = { .mx = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER, .agc_on = 1, .trim_g = 1.0 };
+
+static double ev_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
 static void tx_design(void) {
   for (int k = 0; k < TX_DEC_TAPS; k++) {
@@ -746,6 +782,7 @@ static void *tx_worker(void *arg) {
       tx_finish();
       pthread_mutex_lock(&T.mx);
       T.eoo_end_pos = T.out_w;
+      T.ev_eoo_gen = ev_now();
       continue;
     }
     pthread_cond_wait(&T.cv, &T.mx);
@@ -963,6 +1000,12 @@ int rade_native_tx_inject(const float *samples, long n) {
   return 0;
 }
 
+void rade_native_tx_times(double t[7]) {
+  pthread_mutex_lock(&T.mx);
+  t[0] = T.ev_key; t[1] = T.ev_end_req; t[2] = T.ev_eoo_gen; t[3] = T.ev_eoo_out; t[4] = T.ev_done; t[5] = T.ev_unkey; t[6] = T.ev_out0;
+  pthread_mutex_unlock(&T.mx);
+}
+
 int rade_native_tx_inject_state(double *t0, double *t1, double *fraction) {
   pthread_mutex_lock(&T.mx);
   int on = T.inj_on;
@@ -1006,6 +1049,8 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
     T.blk_n = T.blk_pos = T.acc_n = 0;
     T.acc_ms = 0.0;
     T.pk_ref = -200.0;
+    T.ev_key = ev_now();
+    T.ev_end_req = T.ev_eoo_gen = T.ev_eoo_out = T.ev_done = T.ev_unkey = T.ev_out0 = 0.0;
   }
   T.keyed = transmitting != 0;
   if (T.inj_on) {
@@ -1022,6 +1067,7 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   }
   lv_process(buf, n);               // trim, level, limit and measure the mic, keyed or not
   if (!transmitting) {
+    if (T.ev_key > 0.0 && T.ev_unkey == 0.0) { T.ev_unkey = ev_now(); }     // the first block the radio was not keyed for
     // discard whatever is in flight so the next over starts clean
     if (T.active || T.pcm_w != T.pcm_r || T.out_w != T.out_r) { T.flush = 1; pthread_cond_signal(&T.cv); }
     T.active = 0; T.started = 0; T.end_req = 0; T.end_state = 0; T.eoo_end_pos = -1; T.tail = 0;
@@ -1062,7 +1108,7 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   // into the middle of the signal. Start the output once two frames are
   // queued; after that a hole needs the worker to fall a frame behind.
   //
-  if (!T.started && T.out_w - T.out_r >= 2L * T.nmod * TX_INT) { T.started = 1; }
+  if (!T.started && T.out_w - T.out_r >= 2L * T.nmod * TX_INT) { T.started = 1; T.ev_out0 = ev_now(); }
   for (int i = 0; i < n; i++) {
     if (T.started && T.out_r < T.out_w) {
       RADE_COMP c = T.out[T.out_r % TX_OUT_RING];
@@ -1078,8 +1124,9 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   // the over is finished once the EOO has gone into WDSP and WDSP has had
   // time to put it out (its TX filters delay by about 0.13 s)
   if (T.end_state == 1 && T.eoo_end_pos >= 0 && T.out_r >= T.eoo_end_pos) {
+    if (T.ev_eoo_out == 0.0) { T.ev_eoo_out = ev_now(); }       // the last EOO sample has gone to WDSP
     T.tail += n;
-    if (T.tail >= TX_TAIL) { T.end_state = 2; }
+    if (T.tail >= TX_TAIL) { T.end_state = 2; if (T.ev_done == 0.0) { T.ev_done = ev_now(); } }
   }
   pthread_mutex_unlock(&T.mx);
   pthread_mutex_lock(&E.mx);
@@ -1099,6 +1146,7 @@ int rade_native_tx_end_request(void) {
     hold = 1;
   } else if (T.end_state == 0 && T.active) {
     T.end_state = 1;
+    T.ev_end_req = ev_now();
     T.end_req = 1;
     T.eoo_end_pos = -1;
     T.tail = 0;

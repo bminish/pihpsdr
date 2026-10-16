@@ -75,6 +75,13 @@ static GtkWidget *test_b = NULL, *test_label = NULL;
 static int test_armed = 0;              // the operator has ticked Test harness: a script may key the transmitter
 static int test_keyed = 0;              // ... and it has done so, and so is the one to release
 static char test_stem[160] = "";
+static double test_t_mox_on = 0.0, test_t_mox_off = 0.0;   // when the harness called radio_set_mox(1) / (0), unix seconds
+
+static double test_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 static GtkWidget *capture_label = NULL;
 static guint timer_id = 0;
 static guint event_timer_id = 0;
@@ -1131,6 +1138,8 @@ static const char *test_refusal(void) {
 }
 
 static void test_status(char *r, size_t n) {
+  double ev[7];
+  rade_native_tx_times(ev);
   double t0 = 0, t1 = 0, fr = 0;
   int inj = rade_native_tx_inject_state(&t0, &t1, &fr);
   rade_native_status_t st;
@@ -1144,13 +1153,14 @@ static void test_status(char *r, size_t n) {
   }
   snprintf(r, n, "armed=%d wave=%d dial=%lld mode=%s invert=%d user_invert=%d drive_db=%.1f trim_db=%.1f agc=%d agc_db=%.2f "
                  "rade_tx=%d tx=%d tx_drive_pct=%d capture=%d log=%d sync=%d snr=%.1f foff=%.1f mic_lufs=%.1f mic_peak_dbfs=%.1f "
-                 "inj=%d inj_frac=%.3f t0=%.3f t1=%.3f can_key=%d refusal=%s",
+                 "inj=%d inj_frac=%.3f t0=%.6f t1=%.6f can_key=%d refusal=%s ev_key=%.6f ev_end_req=%.6f ev_eoo_gen=%.6f ev_eoo_out=%.6f "
+                 "ev_done=%.6f ev_unkey=%.6f ev_out0=%.6f t_mox_on=%.6f t_mox_off=%.6f",
            test_armed, rade_native_waveform(), rade_dial(), mode_string[vfo[0].mode], rade_native_get_invert(),
            rade_native_user_invert(), rade_native_tx_get_drive_db(), rade_native_tx_get_trim_db(), rade_native_tx_get_agc(),
            lv.agc_gain_db, rade_native_tx_enabled(), radio_is_transmitting() ? 1 : 0,
            transmitter ? transmitter->drive : -1, rade_native_capture_active(), rade_log_active(), st.sync, st.snr_db,
            st.foff_hz, lv.valid ? lv.loud_avg : -99.0, lv.peak_dbfs, inj, fr, t0, t1, why[0] == 0,
-           why[0] ? why : "none");
+           why[0] ? why : "none", ev[0], ev[1], ev[2], ev[3], ev[4], ev[5], ev[6], test_t_mox_on, test_t_mox_off);
 }
 
 static void wset(GtkWidget *w, int on) {
@@ -1169,7 +1179,10 @@ static int test_exec(const char *verb, const char *args, char *reply, size_t n) 
   if (!strcmp(verb, "abort") || !strcmp(verb, "unkey")) {
     int was = test_keyed;
     if (!strcmp(verb, "abort")) { rade_native_tx_inject(NULL, 0); }
-    if (test_keyed) { test_keyed = 0; if (radio_is_transmitting()) { radio_set_mox(0); } }
+    if (test_keyed) {
+      test_keyed = 0;
+      if (radio_is_transmitting()) { test_t_mox_off = test_now(); radio_set_mox(0); }
+    }
     snprintf(reply, n, "released=%d", was);
     return 0;
   }
@@ -1239,6 +1252,8 @@ static int test_exec(const char *verb, const char *args, char *reply, size_t n) 
     if (radio_is_transmitting()) { snprintf(reply, n, "already transmitting"); return -1; }
     if (rade_native_tx_inject_state(NULL, NULL, NULL) == 0) { snprintf(reply, n, "nothing injected: use inject first"); return -1; }
     test_keyed = 1;
+    test_t_mox_on = test_now();
+    test_t_mox_off = 0.0;
     radio_set_mox(1);
     snprintf(reply, n, "keyed=1");
     return 0;

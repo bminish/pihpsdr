@@ -69,6 +69,7 @@ check: test_geometry test_log test_ctl
 	./test_geometry
 	./test_log
 	python3 test_ctl.py
+	python3 test_timing.py
 
 clean:
 	rm -f modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl

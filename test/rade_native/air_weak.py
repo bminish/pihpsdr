@@ -27,12 +27,18 @@ from scipy.signal import spectrogram
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import kiwi_rx
+import kiwi_gps_wav as KG
 
 FS = kiwi_rx.FS_KIWI
 BW = {"v1": 1600.0, "v2": 1000.0}
 
 
 def load_iq(path):
+    try:                                          # a --kiwi-wav (GPS-stamped) recording has a stamp chunk before every block
+        rec = KG.read_kiwi_gps_wav(path, os.path.getmtime(path))
+        return rec.z.astype(np.complex128), rec.fs
+    except ValueError:
+        pass
     fs, x = wavfile.read(path)
     x = x.astype(np.float64) / 32768.0
     return x[:, 0] + 1j * x[:, 1], fs
