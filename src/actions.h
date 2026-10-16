@@ -160,6 +160,7 @@ enum ACTION {
   PREAMP,
   PS,
   MENU_PS,
+  MENU_RADE,
   PTT,
   MENU_RADIO,
   RCL0,
