@@ -124,10 +124,11 @@ static const char *agc_name(int a);
 static int heard_seq = 0;
 static char heard_call[16] = "";
 static float heard_snr = 0.0f;
+static int heard_snr_valid = 0;
 static float heard_foff = 0.0f;
 // the last few calls, newest last, so that two arriving close together are both told to the Reporter
 #define HEARD_KEEP 5
-static struct { int seq; char call[16]; float snr; double t; } heard_hist[HEARD_KEEP];
+static struct { int seq; char call[16]; float snr; int snr_valid; double t; } heard_hist[HEARD_KEEP];
 static int heard_n = 0;
 // transmissions: how many have started, and when the last did, so that a short one is not missed
 static int tx_count = 0;
@@ -172,13 +173,16 @@ static void log_call(const rade_native_call_t *c) {
   strftime(utc, sizeof utc, "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
   strftime(loc, sizeof loc, "%Y-%m-%d %H:%M:%S", localtime(&t));
   int inv = rade_native_get_invert();
-  fprintf(f, "%s,%s,%s,V%d,%lld,%s,%d,%.1f,%.1f,%d,%d,%s,%.1f,%d,%d,%d,%s\n", utc, loc, c->call,
-          c->waveform, rade_dial(), mode_string[vfo[0].mode], inv, c->snr_db, c->foff_hz,
+  char snr_s[16] = "";
+  if (c->snr_valid) { snprintf(snr_s, sizeof snr_s, "%.1f", c->snr_db); }          // no lock, no SNR: blank, not 0
+  fprintf(f, "%s,%s,%s,V%d,%lld,%s,%d,%s,%.1f,%d,%d,%s,%.1f,%d,%d,%d,%s\n", utc, loc, c->call,
+          c->waveform, rade_dial(), mode_string[vfo[0].mode], inv, snr_s, c->foff_hz,
           rx->filter_low, rx->filter_high, agc_name(rx->agc), rx->volume, rx->adc,
           adc[rx->adc].attenuation, adc[rx->adc].preamp, rade_native_capture_stem());
   fclose(f);
   snprintf(heard_call, sizeof heard_call, "%s", c->call);
   heard_snr = c->snr_db;
+  heard_snr_valid = c->snr_valid;
   heard_foff = c->foff_hz;
   heard_t = c->t_unix;
   heard_seq++;
@@ -186,6 +190,7 @@ static void log_call(const rade_native_call_t *c) {
   heard_hist[heard_n].seq = heard_seq;
   snprintf(heard_hist[heard_n].call, sizeof heard_hist[heard_n].call, "%s", c->call);
   heard_hist[heard_n].snr = c->snr_db;
+  heard_hist[heard_n].snr_valid = c->snr_valid;
   heard_hist[heard_n].t = c->t_unix;
   heard_n++;
   if (rade_native_capture_active()) {
@@ -198,8 +203,10 @@ static void log_call(const rade_native_call_t *c) {
   memmove(recent[1], recent[0], sizeof recent[0] * (n_recent - 1));
   char hms[16];
   strftime(hms, sizeof hms, "%H:%M:%S", localtime(&t));
-  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  SNR %.1f dB  %+.1f Hz  %.4f MHz", hms, c->call,
-           c->waveform, c->snr_db, c->foff_hz, rade_dial() / 1e6);
+  char sn[24] = "SNR -";
+  if (c->snr_valid) { snprintf(sn, sizeof sn, "SNR %.1f dB", c->snr_db); }
+  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  %s  %+.1f Hz  %.4f MHz", hms, c->call,
+           c->waveform, sn, c->foff_hz, rade_dial() / 1e6);
   t_print("%s: RADE call %s\n", __func__, recent[0]);
 }
 
@@ -261,23 +268,28 @@ static void state_write(int running) {
   rade_native_get_status(&st);
   hist[0] = 0;
   for (int i = 0; i < heard_n; i++) {
-    char one[100];
-    snprintf(one, sizeof one, "%s{\"seq\":%d,\"call\":\"%s\",\"snr\":%.1f,\"t\":%.0f}", i ? "," : "",
-             heard_hist[i].seq, heard_hist[i].call, heard_hist[i].snr, heard_hist[i].t);
+    char one[120], sn[16] = "null";
+    if (heard_hist[i].snr_valid) { snprintf(sn, sizeof sn, "%.1f", heard_hist[i].snr); }
+    snprintf(one, sizeof one, "%s{\"seq\":%d,\"call\":\"%s\",\"snr\":%s,\"t\":%.0f}", i ? "," : "",
+             heard_hist[i].seq, heard_hist[i].call, sn, heard_hist[i].t);
     strncat(hist, one, sizeof hist - strlen(hist) - 1);
   }
+  // SNR is told only while there is a lock (null otherwise: 0 is a real SNR); likewise for the call heard
+  char rx_snr_s[16] = "null", heard_snr_s[16] = "null";
+  if (st.sync) { snprintf(rx_snr_s, sizeof rx_snr_s, "%.1f", st.snr_db); }
+  if (heard_snr_valid) { snprintf(heard_snr_s, sizeof heard_snr_s, "%.1f", heard_snr); }
   snprintf(call, sizeof call, "%s", rade_native_get_callsign());
   snprintf(ver, sizeof ver, "%s", build_version);
   for (char *c = ver; *c; c++) { if (*c == '"' || *c == '\\' || (unsigned char)*c < 32) { *c = '_'; } }
   snprintf(text, sizeof text,
            "{\"running\":%d,\"updated\":%.3f,\"pid\":%d,\"waveform\":%d,\"dial_hz\":%lld,"
            "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
-           "\"rx_sync\":%d,\"rx_snr\":%.1f,\"rx_foff\":%.1f,"
-           "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%.1f,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
+           "\"rx_sync\":%d,\"rx_snr\":%s,\"rx_foff\":%.1f,"
+           "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%s,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
            "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"heard\":[%s]}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
            rade_dial(), rade_is_tx() ? 1 : 0, call, ver,
-           st.sync ? 1 : 0, st.snr_db, st.foff_hz, heard_seq, heard_call, heard_snr, heard_foff, heard_t, tx_count, tx_last_t,
+           st.sync ? 1 : 0, rx_snr_s, st.foff_hz, heard_seq, heard_call, heard_snr_s, heard_foff, heard_t, tx_count, tx_last_t,
            rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, hist);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
@@ -860,8 +872,12 @@ static int update_cb(gpointer arg) {
   if (st.waveform == 0) {
     snprintf(text, sizeof text, "-");
   } else {
-    snprintf(text, sizeof text, "%s  SNR %.1f dB  offset %+.1f Hz  (underruns %lu, overruns %lu)",
-             st.sync ? "SYNC" : "searching", st.snr_db, st.foff_hz, st.underruns, st.overruns);
+    if (st.sync) {
+      snprintf(text, sizeof text, "SYNC  SNR %.1f dB  offset %+.1f Hz  (underruns %lu, overruns %lu)", st.snr_db, st.foff_hz,
+               st.underruns, st.overruns);
+    } else {                      // no lock: no SNR and no offset to show (the values are not measurements)
+      snprintf(text, sizeof text, "searching  (underruns %lu, overruns %lu)", st.underruns, st.overruns);
+    }
   }
   gtk_label_set_text(GTK_LABEL(status_label), text);
   rade_native_capture_info(text, sizeof text);
