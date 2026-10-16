@@ -13,4 +13,4 @@ Needs Python 3 with tkinter, numpy and matplotlib (TkAgg); no piHPSDR running.
 - **Overs list**: choose one to zoom to it; the text area then gives its static information - run, UTC times, dial, mode, waveform, Invert, the nominal energy centre (dial +/- 1500 Hz), the decoder's offset, SNR statistics, end-of-over, call.
   Choosing a run in the run list shows its `meta.txt` and a summary (dials heard, calls, event counts).
 
-The old single-file `*_RADE.csv` logs are not read. Test: `python3 test/rade_logview/test_logview.py` (window part is withdrawn, nothing appears).
+The old single-file `*_RADE.csv` logs are converted by `convert_old_logs.py` (end-of-over flag and calls were never recorded in them and stay blank). Test: `python3 test/rade_logview/test_logview.py` (window part is withdrawn, nothing appears).
