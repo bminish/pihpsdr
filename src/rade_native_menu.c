@@ -119,13 +119,13 @@ static const char *agc_name(int a);
 
 // the last call heard in an end-of-over frame, for the Reporter (seq counts them)
 static int heard_seq = 0;
-static char heard_call[16] = "";
+static char heard_call[40] = "";
 static float heard_snr = 0.0f;
 static int heard_snr_valid = 0;
 static float heard_foff = 0.0f;
 // the last few calls, newest last, so that two arriving close together are both told to the Reporter
 #define HEARD_KEEP 5
-static struct { int seq; char call[16]; float snr; int snr_valid; double t; } heard_hist[HEARD_KEEP];
+static struct { int seq; char call[40]; float snr; int snr_valid; double t; } heard_hist[HEARD_KEEP];
 static int heard_n = 0;
 // transmissions: how many have started, and when the last did, so that a short one is not missed
 static int tx_count = 0;
@@ -256,12 +256,12 @@ static guint state_timer_id = 0;
 
 static void state_write(int running) {
   if (state_file[0] == 0) { return; }
-  char tmp[600], text[2200], call[16], ver[64], hist[1000];
+  char tmp[600], text[2600], call[16], ver[64], hist[1600];
   rade_native_status_t st;
   rade_native_get_status(&st);
   hist[0] = 0;
   for (int i = 0; i < heard_n; i++) {
-    char one[120], sn[16] = "null";
+    char one[160], sn[16] = "null";
     if (heard_hist[i].snr_valid) { snprintf(sn, sizeof sn, "%.1f", heard_hist[i].snr); }
     snprintf(one, sizeof one, "%s{\"seq\":%d,\"call\":\"%s\",\"snr\":%s,\"t\":%.0f}", i ? "," : "",
              heard_hist[i].seq, heard_hist[i].call, sn, heard_hist[i].t);

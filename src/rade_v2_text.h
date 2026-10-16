@@ -55,4 +55,42 @@ float rade_v2_text_next(rade_v2_text_t *t);
 // Go back to block 0, bit 0.
 void rade_v2_text_restart(rade_v2_text_t *t);
 
+//
+// Receive: the decoder of freedv-gui's rade_text_rx_symbol(), ported. Feed it rade_rx_get_data_symbol() once after each
+// rade_rx() that returned features. The first 112 symbols (4.5 s) are swept for the codeword alignment (a unique CRC-valid
+// rotation is taken), after that every new symbol is tried as a codeword, and failing that the same window of the
+// combining accumulators (one per cycle length of 1-4 blocks, decay 0.7, copies added coherently). Blocks are reassembled
+// by number; the message is delivered once per pass through the transmitter's cycle (block 0 starts a pass). On loss of
+// sync call reset (the position in the cycle is lost with it). Single owner: the receive worker thread.
+//
+
+#define RADE_V2_TEXT_COMBINE_MAX (RADE_V2_TEXT_BITS * RADE_V2_TEXT_BLOCKS)
+
+typedef struct {
+  uint8_t block, last;
+  uint8_t chars[8];
+} rade_v2_text_fields_t;
+
+typedef struct {
+  float circ[RADE_V2_TEXT_BITS];
+  int   wr, filled;
+  float snap[RADE_V2_TEXT_BITS];
+  int   sweep_next, sweep_n;
+  rade_v2_text_fields_t sweep_win;
+  float acc[RADE_V2_TEXT_BLOCKS][RADE_V2_TEXT_COMBINE_MAX];
+  int   acc_idx[RADE_V2_TEXT_BLOCKS];
+  int   total;
+  uint8_t asm_chars[RADE_V2_TEXT_BLOCKS][8];
+  uint8_t asm_got[RADE_V2_TEXT_BLOCKS];
+  int   asm_total;       // -1 until a last block is seen
+  int   asm_delivered;
+} rade_v2_text_rx_t;
+
+void rade_v2_text_rx_init(rade_v2_text_rx_t *rx);
+void rade_v2_text_rx_reset(rade_v2_text_rx_t *rx);
+
+// One data symbol in. Returns 1 and the message in msg (at least RADE_V2_TEXT_MAXCHARS + 1 bytes) when a message
+// is complete, else 0.
+int rade_v2_text_rx_symbol(rade_v2_text_rx_t *rx, float sym, char *msg);
+
 #endif

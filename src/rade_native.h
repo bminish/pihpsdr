@@ -227,7 +227,7 @@ int  rade_native_tx_end_state(void);
 void rade_native_tx_end_cancel(void);
 
 //
-// The callsign sent in the end-of-over frame (V1; V2 has no text yet).
+// The callsign sent in the end-of-over frame (V1) and on the data-symbol channel (V2).
 // Letters, digits and '/', upper-cased, at most 7 characters; anything else
 // is dropped. Empty means none is sent.
 //
@@ -235,12 +235,12 @@ void rade_native_set_callsign(const char *call);
 const char *rade_native_get_callsign(void);
 
 //
-// Callsigns decoded from received end-of-over frames (V1). The engine
+// Callsigns decoded from received end-of-over frames (V1) and from the V2 data-symbol channel. The engine
 // queues them; the caller takes them with rade_native_call_pop() and adds
 // what only it knows (dial frequency, mode).
 //
 typedef struct {
-  char   call[16];
+  char   call[40];       // V1: up to 8 characters; V2: up to 32
   double t_unix;
   float  snr_db;       // smoothed SNR over the over, before it ended
   float  foff_hz;
