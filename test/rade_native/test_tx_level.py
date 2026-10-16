@@ -71,40 +71,42 @@ np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32")
 r = run(os.path.join(OUT, "lvl_t.f32"))[-1]
 check(r["limiting"] == 1 and r["peak"] > 3.0, "+12 dB over: limiter acting, peak %.1f dBFS reported before it" % r["peak"])
 print("leveller (works only while transmitting)")
-for gdb in (-24, -10, +8):
+for gdb in (-14, -8, +8):
     m = mic * 10 ** (gdb / 20)
     np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
     rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=12, extra=["--keyed"])
     r = rows[-1]
     check(abs(r["delta"]) <= 3.0, "mic %+d dB: after %d s the leveller has it at %+.1f dB of ideal (adding %+.1f dB)" %
           (gdb, r["t"], r["delta"], r["agc"]))
-m = mic * 10 ** (-24 / 20)
+m = mic * 10 ** (-14 / 20)
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=9)
-check(all(abs(r["agc"]) < 1e-9 for r in rows), "not transmitting: the leveller adds nothing (0.0 dB on every reading, mic -24 dB)")
-m = mic * 10 ** (-28 / 20)
+check(all(abs(r["agc"]) < 1e-9 for r in rows), "not transmitting: the leveller adds nothing (0.0 dB on every reading, mic -14 dB)")
+m = mic * 10 ** (-40 / 20)
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=40, extra=["--keyed"])
-check(max(r["agc"] for r in rows) <= 20.0 + 1e-9, "a quiet mic (-28 dB): the leveller stops at %+.1f dB (limit +20)" % max(r["agc"] for r in rows))
+check(max(abs(r["agc"]) for r in rows) < 1e-9, "a mic whose loudest syllables stay under the -35 LUFS floor (-40 dB): not levelled, gain stays 0.0 dB")
+m = mic * 10 ** (-14 / 20)
+np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 out = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=12, extra=["--rekey"], raw=True)
 em = re.search(r"end of over: agc\s+(\S+)", out); mm = re.search(r"rekeyed: agc\s+(\S+)", out); um = re.search(r"unkeyed: agc\s+(\S+)", out)
 check(em and um and mm and abs(float(em[1])) > 1.0 and float(um[1]) == float(em[1]) == float(mm[1]),
       "the gain (%+.2f dB) is held through receive and into the next over, not reset" % float(em[1]))
-m = mic * 10 ** (-24 / 20)
+m = mic * 10 ** (-14 / 20)
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 r1 = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=1, extra=["--keyed"])
-check(max(abs(r["agc"]) for r in r1) <= 0.5 * 11, "11 s into an over (mic 24 dB low) the leveller has moved %+.1f dB: at most 0.5 dB a second" % r1[-1]["agc"])
+check(max(abs(r["agc"]) for r in r1) <= 0.5 * 11, "11 s into an over (mic 14 dB low) the leveller has moved %+.1f dB: at most 0.5 dB a second" % r1[-1]["agc"])
 # silence: speech, then 25 s of room noise (-62 dB, under the floor) and then silence; the gain must not rise
 rng = np.random.default_rng(3)
 quiet = 10 ** (-62 / 20) * rng.standard_normal(48000 * 25)
-m = np.concatenate([mic * 10 ** (-26 / 20), quiet, 0 * quiet])
+m = np.concatenate([mic * 10 ** (-14 / 20), quiet, 0 * quiet])
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, extra=["--keyed"])
 sp = [r for r in rows if r["t"] == 17][0]["agc"]
 check(sp > 1.0 and len([r for r in rows if r["t"] > 17]) >= 3 and all(abs(r["agc"] - sp) <= 0.05 for r in rows if r["t"] > 17),
       "speech (10 s) then 50 s of noise and silence: gain %+.2f dB after the speech, %+.2f dB at the end" % (sp, rows[-1]["agc"]))
 # a pause with the room audible - above the floor, but 20 LU under the speech: still no rise
-m = np.concatenate([mic * 10 ** (-10 / 20), 10 ** (-45 / 20) * rng.standard_normal(48000 * 20)])
+m = np.concatenate([mic * 10 ** (-8 / 20), 10 ** (-45 / 20) * rng.standard_normal(48000 * 20)])
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, extra=["--keyed"])
 sp = [r for r in rows if r["t"] == 17][0]["agc"]
