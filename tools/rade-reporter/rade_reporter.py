@@ -30,7 +30,7 @@ import time
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core  # noqa: E402
@@ -59,6 +59,66 @@ def iso_to_epoch(iso):
         return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
     except Exception:
         return None
+
+
+class Choice(Gtk.MenuButton):
+    """A drop-down list that opens as a popover, sized to its entries. (Gtk.ComboBoxText opens as a menu, which
+    in a small window can be cut to a couple of rows with scroll arrows.) Same calls as ComboBoxText."""
+    __gsignals__ = {"changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+
+    def __init__(self):
+        super().__init__()
+        self._items = []                  # (id, text)
+        self._active = -1
+        self._label = Gtk.Label(xalign=0)
+        box = Gtk.Box(spacing=6)
+        box.pack_start(self._label, True, True, 0)
+        box.pack_start(Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
+        self.add(box)
+        self._pop = Gtk.Popover()
+        self._pop.set_relative_to(self)
+        self._sw = Gtk.ScrolledWindow(propagate_natural_height=True, propagate_natural_width=True,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER, max_content_height=600)
+        self._list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin=4)
+        self._sw.add(self._list)
+        self._pop.add(self._sw)
+        self.set_popover(self._pop)
+
+    def append(self, ident, text):
+        i = len(self._items)
+        self._items.append((ident, text))
+        b = Gtk.ModelButton(text=text, halign=Gtk.Align.FILL)
+        b.get_child().set_halign(Gtk.Align.START)
+        b.connect("clicked", lambda _b, i=i: (self._pop.popdown(), self.set_active(i)))
+        self._list.pack_start(b, False, False, 0)
+        self._list.show_all()
+        if self._active < 0:
+            self._active = 0
+            self._label.set_text(text)
+
+    def append_text(self, text):
+        self.append(text, text)
+
+    def set_active(self, i):
+        if 0 <= i < len(self._items) and i != self._active:
+            self._active = i
+            self._label.set_text(self._items[i][1])
+            self.emit("changed")
+        elif 0 <= i < len(self._items):
+            self._label.set_text(self._items[i][1])
+
+    def set_active_id(self, ident):
+        for i, (k, _t) in enumerate(self._items):
+            if k == ident:
+                self.set_active(i)
+                return True
+        return False
+
+    def get_active_id(self):
+        return self._items[self._active][0] if self._active >= 0 else None
+
+    def get_active_text(self):
+        return self._items[self._active][1] if self._active >= 0 else None
 
 
 class App(Gtk.Window):
@@ -115,7 +175,7 @@ class App(Gtk.Window):
         r2 = Gtk.Box(spacing=8)
         v.pack_start(r2, False, False, 0)
         r2.pack_start(Gtk.Label(label="Band"), False, False, 0)
-        self.band = Gtk.ComboBoxText()
+        self.band = Choice()
         for b in ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]:
             self.band.append_text(b)
         names = ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]
@@ -134,7 +194,7 @@ class App(Gtk.Window):
         r2.pack_start(self.t_band, False, False, 0)
         r2.pack_start(self.t_freq, False, False, 0)
         r2.pack_start(Gtk.Label(label="Idle <"), False, False, 0)
-        self.idle = Gtk.ComboBoxText()
+        self.idle = Choice()
         for t in ["off", "5 min", "15 min", "60 min", "180 min"]:
             self.idle.append_text(t)
         idles = ["off", "5 min", "15 min", "60 min", "180 min"]
@@ -142,7 +202,7 @@ class App(Gtk.Window):
         self.idle.connect("changed", self._on_view_filter)
         r2.pack_start(self.idle, False, False, 0)
         r2.pack_start(Gtk.Label(label="Show"), False, False, 12)
-        self.view = Gtk.ComboBoxText()
+        self.view = Choice()
         for k, label in (("v1", "RADE V1 only"), ("v2", "RADE V2 only"), ("all", "All (V1 and V2)")):
             self.view.append(k, label)
         self.view.set_active_id(self.cfg.get("view", "all"))
