@@ -86,7 +86,23 @@ def decisions():
     t, why, rk, vk = core.plan(cfg, dict(live, waveform=0), True, "EI6IZ", "IO53hu", "all")
     check(rk is None and all(x[1] == "view" for x in t.values()), "RADE off: reports to neither")
     c2 = core.load_config(os.path.join(tempfile.mkdtemp(), "none.json"))
-    check(c2["view"] == "all" and c2["servers"]["v2"]["host"] == "reporter-radev2.k6aq.net", "defaults: show all; V2 host set")
+    st = dict(live, waveform=2)
+    check(core.resolve_view("follow", st) == "v2" and core.resolve_view("follow", dict(live, waveform=1)) == "v1"
+          and core.resolve_view("follow", dict(live, waveform=0)) == "all" and core.resolve_view("follow", None) == "all"
+          and core.resolve_view("v1", st) == "v1", "Follow shows the radio's mode (all while RADE is off or piHPSDR is gone)")
+    t, why, rk, vk = core.plan(cfg, st, False, "EI6IZ", "IO53hu", "follow")
+    check(vk == ["v2"], "plan watches only V2 when following a V2 radio")
+    S = core.Station("a"); S.rx_snr = 5.0; S.rx_call = "DL1ABC"; S.rx_time = 1000.0
+    check(S.receiving_now(1015.0) and not S.receiving_now(1021.0), "receiving (blue): 20 s after a report with a call")
+    S.rx_call = ""
+    check(S.receiving_now(1004.0) and not S.receiving_now(1006.0), "... 5 s after one without a call")
+    S.rx_call = "DL1ABC"; S.rx_snr = None
+    check(not S.receiving_now(1001.0), "no SNR: not blue")
+    S.rx_snr = 5.0; S.rx_only = True
+    check(not S.receiving_now(1001.0), "receive-only status: not blue")
+    S.rx_only = False; S.transmitting = True
+    check(not S.receiving_now(1001.0), "transmitting: not blue")
+    check(c2["view"] == "follow" and c2["servers"]["v2"]["host"] == "reporter-radev2.k6aq.net", "defaults: follow the radio mode; V2 host set")
     d = core.decide(cfg, dict(live, waveform=0), True, "EI6IZ", "IO53hu", "v1")
     check(d[1] == "view" and "RADE is off" in d[5], "RADE off: not present")
     d = core.decide(cfg, dict(live, linked=False), True, "EI6IZ", "IO53hu", "v1")

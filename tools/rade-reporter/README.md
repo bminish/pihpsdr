@@ -15,7 +15,7 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   only in the active mode, never your own call, and not calls heard before you went on.
   The window also shows the live receive state (SNR and offset, from piHPSDR every
   couple of seconds) and the last call heard. **Regular SNR**, as freedv-gui does it: while a signal is in sync it sends the live SNR every few
-  seconds (1-30 s, your choice; freedv-gui sends about once a second). No callsign is needed: until one has
+  seconds (fixed at 5 s, no tick box: it is sent whenever you are Reporting and there is an SNR; freedv-gui sends about once a second). No callsign is needed: until one has
   been decoded the report carries a blank one; after that it carries the last call decoded, until sync has been
   lost for 10 s. The window shows when it is doing this, and why when it is not. A V1 call arrives only at the end of an
   over, so there is no callsign to report with while the over is still going.
@@ -28,12 +28,12 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   present, the reporter for your mode is joined as a reporter even if it is not
   the one shown. The choice is remembered.
 - piHPSDR tells it what it is doing through
-  `~/.local/state/pihpsdr-rade/state.json`; settings (callsign, grid, servers)
+  `~/.local/state/pihpsdr-rade/state.json`; settings (grid, servers)
   are in `~/.config/pihpsdr-rade/reporter.json`.
 - Needs a callsign and a Maidenhead grid square (4, 6 or 8 characters). Changes to
   either are announced only after 1.5 s without typing.
 - Kept between runs: the message (sent on every connection until Clear), Track, band and idle
-  filters, the SNR setting, callsign, grid, servers. Not kept: reporting itself.
+  filters, the sort column and direction, grid, servers. Not kept: reporting itself.
 - One window: starting it again raises the one that is open.
 
 Files: `sio.py` (Socket.IO client), `core.py` (stations, places, the link, what
@@ -56,3 +56,7 @@ No lock, no SNR: when piHPSDR's receiver is not in sync it tells the Reporter `r
 nothing is sent. A lock at an SNR of exactly 0 dB, or a negative one, is a real measurement and is reported. A call decoded in an end-of-over frame is
 reported with the SNR averaged over the reception's in-sync frames (the average starts afresh after 1.5 s without sync); if there were none, the call is
 not reported. The RADE window and the received-calls log show "-" rather than 0 in the same cases.
+
+- **Callsign**: not entered here; it is always the one set in piHPSDR's RADE window (shown as "Call ..."). **Reporting** is the former "Report my presence".
+- **Show**: *Follow radio mode* (the default; shows the reporter of the RADE mode piHPSDR has selected, both while RADE is off) , V1 only, V2 only, All. The choice is remembered; Follow was made the default once, when this version first ran.
+- **Colours**, as freedv-gui: orange while a station transmits; blue only while its status is Receiving and an rx_report with an SNR arrived in the last 20 s (5 s if the report had no call). Your own row is no longer marked.
