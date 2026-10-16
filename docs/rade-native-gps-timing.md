@@ -21,8 +21,9 @@ signals (MSF, WWV) and on synthetic recordings; the first air run with `--gps au
 - **Frequency** (`kiwi_freq_check.py`, WWV carriers, time stations good to 1e-11): 10 MHz -0.22 Hz (-0.022 ppm), 15 MHz +0.38 Hz (+0.025 ppm). The Kiwi's
   ADC clock is GPS-corrected: the GPS-fitted sample rate is 2.9 ppm from the one its configured clock gives, and the carriers are right to +-0.03 ppm
   (**about +-0.9 Hz at 28.645 MHz**, plus the ionosphere's Doppler of a few tenths of a Hz). The 5 MHz try found only a weak signal (19 dB) and was not used.
-  So the transmit frequency error read from the decoder's frequency offset (earlier runs: +11.2 Hz at 28645 kHz, +5.4 Hz at 14250 kHz: both +0.39 ppm) is the **radio's**,
-  to about +-0.03 ppm; it is the same ppm on both bands.
+  **Correction (same day, after the first GPS run): the +11.2 Hz at 28645 kHz and +5.4 Hz at 14250 kHz (both +0.39 ppm) read on the earlier recordings were the Kiwi's, not the radio's.**
+  Those sessions were made before the GPS was fitted (`session.json`: `gps_good` 0, `fixes` 0), so the Kiwi's ADC clock was uncorrected; with the GPS locked the same transmitter reads
+  +0.1 Hz (0.003 ppm) on V1 and -0.6 ... +1.0 Hz on V2 (`rade-native-air-run3-20261016.md`). An earlier version of this paragraph said the offset was the radio's; it was wrong.
 - **Time axis** (`kiwi_time_check.py`, MSF Anthorn 60 kHz, whose carrier is off for the first 100 ms of every UTC second; ground wave about 280 km, 1 ms): the edges fall
   +3.1 ms and rise +103.3 ms (expected 0 and 100 plus 1 ms): **the Kiwi's stamps are late by about +2.2 ms** (two recordings, 25 s and 90 s: +2.1 and +2.2 ms; the mean of the two edges
   cancels the symmetric parts of the transmitter's edges and the filter). `air_timing.py` subtracts the figure in `out/kiwi_time_offset.json` from every time it takes from the recording.
@@ -54,14 +55,14 @@ python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels=0,3 --re
 | `key_to_rf_onset_ms`, `mox_on_to_rf_onset_ms` | the key-down (first keyed block / the harness's `radio_set_mox(1)`) to RF onset: includes the two-frame prefill (240 ms V1, 80 ms V2) |
 | `wdsp_out_last_to_rf_end_ms` | the last modem energy out of WDSP to RF end. **Equal to `wdsp_out_to_rf_onset_ms` (within the jitter) = everything WDSP gave the radio went out. Shorter by tens of ms = the radio was released with samples still on their way: a clipped tail.** |
 | `tail_after_eoo_ms` | RF end minus (`ev_eoo_out` + the start latency): >= 0 means the end-of-over frame went out whole, and how much further RF there was (the TX filter's ring-down, the hold) |
-| `mox_off_after_wdsp_last_ms`, `unkey_after_wdsp_last_ms` | key-up called (harness) / first unkeyed block, after the last modem energy left WDSP: **negative = released before WDSP had finished** |
+| `unkey_after_wdsp_last_ms` | the first block the engine saw not keyed, after the last modem energy left WDSP: **negative = released before WDSP had finished**. (`mox_off_after_wdsp_last_ms` is when the harness *asked* for key-up, which is before the engine's end-of-over hold, so it is always about -500 ms: not a measure of early release.) |
 | `hold_after_eoo_ms` | the engine's hold after the last EOO sample went to WDSP (`ev_done - ev_eoo_out`): 0.4 s of it is `TX_TAIL` |
 | `mox_off_to_rf_end_ms`, `unkey_to_rf_end_ms` | key-up to the end of the RF |
 | `sync_after_onset_ms` | RF onset to librade's first sync (end of its block): how long the receiver needs to acquire |
 | `eoo_decoded_after_rf_end_ms`, `eoo_decoded_vs_ev_eoo_out_ms` | when the Kiwi's decoder reported the end-of-over frame, against the RF end and the engine's hand-off |
 | `fx_speech_start_clipped_ms`, `fx_speech_end_missing_ms`, `fx_rx_start_vs_speech_frames` | against the speech sent: how much of the start of the speech the decoded output does not contain (0 = none; frames are 10 ms), how much of the end; `rx_start_vs_speech_frames` >= 0 means the decoder's first frame was at or before the first speech frame |
 | `fx_loss_first_250ms`, `fx_loss_first_1s`, `fx_loss_middle`, `fx_loss_last_1s` | feature loss of the aligned decode, untrimmed, by part of the over (compare the first and last with the middle) |
-| `tx_freq_error_hz`, `tx_freq_error_ppm` | the decoder's frequency offset averaged over the over (Kiwi tuned to the dial, GPS-corrected: the radio's error, +-0.03 ppm) |
+| `tx_freq_error_hz`, `tx_freq_error_ppm` | the decoder's frequency offset averaged over the over (Kiwi tuned to the dial, GPS-corrected: the radio's error to about +-1 Hz at 28.6 MHz; **only meaningful for recordings made with a GPS solution on the Kiwi**) |
 | `kiwi_time_offset_ms`, `kiwi_fs_hz`, `gps_solution_pct`, `gps_stamp_scatter_us`, `wdsp_block_clock_jitter_ms` | the correction applied, the fitted Kiwi sample rate, the share of blocks with a GPS solution (the flag is on in about half of blocks even with a lock, which is normal for the Kiwi), the stamps' scatter, the jitter of the engine's block clock |
 
 ## 5. What the first real run should settle (not yet measured)
@@ -69,7 +70,7 @@ python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels=0,3 --re
 1. **Is the pipeline cleared at the end of an over?** `wdsp_out_last_to_rf_end_ms` against `wdsp_out_to_rf_onset_ms`, `mox_off_after_wdsp_last_ms`, `tail_after_eoo_ms`, and the end-of-over frame decoding (`iq_eoo_ok`, `iq_call_ok`).
 2. **Are starts clipped?** `fx_speech_start_clipped_ms`, `fx_loss_first_250ms` against the middle, `rf_rise_ms`, `sync_after_onset_ms`.
 3. **Real TX delays**, split into engine -> WDSP (predicted 66 ms), WDSP -> RF, and the hold; per waveform.
-4. **Transmit frequency** against the GPS-corrected Kiwi (+11 Hz = +0.39 ppm so far, from the decoder's estimate on the older, unstamped recordings).
+4. **Transmit frequency** against the GPS-corrected Kiwi: measured in run 3, within +-1 Hz (section 7 of `rade-native-air-run3-20261016.md`).
 
 ## 6. Limits
 
