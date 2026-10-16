@@ -67,7 +67,7 @@ test_log: test_log.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_native_log.h
 
 check: test_geometry test_log test_ctl
 	./test_geometry
-	./test_log
+	python3 test_log.py
 	python3 test_ctl.py
 	python3 test_timing.py
 
