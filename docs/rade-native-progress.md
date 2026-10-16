@@ -16,6 +16,13 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (tail, and why the Reporter changes did not show): `TX_TAIL` 8000 -> 5120 samples (60 ms shorter; margin about 20 ms; to be re-measured with the GPS timing).
+  Notes from run 3 kept for later decisions: the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of speech to acquisition (candidate: lead-in frames); the end-of-over
+  frame is 2.4 dB (V1) below the speech power at 0 dB drive (candidate: raise it); working drive +3 dB. **The Reporter's missing features and the 0 SNR were an old Reporter
+  process (started 13:42, still running at 14:50): it outlives piHPSDR and a second start only asked it to show itself, so none of the updates ran.** Fixed: the lock file
+  carries a code id (hash of the program files), a start with different code stops the old one and takes over, and the window title shows the id. Also: column headings
+  now have their own label and button for the right click (and a "Columns / filters" button gives the same menu).
+
 - 2026-10-16 (air run 3, GPS timing): `docs/rade-native-air-run3-20261016.md`. WDSP delay 78.8 ms (offline 66), radio side 10.9 ms; V1 key-to-RF 335 ms, V2 174 ms (prefill 240 / 80 ms);
   no clipped end (EOO and call 12/12); the radio is released 115 ms after the RF ends; the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of speech to acquisition (candidate: lead-in frames);
   EOO frame 2.4 dB (V1) below the speech power at 0 dB drive (candidate: raise it); TX frequency within +-1 Hz. **Correction: the earlier "+0.39 ppm" frequency offset was the Kiwi's, before it had a GPS.**
