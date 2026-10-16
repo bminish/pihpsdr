@@ -185,10 +185,15 @@ class Viewer:
             return None
         self.runs.append(run)
         self.runlist.insert("end", self.run_label(run))
+        self.colour_runs()
         self.refresh_overs()
         self.live_note()
         self.set_text(ld.run_text(run))
         return run
+
+    def colour_runs(self):
+        for i in range(self.runlist.size()):                  # the list is the key to the colours in the graphs
+            self.runlist.itemconfig(i, foreground=COLOURS[i % len(COLOURS)])
 
     def run_label(self, run):
         return ("● " if run.live else "") + run.name
@@ -242,6 +247,7 @@ class Viewer:
             self.runs[i] = new
             self.runlist.delete(i)
             self.runlist.insert(i, self.run_label(new))
+            self.colour_runs()
             changed += 1
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         if not changed:
@@ -267,6 +273,7 @@ class Viewer:
             return
         del self.runs[sel[0]]
         self.runlist.delete(sel[0])
+        self.colour_runs()
         self.refresh_overs()
         self.replot()
 
@@ -344,14 +351,12 @@ class Viewer:
                     t, y = ld.with_gaps(data["t"], data[col])
                     if np.all(np.isnan(y)):
                         continue
-                    ax.plot(self.x(t), y, style, color=COLOURS[ri % len(COLOURS)], lw=1.1,
-                            label="%d %s" % (ri + 1, leg) if len(series) > 1 or len(self.runs) > 1 else None)
+                    ax.plot(self.x(t), y, style, color=COLOURS[ri % len(COLOURS)], lw=1.1)
+            if len(series) > 1:                              # what the lines are, in the axis label: no box over the data
+                label += "\n" + " / ".join("%s %s" % ({"-": "solid", ":": "dotted"}.get(st, st), leg) for _c, leg, st in series)
             ax.set_ylabel(label, fontsize=8)
             ax.grid(True, alpha=0.3)
             ax.tick_params(labelsize=8)
-            h, _l = ax.get_legend_handles_labels()
-            if h:
-                ax.legend(fontsize=7, loc="upper right", ncol=4)
             self.draw_marks(ax, first=(ax is axs[0]))
         self.axes = list(axs)
         if self.utc.get():
