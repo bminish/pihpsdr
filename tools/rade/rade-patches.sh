@@ -10,7 +10,7 @@
 #   2 core    files that are only ours and sit in src/ and the top directory (src/rade_*, rade_native.mk): cannot conflict
 #   3 extras  tools/, test/, docs/ (reporter, log viewer, test harness, documents): cannot conflict, nothing in them is built into piHPSDR
 #
-# BASE is the commit the work started from: the parent of the commit that added src/rade_native.c. It is only used to
+# BASE is the commit the work started from: the parent of the first commit that added docs/rade-native.md or src/rade_native.c. It is only used to
 # say what "ours" is; REF is where the patches are tried.
 #
 set -e
@@ -22,7 +22,7 @@ EXTRA_PATHS="tools test docs/rade-native*.md"
 
 base() {
   if [ -n "$RADE_BASE" ]; then echo "$RADE_BASE"; return; fi
-  git rev-parse "$(git log --diff-filter=A --format=%H -- src/rade_native.c | tail -1)^"
+  git rev-parse "$(git log --diff-filter=A --format=%H -- docs/rade-native.md src/rade_native.c | tail -1)^"
 }
 
 make_patches() {          # $1 = directory, $2 = what the work is made against (default BASE), $3 = the work (default HEAD)
