@@ -265,6 +265,8 @@ class Link:
     def report_rx(self, callsign, mode, snr):
         """freedv-gui's rx_report: callsign (may be empty: something is being received but nobody is
         identified yet), mode, SNR as it rounds it, int(snr + 0.5). Only while reporting."""
+        if not isinstance(snr, (int, float)) or isinstance(snr, bool):
+            return False                   # no lock, no SNR: nothing is sent (0 is a real SNR; "none" is not 0)
         with self.lock:
             if (self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode):
                 self.client.emit("rx_report", {"callsign": callsign or "", "mode": mode, "snr": int(snr + 0.5)})
@@ -433,12 +435,14 @@ class PeriodicSnr:
             return False, "", 0.0, "paused while transmitting"
         if not p.get("rx_sync"):
             return False, "", 0.0, "waiting for a signal"
+        if not isinstance(p.get("rx_snr"), (int, float)):
+            return False, "", 0.0, "in sync but no SNR yet: nothing sent"
         what = "call %s" % self.call if self.call else "no call decoded yet, sent blank"
         status = "sending the SNR every %g s (%s)" % (self.interval, what)
         if now - self.last_sent < self.interval:
             return False, "", 0.0, status
         self.last_sent = now
-        snr = float(p.get("rx_snr", 0.0))
+        snr = float(p["rx_snr"])
         self.last = (self.call, snr, now)
         return True, self.call, snr, status
 
@@ -453,7 +457,7 @@ def rx_reports_due(p, last_seq, mycall, now=None, max_age=60.0):
     now = time.time() if now is None else now
     entries = p.get("heard")
     if not isinstance(entries, list):          # an older piHPSDR: just the latest
-        entries = [{"seq": p.get("heard_seq", 0), "call": p.get("heard_call"), "snr": p.get("heard_snr", 0.0),
+        entries = [{"seq": p.get("heard_seq", 0), "call": p.get("heard_call"), "snr": p.get("heard_snr"),
                     "t": p.get("heard_t", 0)}]
     out = []
     for e in sorted(entries, key=lambda x: int(x.get("seq", 0))):
@@ -463,7 +467,9 @@ def rx_reports_due(p, last_seq, mycall, now=None, max_age=60.0):
             continue
         if now - float(e.get("t", 0)) > max_age:
             continue
-        out.append((call, float(e.get("snr", 0.0)), seq))
+        if not isinstance(e.get("snr"), (int, float)):
+            continue                       # decoded with no lock behind it: there is no SNR to report, so no report
+        out.append((call, float(e["snr"]), seq))
     return out
 
 

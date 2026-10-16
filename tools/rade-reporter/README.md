@@ -39,3 +39,20 @@ window; it is a separate program and keeps running when piHPSDR is closed.
 Files: `sio.py` (Socket.IO client), `core.py` (stations, places, the link, what
 to report), `rade_reporter.py` (the window). Tests: `test/rade_reporter/`,
 against a mock server; `--live` only watches the real one.
+
+## The list: columns and filters
+
+- **Columns**: drag a heading to move the column; right click any heading for the list of columns and tick/untick to show or hide them
+  (at least one stays; Callsign cannot be hidden). Order and hidden columns are remembered.
+- **Distance**: right click **km** for *Distance filter...*: show only stations between two distances from you (from your Grid; 0 = no limit on
+  that side). Stations with no locator are hidden while it is on. The heading shows `km *` while it is on; the menu clears it.
+- **Frequency range**: right click **MHz** for *Frequency range filter...*: only stations in a range of frequencies (stations that have sent no
+  frequency are hidden while it is on). The heading shows `MHz *`.
+- The filters are remembered, and apply together with Band, Track and Idle.
+
+## SNR is only reported with a lock
+
+No lock, no SNR: when piHPSDR's receiver is not in sync it tells the Reporter `rx_snr: null` (librade's SNR value then means nothing), and
+nothing is sent. A lock at an SNR of exactly 0 dB, or a negative one, is a real measurement and is reported. A call decoded in an end-of-over frame is
+reported with the SNR averaged over the reception's in-sync frames (the average starts afresh after 1.5 s without sync); if there were none, the call is
+not reported. The RADE window and the received-calls log show "-" rather than 0 in the same cases.

@@ -16,6 +16,13 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (Reporter: no SNR without a lock; columns and filters): piHPSDR now writes `rx_snr: null` (and `heard[].snr: null`) when the
+  receiver has no lock (librade's value is not a measurement then; the old state file said 0.0); the SNR average behind a heard call restarts
+  after 1.5 s without sync and a call with no lock behind it has no SNR (`snr_valid`). The Reporter sends no SNR report (periodic or per call)
+  without a number: a real 0 or negative SNR is sent. The RADE window and the calls log show "-" instead of 0. Reporter list: columns
+  can be hidden / reordered (right click a heading; remembered), right click **km** = distance filter, **MHz** = frequency-range filter
+  (`test_reporter.py`, `test_gui_columns.py`).
+
 - 2026-10-16 (GPS Kiwi): `docs/rade-native-gps-timing.md`. IQ recordings are now `--kiwi-wav` (GNSS time per block) when the Kiwi has a GPS solution;
   `kiwi_gps_wav.py` reads them (sample rate fitted from the stamps: 11998.937 Hz), `kiwi_rx` puts the 8 kHz stream on GPS time and reports the decoder's
   times in UTC and the clipping of the start / end of the speech; engine event times and `_txblocks.csv` in the build; `air_timing.py` for RF onset / end, WDSP

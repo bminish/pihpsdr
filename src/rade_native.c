@@ -179,6 +179,8 @@ static struct {
   // status
   rade_native_status_t st;
   float snr_ema, foff_last;              // last in-sync values, for the call log
+  int snr_n;                             // in-sync SNR estimates behind snr_ema (0: none, the value means nothing)
+  long nosync;                           // 8 kHz samples since sync was last seen
   rade_native_call_t calls[16];
   int ncalls;
   double last_call_t;
@@ -259,8 +261,14 @@ static void *worker(void *arg) {
     E.st.snr_db = rade_snrdB_3k_est(r);
     E.st.foff_hz = rade_freq_offset(r);
     if (E.st.sync) {
-      E.snr_ema = E.snr_ema == 0.0f ? E.st.snr_db : 0.9f * E.snr_ema + 0.1f * E.st.snr_db;
+      // a new reception (sync back after 1.5 s without) starts the average afresh; an estimate with no lock is never used
+      E.snr_ema = E.snr_n == 0 ? E.st.snr_db : 0.9f * E.snr_ema + 0.1f * E.st.snr_db;
+      if (E.snr_n < 1000000) { E.snr_n++; }
       E.foff_last = E.st.foff_hz;
+      E.nosync = 0;
+    } else {
+      E.nosync += nin;
+      if (E.nosync > 12000) { E.snr_n = 0; }
     }
     if (has_eoo && neoo > 0) {
       char call[16];
@@ -274,6 +282,7 @@ static void *worker(void *arg) {
             snprintf(c->call, sizeof c->call, "%s", call);
             c->t_unix = t;
             c->snr_db = E.snr_ema;
+            c->snr_valid = E.snr_n > 0;
             c->foff_hz = E.foff_last;
             c->waveform = E.waveform;
           }
@@ -1202,6 +1211,7 @@ void rade_native_configure(int waveform, int user_invert) {
   E.waveform = 0;
   memset(&E.st, 0, sizeof E.st);
   E.snr_ema = E.foff_last = 0.0f;
+  E.snr_n = 0; E.nosync = 0;
   E.ncalls = 0;
   E.last_call[0] = 0;
   if (waveform == 0) { return; }

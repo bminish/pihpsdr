@@ -41,6 +41,10 @@ HEAD = ["Callsign", "Locator", "km", "Hdg", "Version", "MHz", "Mode", "Status", 
  C_SID, C_BG, C_KMV, C_HDGV, C_MHZV, C_SNRV, C_UPDV) = range(20)
 
 
+def snr_text(v):
+    return "%.1f dB" % v if isinstance(v, (int, float)) else "- (no lock)"
+
+
 def hhmm(iso):
     return iso[11:19] if len(iso) >= 19 else ""
 
@@ -103,6 +107,10 @@ class App(Gtk.Window):
         self.periodic.enabled = bool(self.cfg.get("snr_enabled", True))
         self._loading = True
         self.last_qsy = None
+        # list filters set from the headings (right click km: distance, MHz: frequency range); 0 = no limit on that side
+        self._dist = (float(self.cfg.get("dist_min", 0) or 0), float(self.cfg.get("dist_max", 0) or 0))
+        self._frng = (float(self.cfg.get("f_min", 0) or 0), float(self.cfg.get("f_max", 0) or 0))
+        self._applying_cols = False
         self.set_default_size(*self.cfg.get("size", [1100, 520]))
         self.connect("delete-event", self._quit)
         self._build()
@@ -230,6 +238,7 @@ class App(Gtk.Window):
         self.filt.set_visible_func(self._visible, None)
         self.sort = Gtk.TreeModelSort(model=self.filt)
         self.tree = Gtk.TreeView(model=self.sort)
+        self.cols = {}
         numeric = {C_KM: C_KMV, C_HDG: C_HDGV, C_MHZ: C_MHZV, C_SNR: C_SNRV, C_UPD: C_UPDV}
         for i, name in enumerate(HEAD):
             cell = Gtk.CellRendererText()
@@ -238,8 +247,12 @@ class App(Gtk.Window):
             col.set_resizable(True)
             col.set_alignment(0.0)                         # and the headings
             col.set_sort_column_id(numeric.get(i, i))
+            col.set_reorderable(True)                      # drag a heading to move the column
             self.tree.append_column(col)
+            self.cols[name] = col
+            col.get_button().connect("button-press-event", self._on_header_click, name)      # right click: columns, filters
         self.tree.connect("button-press-event", self._on_tree_click)
+        self.tree.connect("columns-changed", self._on_cols_changed)
         self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # C_UPDV is minus the update time: newest first
         sw = Gtk.ScrolledWindow()
         sw.add(self.tree)
@@ -247,6 +260,8 @@ class App(Gtk.Window):
 
         self.status = Gtk.Label(xalign=0)
         v.pack_start(self.status, False, False, 0)
+        self._apply_columns()
+        self._titles()
         if self._show:
             self.show_all()
         else:
@@ -480,7 +495,9 @@ class App(Gtk.Window):
         elif p.get("tx"):
             live = "transmitting"
         elif p.get("rx_sync"):
-            live = "signal, SNR %.1f dB, offset %+.1f Hz" % (p.get("rx_snr", 0.0), p.get("rx_foff", 0.0))
+            sn = p.get("rx_snr")
+            live = ("signal, SNR %.1f dB, offset %+.1f Hz" % (sn, p.get("rx_foff", 0.0))) if isinstance(sn, (int, float)) \
+                else "signal (no SNR yet)"
         else:
             live = "no signal"
         due = core.rx_reports_due(p, self._heard_seq, mycall)
@@ -488,8 +505,8 @@ class App(Gtk.Window):
             # not present: whatever is heard now is old news if we do become present
             seq = int(p.get("heard_seq", 0))
             if self._heard_seq is not None and seq != self._heard_seq and p.get("heard_call"):
-                self._heard_note = "last heard %s %s, SNR %.1f dB: not reported (%s)" % (
-                    time.strftime("%H:%M:%S"), p["heard_call"], p.get("heard_snr", 0.0), self.why.get_text())
+                self._heard_note = "last heard %s %s, SNR %s: not reported (%s)" % (
+                    time.strftime("%H:%M:%S"), p["heard_call"], snr_text(p.get("heard_snr")), self.why.get_text())
             self._heard_seq = seq
             due = []
         for call, snr, seq in due:                      # every call decoded, in order
@@ -499,7 +516,7 @@ class App(Gtk.Window):
             self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
                 time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
         if not due and p.get("heard_call") and not self._heard_note:
-            self._heard_note = "last heard %s, SNR %.1f dB (not reported)" % (p["heard_call"], p.get("heard_snr", 0.0))
+            self._heard_note = "last heard %s, SNR %s (not reported)" % (p["heard_call"], snr_text(p.get("heard_snr")))
         # transmissions too short to have been seen as "transmitting": the server still wants them
         txc = int(p.get("tx_count", 0))
         if self._tx_seen is None or role != "report":
@@ -559,13 +576,134 @@ class App(Gtk.Window):
             for i, v in enumerate(vals):
                 if cur[i] != v:
                     self.store.set_value(it, i, v)
-                    if i in (C_MHZV, C_UPDV):
+                    if i in (C_MHZV, C_UPDV, C_KMV):
                         filter_cols = True
         for sid, it in rows.items():
             if sid not in seen:
                 self.store.remove(it)
                 structural = True
         self._refilter(structural or filter_cols)
+
+    # ------------------------------------------------------- columns and heading filters
+    def _col_names(self):
+        """The columns in the order they are shown."""
+        by_col = {id(c): n for n, c in self.cols.items()}
+        return [by_col[id(c)] for c in self.tree.get_columns()]
+
+    def _apply_columns(self):
+        """Hidden and ordered columns from the config (names the config does not know are ignored; new ones keep their place)."""
+        c = self.cfg.get("columns") or {}
+        self._applying_cols = True
+        try:
+            hidden = set(c.get("hidden") or [])
+            for n, col in self.cols.items():
+                col.set_visible(n not in hidden or n == "Callsign")
+            order = [n for n in (c.get("order") or []) if n in self.cols]
+            order += [n for n in HEAD if n not in order]
+            prev = None
+            for n in order:
+                self.tree.move_column_after(self.cols[n], prev)
+                prev = self.cols[n]
+        finally:
+            self._applying_cols = False
+
+    def _save_columns(self):
+        self._remember(columns={"order": self._col_names(), "hidden": [n for n, c in self.cols.items() if not c.get_visible()]})
+
+    def _on_cols_changed(self, *_):
+        if self._loading or self._applying_cols:
+            return
+        self._save_columns()
+
+    def _set_column_visible(self, name, on):
+        if not on and sum(1 for c in self.cols.values() if c.get_visible()) <= 1:
+            return                                   # at least one column stays
+        self.cols[name].set_visible(on)
+        self._save_columns()
+
+    def _titles(self):
+        """A heading carries a star while its filter is on."""
+        self.cols["km"].set_title("km *" if any(self._dist) else "km")
+        self.cols["MHz"].set_title("MHz *" if any(self._frng) else "MHz")
+
+    def _set_dist(self, lo, hi):
+        self._dist = (max(0.0, float(lo)), max(0.0, float(hi)))
+        self._remember(dist_min=self._dist[0], dist_max=self._dist[1])
+        self._titles()
+        self._refilter(True)
+
+    def _set_freq(self, lo, hi):
+        self._frng = (max(0.0, float(lo)), max(0.0, float(hi)))
+        self._remember(f_min=self._frng[0], f_max=self._frng[1])
+        self._titles()
+        self._refilter(True)
+
+    def _header_menu(self, name):
+        """The menu of a column heading: its filter (km, MHz), and which columns are shown."""
+        m = Gtk.Menu()
+        def add(label, fn, check=None):
+            it = Gtk.CheckMenuItem(label=label) if check is not None else Gtk.MenuItem(label=label)
+            if check is not None:
+                it.set_active(check)
+                it.connect("toggled", lambda w: fn(w.get_active()))
+            else:
+                it.connect("activate", lambda *_: fn())
+            m.append(it)
+            return it
+        if name == "km":
+            add("Distance filter...", self._dist_dialog)
+            if any(self._dist):
+                add("Clear the distance filter", lambda: self._set_dist(0, 0))
+            m.append(Gtk.SeparatorMenuItem())
+        if name == "MHz":
+            add("Frequency range filter...", self._freq_dialog)
+            if any(self._frng):
+                add("Clear the frequency filter", lambda: self._set_freq(0, 0))
+            m.append(Gtk.SeparatorMenuItem())
+        for n in HEAD:
+            add(n, lambda on, n=n: self._set_column_visible(n, on), check=self.cols[n].get_visible())
+        m.show_all()
+        return m
+
+    def _on_header_click(self, button, ev, name):
+        if ev.button != 3:
+            return False
+        self._header_menu(name).popup_at_pointer(ev)
+        return True
+
+    def _range_dialog(self, title, text, unit, lo, hi, maxv, digits, step):
+        dlg = Gtk.Dialog(title=title, transient_for=self, modal=True)
+        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("OK", Gtk.ResponseType.OK)
+        g = Gtk.Grid(column_spacing=8, row_spacing=8, margin=12)
+        dlg.get_content_area().add(g)
+        g.attach(Gtk.Label(label=text, xalign=0), 0, 0, 3, 1)
+        spins = []
+        for r, (label, v) in enumerate((("from", lo), ("to", hi))):
+            g.attach(Gtk.Label(label=label, xalign=1), 0, r + 1, 1, 1)
+            sp = Gtk.SpinButton.new_with_range(0, maxv, step)
+            sp.set_digits(digits)
+            sp.set_value(v)
+            g.attach(sp, 1, r + 1, 1, 1)
+            g.attach(Gtk.Label(label=unit + ("  (0: no limit)"), xalign=0), 2, r + 1, 1, 1)
+            spins.append(sp)
+        dlg.show_all()
+        ok = dlg.run() == Gtk.ResponseType.OK
+        out = (spins[0].get_value(), spins[1].get_value())
+        dlg.destroy()
+        return out if ok else None
+
+    def _dist_dialog(self, *_):
+        note = "Stations between these distances from you (from your Grid; stations with no locator are hidden while this is on)"
+        r = self._range_dialog("Distance filter", note, "km", self._dist[0], self._dist[1], 20000, 0, 50)
+        if r is not None:
+            self._set_dist(*r)
+
+    def _freq_dialog(self, *_):
+        note = "Stations on frequencies in this range (stations that have sent no frequency are hidden while this is on)"
+        r = self._range_dialog("Frequency range filter", note, "MHz", self._frng[0], self._frng[1], 60000, 4, 0.001)
+        if r is not None:
+            self._set_freq(*r)
 
     def _visible(self, model, it, _d):
         dial, band, tracking, by_band, idle = self._fp
@@ -579,6 +717,16 @@ class App(Gtk.Window):
                 return False
         if idle and model[it][C_UPDV] and time.time() + model[it][C_UPDV] > idle:
             return False
+        dlo, dhi = self._dist
+        if dlo or dhi:
+            km = model[it][C_KMV]                 # -1: no distance (no locator, or none for the station)
+            if km < 0 or (dlo and km < dlo) or (dhi and km > dhi):
+                return False
+        flo, fhi = self._frng
+        if flo or fhi:
+            mhz = model[it][C_MHZV]               # 0: the station has told us no frequency
+            if mhz <= 0 or (flo and mhz < flo) or (fhi and mhz > fhi):
+                return False
         return True
 
     def _refilter(self, force=True):
