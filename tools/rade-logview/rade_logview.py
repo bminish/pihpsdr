@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RADE log viewer: zoomable graphs of the parameter logs written by piHPSDR (rade-logs/<run>/).
 
-    rade_logview.py [run-directory | run.tar.gz ...]
+    rade_logview.py [run-directory | run.tar.gz | folder-of-runs ...]
 
 Pick runs (Open), tick the parameters to plot, zoom/pan with the toolbar, tick Measure and click
 twice on the graph for the time and level difference and the statistics between the two points.
@@ -67,11 +67,24 @@ class Viewer:
         pw.add(right, weight=1)
 
         bar = ttk.Frame(left); bar.pack(fill="x", padx=4, pady=4)
-        ttk.Button(bar, text="Open…", command=self.open_dialog).pack(side="left")
-        ttk.Button(bar, text="Remove run", command=self.remove_run).pack(side="left", padx=4)
-        ttk.Button(bar, text="Fit all", command=self.fit_all).pack(side="left")
-        self.runlist = tk.Listbox(left, height=5, exportselection=False)
+        ttk.Button(bar, text="Files…", command=self.open_dialog).pack(side="left")
+        ttk.Button(bar, text="Folder…", command=self.open_folder).pack(side="left", padx=4)
+        ttk.Button(bar, text="Remove", command=self.remove_run).pack(side="left")
+        ttk.Button(bar, text="Fit all", command=self.fit_all).pack(side="left", padx=4)
+        self.runlist = tk.Listbox(left, height=6, exportselection=False)
         self.runlist.pack(fill="x", padx=4)
+        lf = ttk.Frame(left); lf.pack(fill="x", padx=4, pady=(4, 0))
+        ttk.Button(lf, text="Update live (F5)", command=self.update_live).pack(side="left")
+        self.auto = tk.BooleanVar(value=False)
+        ttk.Checkbutton(lf, text="every", variable=self.auto, command=self.auto_changed).pack(side="left", padx=(6, 0))
+        self.auto_s = tk.IntVar(value=2)
+        ttk.Spinbox(lf, from_=1, to=60, width=3, textvariable=self.auto_s).pack(side="left")
+        ttk.Label(lf, text="s").pack(side="left")
+        self.follow = tk.BooleanVar(value=True)
+        ttk.Checkbutton(left, text="Follow the newest data when updating", variable=self.follow).pack(anchor="w", padx=4)
+        self.live_status = ttk.Label(left, text="no live run", anchor="w", font=("monospace", 8))
+        self.live_status.pack(fill="x", padx=4)
+        self._auto_id = None
         self.runlist.bind("<<ListboxSelect>>", lambda e: self.show_run_text())
 
         pf = ttk.LabelFrame(left, text="Parameters (one panel each)"); pf.pack(fill="x", padx=4, pady=4)
@@ -119,18 +132,44 @@ class Viewer:
         self.canvas.mpl_connect("motion_notify_event", self.on_move)
         self.canvas.mpl_connect("button_press_event", self.on_click)
         root.bind("<Key-Escape>", lambda e: self.clear_measure())
+        root.bind("<F5>", lambda e: self.update_live())
         for p in paths:
-            self.add_path(p)
+            self.add_any(p)
         self.replot()
 
     # ---------------------------------------------------------------- runs
     def open_dialog(self):
-        p = filedialog.askopenfilename(title="Open a run: choose any file in the run directory, or a .tar.gz",
-                                       initialdir=self.initialdir(),
-                                       filetypes=[("RADE logs", "*.csv *.txt *.tar.gz"), ("all", "*")])
-        if p:
+        ps = filedialog.askopenfilenames(title="Open runs: choose files in run directories and/or .tar.gz (several at once)",
+                                         initialdir=self.initialdir(),
+                                         filetypes=[("RADE logs", "*.csv *.txt *.tar.gz"), ("all", "*")])
+        for p in ps:
             self.add_path(p)
+        if ps:
             self.replot()
+
+    def open_folder(self):
+        p = filedialog.askdirectory(title="Open a run directory (live runs can be updated), or a folder of runs",
+                                    initialdir=self.initialdir(), mustexist=True)
+        if p:
+            self.add_any(p)
+            self.replot()
+
+    def add_any(self, p):
+        """A run (directory, file in one, .tar.gz) or a folder of runs: all of them are opened."""
+        if os.path.isdir(p):
+            found = ld.find_runs(p)
+            if not found:
+                self.error("Cannot open", "%s\n\nno run (a directory with meta.txt) or .tar.gz in it" % p)
+            for q in found:
+                self.add_path(q)
+        else:
+            self.add_path(p)
+
+    def error(self, title, msg):
+        if getattr(self, "quiet", False):
+            print(title, msg)
+        else:
+            messagebox.showerror(title, msg)
 
     def initialdir(self):
         d = os.path.join(HERE, "..", "..", "rade-logs")
@@ -140,18 +179,87 @@ class Viewer:
         try:
             run = ld.load_run(p)
         except Exception as e:                               # a bad file is reported, never fatal
-            if getattr(self, "quiet", False):
-                print("cannot open", p, e)
-            else:
-                messagebox.showerror("Cannot open", "%s\n\n%s" % (p, e))
+            self.error("Cannot open", "%s\n\n%s" % (p, e))
             return None
         if any(r.name == run.name and r.t0 == run.t0 for r in self.runs):
             return None
         self.runs.append(run)
-        self.runlist.insert("end", run.name)
+        self.runlist.insert("end", self.run_label(run))
         self.refresh_overs()
+        self.live_note()
         self.set_text(ld.run_text(run))
         return run
+
+    def run_label(self, run):
+        return ("● " if run.live else "") + run.name
+
+    def live_note(self, text=None):
+        n = sum(1 for r in self.runs if r.live)
+        if text is None:
+            text = "%d live run%s (● in the list)" % (n, "" if n == 1 else "s") if n else "no live run"
+        self.live_status.configure(text=text)
+
+    def auto_changed(self):
+        if self._auto_id is not None:
+            self.root.after_cancel(self._auto_id)
+            self._auto_id = None
+        if self.auto.get():
+            self._auto_tick()
+
+    def _auto_tick(self):
+        self.update_live()
+        try:
+            ms = max(1, int(self.auto_s.get())) * 1000
+        except (tk.TclError, ValueError):
+            ms = 2000
+        self._auto_id = self.root.after(ms, self._auto_tick) if self.auto.get() else None
+
+    def newest(self):
+        """The latest time in any live run (absolute seconds)."""
+        t = []
+        for r in self.runs:
+            if not r.live:
+                continue
+            for d in (r.rx, r.tx):
+                if "t" in d and len(d["t"]):
+                    t.append(float(np.nanmax(d["t"])))
+            if r.events:
+                t.append(r.events[-1][0])
+        return max(t) if t else None
+
+    def update_live(self):
+        """Reload every live run whose files have changed; keep the view, or follow the newest data."""
+        changed = 0
+        for i, r in enumerate(self.runs):
+            if not r.live or ld.signature(r.source) == r.sig:
+                continue
+            try:
+                new = ld.load_run(r.source)
+            except Exception as e:                           # caught mid-write, or gone: keep what is shown
+                self.live_note("update of %s failed: %s" % (r.name, e))
+                continue
+            new.name = r.name
+            self.runs[i] = new
+            self.runlist.delete(i)
+            self.runlist.insert(i, self.run_label(new))
+            changed += 1
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        if not changed:
+            self.live_note("%s: no change (%d live)" % (stamp, sum(1 for r in self.runs if r.live)))
+            return 0
+        old = self.axes_xlim() if getattr(self, "axes", None) else None
+        self.refresh_overs()
+        self.replot()
+        if self.follow.get() and old is not None and self.axes:
+            tn = self.newest()
+            if tn is not None:
+                width = (old[1] - old[0]) * (86400.0 if self.utc.get() else 1.0)      # seconds
+                self.set_xlim(tn - width * 0.97, tn + width * 0.03)    # the right edge goes to the newest data, same width
+        sel = self.runlist.curselection()
+        if sel:
+            self.show_run_text()
+        self.live_note("%s: updated %d run%s" % (stamp, changed, "" if changed == 1 else "s"))
+        return changed
 
     def remove_run(self):
         sel = self.runlist.curselection()
