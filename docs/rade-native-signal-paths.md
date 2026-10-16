@@ -156,7 +156,7 @@ flowchart TB
 | 12 | drive scale, protocol | | `tx_full_buffer` | power; PA | drive slider |
 
 End of an over: `radio_set_mox(0)` is held (`rade_native_tx_end_request`): remaining speech, silence to complete
-the modem frame, the EOO frame, then `TX_TAIL` = 8000 samples (167 ms) for WDSP's TX filters, then the radio
+the modem frame, the EOO frame, then `TX_TAIL` = 5120 samples (107 ms) for WDSP's TX filters, then the radio
 is released. Measured hold after the last mic sample: 0.58 to 0.62 s V1, 0.38 s V2.
 
 ## 4. What sets the passband, the sideband and the dial
@@ -288,7 +288,7 @@ sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync en
 | `rade_native.c` TX | `TX_DEC`, `TX_DEC_TAPS` | 3, 36 (cutoff 7.2 kHz) |
 | | `TX_INT`, `TX_INT_TAPS` | 6, 48 (cutoff 3.9 kHz) |
 | | `TX_LEVEL_V1`, `_V2` | 0.357, 0.504 (was 0.3 both), times the Drive slider (-6..+6 dB) |
-| | `TX_TAIL` | 8000 samples |
+| | `TX_TAIL` | 5120 samples (107 ms; was 8000 = 167 ms until 2026-10-16) |
 | | leveller | gain held through RX and between overs; changes only while transmitting and only on speech (400 ms loudness before the gain >= -35 LUFS, within 15 LU of the over's loudest, within 10 LU of the speech average); up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB |
 | | limiter | knee 0.9, ceiling 1.0 |
 | WDSP (TX filter) | `bp0` | 2048 taps at the WDSP DSP rate (96 kHz on P2), 7-term BH, linear phase, edges V1 675..2275 / V2 1000..2000; see `rade-native-filter-lab.md` |

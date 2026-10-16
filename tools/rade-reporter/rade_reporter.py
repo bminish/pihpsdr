@@ -88,7 +88,7 @@ def open_below(combo):
 
 class App(Gtk.Window):
     def __init__(self, show=True):
-        super().__init__(title="RADE Reporter")
+        super().__init__(title="RADE Reporter  [%s]" % CODE_ID)
         self._show = show                 # tests build the window without putting it on the screen
         self.cfg = core.load_config()
         self.dirty = True
@@ -189,6 +189,10 @@ class App(Gtk.Window):
         web = Gtk.Button(label="Website")
         web.connect("clicked", self._on_web)
         r2.pack_end(web, False, False, 0)
+        vw = Gtk.Button(label="Columns / filters")
+        vw.set_tooltip_text("The same menu as a right click on a column heading: which columns to show, and the distance (km) and frequency (MHz) filters.\nDrag a heading to move a column.")
+        vw.connect("clicked", lambda b: self._header_menu(None).popup_at_widget(b, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None))
+        r2.pack_end(vw, False, False, 0)
         st = Gtk.Button(label="Settings")
         st.connect("clicked", self._on_settings)
         r2.pack_end(st, False, False, 0)
@@ -239,6 +243,7 @@ class App(Gtk.Window):
         self.sort = Gtk.TreeModelSort(model=self.filt)
         self.tree = Gtk.TreeView(model=self.sort)
         self.cols = {}
+        self.labels = {}
         numeric = {C_KM: C_KMV, C_HDG: C_HDGV, C_MHZ: C_MHZV, C_SNR: C_SNRV, C_UPD: C_UPDV}
         for i, name in enumerate(HEAD):
             cell = Gtk.CellRendererText()
@@ -250,7 +255,15 @@ class App(Gtk.Window):
             col.set_reorderable(True)                      # drag a heading to move the column
             self.tree.append_column(col)
             self.cols[name] = col
-            col.get_button().connect("button-press-event", self._on_header_click, name)      # right click: columns, filters
+            # the heading is a label we own, so that its button can be found (the column's own button is not reliably the one
+            # that receives the click) and its text changed when a filter is on
+            lab = Gtk.Label(label=name, xalign=0.0)
+            lab.show()
+            col.set_widget(lab)
+            self.labels[name] = lab
+            btn = lab.get_ancestor(Gtk.Button) or col.get_button()
+            btn.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+            btn.connect("button-press-event", self._on_header_click, name)      # right click: columns, filters
         self.tree.connect("button-press-event", self._on_tree_click)
         self.tree.connect("columns-changed", self._on_cols_changed)
         self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # C_UPDV is minus the update time: newest first
@@ -623,8 +636,8 @@ class App(Gtk.Window):
 
     def _titles(self):
         """A heading carries a star while its filter is on."""
-        self.cols["km"].set_title("km *" if any(self._dist) else "km")
-        self.cols["MHz"].set_title("MHz *" if any(self._frng) else "MHz")
+        self.labels["km"].set_text("km *" if any(self._dist) else "km")
+        self.labels["MHz"].set_text("MHz *" if any(self._frng) else "MHz")
 
     def _set_dist(self, lo, hi):
         self._dist = (max(0.0, float(lo)), max(0.0, float(hi)))
@@ -650,12 +663,12 @@ class App(Gtk.Window):
                 it.connect("activate", lambda *_: fn())
             m.append(it)
             return it
-        if name == "km":
+        if name in ("km", None):
             add("Distance filter...", self._dist_dialog)
             if any(self._dist):
                 add("Clear the distance filter", lambda: self._set_dist(0, 0))
             m.append(Gtk.SeparatorMenuItem())
-        if name == "MHz":
+        if name in ("MHz", None):
             add("Frequency range filter...", self._freq_dialog)
             if any(self._frng):
                 add("Clear the frequency filter", lambda: self._set_freq(0, 0))
@@ -738,23 +751,66 @@ class App(Gtk.Window):
             self.filt.refilter()
 
 
+def code_id():
+    """Identifies the code this process runs (the program files' contents): a Reporter left running from before an update is replaced."""
+    import hashlib
+    h = hashlib.sha1()
+    for n in ("rade_reporter.py", "core.py", "sio.py"):
+        try:
+            h.update(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), n), "rb").read())
+        except OSError:
+            pass
+    return h.hexdigest()[:8]
+
+
+CODE_ID = code_id()
+
+
 def single_instance():
-    """Only one reporter window. A second start asks the first to show itself."""
+    """Only one reporter window. A second start asks the first to show itself - unless the first is running older code (it outlives
+    piHPSDR, so it can be hours old): then it is stopped and this one takes over."""
     d = os.path.dirname(core.state_path())
     os.makedirs(d, exist_ok=True)
-    f = open(os.path.join(d, "reporter.lock"), "a+")
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        f.seek(0)
+    path = os.path.join(d, "reporter.lock")
+    f = open(path, "a+")
+    for attempt in range(2):
         try:
-            os.kill(int(f.read().strip() or 0), signal.SIGUSR1)
-        except (ValueError, OSError):
-            pass
-        return None
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            f.seek(0)
+            txt = f.read().split()
+            try:
+                pid = int(txt[0]) if txt else 0
+            except ValueError:
+                pid = 0
+            if attempt == 0 and pid and (len(txt) < 2 or txt[1] != CODE_ID):
+                try:
+                    os.kill(pid, signal.SIGTERM)             # older code: replace it
+                except OSError:
+                    pass
+                t = time.time()
+                while time.time() - t < 5.0:                 # until it lets go of the lock
+                    try:
+                        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError:
+                        time.sleep(0.1)
+                else:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    time.sleep(0.3)
+                continue
+            try:
+                os.kill(pid, signal.SIGUSR1)                 # the same code: show it
+            except (ValueError, OSError):
+                pass
+            return None
     f.seek(0)
     f.truncate()
-    f.write(str(os.getpid()))
+    f.write("%d %s" % (os.getpid(), CODE_ID))
     f.flush()
     return f
 
