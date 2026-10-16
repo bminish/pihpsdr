@@ -231,7 +231,7 @@ static void *worker(void *arg) {
   fargan_init(&fargan);
   rade_v2_text_rx_t *vrx = E.waveform == RADE_NATIVE_V2 ? malloc(sizeof *vrx) : NULL;   // the V2 callsign decoder
   if (vrx) { rade_v2_text_rx_init(vrx); }
-  int v2_was_sync = 0;
+  long v2_last_pos = -1;                                         // input position of the last symbol fed
   pthread_mutex_lock(&E.mx);
   while (E.running) {
     int nin = rade_nin(r);
@@ -247,8 +247,14 @@ static void *worker(void *arg) {
     int nout = rade_rx(r, feat, &has_eoo, neoo > 0 ? eoo : NULL, blk);
     char v2_call[RADE_V2_TEXT_MAXCHARS + 1];
     int v2_got = 0;
-    if (vrx && nout > 0) {                                     // one data symbol per modem frame, as freedv-gui feeds it
-      v2_got = rade_v2_text_rx_symbol(vrx, rade_rx_get_data_symbol(r), v2_call);
+    if (vrx && nout > 0 && rade_sync(r)) {                     // one data symbol per modem frame, only with lock
+      // lock is the gate: only symbols received with lock are fed, with the frames missed since the last one (320 samples
+      // each); rade_v2_text_rx_feed decides whether a new lock continues the same sender's cycle or starts a new reception
+      long gap = v2_last_pos >= 0 ? lround((double)(consumed - v2_last_pos) / 320.0) - 1 : 0;
+      v2_last_pos = consumed;
+      int resets = vrx->resets;
+      v2_got = rade_v2_text_rx_feed(vrx, rade_rx_get_data_symbol(r), gap > 0 ? (int)gap : 0, v2_call);
+      if (vrx->resets != resets) { E.last_call[0] = 0; }   // a new reception: its call is reported again
     }
     float pcm[LPCNET_FRAME_SIZE * 16];
     int npcm = 0;
@@ -274,13 +280,6 @@ static void *worker(void *arg) {
     E.st.blocks++;
     E.st.sync = rade_sync(r);
     E.st.snr_db = rade_snrdB_3k_est(r);
-    if (vrx) {
-      if (v2_was_sync && !E.st.sync) {                         // the place in the sender's cycle is lost with the sync
-        rade_v2_text_rx_reset(vrx);
-        E.last_call[0] = 0;
-      }
-      v2_was_sync = E.st.sync;
-    }
     E.st.foff_hz = rade_freq_offset(r);
     if (E.st.sync) {
       // a new reception (sync back after 1.5 s without) starts the average afresh; an estimate with no lock is never used
