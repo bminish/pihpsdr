@@ -16,6 +16,10 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (parameter log redesigned): `rade-logs/<time>/` with `meta.txt`, `rx.csv` (in sync only, 2 Hz mean + min SNR; V2 columns for V2), `tx.csv` (keyed only, 2 Hz),
+  `events.csv`, `overs.csv` (one row per heard over with dial, mode, waveform, SNR/offset statistics, end-of-over seen and the call), `tx_overs.csv`, and a `.tar.gz` copy on stop.
+  Aggregation in the writer thread; audio threads unchanged. `test_log.py` (scripted scene) in `make check`; `log_analysis.py` and `air_test.py` read the new tables. Design and numbers: `rade-native-logging.md`. Not yet run live.
+
 - 2026-10-16 (60 m, compact RADE window): 60 m (5250-5450 kHz) defaults to upper sideband for V1 and V2, Invert means below the carrier for both; band
   class changes (10 MHz, 60 m) re-apply the default. RADE window: "Receiver 0 ..." text removed (tooltip), calls limited to the last 4 and fixed-format,
   "My call" is "Call" with the end-of-over-frame text removed (wrong for V2), mic meter one fixed-width line (LOW/OK/HI/CLIP, values side by side,

@@ -192,6 +192,11 @@ static void log_call(const rade_native_call_t *c) {
   heard_hist[heard_n].snr_valid = c->snr_valid;
   heard_hist[heard_n].t = c->t_unix;
   heard_n++;
+  if (rade_log_active()) {
+    char sn[16] = "none";
+    if (c->snr_valid) { snprintf(sn, sizeof sn, "%.1f", c->snr_db); }
+    rade_log_event("call %s snr=%s", c->call, sn);
+  }
   if (rade_native_capture_active()) {
     char line[200];
     snprintf(line, sizeof line, "call %s snr=%.1f foff=%.1f", c->call, c->snr_db, c->foff_hz);
@@ -296,7 +301,7 @@ static void state_exit(void) {
 
 static void band_default_changed(void);
 
-static char ev_last[120];               // last state written to the parameter log
+static int log_events_fresh = 0;        // set when logging starts: the next poll writes every setting as an event
 
 static int state_cb(gpointer arg) {
   static char last[200];
@@ -326,13 +331,25 @@ static int state_cb(gpointer arg) {
   snprintf(now, sizeof now, "%d %lld %d %s %d %d", rade_native_waveform(), rade_dial(),
            tx_now, rade_native_get_callsign(), heard_seq, tx_count);
   if (rade_log_active()) {
-    char ev[120];
-    snprintf(ev, sizeof ev, "wave=%d dial=%lld mode=%s invert=%d tx=%d", rade_native_waveform(), rade_dial(),
-             mode_string[vfo[0].mode], rade_native_get_invert(), tx_now);
-    if (strcmp(ev, ev_last) != 0) {
-      rade_log_event("%s", ev);
-      strcpy(ev_last, ev);
-    }
+    // the settings as events, each when it changes (and all of them once, at the start: log_events_reset())
+    static long long p_dial = -1;
+    static int p_wave = -1, p_inv = -1, p_txe = -1, p_agc = -1;
+    static char p_mode[8] = "";
+    static double p_drive = 1e9, p_trim = 1e9;
+    if (log_events_fresh) { p_dial = -1; p_wave = p_inv = p_txe = p_agc = -1; p_mode[0] = 0; p_drive = p_trim = 1e9; log_events_fresh = 0; }
+    long long d = rade_dial();
+    const char *mo = mode_string[vfo[0].mode];
+    if (rade_native_waveform() != p_wave) { p_wave = rade_native_waveform(); rade_log_event("wave %d", p_wave); }
+    if (d != p_dial) { p_dial = d; rade_log_event("dial %lld", d); }
+    if (strcmp(mo, p_mode) != 0) { snprintf(p_mode, sizeof p_mode, "%s", mo); rade_log_event("mode %s", mo); }
+    if (rade_native_get_invert() != p_inv) { p_inv = rade_native_get_invert(); rade_log_event("invert %d", p_inv); }
+    if (rade_native_tx_enabled() != p_txe) { p_txe = rade_native_tx_enabled(); rade_log_event("tx_enabled %d", p_txe); }
+    if (rade_native_tx_get_drive_db() != p_drive) { p_drive = rade_native_tx_get_drive_db(); rade_log_event("drive %.1f", p_drive); }
+    if (rade_native_tx_get_trim_db() != p_trim) { p_trim = rade_native_tx_get_trim_db(); rade_log_event("trim %.1f", p_trim); }
+    if (rade_native_tx_get_agc() != p_agc) { p_agc = rade_native_tx_get_agc(); rade_log_event("agc %d", p_agc); }
+    rade_log_ctx_t lc = { .dial_hz = d, .wave = rade_native_waveform(), .invert = rade_native_get_invert() };
+    snprintf(lc.mode, sizeof lc.mode, "%s", mo);
+    rade_log_context(&lc);
   }
   gint64 t = g_get_monotonic_time();
   if (strcmp(now, last) != 0 || t - last_t >= 2000000) {
@@ -425,7 +442,6 @@ static void drive_cb(GtkWidget *widget, gpointer data) {
   if (updating) { return; }
   double db = gtk_range_get_value(GTK_RANGE(widget));
   rade_native_tx_set_drive_db(db);
-  rade_log_event("drive %.1f dB", db);
 }
 
 //
@@ -442,7 +458,7 @@ static void log_cb(GtkWidget *widget, gpointer data) {
              build_version, w == RADE_NATIVE_V1 ? "V1" : w == RADE_NATIVE_V2 ? "V2" : "off", rade_dial(),
              mode_string[vfo[0].mode], rade_native_get_invert(), rade_native_tx_get_trim_db(),
              rade_native_tx_get_agc(), rade_native_tx_get_drive_db(), rade_native_tx_enabled());
-    ev_last[0] = 0;                         // so the state at the start is the first event
+    log_events_fresh = 1;                   // so the settings at the start are the first events
     if (rade_log_start(meta) != 0) {
       updating = 1;
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
@@ -1236,7 +1252,7 @@ static int test_exec(const char *verb, const char *args, char *reply, size_t n) 
       if (radio_is_transmitting()) { snprintf(reply, n, "not while transmitting"); return -1; }
       vfo_id_set_frequency(0, d);
     }
-    if (rade_test_arg(args, "drive_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_drive_db(d); if (drive_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(drive_scale), d < -6.0 ? -6.0 : d); updating = 0; } rade_log_event("drive %.1f dB (harness)", rade_native_tx_get_drive_db()); }
+    if (rade_test_arg(args, "drive_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_drive_db(d); if (drive_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(drive_scale), d < -6.0 ? -6.0 : d); updating = 0; } }
     if (rade_test_arg(args, "trim_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_trim_db(d); if (mic_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(mic_scale), d); updating = 0; } }
     if (rade_test_arg(args, "agc", v, sizeof v)) { int a = atoi(v); rade_native_tx_set_agc(a); if (mic_agc_b) { updating = 1; gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), a); updating = 0; } }
     if (rade_test_arg(args, "tx", v, sizeof v)) { wset(tx_b, atoi(v)); }
