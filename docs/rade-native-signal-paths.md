@@ -287,7 +287,7 @@ sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync en
 | | `TX_INT`, `TX_INT_TAPS` | 6, 48 (cutoff 3.9 kHz) |
 | | `TX_LEVEL_V1`, `_V2` | 0.357, 0.504 (was 0.3 both), times the Drive slider (-6..+6 dB) |
 | | `TX_TAIL` | 8000 samples |
-| | leveller | only while transmitting, 0 dB at key-down; up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB, holds under -55 LUFS |
+| | leveller | gain held through RX and between overs; changes only while transmitting and only on speech (400 ms loudness before the gain >= -50 LUFS, within 15 LU of the over's loudest, within 10 LU of the speech average); up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB |
 | | limiter | knee 0.9, ceiling 1.0 |
 | WDSP (operator) | RX AGC | medium, top 80 dB |
 | WDSP (ours) | TX panel | select 3, copy 0, gain 1; EQ, leveler, CFC, compressor, DEXP, phase rotator off |

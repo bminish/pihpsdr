@@ -16,6 +16,16 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (leveller revised on request): the gain is **held** through
+  receive and from one over to the next (no reset at key-down; the loudness
+  average does start empty each over). It changes only while transmitting and
+  only on speech: 400 ms loudness before the gain at least -50 LUFS, within 15 LU
+  of the loudest speech of the over (forgets 0.03 dB/s), within 10 LU of the speech
+  average. Pauses, hiss or room noise, even beyond the 10 s average, never raise it
+  (`test_tx_level.py`: speech then 50 s of noise and silence, gain unchanged to
+  0.05 dB; a room above the floor but 20 LU under the speech, unchanged). A very
+  quiet mic (pre-gain under -50 LUFS) is not levelled at all, by design.
+
 - 2026-10-16 (Reporter V1/V2/All, toolbar, drive, leveller, log): (1) Reporter:
   V2's host is `reporter-radev2.k6aq.net:443` TLS (from `../rade3_reporting.md`,
   freedv-gui's hard-coded value; a view-only connection returned a station
