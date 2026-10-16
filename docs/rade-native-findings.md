@@ -11,7 +11,7 @@ measured, on the air or offline, on the dates given; everything marked *not meas
 |---|---|---|
 | librade (V1, V2) built into piHPSDR, RX and TX engines on the WDSP I/Q chain | `src/rade_native.[ch]`, `tools/rade/build_rade.sh` (`make RADE_NATIVE=ON`) | works on the air, both directions |
 | RADE window (waveform, Invert, TX, mic trim/AGC/drive, capture, parameter log, calls, test harness), assignable to a toolbar button | `src/rade_native_menu.c`, `MENU_RADE` | built; the GTK side of the newer parts is not covered by tests |
-| V1 callsign in the end-of-over frame (freedv-gui's LDPC text) | `src/rade_eoo_text.c` | interoperates; **V2 callsign on the data-symbol channel: `src/rade_v2_text.c`, sent with every V2 transmission, decoded by freedv-gui's receiver offline (not yet on air; V2 callsign is not decoded on receive in piHPSDR)** |
+| V1 callsign in the end-of-over frame (freedv-gui's LDPC text) | `src/rade_eoo_text.c` | interoperates; **V2 callsign on the data-symbol channel: `src/rade_v2_text.c`, sent with every V2 transmission, decoded by freedv-gui's receiver offline, and decoded on receive by a port of freedv-gui's receiver (same file); neither yet on air** |
 | RADE Reporter (FreeDV Reporter client, V1 / V2 / both) | `tools/rade-reporter/` | reports only to the reporter of the active mode, only for a RADE transmission |
 | Parameter log (non-blocking, one file per run) | `src/rade_native_log.[ch]` | producer cost 0.3 us mean |
 | Test harness (control socket, operator-armed, guarded) + automated air runs + Kiwi analysis | `src/rade_native_test.[ch]`, `test/rade_native/{rade_ctl,air_test,air_weak,kiwi_rx}.py` | run on the air twice (see 6) |
@@ -49,7 +49,7 @@ measured, on the air or offline, on the dates given; everything marked *not meas
 | | sync holds to | end-of-over frame from | V1 callsign from |
 |---|---|---|---|
 | V1 | about 0 dB band SNR | about +1.7 dB | about +8.5 dB |
-| V2 | about -1 dB | about +6 to +7 dB | (V2 callsign rides the data symbols through the over, not the end-of-over frame) |
+| V2 | about -1 dB | about +6 to +7 dB | (V2 callsign rides the data symbols through the over, not the end-of-over frame; receive threshold not measured, decoded in the engine test at 6 dB SNR) |
 
 Both hold sync at level -24 dB on the air at drive 1 %, and lose it at -30 dB. librade's V2 SNR estimate tops out near 18 dB (V1 near 32), so on strong
 signals use the band-power SNR or the feature loss. The weak-signal emulation (`air_weak.py`) agrees with the real weak runs.
@@ -85,7 +85,7 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 ## 10. Open items
 
 1. Filter optimisation (this document's sibling): see `rade-native-filter-lab.md` for the options measured and the recommendation; not applied until agreed.
-2. V2 callsign: **transmit built 2026-10-16** (`rade_v2_text.c`, tests `v2_text_interop`, `test_v2_text.py`); on-air check against a real freedv-gui, and decoding the callsign in piHPSDR's own V2 receiver, still to do.
+2. V2 callsign: **transmit and receive built 2026-10-16** (`rade_v2_text.c`; tests `v2_text_interop` part D = our receiver identical to freedv-gui's symbol by symbol, `test_v2_text.py` = real TX and RX engines); on-air check against a real freedv-gui, in both directions, still to do.
 3. The over-the-air delay needs a time reference in the recording.
 4. The PA and the radiated spectrum (Kiwi spectrum of the over versus the TX output) are not characterised; fading is not tested; one clip.
 5. The working TX level (+3 dB) is a recommendation, not a change.
