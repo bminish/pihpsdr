@@ -174,6 +174,20 @@ def periodic():
     pr.enabled = True
     pr.reset()
     check(pr.call == "" and pr.last is None, "reset (not reporting): forgets the call")
+    # V2: the call is the one piHPSDR says belongs to the reception in progress (rx_call), not the Reporter's own 10 s rule
+    p2 = dict(p, waveform=2)
+    pv = core.PeriodicSnr(interval=5.0, reset_s=10.0)
+    r = pv.step(dict(p2, rx_call=""), 300.0)
+    check(r[0] is True and r[1] == "", "V2, no call yet in this reception: sent blank")
+    r = pv.step(dict(p2, rx_call="VK5DGR"), 306.0)
+    check(r[0] is True and r[1] == "VK5DGR", "V2, piHPSDR has the call of the reception: it goes with the SNR")
+    pv.step(dict(p2, rx_call="VK5DGR", rx_sync=0), 310.0)
+    r = pv.step(dict(p2, rx_call="VK5DGR"), 330.0)
+    check(r[0] is True and r[1] == "VK5DGR", "V2, lock lost for 20 s and back as the same sender: the call is kept (V1 would forget it after 10 s)")
+    r = pv.step(dict(p2, rx_call=""), 336.0)
+    check(r[0] is True and r[1] == "", "V2, piHPSDR says it is a new reception (rx_call empty): blank again")
+    r = pv.step(dict(p, rx_call="IGNORED"), 342.0)
+    check(r[1] != "IGNORED", "V1: rx_call is not used")
     # no lock, no SNR: a missing SNR is never turned into 0, a real 0 or a negative SNR is reported
     pz = core.PeriodicSnr(interval=5.0)
     r = pz.step(dict(p, rx_sync=0, rx_snr=None), 200.0)

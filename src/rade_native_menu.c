@@ -277,12 +277,12 @@ static void state_write(int running) {
   snprintf(text, sizeof text,
            "{\"running\":%d,\"updated\":%.3f,\"pid\":%d,\"waveform\":%d,\"dial_hz\":%lld,"
            "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
-           "\"rx_sync\":%d,\"rx_snr\":%s,\"rx_foff\":%.1f,"
+           "\"rx_sync\":%d,\"rx_snr\":%s,\"rx_foff\":%.1f,\"rx_call\":\"%s\","
            "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%s,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
            "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"heard\":[%s]}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
            rade_dial(), rade_is_tx() ? 1 : 0, call, ver,
-           st.sync ? 1 : 0, rx_snr_s, st.foff_hz, heard_seq, heard_call, heard_snr_s, heard_foff, heard_t, tx_count, tx_last_t,
+           st.sync ? 1 : 0, rx_snr_s, st.foff_hz, st.rx_call, heard_seq, heard_call, heard_snr_s, heard_foff, heard_t, tx_count, tx_last_t,
            rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, hist);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
