@@ -244,7 +244,17 @@ class Link:
     as freedv-gui does.
     """
 
-    def __init__(self, roster, on_event, on_state, software, client_factory=SioClient):
+    MIN_GAP_S = 5.0            # never two events of one kind within this long: remote servers are not to be burdened
+    STABLE_S = 5.0             # the dial must stand still this long (or a signal be in sync) before the frequency is reported
+
+    def __init__(self, roster, on_event, on_state, software, client_factory=SioClient, clock=time.time):
+        self.clock = clock
+        self.rx_calls = []         # calls decoded, waiting for their turn (oldest first)
+        self.rx_blank = None       # the latest live SNR report, (callsign, mode, snr), waiting for its turn
+        self.pulse = None          # mode of a transmission that began and ended between two looks
+        self.freq_seen = None
+        self.freq_since = 0.0
+        self.live = False
         self.roster, self.on_event, self.on_state = roster, on_event, on_state
         self.software = software
         self.factory = client_factory
@@ -257,10 +267,14 @@ class Link:
         self.lock = threading.RLock()
 
     # ---- public
-    def set_target(self, server, role, callsign="", grid="", freq=0, mode="", tx=False, message=""):
-        """server: a DEFAULT_SERVERS-style dict with host/port/secure, or None to be disconnected."""
+    def set_target(self, server, role, callsign="", grid="", freq=0, mode="", tx=False, message="", live=False):
+        """server: a DEFAULT_SERVERS-style dict with host/port/secure, or None to be disconnected.
+        live: a signal is in sync with an SNR - new information that settles the frequency at once."""
         old, reopen = None, False
         with self.lock:
+            if int(freq) != self.freq_seen:           # tuning: the clock for "stable" starts again
+                self.freq_seen, self.freq_since = int(freq), self.clock()
+            self.live = bool(live)
             if server is None or not server.get("host"):
                 old = self._detach()
             else:
@@ -294,7 +308,13 @@ class Link:
             return False                   # no lock, no SNR: nothing is sent (0 is a real SNR; "none" is not 0)
         with self.lock:
             if (self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode):
-                self.client.emit("rx_report", {"callsign": callsign or "", "mode": mode, "snr": int(snr + 0.5)})
+                item = (callsign or "", mode, int(snr + 0.5))
+                if item[0]:
+                    if item not in self.rx_calls:
+                        self.rx_calls = (self.rx_calls + [item])[-4:]
+                else:
+                    self.rx_blank = item        # only the newest live report is worth sending
+                self._push()
                 return True
         return False
 
@@ -303,9 +323,8 @@ class Link:
         'last TX' is right (freedv-gui reports every PTT change)."""
         with self.lock:
             if self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode:
-                self.client.emit("tx_report", {"mode": mode, "transmitting": True})
-                self.client.emit("tx_report", {"mode": mode, "transmitting": False})
-                self.sent["mode"], self.sent["tx"] = mode, False
+                self.pulse = mode               # sent as on, then off, when its turn comes
+                self._push()
                 return True
         return False
 
@@ -326,6 +345,7 @@ class Link:
         self.roster.clear()
         self.fully = False
         self.sent = {}
+        self.rx_calls, self.rx_blank, self.pulse = [], None, None
         self.role = role
         self.client = self.factory(server["host"], server["port"], server["secure"], auth,
                                    self._event, self._state)
@@ -337,6 +357,7 @@ class Link:
         self.key = None
         self.fully = False
         self.sent = {}
+        self.rx_calls, self.rx_blank, self.pulse = [], None, None
         return c
 
     def _finish(self, c):
@@ -363,19 +384,54 @@ class Link:
         self.on_event(name, data)
 
     def _push(self):
-        """Tell the server what changed. Only when reporting, only when it is ready for it."""
+        """Tell the server what is new - and nothing else. Only when reporting and the server is ready. At most one event of each
+        kind per MIN_GAP_S (what is waiting is merged, so the latest state goes out when the time comes); nothing that repeats what
+        the server already has; while the dial is being tuned nothing at all, until it has stood still for STABLE_S or a signal is
+        in sync with an SNR."""
         if self.client is None or not self.fully or getattr(self, "role", "view") != "report":
             return
+        now = self.clock()
         w, s = self.want, self.sent
-        if w["freq"] and w["freq"] != s.get("freq"):
+        t = s.setdefault("_t", {})
+        def due(kind):
+            return now - t.get(kind, -1e9) >= self.MIN_GAP_S
+        def sent(kind):
+            t[kind] = now
+        settled = self.live or now - self.freq_since >= self.STABLE_S
+        if w["freq"] and w["freq"] != s.get("freq") and settled and due("freq"):
             self.client.emit("freq_change", {"freq": w["freq"]})
             s["freq"] = w["freq"]
-        if w["mode"] and (w["mode"], w["tx"]) != (s.get("mode"), s.get("tx")):
+            sent("freq")
+        if not settled:
+            return                       # tuning: no transmit, receive or message traffic either
+        if self.pulse and due("tx"):
+            self.client.emit("tx_report", {"mode": self.pulse, "transmitting": True})
+            self.client.emit("tx_report", {"mode": self.pulse, "transmitting": False})
+            s["mode"], s["tx"] = self.pulse, False
+            self.pulse = None
+            sent("tx")
+        elif w["mode"] and (w["mode"], w["tx"]) != (s.get("mode"), s.get("tx")) and due("tx"):
             self.client.emit("tx_report", {"mode": w["mode"], "transmitting": w["tx"]})
             s["mode"], s["tx"] = w["mode"], w["tx"]
-        if w["message"] != s.get("message", ""):
+            sent("tx")
+            self.pulse = None
+        if w["message"] != s.get("message", "") and due("message"):
             self.client.emit("message_update", {"message": w["message"]})
             s["message"] = w["message"]
+            sent("message")
+        if w["freq"] and s.get("freq") != w["freq"]:
+            return                       # the server does not have our frequency yet: its reception reports would mean nothing
+        item = self.rx_calls[0] if self.rx_calls else self.rx_blank
+        if item is not None and due("rx"):
+            if item[0]:
+                self.rx_calls.pop(0)
+            else:
+                self.rx_blank = None
+            payload = {"callsign": item[0], "mode": item[1], "snr": item[2]}
+            if payload != s.get("rx"):               # the same again is not news
+                self.client.emit("rx_report", payload)
+                s["rx"] = payload
+                sent("rx")
 
 
 # ------------------------------------------------------------------ pihpsdr link
@@ -463,7 +519,7 @@ class PeriodicSnr:
         if not isinstance(p.get("rx_snr"), (int, float)):
             return False, "", 0.0, "in sync but no SNR yet: nothing sent"
         what = "call %s" % self.call if self.call else "no call decoded yet, sent blank"
-        status = "sending the SNR every %g s (%s)" % (self.interval, what)
+        status = "sending the SNR when it changes, at most every %g s (%s)" % (self.interval, what)
         if now - self.last_sent < self.interval:
             return False, "", 0.0, status
         self.last_sent = now

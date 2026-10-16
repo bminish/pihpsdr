@@ -16,6 +16,9 @@ sys.path.insert(0, HERE)
 import core  # noqa: E402
 from mock_server import MockServer  # noqa: E402
 
+REAL_GAP, REAL_STABLE = core.Link.MIN_GAP_S, core.Link.STABLE_S
+core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0     # the flow tests run on real sockets and real time; the pacing has its own test
+
 fails = 0
 
 
@@ -220,6 +223,73 @@ def periodic():
     check(core.PeriodicSnr(1.0).interval == 1.0, "interval is settable (freedv-gui itself sends about once a second)")
 
 
+def pacing():
+    print("pacing: nothing while tuning, at most one event of a kind per 5 s, nothing that is not new")
+    core.Link.MIN_GAP_S, core.Link.STABLE_S = REAL_GAP, REAL_STABLE
+    check((REAL_GAP, REAL_STABLE) == (5.0, 5.0), "the real limits are 5 s and 5 s")
+    now = [1000.0]
+
+    class Fake:
+        def __init__(self, host, port, secure, auth, on_event, on_state):
+            self.events, self.on_event = [], on_event
+        def start(self): self.on_event("connection_successful", {})
+        def stop(self): pass
+        def emit(self, ev, data): self.events.append((now[0], ev, data))
+    link = core.Link(core.Roster(), lambda n, d: None, lambda s, m: None, "t", client_factory=Fake, clock=lambda: now[0])
+    srv = {"host": "h", "port": 1, "secure": False}
+    def tick(dt, freq=7053000, tx=False, live=False, msg=""):
+        now[0] += dt
+        link.set_target(srv, "report", "EI6IZ", "IO53hu", freq, "RADEV1", tx, msg, live=live)
+    ev = lambda kind: [e for e in link.client.events if e[1] == kind]
+    tick(0)
+    check(not link.client.events, "just connected, dial not yet stable: nothing sent")
+    for i in range(8):                     # tuning every second for 8 s
+        tick(1.0, freq=7053000 + 1000 * i)
+    check(not link.client.events, "tuning: nothing sent at all (no freq, no tx state)")
+    link.report_rx("", "RADEV1", 3)
+    tick(1.0, freq=7065000)
+    check(not ev("rx_report"), "a reception report is held while the dial is moving")
+    for i in range(4):
+        tick(1.0, freq=7065000)
+    check(len(ev("freq_change")) == 0, "stable 4 s: still nothing")
+    tick(1.0, freq=7065000)
+    check([e[2] for e in ev("freq_change")] == [{"freq": 7065000}], "stable 5 s: the frequency is sent, once")
+    check(len(ev("tx_report")) == 1 and len(ev("rx_report")) == 1, "and the held state and report follow with it")
+    n = len(link.client.events)
+    for i in range(20):
+        tick(1.0, freq=7065000)
+    check(len(link.client.events) == n, "nothing new: nothing sent, for 20 s")
+    link.report_rx("", "RADEV1", 3); tick(6.0, freq=7065000)
+    check(len(ev("rx_report")) == 1, "the same SNR again is not sent")
+    link.report_rx("", "RADEV1", 5); link.report_rx("", "RADEV1", 6); link.report_rx("", "RADEV1", 7)
+    check(len(ev("rx_report")) == 2 and ev("rx_report")[-1][2]["snr"] == 5 or len(ev("rx_report")) == 1, "a report inside 5 s of the last waits")
+    tick(1.0, freq=7065000)
+    t_last = ev("rx_report")[-1][0]
+    tick(5.0, freq=7065000)
+    rr = ev("rx_report")
+    check(all(b[0] - a[0] >= 5.0 for a, b in zip(rr, rr[1:])), "reception reports are at least 5 s apart (%s)" % [round(x[0]) for x in rr])
+    check(rr[-1][2]["snr"] == 7, "only the newest live SNR goes out when its turn comes")
+    # a call is not lost to a live report
+    now[0] += 6; link.report_rx("", "RADEV1", 8); link.report_rx("DL1ABC", "RADEV1", 9); tick(0, freq=7065000)
+    tick(5.1, freq=7065000); tick(5.1, freq=7065000)
+    sent = [e[2] for e in ev("rx_report")][-3:]
+    check({"callsign": "DL1ABC", "mode": "RADEV1", "snr": 9} in sent, "a decoded call is sent (calls first)")
+    # tx on / off: each change goes out, but not more often than 5 s
+    tick(6.0, freq=7065000, tx=True)
+    tick(1.0, freq=7065000, tx=False)
+    tx = ev("tx_report")
+    check(tx[-1][2]["transmitting"] is True, "transmit on goes out at once")
+    tick(4.5, freq=7065000, tx=False)
+    check(ev("tx_report")[-1][2]["transmitting"] is False, "transmit off goes out when 5 s have passed")
+    # a signal in sync settles a moving dial at once
+    link.client.events.clear()
+    tick(10.0, freq=7070000); tick(1.0, freq=7071000, live=True)
+    check([e[2] for e in ev("freq_change")] == [{"freq": 7071000}], "lock + SNR while tuning: new information, frequency sent without waiting")
+    tick(0.5, freq=7072000, live=True)
+    check(len(ev("freq_change")) == 1, "...and not again within 5 s")
+    core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0
+
+
 def link_flow():
     print("link to a (mock) reporter")
     s1, s2 = MockServer().start(), MockServer().start()
@@ -324,6 +394,7 @@ if __name__ == "__main__":
     decisions()
     heard()
     periodic()
+    pacing()
     link_flow()
     if "--live" in sys.argv:
         live()
