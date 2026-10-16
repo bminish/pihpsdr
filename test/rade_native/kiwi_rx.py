@@ -20,7 +20,7 @@ all at the same moment, each on its own connection to the Kiwi:
 IQ is the primary path: it is the same complex baseband the transmitter and
 the native receiver work in. The audio profiles are there to see what the
 usual way of listening does to the signal. V1 below 10 MHz is sent inverted
-(lower sideband, see docs/rade-native.md), so the default set is iq, iq-fixed
+(lower sideband, see docs/archive/rade/plan.md), so the default set is iq, iq-fixed
 and lsb there, and iq, iq-fixed and usb elsewhere; --profiles overrides it.
 
 analyze converts each recording to 8 kHz complex baseband, mixes out any

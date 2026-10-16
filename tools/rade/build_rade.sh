@@ -2,7 +2,7 @@
 # Fetch and build librade (freedv/rade_c) at the pinned commit.
 # Output: third_party/rade_c-src (source), third_party/rade_c-build (build).
 # Both are untracked. Change PIN here and record it in
-# docs/rade-native-progress.md.
+# docs/archive/rade/progress.md.
 set -e
 PIN=b3e3748
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

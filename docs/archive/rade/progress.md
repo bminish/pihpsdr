@@ -1,6 +1,6 @@
 # RADE native: progress
 
-Plan: [rade-native.md](rade-native.md). Branch `feature/rade-native`.
+Plan: [plan.md](plan.md). Branch `feature/rade-native`.
 Updated with every commit that moves the work. Newest entry first.
 
 ## Status
@@ -16,7 +16,7 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
-- 2026-10-16 (review: dead code, comments, upstream footprint): **Footprint** against the commit the work grew from: 8 existing files, 172 lines added, 1 changed; 7,100 lines of our own files in `src/` and `rade_native.mk`. **Changed to shrink it**: the Makefile hunks (which sat next to the TEST-only DIVCAP block and conflicted with upstream) are now `rade_native.mk` plus three lines; the properties save/restore in `radio.c` is two calls into `rade_native_menu.c`; the one-line `rx_rade_invert()`/`tx_rade_invert()` wrappers are gone; nothing is added to `.gitignore` (the log and capture directories write their own, `third_party/`, `tools/`, `test/` carry theirs). **Dead code removed**: `rade_test_socket_path()`, the exported `rade_native_width()` (now static), a stale comment block in `rade_v2_text.[ch]`. `rade_v2_text_restart()` stays: tested (decoder after a restart of the stream). No unused functions, fields or macros otherwise (compiler warnings and a cross-reference of every exported name). **Measured, not changed**: the V2 callsign receiver costs 0.5 % (clean) to 0.9 % (noise, worst case) of one core on this PC, 368 us per symbol; not measured on a Pi; left as freedv-gui does it (identical results matter more). **Patches**: `tools/rade/rade-patches.sh export|check` and `docs/rade-native-upstreaming.md`. `check` against `upstream/master` `dbcaa64d`: hooks apply cleanly, core and extras apply, all RADE objects and the six hooked files compile with `RADE_NATIVE=ON`.
+- 2026-10-16 (review: dead code, comments, upstream footprint): **Footprint** against the commit the work grew from: 8 existing files, 172 lines added, 1 changed; 7,100 lines of our own files in `src/` and `rade_native.mk`. **Changed to shrink it**: the Makefile hunks (which sat next to the TEST-only DIVCAP block and conflicted with upstream) are now `rade_native.mk` plus three lines; the properties save/restore in `radio.c` is two calls into `rade_native_menu.c`; the one-line `rx_rade_invert()`/`tx_rade_invert()` wrappers are gone; nothing is added to `.gitignore` (the log and capture directories write their own, `third_party/`, `tools/`, `test/` carry theirs). **Dead code removed**: `rade_test_socket_path()`, the exported `rade_native_width()` (now static), a stale comment block in `rade_v2_text.[ch]`. `rade_v2_text_restart()` stays: tested (decoder after a restart of the stream). No unused functions, fields or macros otherwise (compiler warnings and a cross-reference of every exported name). **Measured, not changed**: the V2 callsign receiver costs 0.5 % (clean) to 0.9 % (noise, worst case) of one core on this PC, 368 us per symbol; not measured on a Pi; left as freedv-gui does it (identical results matter more). **Patches**: `tools/rade/rade-patches.sh export|check` and `docs/rade/upstreaming.md`. `check` against `upstream/master` `dbcaa64d`: hooks apply cleanly, core and extras apply, all RADE objects and the six hooked files compile with `RADE_NATIVE=ON`.
 - 2026-10-16 (log viewer: several files, live runs): Files… takes several files at once, Folder… a run or a folder of runs (also on the command line; a `.tar.gz` is skipped when its directory is there). A directory run without `ended_utc` in `meta.txt` is live (●): Update live (F5) reloads changed live runs (a half-written last line is ignored), keeps the zoom or follows the newest data at the same width; optional automatic update every 1-60 s. Test: `test/rade_logview/test_logview.py` (data layer and the withdrawn window).
 - 2026-10-16 (TUNE reported as a RADE transmission - fixed): `rade_is_tx()` (what the Reporter's `tx` and `tx_count` come from) tested `radio_is_transmitting()` and `transmitter->tune` separately; when a TUNE ends its flag clears a moment before the key does, and that moment counted as a RADE transmission (a tx report at the end of every tune). It now asks the engine, `rade_native_tx_live()`: the engine has been keyed for real RADE speech (transmitter.c passes transmitting = 0 for TUNE, two-tone and noise) for 170 ms running and still is, the end-of-over frame included. Edge blocks of a TUNE never get there. Test: `test_tx_live` (in `make check`). Needs a restart of piHPSDR.
 - 2026-10-16 (Reporter and the V2 call): piHPSDR now publishes `rx_call` in `state.json` (the callsign of the V2 reception in progress: kept through a drop-out of the same sender, empty for a new reception and while a new lock is being checked against the last). For V2 the Reporter's regular SNR report carries `rx_call` instead of applying its own 10 s forget rule (V1 keeps the rule, `rx_call` unused). Test: `test_reporter.py` (call kept across a 20 s loss, blank on a new reception, ignored for V1). Needs a restart of piHPSDR (the Reporter replaces itself). Not run against a live reporter.
@@ -33,7 +33,7 @@ Updated with every commit that moves the work. Newest entry first.
 
 - 2026-10-16 (parameter log redesigned): `rade-logs/<time>/` with `meta.txt`, `rx.csv` (in sync only, 2 Hz mean + min SNR; V2 columns for V2), `tx.csv` (keyed only, 2 Hz),
   `events.csv`, `overs.csv` (one row per heard over with dial, mode, waveform, SNR/offset statistics, end-of-over seen and the call), `tx_overs.csv`, and a `.tar.gz` copy on stop.
-  Aggregation in the writer thread; audio threads unchanged. `test_log.py` (scripted scene) in `make check`; `log_analysis.py` and `air_test.py` read the new tables. Design and numbers: `rade-native-logging.md`. Not yet run live.
+  Aggregation in the writer thread; audio threads unchanged. `test_log.py` (scripted scene) in `make check`; `log_analysis.py` and `air_test.py` read the new tables. Design and numbers: `logging.md`. Not yet run live.
 
 - 2026-10-16 (60 m, compact RADE window): 60 m (5250-5450 kHz) defaults to upper sideband for V1 and V2, Invert means below the carrier for both; band
   class changes (10 MHz, 60 m) re-apply the default. RADE window: "Receiver 0 ..." text removed (tooltip), calls limited to the last 4 and fixed-format,
@@ -47,7 +47,7 @@ Updated with every commit that moves the work. Newest entry first.
   carries a code id (hash of the program files), a start with different code stops the old one and takes over, and the window title shows the id. Also: column headings
   now have their own label and button for the right click (and a "Columns / filters" button gives the same menu).
 
-- 2026-10-16 (air run 3, GPS timing): `docs/rade-native-air-run3-20261016.md`. WDSP delay 78.8 ms (offline 66), radio side 10.9 ms; V1 key-to-RF 335 ms, V2 174 ms (prefill 240 / 80 ms);
+- 2026-10-16 (air run 3, GPS timing): `docs/rade/air-run-3.md`. WDSP delay 78.8 ms (offline 66), radio side 10.9 ms; V1 key-to-RF 335 ms, V2 174 ms (prefill 240 / 80 ms);
   no clipped end (EOO and call 12/12); the radio is released 115 ms after the RF ends; the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of speech to acquisition (candidate: lead-in frames);
   EOO frame 2.4 dB (V1) below the speech power at 0 dB drive (candidate: raise it); TX frequency within +-1 Hz. **Correction: the earlier "+0.39 ppm" frequency offset was the Kiwi's, before it had a GPS.**
 
@@ -58,20 +58,20 @@ Updated with every commit that moves the work. Newest entry first.
   can be hidden / reordered (right click a heading; remembered), right click **km** = distance filter, **MHz** = frequency-range filter
   (`test_reporter.py`, `test_gui_columns.py`).
 
-- 2026-10-16 (GPS Kiwi): `docs/rade-native-gps-timing.md`. IQ recordings are now `--kiwi-wav` (GNSS time per block) when the Kiwi has a GPS solution;
+- 2026-10-16 (GPS Kiwi): `docs/rade/gps-timing.md`. IQ recordings are now `--kiwi-wav` (GNSS time per block) when the Kiwi has a GPS solution;
   `kiwi_gps_wav.py` reads them (sample rate fitted from the stamps: 11998.937 Hz), `kiwi_rx` puts the 8 kHz stream on GPS time and reports the decoder's
   times in UTC and the clipping of the start / end of the speech; engine event times and `_txblocks.csv` in the build; `air_timing.py` for RF onset / end, WDSP
   output, latencies. Validated on receive-only signals: Kiwi frequency +-0.03 ppm (WWV 10 and 15 MHz), time axis late by +2.2 ms (MSF 60 kHz), detector and
   clock mapping on synthetic recordings (`test_timing.py`). **No real over recorded with GPS yet; the engine changes are compiled, not run on the radio.**
 
 - 2026-10-16 (filter lab): `test/rade_native/filter_lab.py` + `wdsp_probe --nc/--mp/--win/--nbpwin/--nbp`, results in
-  `docs/rade-native-filter-lab.md`. V2 TX filter: edge carriers lose 1.7 dB at the default 2048/7-term/96 kHz, but no length,
+  `docs/rade/filter-lab.md`. V2 TX filter: edge carriers lose 1.7 dB at the default 2048/7-term/96 kHz, but no length,
   window or edge setting moves the decode by more than 0.05 dB; minimum phase costs about 1 dB (its group-delay spread, 3-5 ms TX and
   9-14 ms RX, exceeds the 4 ms cyclic prefix); narrowing the V2 RX to 1030..1970 gains 0.3 dB of sync sensitivity and no more. The V2
-  spectrum's edge carriers are weak (-11 / -18 dB) in the modem itself. Nothing applied. `docs/rade-native-findings.md`: the
+  spectrum's edge carriers are weak (-11 / -18 dB) in the modem itself. Nothing applied. `docs/rade/findings.md`: the
   consolidated summary of all findings.
 
-- 2026-10-16 (air run 2, ALC strong/weak): `docs/rade-native-air-run2-20261016.md`. The ALC costs nothing measurable
+- 2026-10-16 (air run 2, ALC strong/weak): `docs/rade/air-run-2.md`. The ALC costs nothing measurable
   on weak signals and does not lower the strong-signal power: received power stops rising at about +1.5 dB (V1 +1.0 dB, V2
   +0.4 dB over the 0 dB level); decode quality at +3..+6 dB equals or beats 0 dB at every noise level tested. V1's own SNR
   estimate falls ~5 dB above the knee (clip distortion at ~-26 dB); the decode does not. Sweet spot +1.5..+3 dB; suggested
@@ -86,7 +86,7 @@ Updated with every commit that moves the work. Newest entry first.
   are in the plan.
 
 - 2026-10-16 (first automated air run, 28645 kHz, 18 runs V1/V2 -30..+6 dB): written up in
-  `docs/rade-native-air-run-20261016.md`. ALC ceiling at the P2 output is -0.97 dBFS and is reached at the
+  `docs/rade/air-run-1.md`. ALC ceiling at the P2 output is -0.97 dBFS and is reached at the
   0 dB level; +3 dB buys 0.8 dB (V1) of power, +6 dB nothing, with no measurable decode cost;
   sync holds to -24 dB, EOO/call need about SNR 7 dB (V1) / 5 dB (V2); V2's SNR estimate tops out near
   18 dB. Harness bug found and fixed (capture started twice: harmless message). Air delay not measured.
@@ -134,9 +134,9 @@ Updated with every commit that moves the work. Newest entry first.
   decoded. `alc_sweep.py` (offline): at the current levels the ALC is already
   at its ceiling, more level only lowers the TXA gain, decode not harmed; the
   live peak (-0.97 dBFS) is about 1 dB below the offline one, unexplained.
-  Write-up in `docs/rade-native-signal-paths.md` section 7a.
+  Write-up in `docs/rade/signal-paths.md` section 7a.
 
-- 2026-10-16 (signal paths): `docs/rade-native-signal-paths.md` - RX and TX diagrams, stage tables, what each display/report item is measured from, taps, parameter register, and a change log of the signal path (add a line with every change to a stage).
+- 2026-10-16 (signal paths): `docs/rade/signal-paths.md` - RX and TX diagrams, stage tables, what each display/report item is measured from, taps, parameter register, and a change log of the signal path (add a line with every change to a stage).
 
 - 2026-10-16 (mode changes keep the energy still): built. `rade_native_plan()`
   (`src/rade_native.c`, unit-tested in `test_geometry`) gives the sideband
@@ -153,7 +153,7 @@ Updated with every commit that moves the work. Newest entry first.
   band default. Built and unit-tested; **not run on a radio**.
 
 - 2026-10-16 (filtering and mode changes, from the captures): see
-  `docs/rade-native-filtering.md`. In short: (1) the three TX captures show
+  `docs/rade/filtering.md`. In short: (1) the three TX captures show
   the SSB profile's CFC post-equaliser and leveler active during RADE
   transmit (energy centre +1650 Hz instead of +1457, bottom third of the
   carriers about 5 dB down); reproduced offline; guarded in

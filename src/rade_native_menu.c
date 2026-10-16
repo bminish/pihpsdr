@@ -19,7 +19,7 @@
 
 //
 // Menu for the native RADE receiver (feature/rade-native). See
-// docs/rade-native.md. Receiver 0 only.
+// docs/archive/rade/plan.md. Receiver 0 only.
 //
 
 #include <gtk/gtk.h>
@@ -1094,7 +1094,7 @@ void rade_native_menu(GtkWidget *parent) {
   // Log, Capture and the test harness on one line; their state is the state of the button
   log_b = gtk_toggle_button_new_with_label("Log");
   gtk_widget_set_tooltip_text(log_b, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on "
-                                     "(overs heard and sent, SNR and offset, events; see docs/rade-native-logging.md). Written by a "
+                                     "(overs heard and sent, SNR and offset, events; see docs/rade/logging.md). Written by a "
                                      "background thread; the audio never waits for it.");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
   g_signal_connect(log_b, "toggled", G_CALLBACK(log_cb), NULL);
