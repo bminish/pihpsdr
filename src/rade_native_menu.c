@@ -53,7 +53,6 @@ static GtkWidget *dialog = NULL;
 static GtkWidget *status_label = NULL;
 static GtkWidget *edge_label = NULL;
 static GtkWidget *call_e = NULL;
-static GtkWidget *call_label = NULL;
 static GtkWidget *recv_label = NULL;
 static guint calls_timer_id = 0;
 #define RECENT_CALLS 4
@@ -63,15 +62,14 @@ static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_tex
 static GtkWidget *note_label = NULL;     // messages that must stay: the reporter's start, failures
 static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
 static GtkWidget *mox_b = NULL;         // the transmit button
-static GtkWidget *tx_label = NULL;
 static GtkWidget *wave_b[3] = {NULL, NULL, NULL};
 static GtkWidget *inv_b = NULL;
 static int want_tx = 1;                 // RADE transmit follows the waveform unless switched off
 static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
-static GtkWidget *drive_scale = NULL, *log_b = NULL, *log_label = NULL;
-static GtkWidget *test_b = NULL, *test_label = NULL;
+static GtkWidget *drive_scale = NULL, *log_b = NULL;
+static GtkWidget *test_b = NULL;
 static int test_armed = 0;              // the operator has ticked Test harness: a script may key the transmitter
 static int test_keyed = 0;              // ... and it has done so, and so is the one to release
 static char test_stem[160] = "";
@@ -82,7 +80,6 @@ static double test_now(void) {
   clock_gettime(CLOCK_REALTIME, &ts);
   return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
-static GtkWidget *capture_label = NULL;
 static guint timer_id = 0;
 static guint event_timer_id = 0;
 static char last_state[1024];
@@ -207,9 +204,9 @@ static void log_call(const rade_native_call_t *c) {
   memmove(recent[1], recent[0], sizeof recent[0] * (n_recent - 1));
   char hms[16];
   strftime(hms, sizeof hms, "%H:%M:%S", localtime(&t));
-  char sn[24] = "    -   ";
+  char sn[24] = "   -   ";
   if (c->snr_valid) { snprintf(sn, sizeof sn, "%5.1f dB", c->snr_db); }
-  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  %s  %+6.1f Hz  %8.4f MHz", hms, c->call,
+  snprintf(recent[0], sizeof recent[0], "%s %-7s V%d %s %+5.1f Hz %7.3f", hms, c->call,
            c->waveform, sn, c->foff_hz, rade_dial() / 1e6);
   t_print("%s: RADE call %s\n", __func__, recent[0]);
 }
@@ -463,13 +460,15 @@ static void log_cb(GtkWidget *widget, gpointer data) {
       updating = 1;
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
       updating = 0;
-      gtk_label_set_text(GTK_LABEL(log_label), "could not open the log file");
+      say("could not open the log file");
       return;
     }
-    gtk_label_set_text(GTK_LABEL(log_label), rade_log_path());
+    char tip[300];                           // the state is the button; where it is writing is the tooltip
+    snprintf(tip, sizeof tip, "Logging to %s (press to stop)", rade_log_path());
+    gtk_widget_set_tooltip_text(widget, tip);
   } else {
     rade_log_stop();
-    gtk_label_set_text(GTK_LABEL(log_label), "not logging");
+    gtk_widget_set_tooltip_text(widget, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on.");
   }
 }
 
@@ -672,11 +671,11 @@ static void cleanup(void) {
     g_source_remove(timer_id);
     timer_id = 0;
   }
-  recv_label = call_label = call_e = NULL;
-  tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
+  recv_label = call_e = NULL;
+  tx_b = mox_b = inv_b = capture_b = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   mic_scale = mic_agc_b = mic_bar = mic_text = note_label = NULL;
-  drive_scale = log_b = log_label = test_b = test_label = NULL;
+  drive_scale = log_b = test_b = NULL;
   if (dialog != NULL) {
     //
     // This window is deliberately not "sub_menu": the main menu and the
@@ -758,20 +757,26 @@ static int tx_ready(void) {
 }
 
 static void show_tx_state(void) {
-  if (tx_label == NULL) { return; }
-  const char *t;
+  if (mox_b == NULL) { return; }
+  const char *t, *tip;
   if (rade_native_waveform() == 0) {
-    t = "Select V1 or V2";
+    t = "TX (Select Mode)";
+    tip = "Select RADE V1 or V2 to transmit RADE from here. Space bar in this window also transmits.";
   } else if (transmitter == NULL) {
-    t = "No transmitter";
+    t = "TX (no transmitter)";
+    tip = "There is no transmitter.";
   } else if (transmitter->puresignal) {
-    t = "RADE transmit is not available with PureSignal";
+    t = "TX (PureSignal: not RADE)";
+    tip = "RADE transmit is not available with PureSignal.";
   } else if (!tx_ready()) {
-    t = "TX is NOT RADE: the transmit button here is disabled, other TX buttons send ordinary speech";
+    t = "TX (RADE TX off)";
+    tip = "RADE TX is off: this button is disabled, other TX buttons send ordinary speech.";
   } else {
-    t = rade_native_waveform() == RADE_NATIVE_V1 ? "TX: RADE V1" : "TX: RADE V2";
+    t = rade_native_waveform() == RADE_NATIVE_V1 ? "TX (RADE V1)" : "TX (RADE V2)";
+    tip = "Transmit (or the space bar in this window).";
   }
-  gtk_label_set_text(GTK_LABEL(tx_label), t);
+  gtk_button_set_label(GTK_BUTTON(mox_b), t);
+  gtk_widget_set_tooltip_text(mox_b, tip);
 }
 
 //
@@ -898,14 +903,14 @@ static int update_cb(gpointer arg) {
   } else {
     // fixed width, the fields in the same places whatever they hold; with no lock the SNR and the offset are not measurements: dashes
     if (st.sync) {
-      snprintf(text, sizeof text, "SYNC     %6.1f dB %+7.1f Hz  u%-4lu o%-4lu", st.snr_db, st.foff_hz, st.underruns, st.overruns);
+      snprintf(text, sizeof text, "SYNC    %6.1f dB %+7.1f Hz  u%-3lu o%-3lu", st.snr_db, st.foff_hz, st.underruns, st.overruns);
     } else {
-      snprintf(text, sizeof text, "NO SYNC     --.- dB    --.- Hz  u%-4lu o%-4lu", st.underruns, st.overruns);
+      snprintf(text, sizeof text, "NO SYNC    --.- dB    --.- Hz  u%-3lu o%-3lu", st.underruns, st.overruns);
     }
   }
   gtk_label_set_text(GTK_LABEL(status_label), text);
   rade_native_capture_info(text, sizeof text);
-  gtk_label_set_text(GTK_LABEL(capture_label), text);
+  gtk_widget_set_tooltip_text(capture_b, rade_native_capture_active() ? text : "Records the receiver's and transmitter's signals and statistics to rade-captures/ for analysis.");
   updating = 1;
   if (!rade_native_capture_active() &&
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(capture_b))) {
@@ -913,7 +918,7 @@ static int update_cb(gpointer arg) {
   }
   int tx = radio_is_transmitting();
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mox_b), tx);
-  gtk_button_set_label(GTK_BUTTON(mox_b), tx ? "TRANSMITTING - click or space to stop" : "Transmit (space bar)");
+  if (tx) { gtk_button_set_label(GTK_BUTTON(mox_b), "ON AIR (stop)"); } else { show_tx_state(); }
   // the waveform and the TX processing are not changed in mid-over
   for (int i = 0; i < 3; i++) { gtk_widget_set_sensitive(wave_b[i], !tx); }
   gtk_widget_set_sensitive(inv_b, !tx);
@@ -944,11 +949,8 @@ void rade_native_menu(GtkWidget *parent) {
   GtkWidget *grid = gtk_grid_new();
   gtk_grid_set_column_spacing (GTK_GRID(grid), 10);
   gtk_grid_set_row_spacing (GTK_GRID(grid), 10);
-  GtkWidget *close_b = gtk_button_new_with_label("Close");
-  gtk_widget_set_name(close_b, "close_button");
-  g_signal_connect (close_b, "button-press-event", G_CALLBACK(close_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), close_b, 0, 0, 1, 1);
   int w = rade_native_waveform();
+  int row = 0;
   wave_b[0] = gtk_radio_button_new_with_label(NULL, "Off");
   wave_b[1] = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(wave_b[0]), "RADE V1");
   wave_b[2] = gtk_radio_button_new_with_label_from_widget(GTK_RADIO_BUTTON(wave_b[0]), "RADE V2");
@@ -956,41 +958,59 @@ void rade_native_menu(GtkWidget *parent) {
   g_signal_connect(wave_b[0], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(0));
   g_signal_connect(wave_b[1], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V1));
   g_signal_connect(wave_b[2], "toggled", G_CALLBACK(waveform_cb), GINT_TO_POINTER(RADE_NATIVE_V2));
-  for (int i = 0; i < 3; i++) { gtk_grid_attach(GTK_GRID(grid), wave_b[i], 1 + i, 0, 1, 1); }
+  for (int i = 0; i < 3; i++) { gtk_grid_attach(GTK_GRID(grid), wave_b[i], 1 + i, row, 1, 1); }
   inv_b = gtk_check_button_new_with_label("Invert");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(inv_b), rade_native_user_invert());
   g_signal_connect(inv_b, "toggled", G_CALLBACK(invert_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), inv_b, 4, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), inv_b, 4, row, 1, 1);
   GtkWidget *rep_b = gtk_button_new_with_label("Reporter");
   gtk_widget_set_tooltip_text(rep_b, "Opens the RADE Reporter in its own window. It is a separate program: "
                                      "it stays open when piHPSDR is closed, and starts with reporting off.");
   g_signal_connect(rep_b, "clicked", G_CALLBACK(reporter_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), rep_b, 5, 0, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), rep_b, 5, row, 1, 1);
+  GtkWidget *close_b = gtk_button_new_with_label("Close");
+  gtk_widget_set_name(close_b, "close_button");
+  g_signal_connect (close_b, "button-press-event", G_CALLBACK(close_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), close_b, 0, row++, 1, 1);
+
   edge_label = gtk_label_new("");
   gtk_widget_set_halign(edge_label, GTK_ALIGN_START);
-  fixed_label(edge_label, 64, 0);
+  fixed_label(edge_label, 58, 0);
   gtk_widget_set_tooltip_text(edge_label, "The energy stays where it is: choosing V1 or V2, or Invert, moves the dial (3 kHz for a sideband "
                                           "change) and sets DIGU or DIGL; Off returns to USB or LSB on the same carrier. V1 is lower sideband "
                                           "below 10 MHz, V2 upper; on 60 m both are upper. Invert reverses it.");
-  gtk_grid_attach(GTK_GRID(grid), edge_label, 0, 1, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), edge_label, 0, row++, 6, 1);
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
-  fixed_label(status_label, 44, 1);
-  gtk_grid_attach(GTK_GRID(grid), status_label, 0, 2, 5, 1);
-  mox_b = gtk_toggle_button_new_with_label("Transmit (space bar)");
+  fixed_label(status_label, 48, 1);
+  gtk_grid_attach(GTK_GRID(grid), status_label, 0, row++, 6, 1);
+
+  // transmit: the button says what a press will send; RADE TX; the drive trim, short, beside them
+  mox_b = gtk_toggle_button_new_with_label("TX (Select Mode)");
+  gtk_widget_set_size_request(mox_b, 200, -1);
   g_signal_connect(mox_b, "toggled", G_CALLBACK(mox_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), mox_b, 0, 3, 3, 1);
+  gtk_grid_attach(GTK_GRID(grid), mox_b, 0, row, 3, 1);
   tx_b = gtk_check_button_new_with_label("RADE TX");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
   g_signal_connect(tx_b, "toggled", G_CALLBACK(tx_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), tx_b, 3, 3, 1, 1);
-  tx_label = gtk_label_new("");
-  gtk_widget_set_halign(tx_label, GTK_ALIGN_START);
-  fixed_label(tx_label, 64, 0);
-  gtk_grid_attach(GTK_GRID(grid), tx_label, 0, 4, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), tx_b, 3, row, 1, 1);
+  GtkWidget *drive_l = gtk_label_new("Drive");
+  gtk_widget_set_halign(drive_l, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), drive_l, 4, row, 1, 1);
+  drive_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -6.0, 6.0, 0.1);
+  gtk_scale_set_value_pos(GTK_SCALE(drive_scale), GTK_POS_RIGHT);
+  gtk_scale_set_digits(GTK_SCALE(drive_scale), 1);
+  gtk_scale_add_mark(GTK_SCALE(drive_scale), 0.0, GTK_POS_BOTTOM, NULL);
+  gtk_range_set_value(GTK_RANGE(drive_scale), rade_native_tx_get_drive_db());
+  gtk_widget_set_size_request(drive_scale, 110, -1);
+  gtk_widget_set_tooltip_text(drive_scale, "Level into the transmit chain, dB around the defined one (0: the modem peaks "
+                                           "just below the ALC ceiling). Above 0 the ALC starts to compress the peaks.");
+  g_signal_connect(drive_scale, "value-changed", G_CALLBACK(drive_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), drive_scale, 5, row++, 1, 1);
+
   GtkWidget *mic_l = gtk_label_new("Mic trim");
   gtk_widget_set_halign(mic_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), mic_l, 0, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), mic_l, 0, row, 1, 1);
   mic_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -20.0, 20.0, 0.5);
   gtk_scale_set_value_pos(GTK_SCALE(mic_scale), GTK_POS_RIGHT);
   gtk_scale_add_mark(GTK_SCALE(mic_scale), 0.0, GTK_POS_BOTTOM, NULL);
@@ -999,14 +1019,14 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_tooltip_text(mic_scale, "dB added to the mic before RADE. Set the mic itself in the system mixer or "
                                          "on the radio; use this to finish the job. (The Mic Gain slider has no effect on RADE.)");
   g_signal_connect(mic_scale, "value-changed", G_CALLBACK(trim_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), mic_scale, 1, 5, 3, 1);
+  gtk_grid_attach(GTK_GRID(grid), mic_scale, 1, row, 3, 1);
   mic_agc_b = gtk_check_button_new_with_label("AGC");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), rade_native_tx_get_agc());
   gtk_widget_set_tooltip_text(mic_agc_b, "Changes its gain only while you transmit and are speaking: pauses, hiss and the room never raise it. "
                                          "The gain is held through receive and from one over to the next. Moves slowly towards the ideal "
                                          "(0.2 to 0.5 dB a second; 2 dB a second down for a shout), adds at most 20 dB, may take off up to 30.");
   g_signal_connect(mic_agc_b, "toggled", G_CALLBACK(agc_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), mic_agc_b, 4, 5, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), mic_agc_b, 4, row++, 1, 1);
   mic_bar = gtk_level_bar_new_for_interval(0.0, 1.0);
   gtk_widget_set_name(mic_bar, "radelevel");
   gtk_level_bar_add_offset_value(GTK_LEVEL_BAR(mic_bar), GTK_LEVEL_BAR_OFFSET_LOW, 17.0 / 30.0);    // 3 dB under the ideal
@@ -1032,83 +1052,55 @@ void rade_native_menu(GtkWidget *parent) {
   g_signal_connect(pip, "draw", G_CALLBACK(pip_draw_cb), NULL);
   gtk_overlay_add_overlay(GTK_OVERLAY(ov), pip);
   gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(ov), pip, TRUE);
-  gtk_grid_attach(GTK_GRID(grid), ov, 0, 6, 5, 1);
+  gtk_grid_attach(GTK_GRID(grid), ov, 0, row++, 6, 1);
   mic_text = gtk_label_new("");
   gtk_widget_set_halign(mic_text, GTK_ALIGN_START);
-  fixed_label(mic_text, 52, 1);
-  gtk_grid_attach(GTK_GRID(grid), mic_text, 0, 7, 5, 1);
+  fixed_label(mic_text, 48, 1);
+  gtk_grid_attach(GTK_GRID(grid), mic_text, 0, row++, 6, 1);
+
+  // Log, Capture and the test harness on one line; their state is the state of the button
+  log_b = gtk_toggle_button_new_with_label("Log");
+  gtk_widget_set_tooltip_text(log_b, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on "
+                                     "(overs heard and sent, SNR and offset, events; see docs/rade-native-logging.md). Written by a "
+                                     "background thread; the audio never waits for it.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
+  g_signal_connect(log_b, "toggled", G_CALLBACK(log_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), log_b, 0, row, 1, 1);
   capture_b = gtk_toggle_button_new_with_label("Capture");
+  gtk_widget_set_tooltip_text(capture_b, "Records the receiver's and transmitter's signals and statistics to rade-captures/ for analysis.");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
   g_signal_connect(capture_b, "toggled", G_CALLBACK(capture_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 8, 1, 1);
-  capture_label = gtk_label_new("not capturing");
-  gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
-  fixed_label(capture_label, 52, 0);
-  gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 8, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), capture_b, 1, row, 1, 1);
+  test_b = gtk_check_button_new_with_label("Test harness");
+  gtk_widget_set_tooltip_text(test_b, "Lets a script (test/rade_native/rade_ctl.py) key the transmitter and send a file as the "
+                                      "mic, for repeatable over-the-air tests. Off when piHPSDR starts and when this window closes. "
+                                      "Limits: drive TEST_MAX_DRIVE_PCT, the 10 m band, 90 s an over. Untick to stop at once. "
+                                      "Ticked: a script can key the transmitter.");
+  g_signal_connect(test_b, "toggled", G_CALLBACK(test_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), test_b, 2, row++, 2, 1);
+
   GtkWidget *call_l = gtk_label_new("Call");
   gtk_widget_set_halign(call_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), call_l, 0, 9, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_l, 0, row, 1, 1);
   call_e = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
   gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
   gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
-  gtk_grid_attach(GTK_GRID(grid), call_e, 1, 9, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), call_e, 1, row++, 1, 1);
   g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
   call_changed_cb(call_e, NULL);
-  GtkWidget *recv_l = gtk_label_new("Received calls");
-  gtk_widget_set_halign(recv_l, GTK_ALIGN_END);
-  gtk_widget_set_valign(recv_l, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 10, 1, 1);
-  recv_label = gtk_label_new("");
+  recv_label = gtk_label_new("");                          // the calls heard, no heading: the lines say what they are
   gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
-  fixed_label(recv_label, 62, 1);
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
-  gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 10, 4, 1);
+  fixed_label(recv_label, 46, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_label, 0, row++, 6, 1);
   show_recent();
   note_label = gtk_label_new("");
   gtk_label_set_line_wrap(GTK_LABEL(note_label), TRUE);
-  gtk_label_set_max_width_chars(GTK_LABEL(note_label), 60);
+  gtk_label_set_max_width_chars(GTK_LABEL(note_label), 50);
   gtk_label_set_selectable(GTK_LABEL(note_label), TRUE);
   gtk_widget_set_halign(note_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), note_label, 0, 12, 6, 1);
-  gtk_grid_insert_row(GTK_GRID(grid), 8);
-  gtk_grid_insert_row(GTK_GRID(grid), 8);
-  GtkWidget *drive_l = gtk_label_new("Drive");
-  gtk_widget_set_halign(drive_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), drive_l, 0, 8, 1, 1);
-  drive_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -6.0, 6.0, 0.1);
-  gtk_scale_set_value_pos(GTK_SCALE(drive_scale), GTK_POS_RIGHT);
-  gtk_scale_add_mark(GTK_SCALE(drive_scale), 0.0, GTK_POS_BOTTOM, NULL);
-  gtk_range_set_value(GTK_RANGE(drive_scale), rade_native_tx_get_drive_db());
-  gtk_widget_set_hexpand(drive_scale, TRUE);
-  gtk_widget_set_tooltip_text(drive_scale, "Level into the transmit chain, dB around the defined one (0: the modem peaks "
-                                           "just below the ALC ceiling). Above 0 the ALC starts to compress the peaks.");
-  g_signal_connect(drive_scale, "value-changed", G_CALLBACK(drive_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), drive_scale, 1, 8, 4, 1);
-  log_b = gtk_toggle_button_new_with_label("Log");
-  gtk_widget_set_tooltip_text(log_b, "Writes the decode parameters (sync, SNR, offset, librade statistics) and the "
-                                     "transmit parameters (loudness, peak, leveller gain, drive, buffers) to a new "
-                                     "file in rade-logs/ each time it is switched on. Written by a background thread; "
-                                     "the audio never waits for it.");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
-  g_signal_connect(log_b, "toggled", G_CALLBACK(log_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), log_b, 0, 9, 1, 1);
-  log_label = gtk_label_new(rade_log_active() ? rade_log_path() : "not logging");
-  gtk_widget_set_halign(log_label, GTK_ALIGN_START);
-  fixed_label(log_label, 52, 0);
-  gtk_label_set_selectable(GTK_LABEL(log_label), TRUE);
-  gtk_grid_attach(GTK_GRID(grid), log_label, 1, 9, 4, 1);
-  gtk_grid_insert_row(GTK_GRID(grid), 10);
-  test_b = gtk_check_button_new_with_label("Test harness");
-  gtk_widget_set_tooltip_text(test_b, "Lets a script (test/rade_native/rade_ctl.py) key the transmitter and send a file as the "
-                                      "mic, for repeatable over-the-air tests. Off when piHPSDR starts and when this window closes. "
-                                      "Limits: drive TEST_MAX_DRIVE_PCT, the 10 m band, 90 s an over. Untick to stop at once.");
-  g_signal_connect(test_b, "toggled", G_CALLBACK(test_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), test_b, 0, 10, 1, 1);
-  test_label = gtk_label_new("off: a script can read the status only");
-  gtk_widget_set_halign(test_label, GTK_ALIGN_START);
-  fixed_label(test_label, 52, 0);
-  gtk_grid_attach(GTK_GRID(grid), test_label, 1, 10, 4, 1);
+  gtk_grid_attach(GTK_GRID(grid), note_label, 0, row++, 6, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();
@@ -1158,17 +1150,15 @@ static void test_disarm(void) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(test_b), FALSE);
     updating = 0;
   }
-  if (test_label != NULL) { gtk_label_set_text(GTK_LABEL(test_label), "off: a script can read the status only"); }
 }
 
 static void test_cb(GtkWidget *widget, gpointer data) {
   if (updating) { return; }
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
     test_armed = 1;
-    char text[300];
-    snprintf(text, sizeof text, "ARMED: a script can key the transmitter (drive <= %d %%, 10 m, <= %.0f s). Untick to stop.",
-             TEST_MAX_DRIVE_PCT, TEST_MAX_OVER_S);
-    gtk_label_set_text(GTK_LABEL(test_label), text);
+    char text[200];                          // the state is the tick; the limits are said once, here
+    snprintf(text, sizeof text, "Test harness armed: drive <= %d %%, 10 m, <= %.0f s an over", TEST_MAX_DRIVE_PCT, TEST_MAX_OVER_S);
+    say(text);
   } else {
     test_disarm();
   }
