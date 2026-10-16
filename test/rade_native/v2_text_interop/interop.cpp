@@ -1,7 +1,7 @@
 // Interoperability of src/rade_v2_text.c (the V2 callsign we transmit) with freedv-gui's own V2 text code
 // (src/pipeline/rade_text.cpp of its backend, built unmodified; FREEDV_SRC is its src/ directory).
 //
-//   interop                       A, B, C below
+//   interop                       A, B, C, D below
 //   interop --iq in8k.f32 CALL    decode a file of 8 kHz complex baseband (interleaved float32 I,Q) with librade V2 and
 //                                 freedv-gui's text receiver; the call it delivers must be CALL
 //
@@ -176,6 +176,63 @@ static void part_c() {
   check(modem_run("EI6IZ", 100, 1, 700, true) == "EI6IZ", "a restart of the stream in mid over is decoded");
 }
 
+
+// D  our receiver (rade_v2_text_rx_*) against freedv-gui's, symbol by symbol on the same input: delivered at the same
+//    symbol with the same text, over many calls, offsets into the cycle, noise levels, resets and pure noise
+static void part_d() {
+  printf("D  receiver: ours against freedv-gui's on identical symbols\n");
+  int runs = 0, same = 0, delivered = 0;
+  std::string firstdiff;
+  const char *calls[] = {"EI6IZ", "W1AW/P", "VE3/KG6AOV/MM", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456", "K1ABC", ""};
+  for (const char *c : calls) {
+    for (double sigma : {0.0, 0.6, 0.9, 1.1}) {
+      for (int skip : {0, 37, 111, 200}) {
+        for (int reset_at : {-1, 300}) {
+          rade_v2_text_t t; rade_v2_text_init(&t, c);
+          for (int i = 0; i < skip; i++) { rade_v2_text_next(&t); }
+          std::mt19937 rng(1000 * runs + 7);
+          std::normal_distribution<float> nd(0.0f, 1.0f);
+          rade_text_t th = rade_text_create();
+          Got g; rade_text_set_rx_callback(th, on_text, &g);
+          rade_v2_text_rx_t us; rade_v2_text_rx_init(&us);
+          bool ok = true;
+          int n_th = 0;
+          for (int i = 0; i < 112 * 8 && ok; i++) {
+            if (i == reset_at) { rade_text_rx_reset(th); rade_v2_text_rx_reset(&us); }
+            float sym = rade_v2_text_next(&t) + (float)sigma * nd(rng);
+            int before = g.n;
+            rade_text_rx_symbol(th, sym);
+            char msg[RADE_V2_TEXT_MAXCHARS + 1];
+            int got = rade_v2_text_rx_symbol(&us, sym, msg);
+            int theirs = g.n != before;
+            if (got != theirs || (got && g.text != msg)) {
+              ok = false;
+              char b[200]; snprintf(b, sizeof b, "call '%s' sigma %.1f skip %d reset %d symbol %d: ours %d '%s' theirs %d '%s'", c, sigma, skip, reset_at, i, got, got ? msg : "", theirs, theirs ? g.text.c_str() : "");
+              if (firstdiff.empty()) { firstdiff = b; }
+            }
+            n_th += theirs;
+          }
+          delivered += n_th > 0;
+          same += ok; runs++;
+          rade_text_destroy(th);
+        }
+      }
+    }
+  }
+  char b[160]; snprintf(b, sizeof b, "%d runs identical to freedv-gui's receiver of %d (%d of them delivered a call)", same, runs, delivered);
+  check(same == runs, b, firstdiff);
+  int nd_ok = 1;
+  { rade_text_t th = rade_text_create(); Got g; rade_text_set_rx_callback(th, on_text, &g);
+    rade_v2_text_rx_t us; rade_v2_text_rx_init(&us);
+    std::mt19937 rng(5); std::normal_distribution<float> nd(0.0f, 1.0f);
+    for (int i = 0; i < 112 * 200; i++) {
+      float sym = nd(rng); char msg[40];
+      int b4 = g.n; rade_text_rx_symbol(th, sym);
+      if ((rade_v2_text_rx_symbol(&us, sym, msg) != 0) != (g.n != b4)) { nd_ok = 0; }
+    }
+    check(nd_ok, "900 s of pure noise: same (no) deliveries as freedv-gui's"); rade_text_destroy(th); }
+}
+
 static int decode_file(const char *path, const char *want) {
   FILE *f = fopen(path, "rb");
   if (!f) { perror(path); return 2; }
@@ -208,7 +265,7 @@ static int decode_file(const char *path, const char *want) {
 int main(int argc, char **argv) {
   ulog_set_quiet(true);                    // the receiver logs every block it decodes
   if (argc == 4 && !strcmp(argv[1], "--iq")) { return decode_file(argv[2], argv[3]); }
-  part_a(); part_b(); part_c();
+  part_a(); part_b(); part_c(); part_d();
   printf(fails ? "FAILED %d\n" : "all passed\n", fails);
   return fails ? 1 : 0;
 }
