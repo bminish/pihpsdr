@@ -22,7 +22,7 @@
 #include <stddef.h>
 
 //
-// Native RADE V1/V2 through the WDSP I/Q chain. See docs/rade-native.md.
+// Native RADE V1/V2 through the WDSP I/Q chain. See docs/archive/rade/plan.md.
 //
 // The modem sits at a centre frequency above (normal) or below (inverted)
 // the dial frequency; "which sideband" is not a question here. The

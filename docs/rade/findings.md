@@ -2,7 +2,7 @@
 
 Branch `feature/rade-native`. This is the one-page-per-topic summary of what has been built and what the tests
 say, with where the evidence is. Detail and tables are in the documents named in each section; the signal path
-and the change log are in `rade-native-signal-paths.md` (keep that one current). Everything marked *measured* was
+and the change log are in `signal-paths.md` (keep that one current). Everything marked *measured* was
 measured, on the air or offline, on the dates given; everything marked *not measured* was not.
 
 ## 1. What exists
@@ -15,14 +15,14 @@ measured, on the air or offline, on the dates given; everything marked *not meas
 | RADE Reporter (FreeDV Reporter client, V1 / V2 / both) | `tools/rade-reporter/` | reports only to the reporter of the active mode, only for a RADE transmission |
 | Parameter log (non-blocking, one file per run) | `src/rade_native_log.[ch]` | producer cost 0.3 us mean |
 | Test harness (control socket, operator-armed, guarded) + automated air runs + Kiwi analysis | `src/rade_native_test.[ch]`, `test/rade_native/{rade_ctl,air_test,air_weak,kiwi_rx}.py` | run on the air twice (see 6) |
-| Filter lab (WDSP TX/RX filter options, offline) | `test/rade_native/filter_lab.py` | see `rade-native-filter-lab.md` |
+| Filter lab (WDSP TX/RX filter options, offline) | `test/rade_native/filter_lab.py` | see `filter-lab.md` |
 
 ## 2. Geometry, sideband and the dial (measured offline; behaviour on the radio as used)
 
 - The dial is the suppressed carrier of the sideband in use; the energy centre is `dial + 1500 Hz` (upper) or `dial - 1500`
   (lower) and **does not move** when the waveform, Invert or RADE changes: the dial moves instead, by 3 kHz when the sideband
   changes (`rade_native_plan()`, `test_geometry`, `modes_table`). V1 is lower sideband below 10 MHz, V2 upper; **on 60 m (5250-5450 kHz) USB is the convention, so both V1 and V2 default to upper sideband and Invert there means below the carrier, for both** (`RADE_NATIVE_60M_*`, `rade_native_band_class()`). Switching RADE off
-  hands back to USB or LSB on the same carrier. The Reporter is told the dial. (`rade-native-filtering.md`)
+  hands back to USB or LSB on the same carrier. The Reporter is told the dial. (`filtering.md`)
 - V1's carriers are centred on 1475 Hz, V2's on 1500 Hz; WDSP's convention is the conjugate of librade's, handled at the two interfaces.
 
 ## 3. Transmit spectrum and the speech stages (measured)
@@ -34,7 +34,7 @@ measured, on the air or offline, on the dates given; everything marked *not meas
   the last against the middle), and that is librade's output, not the filter. librade's own V2 TX band-pass is on in the engine and does
   not change the spectrum measurably (0.1 dB).
 
-## 4. Levels and the ALC (measured on the air, 28645 kHz, drive 20 %; `rade-native-air-run-20261016.md`, `rade-native-air-run2-20261016.md`)
+## 4. Levels and the ALC (measured on the air, 28645 kHz, drive 20 %; `air-run-1.md`, `air-run-2.md`)
 
 - The ALC ceiling at the 192 kHz P2 output is **-0.97 dBFS (0.894)**, reached at the defined level (V1 0.357, V2 0.504 into WDSP; `drive_db` 0).
 - Above it every dB of extra level is taken back: +3 dB gives +1.0 dB of received power (V1) and +0.4 dB (V2), +6 dB gives nothing; the crest
@@ -57,7 +57,7 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 ## 6. Test method and what the runs were
 
 - Air run 1 (drive 1 %, 18 runs): level sweep -30..+6 dB, V1 and V2. Air run 2 (drive 20 %, 36 runs of the knee x2 repeats, 10 real weak runs) plus
-  emulation of weak signals on the strong recordings. Harness, runner and analysis: `rade-native-air-tests.md`.
+  emulation of weak signals on the strong recordings. Harness, runner and analysis: `air-tests.md`.
 - The harness arms only when the operator ticks a box; limits are compile-time constants (drive 20 %, 10 m, 90 s). A client that goes away releases the transmitter.
 - Faults found by the runs and fixed: capture started twice by the harness (harmless message); the parameter-log path; SIGPIPE on a closed client socket;
   an over-the-air delay figure that was wrong and was removed.
@@ -66,10 +66,10 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 
 - Hold after the last speech sample before the transmitter is released: **0.65 s V1, 0.43-0.47 s V2** (0.4 s of it is the end-of-over frame and WDSP's TX filter tail).
 - First speech sample within about 0.05 s of the key. No transmit underruns in 64 runs.
-- WDSP filter delay, offline (`rade-native-filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps, of which the linear-phase filters are
+- WDSP filter delay, offline (`filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps, of which the linear-phase filters are
   21 ms (TX, two of them, at 96 kHz) and 43 ms (RX, two of them, at 48 kHz). The over-the-air delay is **not measured** (the Kiwi recordings carry no time stamps).
 
-- **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz). First run with it (`rade-native-air-run3-20261016.md`, 12 overs): engine -> WDSP output 78.8 ms, WDSP -> RF 10.9 ms, key-down to RF 335 ms (V1) / 174 ms (V2) of which 240 / 80 ms is the prefill; RF rise 20 ms; the end-of-over frame and call decoded in every over and nothing of the end is missing; the radio is released about 115 ms after the RF has ended (dead time); **the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of the speech to acquisition** (sync 0.65 s / 0.27 s after the RF onset, at any SNR); the end-of-over frame is 2.4 dB (V1) below the speech's average power at 0 dB drive. The transmit frequency is within +-1 Hz of the GPS-corrected Kiwi: the +0.39 ppm seen earlier was the Kiwi's own, before its GPS (corrected).
+- **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz). First run with it (`air-run-3.md`, 12 overs): engine -> WDSP output 78.8 ms, WDSP -> RF 10.9 ms, key-down to RF 335 ms (V1) / 174 ms (V2) of which 240 / 80 ms is the prefill; RF rise 20 ms; the end-of-over frame and call decoded in every over and nothing of the end is missing; the radio is released about 115 ms after the RF has ended (dead time); **the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of the speech to acquisition** (sync 0.65 s / 0.27 s after the RF onset, at any SNR); the end-of-over frame is 2.4 dB (V1) below the speech's average power at 0 dB drive. The transmit frequency is within +-1 Hz of the GPS-corrected Kiwi: the +0.39 ppm seen earlier was the Kiwi's own, before its GPS (corrected).
 
 ## 8. Mic path (measured offline, `test_tx_level.py`)
 
@@ -84,7 +84,7 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 
 ## 10. Open items
 
-1. Filter optimisation (this document's sibling): see `rade-native-filter-lab.md` for the options measured and the recommendation; not applied until agreed.
+1. Filter optimisation (this document's sibling): see `filter-lab.md` for the options measured and the recommendation; not applied until agreed.
 2. V2 callsign: **transmit and receive built 2026-10-16** (`rade_v2_text.c`; tests `v2_text_interop` part D = our receiver identical to freedv-gui's symbol by symbol, `test_v2_text.py` = real TX and RX engines); on-air check against a real freedv-gui, in both directions, still to do.
 3. The over-the-air delay needs a time reference in the recording.
 4. The PA and the radiated spectrum (Kiwi spectrum of the over versus the TX output) are not characterised; fading is not tested; one clip.

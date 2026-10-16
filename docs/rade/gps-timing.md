@@ -23,7 +23,7 @@ signals (MSF, WWV) and on synthetic recordings; the first air run with `--gps au
   (**about +-0.9 Hz at 28.645 MHz**, plus the ionosphere's Doppler of a few tenths of a Hz). The 5 MHz try found only a weak signal (19 dB) and was not used.
   **Correction (same day, after the first GPS run): the +11.2 Hz at 28645 kHz and +5.4 Hz at 14250 kHz (both +0.39 ppm) read on the earlier recordings were the Kiwi's, not the radio's.**
   Those sessions were made before the GPS was fitted (`session.json`: `gps_good` 0, `fixes` 0), so the Kiwi's ADC clock was uncorrected; with the GPS locked the same transmitter reads
-  +0.1 Hz (0.003 ppm) on V1 and -0.6 ... +1.0 Hz on V2 (`rade-native-air-run3-20261016.md`). An earlier version of this paragraph said the offset was the radio's; it was wrong.
+  +0.1 Hz (0.003 ppm) on V1 and -0.6 ... +1.0 Hz on V2 (`air-run-3.md`). An earlier version of this paragraph said the offset was the radio's; it was wrong.
 - **Time axis** (`kiwi_time_check.py`, MSF Anthorn 60 kHz, whose carrier is off for the first 100 ms of every UTC second; ground wave about 280 km, 1 ms): the edges fall
   +3.1 ms and rise +103.3 ms (expected 0 and 100 plus 1 ms): **the Kiwi's stamps are late by about +2.2 ms** (two recordings, 25 s and 90 s: +2.1 and +2.2 ms; the mean of the two edges
   cancels the symmetric parts of the transmitter's edges and the filter). `air_timing.py` subtracts the figure in `out/kiwi_time_offset.json` from every time it takes from the recording.
@@ -49,7 +49,7 @@ python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels=0,3 --re
 |---|---|
 | `rf_onset_unix`, `rf_end_unix` (-10 dB), `rf_onset_m20_unix`, `rf_end_m20_unix` | RF start and end of the over in the Kiwi (modem-band power 10 dB / 20 dB under the steady level; Kiwi offset removed) |
 | `rf_rise_ms`, `rf_fall_ms` | 10-90 % amplitude rise at the start and fall at the end: how the onset and the end are slewed (WDSP up-slew; the PA) |
-| `engine_to_wdsp_out_ms` | first modem sample handed to WDSP (`ev_out0`) to the first modem energy in WDSP's output (`_tx.wav`): WDSP's own delay, **66 ms predicted offline** at the default 2048 taps (`rade-native-filter-lab.md`) |
+| `engine_to_wdsp_out_ms` | first modem sample handed to WDSP (`ev_out0`) to the first modem energy in WDSP's output (`_tx.wav`): WDSP's own delay, **66 ms predicted offline** at the default 2048 taps (`filter-lab.md`) |
 | `wdsp_out_to_rf_onset_ms` | WDSP's output to RF on the air: the radio protocol, the radio, the Kiwi's path. The number the engine cannot influence |
 | `tx_start_latency_ms` | `ev_out0` to RF onset: the two above |
 | `key_to_rf_onset_ms`, `mox_on_to_rf_onset_ms` | the key-down (first keyed block / the harness's `radio_set_mox(1)`) to RF onset: includes the two-frame prefill (240 ms V1, 80 ms V2) |
@@ -70,7 +70,7 @@ python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels=0,3 --re
 1. **Is the pipeline cleared at the end of an over?** `wdsp_out_last_to_rf_end_ms` against `wdsp_out_to_rf_onset_ms`, `mox_off_after_wdsp_last_ms`, `tail_after_eoo_ms`, and the end-of-over frame decoding (`iq_eoo_ok`, `iq_call_ok`).
 2. **Are starts clipped?** `fx_speech_start_clipped_ms`, `fx_loss_first_250ms` against the middle, `rf_rise_ms`, `sync_after_onset_ms`.
 3. **Real TX delays**, split into engine -> WDSP (predicted 66 ms), WDSP -> RF, and the hold; per waveform.
-4. **Transmit frequency** against the GPS-corrected Kiwi: measured in run 3, within +-1 Hz (section 7 of `rade-native-air-run3-20261016.md`).
+4. **Transmit frequency** against the GPS-corrected Kiwi: measured in run 3, within +-1 Hz (section 7 of `air-run-3.md`).
 
 ## 6. Limits
 

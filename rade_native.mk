@@ -5,7 +5,7 @@
 # three lines for it: the include, $(RADE_NATIVE_LIBS) in LIBS and
 # $(RADE_NATIVE_OBJS) in OBJS. Needs librade, which tools/rade/build_rade.sh fetches and builds
 # into third_party/. Off by default: make RADE_NATIVE=ON (or put it in
-# make.config.pihpsdr). See docs/rade-native.md.
+# make.config.pihpsdr). See docs/archive/rade/plan.md.
 #
 ##############################################################################
 

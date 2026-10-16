@@ -58,7 +58,7 @@ knee (V1 -1.5 dB, one of two).
 
 ## Weak signals, emulated (V1; V2 below)
 
-Method and its limits: `air_weak.py` (see `rade-native-air-tests.md`): the strong fixed-gain recording scaled down by the path loss, white
+Method and its limits: `air_weak.py` (see `air-tests.md`): the strong fixed-gain recording scaled down by the path loss, white
 noise added to the Kiwi's measured noise in the modem band, decoded; 2 runs x 3 noise seeds = 6 per cell. "SNR now" is the
 band SNR after the loss.
 

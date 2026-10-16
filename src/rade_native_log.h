@@ -21,7 +21,7 @@
 
 //
 // Parameter log for RADE, for analysis and graphs: what librade gives us on receive and what the transmit side is doing, reduced
-// to what is worth keeping (see docs/rade-native-logging.md for what was measured and why).
+// to what is worth keeping (see docs/rade/logging.md for what was measured and why).
 //
 // The producers are the receive worker and the transmit audio thread; they never wait: each has a single-producer ring and
 // logging a row is a copy and an atomic store. A writer thread wakes 5 times a second and does all the rest: it averages,

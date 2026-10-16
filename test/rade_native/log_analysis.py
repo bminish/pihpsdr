@@ -7,7 +7,7 @@ For a run directory of the current format it lists the table sizes and the overs
 
 Prints, for the files together: rows and bytes by kind; how many transmit rows were while not keyed and receive rows while not in
 sync; for each column the share of rows that differ from the previous row (in sync / not, keyed / not); how well a 1, 2 or 4 Hz
-average of the SNR keeps the SNR; and the size of the reduced form proposed in docs/rade-native-logging.md (a receive sample table
+average of the SNR keeps the SNR; and the size of the reduced form proposed in docs/rade/logging.md (a receive sample table
 at 2 Hz in sync and nothing out of sync but its transitions, transmit samples only while keyed at 2 Hz, events, and one row per
 heard over with the frequency, time, SNR and offset statistics and the call), with the overs it would list.
 """

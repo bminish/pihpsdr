@@ -219,7 +219,7 @@ flowchart LR
 | Is the transmitted spectrum what the modem makes? | `tx_shape.py` (centre, tilt, edges, skirts) |
 | How does the chain behave offline? | `tx_validate.py`, `loss_check.sh`, `wdsp_probe` |
 | Does a mistuned or narrower signal still decode? | `filter_study.py` |
-| How do the WDSP filter options (taps, window, linear / minimum phase, edges) change the TX / RX signal and the decode? | `filter_lab.py response|decode` (`rade-native-filter-lab.md`) |
+| How do the WDSP filter options (taps, window, linear / minimum phase, edges) change the TX / RX signal and the decode? | `filter_lab.py response|decode` (`filter-lab.md`) |
 | How close to the ALC ceiling can the level go? | `alc_sweep.py capture_stem` (offline, 48 kHz TXA; uses the capture's `_txmic.wav`) |
 | Is the mic level meter right? | `test_tx_level.py` |
 | Does the mode-change rule hold? | `test_geometry` (`make check`), `modes_table` |
@@ -293,7 +293,7 @@ sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync en
 | | `TX_TAIL` | 5120 samples (107 ms; was 8000 = 167 ms until 2026-10-16) |
 | | leveller | gain held through RX and between overs; changes only while transmitting and only on speech (400 ms loudness before the gain >= -35 LUFS, within 15 LU of the over's loudest, within 10 LU of the speech average); up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB |
 | | limiter | knee 0.9, ceiling 1.0 |
-| WDSP (TX filter) | `bp0` | 2048 taps at the WDSP DSP rate (96 kHz on P2), 7-term BH, linear phase, edges V1 675..2275 / V2 1000..2000; see `rade-native-filter-lab.md` |
+| WDSP (TX filter) | `bp0` | 2048 taps at the WDSP DSP rate (96 kHz on P2), 7-term BH, linear phase, edges V1 675..2275 / V2 1000..2000; see `filter-lab.md` |
 | WDSP (RX filter) | `nbp0` + `bp1` in series | 2048 taps at 48 kHz, windows 4-term (nbp0) and 7-term (bp1), linear phase (`low_latency` 0), same edges |
 | WDSP (operator) | RX AGC | medium, top 80 dB |
 | WDSP (ours) | TX panel | select 3, copy 0, gain 1; EQ, leveler, CFC, compressor, DEXP, phase rotator off |
@@ -327,7 +327,7 @@ Newest first. One line per change that can move a measurement. "Check" is the sc
 
 - the first TX capture after 73c3925c: `tx_shape.py` PASS?
 - the first off-air Kiwi capture of one of our overs: SNR / loss / end-of-over / call against the local numbers
-- the RX AGC and TX ALC with a fading signal (T-9, T-10 in `rade-native.md`)
+- the RX AGC and TX ALC with a fading signal (T-9, T-10 in `plan.md`)
 
 ## 10. Keeping this document true
 

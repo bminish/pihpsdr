@@ -5,7 +5,7 @@
 #   tools/rade/rade-patches.sh export DIR      write the patch set into DIR
 #   tools/rade/rade-patches.sh check [REF]     does it still apply to REF (default upstream/master) and compile?
 #
-# The work is kept in three layers (docs/rade-native-upstreaming.md):
+# The work is kept in three layers (docs/rade/upstreaming.md):
 #   1 hooks   the lines in files upstream owns (HOOK_FILES): small, each behind #ifdef RADE_NATIVE; the only layer that can conflict
 #   2 core    files that are only ours and sit in src/ and the top directory (src/rade_*, rade_native.mk): cannot conflict
 #   3 extras  tools/, test/, docs/ (reporter, log viewer, test harness, documents): cannot conflict, nothing in them is built into piHPSDR
@@ -18,7 +18,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 HOOK_FILES="Makefile src/actions.c src/actions.h src/new_menu.c src/new_menu.h src/radio.c src/receiver.c src/transmitter.c"
 CORE_PATHS="src/rade_*.c src/rade_*.h rade_native.mk"
-EXTRA_PATHS="tools test docs/rade-native*.md"
+EXTRA_PATHS="tools test docs/rade docs/archive/rade"
 
 base() {
   if [ -n "$RADE_BASE" ]; then echo "$RADE_BASE"; return; fi
