@@ -61,6 +61,27 @@ def iso_to_epoch(iso):
         return None
 
 
+def open_below(combo):
+    """Open a ComboBoxText's list below it, every row showing. GTK's own popup is centred on the chosen row, and
+    on Wayland, where GTK does not know where the window is on the screen, it is cut to a row or two with scroll
+    arrows even with the whole screen free. Keyboard use is left as it was."""
+    def press(w, ev):
+        if ev.button != 1 or not w.get_sensitive():
+            return False
+        menu = Gtk.Menu()
+        for i, row in enumerate(w.get_model()):
+            it = Gtk.MenuItem(label=row[0])
+            it.connect("activate", lambda _i, i=i: w.set_active(i))
+            menu.append(it)
+        menu.set_size_request(w.get_allocated_width(), -1)
+        menu.show_all()
+        menu.attach_to_widget(w, None)
+        menu.connect("deactivate", lambda m: GLib.idle_add(m.destroy))
+        menu.popup_at_widget(w, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, ev)
+        return True
+    combo.connect("button-press-event", press)
+
+
 class App(Gtk.Window):
     def __init__(self, show=True):
         super().__init__(title="RADE Reporter")
@@ -121,6 +142,7 @@ class App(Gtk.Window):
         names = ["All"] + [n for n, _, _ in core.BANDS] + ["Other"]
         self.band.set_active(names.index(self.cfg.get("band", "All")) if self.cfg.get("band", "All") in names else 0)
         self.band.connect("changed", self._on_view_filter)
+        open_below(self.band)
         r2.pack_start(self.band, False, False, 0)
         self.track = Gtk.CheckButton(label="Track")
         self.track.set_tooltip_text("Show only stations on piHPSDR's band or frequency")
@@ -140,6 +162,7 @@ class App(Gtk.Window):
         idles = ["off", "5 min", "15 min", "60 min", "180 min"]
         self.idle.set_active(idles.index(self.cfg.get("idle", "off")) if self.cfg.get("idle", "off") in idles else 0)
         self.idle.connect("changed", self._on_view_filter)
+        open_below(self.idle)
         r2.pack_start(self.idle, False, False, 0)
         r2.pack_start(Gtk.Label(label="Show"), False, False, 12)
         self.view = Gtk.ComboBoxText()
@@ -149,6 +172,7 @@ class App(Gtk.Window):
         self.view.set_tooltip_text("Which reporter's stations the list shows. Reports are sent only to the reporter "
                                    "for the RADE mode piHPSDR has selected, whatever is shown.")
         self.view.connect("changed", self._on_view_changed)
+        open_below(self.view)
         r2.pack_start(self.view, False, False, 0)
         self.qsy_b = Gtk.Button(label="Request QSY")
         self.qsy_b.set_tooltip_text("Asks the selected station to move to your frequency")
