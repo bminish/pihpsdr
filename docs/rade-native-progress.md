@@ -16,6 +16,26 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (Reporter V1/V2/All, toolbar, drive, leveller, log): (1) Reporter:
+  V2's host is `reporter-radev2.k6aq.net:443` TLS (from `../rade3_reporting.md`,
+  freedv-gui's hard-coded value; a view-only connection returned a station
+  list); the "v3" placeholder is gone. **Show** V1 / V2 / All chooses the
+  list; one connection per reporter; reports go only to the reporter of the
+  mode piHPSDR has selected (`core.plan`); tests in `test_reporter.py` and the
+  new `test_gui_view.py`. (2) The RADE window is an action, `MENU_RADE`
+  ("RADE Menu"), assignable to toolbar / g2panel / GPIO buttons like Mode.
+  (3) Drive slider -6..+6 dB around the defined level (0 = the ALC-ceiling
+  level), stored in the settings. (4) Leveller: acts only while transmitting,
+  0 dB at every key-down and the loudness history cleared, 0.2-0.5 dB/s up,
+  2 dB/s down for a shout, at most +20 dB, down to -30 dB; the meter still reads
+  unkeyed (trim only). (5) Parameter log: `Log` button in the RADE window,
+  `rade-logs/<time>_RADE.csv`, a new file each time; rx rows (sync, SNR,
+  offset, librade statistics, buffer fills) per `rade_rx` call, tx rows (keyed,
+  trim, leveller, drive, loudness, peak, buffers) per 100 ms, event rows
+  (waveform, dial, mode, invert, tx, drive); lock-free rings and a writer thread;
+  producer call mean 0.3 us (`test_log`). Built and tested offline; **not run
+  on a radio**.
+
 - 2026-10-16 (TX level and ALC, first on-air captures at 14250 kHz): TX levels
   into WDSP set per waveform (V1 0.357, V2 0.504; were 0.3) so the ALC peaks
   at about 0 dB, 0.5 dB backed off on request. Capture 20261016-005144 (V1,
