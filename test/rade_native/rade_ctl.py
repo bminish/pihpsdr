@@ -80,7 +80,7 @@ class Ctl:
         ok, d = self.request("play file=%s gain_db=%s" % (path, gain_db), timeout)
         if not ok:
             raise RuntimeError("play: %s" % d["error"])
-        return {k: (float(v) if k.startswith("t_") or k in ("duration_s", "consumed") else v) for k, v in d.items()}
+        return {k: (float(v) if k.startswith(("t_", "ev_")) or k in ("duration_s", "consumed") else v) for k, v in d.items()}
 
 
 def main(argv):

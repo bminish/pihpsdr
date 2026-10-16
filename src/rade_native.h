@@ -161,6 +161,10 @@ void rade_native_get_status(rade_native_status_t *st);
 //
 int  rade_native_tx_inject(const float *samples, long n);
 int  rade_native_tx_inject_state(double *t0, double *t1, double *fraction);
+// Unix times (seconds, CLOCK_REALTIME) of this over's events inside the transmit engine, 0 if not yet: [0] first keyed block,
+// [1] end of over asked for, [2] end-of-over frame generated, [3] its last sample handed to WDSP, [4] hold finished (the
+// radio may be released), [5] first block with the radio not keyed, [6] the first block of modem signal handed to WDSP (after the two-frame prefill). For lining the engine up with what a GPS-stamped receiver heard.
+void rade_native_tx_times(double t[7]);
 
 int  rade_native_tx_enabled(void);
 void rade_native_tx_enable(int on);
