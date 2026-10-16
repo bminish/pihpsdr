@@ -242,6 +242,7 @@ typedef struct {
   float  snr_db;       // smoothed SNR over the over, before it ended
   float  foff_hz;
   int    waveform;
+  int    snr_valid;    // 0: there was no lock to take an SNR from; snr_db means nothing and must not be reported
 } rade_native_call_t;
 
 int rade_native_call_pop(rade_native_call_t *c);

@@ -155,6 +155,28 @@ def periodic():
     pr.enabled = True
     pr.reset()
     check(pr.call == "" and pr.last is None, "reset (not reporting): forgets the call")
+    # no lock, no SNR: a missing SNR is never turned into 0, a real 0 or a negative SNR is reported
+    pz = core.PeriodicSnr(interval=5.0)
+    r = pz.step(dict(p, rx_sync=0, rx_snr=None), 200.0)
+    check(r[0] is False, "no sync and no SNR (null from piHPSDR): nothing sent")
+    r = pz.step(dict(p, rx_sync=0, rx_snr=0.0), 201.0)
+    check(r[0] is False, "no sync (an SNR of 0.0 is only what librade says when it has no lock): nothing sent")
+    r = pz.step(dict(p, rx_sync=1, rx_snr=None), 202.0)
+    check(r[0] is False and "no SNR" in r[3], "in sync but no SNR yet: nothing sent, and it says so")
+    r = pz.step(dict(p, rx_sync=1, rx_snr=0.0), 203.0)
+    check(r[0] is True and r[2] == 0.0, "locked at an SNR of exactly 0 dB: reported as 0")
+    r = pz.step(dict(p, rx_sync=1, rx_snr=-4.0), 209.0)
+    check(r[0] is True and r[2] == -4.0, "locked at a negative SNR: reported")
+    now = 1000.0
+    hh = lambda seq, call, snr, t=990.0: {"seq": seq, "call": call, "snr": snr, "t": t}
+    check(core.rx_reports_due({"linked": True, "heard": [hh(10, "VK5DGR", None)]}, 9, "EI6IZ", now) == [],
+          "a call decoded with no SNR behind it (null) is not reported")
+    check(core.rx_reports_due({"linked": True, "heard": [hh(10, "VK5DGR", 0.0), hh(11, "G4ABC", -3.5)]}, 9, "EI6IZ", now)
+          == [("VK5DGR", 0.0, 10), ("G4ABC", -3.5, 11)], "calls heard at 0 and at a negative SNR are reported")
+    check(core.rx_reports_due({"linked": True, "heard_seq": 4, "heard_call": "G4ABC", "heard_snr": None, "heard_t": 990.0},
+                              3, "EI6IZ", now) == [], "an older piHPSDR's latest call with no SNR: not reported")
+    check(core.Link(core.Roster(), lambda n, d: None, lambda st, m: None, "x").report_rx("G4ABC", "RADEV1", None) is False,
+          "report_rx refuses an SNR of None")
     check(core.PeriodicSnr(1.0).interval == 1.0, "interval is settable (freedv-gui itself sends about once a second)")
 
 
