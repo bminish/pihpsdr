@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""RADE log viewer: zoomable graphs of the parameter logs written by piHPSDR (rade-logs/<run>/).
+
+    rade_logview.py [run-directory | run.tar.gz ...]
+
+Pick runs (Open), tick the parameters to plot, zoom/pan with the toolbar, tick Measure and click
+twice on the graph for the time and level difference and the statistics between the two points.
+Choosing an over in the list zooms to it and shows what is known about it in the text area.
+"""
+import os, sys, math, datetime
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import numpy as np
+import matplotlib
+if os.environ.get("RADE_LOGVIEW_AGG"):
+    matplotlib.use("Agg")
+else:
+    matplotlib.use("TkAgg")
+import matplotlib.dates as mdates
+from matplotlib.figure import Figure
+import logdata as ld
+
+# (label, table, [(column, legend, style)])
+PARAMS = [
+    ("SNR (dB)", "rx", [("snr_mean", "mean", "-"), ("snr_min", "min", ":")]),
+    ("Frequency offset (Hz)", "rx", [("foff_mean", "offset", "-")]),
+    ("V2 SNR estimate (dB)", "rx", [("snr_est", "snr_est", "-")]),
+    ("V2 gain", "rx", [("gain", "gain", "-")]),
+    ("V2 delta_hat", "rx", [("delta_hat", "delta_hat", "-")]),
+    ("V2 est_foff (Hz)", "rx", [("est_foff", "est_foff", "-")]),
+    ("TX loudness (LUFS)", "tx", [("loud_lufs", "loudness", "-")]),
+    ("TX peak (dBFS)", "tx", [("peak_dbfs", "peak", "-")]),
+    ("TX leveller gain (dB)", "tx", [("agc_db", "gain", "-")]),
+    ("TX limiting (%)", "tx", [("limiting_pct", "limiting", "-")]),
+    ("TX output fill (min)", "tx", [("out_fill_min", "fill", "-")]),
+]
+DEFAULT_ON = {"SNR (dB)", "Frequency offset (Hz)"}
+EVENT_GROUPS = [
+    ("Overs shaded", None),
+    ("Key down/up", ("key_down", "key_up")),
+    ("End-of-over / calls", ("eoo", "call")),
+    ("Dial / mode / settings", ("dial", "mode", "wave", "invert", "drive", "trim", "agc")),
+]
+COLOURS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2"]
+
+
+def to_num(t_abs):
+    return np.asarray(t_abs, dtype=float) / 86400.0      # matplotlib date numbers count days from 1970
+
+
+class Viewer:
+    def __init__(self, root, paths=()):
+        self.root = root
+        self.runs = []
+        self.xlim = None
+        self.measure = []                  # clicked points: (time_num, axes_index, y)
+        root.title("RADE log viewer")
+        root.geometry("1250x800")
+        pw = ttk.PanedWindow(root, orient="horizontal")
+        pw.pack(fill="both", expand=True)
+        left = ttk.Frame(pw, width=330)
+        right = ttk.Frame(pw)
+        pw.add(left, weight=0)
+        pw.add(right, weight=1)
+
+        bar = ttk.Frame(left); bar.pack(fill="x", padx=4, pady=4)
+        ttk.Button(bar, text="Open…", command=self.open_dialog).pack(side="left")
+        ttk.Button(bar, text="Remove run", command=self.remove_run).pack(side="left", padx=4)
+        ttk.Button(bar, text="Fit all", command=self.fit_all).pack(side="left")
+        self.runlist = tk.Listbox(left, height=5, exportselection=False)
+        self.runlist.pack(fill="x", padx=4)
+        self.runlist.bind("<<ListboxSelect>>", lambda e: self.show_run_text())
+
+        pf = ttk.LabelFrame(left, text="Parameters (one panel each)"); pf.pack(fill="x", padx=4, pady=4)
+        self.pvars = {}
+        for label, _t, _c in PARAMS:
+            v = tk.BooleanVar(value=label in DEFAULT_ON)
+            self.pvars[label] = v
+            ttk.Checkbutton(pf, text=label, variable=v, command=self.replot).pack(anchor="w")
+        ef = ttk.LabelFrame(left, text="Marks"); ef.pack(fill="x", padx=4)
+        self.evars = {}
+        for label, _k in EVENT_GROUPS:
+            v = tk.BooleanVar(value=label in ("Overs shaded", "End-of-over / calls"))
+            self.evars[label] = v
+            ttk.Checkbutton(ef, text=label, variable=v, command=self.replot).pack(anchor="w")
+        self.utc = tk.BooleanVar(value=True)
+        ttk.Checkbutton(left, text="UTC clock on the axis (off: seconds from first run start)", variable=self.utc,
+                        command=self.replot).pack(anchor="w", padx=4)
+
+        of = ttk.LabelFrame(left, text="Overs (heard: H, transmitted: T) - choose one to zoom")
+        of.pack(fill="both", expand=True, padx=4, pady=4)
+        cols = ("run", "start", "dur", "kHz", "wave", "snr", "call")
+        self.tree = ttk.Treeview(of, columns=cols, show="headings", height=10, selectmode="browse")
+        for c, w in zip(cols, (50, 62, 40, 70, 40, 40, 70)):
+            self.tree.heading(c, text=c); self.tree.column(c, width=w, anchor="w", stretch=c in ("call",))
+        sb = ttk.Scrollbar(of, command=self.tree.yview); self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True); sb.pack(side="right", fill="y")
+        self.tree.bind("<<TreeviewSelect>>", self.on_over)
+
+        self.fig = Figure(figsize=(8, 6), dpi=100)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+        top = ttk.Frame(right); top.pack(fill="both", expand=True)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=top)
+        tb = ttk.Frame(top); tb.pack(side="top", fill="x")
+        self.toolbar = NavigationToolbar2Tk(self.canvas, tb)
+        self.toolbar.update()
+        self.mvar = tk.BooleanVar(value=False)
+        ttk.Checkbutton(tb, text="Measure (click A, click B)", variable=self.mvar,
+                        command=self.clear_measure).pack(side="left", padx=8)
+        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+        self.readout = ttk.Label(right, text="", anchor="w", font=("monospace", 9))
+        self.readout.pack(fill="x")
+        self.text = tk.Text(right, height=13, wrap="none", font=("monospace", 9))
+        self.text.pack(fill="x")
+        self.text.configure(state="disabled")
+        self.canvas.mpl_connect("motion_notify_event", self.on_move)
+        self.canvas.mpl_connect("button_press_event", self.on_click)
+        root.bind("<Key-Escape>", lambda e: self.clear_measure())
+        for p in paths:
+            self.add_path(p)
+        self.replot()
+
+    # ---------------------------------------------------------------- runs
+    def open_dialog(self):
+        p = filedialog.askopenfilename(title="Open a run: choose any file in the run directory, or a .tar.gz",
+                                       initialdir=self.initialdir(),
+                                       filetypes=[("RADE logs", "*.csv *.txt *.tar.gz"), ("all", "*")])
+        if p:
+            self.add_path(p)
+            self.replot()
+
+    def initialdir(self):
+        d = os.path.join(HERE, "..", "..", "rade-logs")
+        return os.path.abspath(d) if os.path.isdir(d) else os.getcwd()
+
+    def add_path(self, p):
+        try:
+            run = ld.load_run(p)
+        except Exception as e:                               # a bad file is reported, never fatal
+            if getattr(self, "quiet", False):
+                print("cannot open", p, e)
+            else:
+                messagebox.showerror("Cannot open", "%s\n\n%s" % (p, e))
+            return None
+        if any(r.name == run.name and r.t0 == run.t0 for r in self.runs):
+            return None
+        self.runs.append(run)
+        self.runlist.insert("end", run.name)
+        self.refresh_overs()
+        self.set_text(ld.run_text(run))
+        return run
+
+    def remove_run(self):
+        sel = self.runlist.curselection()
+        if not sel:
+            return
+        del self.runs[sel[0]]
+        self.runlist.delete(sel[0])
+        self.refresh_overs()
+        self.replot()
+
+    def show_run_text(self):
+        sel = self.runlist.curselection()
+        if sel:
+            self.set_text(ld.run_text(self.runs[sel[0]]))
+
+    def set_text(self, s):
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", s)
+        self.text.configure(state="disabled")
+
+    # ---------------------------------------------------------------- overs
+    def refresh_overs(self):
+        self.tree.delete(*self.tree.get_children())
+        self.over_by_iid = {}
+        rows = []
+        for ri, r in enumerate(self.runs):
+            for o in r.overs:
+                rows.append((o["t_start"], ri, "H", o))
+            for o in r.tx_overs:
+                rows.append((o["t_start"], ri, "T", o))
+        rows.sort(key=lambda x: x[0])
+        for t, ri, kind, o in rows:
+            utc = datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%H:%M:%S")
+            snr = "%.1f" % o["snr_mean"] if kind == "H" and not math.isnan(o["snr_mean"]) else ""
+            iid = self.tree.insert("", "end", values=("%s%d" % (kind, ri + 1), utc, "%.0f" % (o["t_end"] - o["t_start"]),
+                                                      "%.1f" % (o["dial_hz"] / 1e3), o.get("wave", ""), snr,
+                                                      o.get("call", "") if kind == "H" else ""))
+            self.over_by_iid[iid] = (ri, kind, o)
+
+    def on_over(self, _e=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        ri, kind, o = self.over_by_iid[sel[0]]
+        run = self.runs[ri]
+        self.set_text(ld.over_text(run, o) if kind == "H" else ld.tx_over_text(run, o))
+        pad = max(2.0, (o["t_end"] - o["t_start"]) * 0.1)
+        self.set_xlim(o["t_start"] - pad, o["t_end"] + pad)
+
+    # ---------------------------------------------------------------- plotting
+    def x(self, t_abs):
+        if self.utc.get():
+            return to_num(t_abs)
+        base = min((r.t0 for r in self.runs), default=0.0)
+        return (np.asarray(t_abs, dtype=float) - base)
+
+    def selected_params(self):
+        return [p for p in PARAMS if self.pvars[p[0]].get()]
+
+    def replot(self):
+        old = self.axes_xlim() if getattr(self, "axes", None) else None
+        was_utc = getattr(self, "_was_utc", self.utc.get())
+        self.fig.clear()
+        self.measure = []
+        self.axes = []
+        params = self.selected_params()
+        if not self.runs or not params:
+            self.fig.text(0.5, 0.5, "Open a run (Open…) and tick a parameter" if not self.runs else "Tick a parameter",
+                          ha="center", va="center", color="gray")
+            self.canvas.draw_idle()
+            return
+        axs = self.fig.subplots(len(params), 1, sharex=True, squeeze=False)[:, 0]
+        for ax, (label, table, series) in zip(axs, params):
+            for ri, run in enumerate(self.runs):
+                data = run.rx if table == "rx" else run.tx
+                if "t" not in data:
+                    continue
+                for col, leg, style in series:
+                    if col not in data:
+                        continue
+                    t, y = ld.with_gaps(data["t"], data[col])
+                    if np.all(np.isnan(y)):
+                        continue
+                    ax.plot(self.x(t), y, style, color=COLOURS[ri % len(COLOURS)], lw=1.1,
+                            label="%d %s" % (ri + 1, leg) if len(series) > 1 or len(self.runs) > 1 else None)
+            ax.set_ylabel(label, fontsize=8)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelsize=8)
+            h, _l = ax.get_legend_handles_labels()
+            if h:
+                ax.legend(fontsize=7, loc="upper right", ncol=4)
+            self.draw_marks(ax, first=(ax is axs[0]))
+        self.axes = list(axs)
+        if self.utc.get():
+            loc = mdates.AutoDateLocator()
+            axs[-1].xaxis.set_major_locator(loc)
+            axs[-1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(loc, formats=["%Y", "%b", "%d", "%H:%M", "%H:%M:%S", "%S.%f"]))
+            axs[-1].set_xlabel("UTC", fontsize=8)
+        else:
+            axs[-1].set_xlabel("seconds from the first run's start", fontsize=8)
+        if old is not None and was_utc == self.utc.get():
+            axs[0].set_xlim(*old)
+        self._was_utc = self.utc.get()
+        self.fig.subplots_adjust(left=0.09, right=0.99, top=0.98, bottom=0.08, hspace=0.12)
+        self.canvas.draw_idle()
+
+    def axes_xlim(self):
+        return self.axes[0].get_xlim() if self.axes else None
+
+    def draw_marks(self, ax, first):
+        on = {k: v.get() for k, v in self.evars.items()}
+        for ri, run in enumerate(self.runs):
+            col = COLOURS[ri % len(COLOURS)]
+            if on["Overs shaded"]:
+                for o in run.overs:
+                    ax.axvspan(self.x(o["t_start"]), self.x(o["t_end"]), color=col, alpha=0.07, lw=0)
+                for o in run.tx_overs:
+                    ax.axvspan(self.x(o["t_start"]), self.x(o["t_end"]), color="red", alpha=0.07, lw=0)
+            for t, kind, val in run.events:
+                if kind in ("key_down", "key_up") and on["Key down/up"]:
+                    ax.axvline(self.x(t), color="green" if kind == "key_down" else "firebrick", lw=0.7, ls="--")
+                elif kind == "eoo" and on["End-of-over / calls"]:
+                    ax.axvline(self.x(t), color="darkorange", lw=0.9)
+                elif kind == "call" and on["End-of-over / calls"]:
+                    ax.axvline(self.x(t), color="purple", lw=0.9)
+                    if first:
+                        ax.annotate(val.split()[0] if val else "", (self.x(t), 1.0), xycoords=("data", "axes fraction"),
+                                    rotation=90, fontsize=7, color="purple", va="top", ha="right")
+                elif kind in ld_settings() and on["Dial / mode / settings"]:
+                    ax.axvline(self.x(t), color="gray", lw=0.4, ls=":")
+                    if first and kind == "dial":
+                        ax.annotate("%.1f" % (float(val) / 1e3) if val else "", (self.x(t), 0.0), xycoords=("data", "axes fraction"),
+                                    rotation=90, fontsize=6, color="gray", va="bottom", ha="left")
+
+    # ---------------------------------------------------------------- zoom
+    def set_xlim(self, a, b):
+        if not self.axes:
+            return
+        if self.utc.get():
+            self.axes[0].set_xlim(to_num(a), to_num(b))
+        else:
+            base = min(r.t0 for r in self.runs)
+            self.axes[0].set_xlim(a - base, b - base)
+        self.canvas.draw_idle()
+
+    def fit_all(self):
+        if not self.axes:
+            return
+        t = [r.t0 for r in self.runs]
+        e = [max([r.t0] + [x[0] for x in r.events] + [o["t_end"] for o in r.overs + r.tx_overs]) for r in self.runs]
+        self.set_xlim(min(t), max(e) + 1)
+        for ax in self.axes:
+            ax.relim(); ax.autoscale_view(scalex=False)
+        self.canvas.draw_idle()
+
+    # ---------------------------------------------------------------- pointer and measuring
+    def from_x(self, xv):
+        if self.utc.get():
+            return float(xv) * 86400.0
+        return float(xv) + min(r.t0 for r in self.runs)
+
+    def on_move(self, ev):
+        if ev.inaxes is None or ev.xdata is None:
+            return
+        t = self.from_x(ev.xdata)
+        self.readout.configure(text="%s   y = %.3f" % (ld.utc_str(t), ev.ydata) if not self.measure or len(self.measure) >= 2
+                               else "A set - click B   (Esc clears)   %s" % ld.utc_str(t))
+
+    def clear_measure(self):
+        for ax in self.axes:
+            for l in getattr(ax, "_mlines", []):
+                try:
+                    l.remove()
+                except ValueError:
+                    pass
+            ax._mlines = []
+        self.measure = []
+        self.readout.configure(text="Measure: click A, then B" if self.mvar.get() else "")
+        self.canvas.draw_idle()
+
+    def on_click(self, ev):
+        if not self.mvar.get() or ev.inaxes is None or ev.xdata is None or self.toolbar.mode != "":
+            return
+        if len(self.measure) >= 2:
+            self.clear_measure()
+        idx = self.axes.index(ev.inaxes)
+        self.measure.append((ev.xdata, idx, ev.ydata))
+        for ax in self.axes:
+            ax._mlines = getattr(ax, "_mlines", []) + [ax.axvline(ev.xdata, color="black", lw=1.0)]
+        if len(self.measure) == 2:
+            self.readout.configure(text=self.measure_text())
+        self.canvas.draw_idle()
+
+    def measure_text(self):
+        (xa, ia, ya), (xb, ib, yb) = self.measure
+        ta, tb = self.from_x(xa), self.from_x(xb)
+        parts = ["dt = %.3f s (A %s  B %s)" % (tb - ta, ld.utc_str(ta)[11:], ld.utc_str(tb)[11:])]
+        if ia == ib:
+            parts.append("dy = %+.3f (%s)" % (yb - ya, self.selected_params()[ia][0]))
+        out = ["   ".join(parts)]
+        for label, table, series in self.selected_params():
+            for ri, run in enumerate(self.runs):
+                data = run.rx if table == "rx" else run.tx
+                if "t" not in data:
+                    continue
+                for col, leg, _s in series:
+                    st = ld.window_stats(data["t"], data.get(col, np.array([])), ta, tb) if col in data else None
+                    if st:
+                        out.append("  run %d %s %s: n=%d mean %.2f min %.2f max %.2f" % (ri + 1, label, leg, st["n"], st["mean"], st["min"], st["max"]))
+        text = "\n".join(out)
+        self.set_text(text)
+        return parts[0] + ("   " + parts[1] if len(parts) > 1 else "")
+
+
+def ld_settings():
+    return ("dial", "mode", "wave", "invert", "drive", "trim", "agc")
+
+
+def main(argv):
+    root = tk.Tk()
+    Viewer(root, argv[1:])
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main(sys.argv)
