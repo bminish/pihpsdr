@@ -30,6 +30,7 @@
 #include "lpcnet.h"
 #include "rade_eoo_text.h"
 #include "rade_native.h"
+#include "rade_native_log.h"
 
 double rade_native_centre(int waveform) {
   return waveform == RADE_NATIVE_V2 ? RADE_NATIVE_FC_V2 : RADE_NATIVE_FC_V1;
@@ -277,6 +278,15 @@ static void *worker(void *arg) {
       }
     }
     if (C.active) { cap_row(consumed, nout); }
+    if (rade_log_active()) {
+      struct rade_stats rs;
+      rade_get_stats(r, &rs);
+      rade_log_rx_t lr = { .rx_pos = consumed, .sync = E.st.sync, .nout = nout, .snr_db = E.st.snr_db,
+                           .foff_hz = E.st.foff_hz, .delta_hat = rs.delta_hat, .est_foff = rs.freq_offset,
+                           .gain = rs.gain, .snr_est = rs.snr_est, .in_fill = E.in_w - E.in_r,
+                           .out_fill = E.out_w - E.out_r, .underruns = E.st.underruns, .overruns = E.st.overruns };
+      rade_log_rx(&lr);
+    }
     for (int i = 0; i < npcm; i++) { E.out_ring[(E.out_w + i) % OUT_RING] = pcm[i]; }
     E.out_w += npcm;
   }
@@ -610,6 +620,9 @@ static struct {
   char call[16];
   // mic level
   double trim_db, trim_g;                // asked for / smoothed linear
+  double drive_db;                       // level into WDSP relative to the defined one, -6 .. +6
+  int keyed;                             // transmitting, for the leveller and the log
+  int log_blocks;                        // 100 ms blocks since the loudness average was last logged
   int agc_on;
   double agc_db;                         // leveller gain, dB
   double k1x[2], k1y[2], k2x[2], k2y[2]; // K-weighting filter state
@@ -643,7 +656,7 @@ static void tx_emit(const RADE_COMP *mod, int n) {
   static RADE_COMP up[1152 * TX_INT];
   const int per = TX_INT_TAPS / TX_INT;
   int nup = 0;
-  const double lvl = E.waveform == RADE_NATIVE_V2 ? TX_LEVEL_V2 : TX_LEVEL_V1;
+  const double lvl = (E.waveform == RADE_NATIVE_V2 ? TX_LEVEL_V2 : TX_LEVEL_V1) * pow(10.0, T.drive_db / 20.0);
   for (int i = 0; i < n && nup + TX_INT <= (int)(sizeof up / sizeof up[0]); i++) {
     T.ihi[T.ipos] = mod[i].real * lvl;
     T.ihq[T.ipos] = mod[i].imag * lvl;
@@ -827,6 +840,31 @@ static int lv_gated(double *avg, double *mom) {
   return 1;
 }
 
+#define LV_MAX_DB   20.0                 // the leveller adds at most this ...
+#define LV_MIN_DB  (-30.0)               // ... and takes off up to this
+
+// one row of the parameter log per 100 ms block; the gated average once a second
+static void lv_log_row(void) {
+  if (!rade_log_active()) { return; }
+  double avg = NAN, mom = NAN, a;
+  if (T.blk_n >= 4) {
+    double sum = 0.0;
+    for (int k = 0; k < 4; k++) { sum += T.blk_ms[(T.blk_pos - 1 - k + 200) % 100]; }
+    mom = lv_db(sum / 4.0);
+  }
+  if (++T.log_blocks >= 10) {
+    T.log_blocks = 0;
+    double m;
+    if (lv_gated(&a, &m)) { avg = a; }
+  }
+  rade_log_tx_t l = { .tx = T.keyed, .trim_db = T.trim_db, .agc_db = T.agc_on && T.keyed ? T.agc_db : 0.0,
+                      .drive_db = T.drive_db, .loud_mom = isnan(mom) ? -99.0 : mom, .loud_avg = avg,
+                      .peak_dbfs = 20.0 * log10((T.peak_hold > T.peak_acc ? T.peak_hold : T.peak_acc) + 1e-9),
+                      .limiting = T.limit_hold < 10, .underruns = T.underruns,
+                      .out_fill = T.out_w - T.out_r, .pcm_fill = T.pcm_w - T.pcm_r, .end_state = T.end_state };
+  rade_log_tx(&l);
+}
+
 static void lv_block_done(void) {
   T.blk_ms[T.blk_pos] = T.acc_ms / LV_BLOCK;
   T.blk_pos = (T.blk_pos + 1) % 100;
@@ -836,25 +874,32 @@ static void lv_block_done(void) {
   if (T.peak_acc > T.peak_hold || ++T.pk_blocks >= 10) { T.peak_hold = T.peak_acc; T.pk_blocks = 0; }
   T.peak_acc = 0.0;
   if (T.limit_hold < 1000) { T.limit_hold++; }
-  if (!T.agc_on) {
-    // the leveller lets go slowly when it is switched off
-    T.agc_db *= 0.9;
+  //
+  // The leveller works only while transmitting: it starts each over at 0 dB (rade_native_tx_block resets
+  // it and the loudness history at key-down) and moves like a slow hand on a fader. It can add at most
+  // 20 dB; it can take off more.
+  //
+  if (!T.keyed || !T.agc_on) {
+    if (T.keyed) { T.agc_db *= 0.9; }             // switched off during the over: let go
+    lv_log_row();
     return;
   }
   double avg, mom;
   int ok = lv_gated(&avg, &mom);
-  if (!ok || mom < -55.0) { return; }             // nothing to level: leave the gain alone, do not lift noise
-  double step = 0.0;
-  if (mom > RADE_NATIVE_TARGET_LUFS + 8.0) {
-    step = -0.6;                                  // a shout: down 6 dB/s
-  } else {
-    double e = RADE_NATIVE_TARGET_LUFS - avg;
-    if (e > 1.5) { step = e > 12 ? 0.2 : e > 6 ? 0.1 : 0.05; }   // too low: up, 0.5 to 2 dB/s
-    else if (e < -1.5) { step = -0.1; }           // too high: down 1 dB/s
+  if (ok && mom >= -55.0) {                       // otherwise nothing to level: leave the gain, do not lift noise
+    double step = 0.0;
+    if (mom > RADE_NATIVE_TARGET_LUFS + 8.0) {
+      step = -0.2;                                // a shout: down 2 dB/s
+    } else {
+      double e = RADE_NATIVE_TARGET_LUFS - avg;
+      if (e > 1.5) { step = e > 12 ? 0.05 : e > 6 ? 0.03 : 0.02; }   // too low: up, 0.2 to 0.5 dB/s
+      else if (e < -1.5) { step = -0.05; }        // too high: down 0.5 dB/s
+    }
+    T.agc_db += step;
+    if (T.agc_db > LV_MAX_DB) { T.agc_db = LV_MAX_DB; }
+    if (T.agc_db < LV_MIN_DB) { T.agc_db = LV_MIN_DB; }
   }
-  T.agc_db += step;
-  if (T.agc_db > 30.0) { T.agc_db = 30.0; }
-  if (T.agc_db < -20.0) { T.agc_db = -20.0; }
+  lv_log_row();
 }
 
 static void lv_process(double *buf, int n) {
@@ -862,7 +907,7 @@ static void lv_process(double *buf, int n) {
   static const double a1[2] = {-1.69065929318241, 0.73248077421585};
   static const double a2[2] = {-1.99004745483398, 0.99007225036621};
   double target = pow(10.0, T.trim_db / 20.0);
-  double ga = pow(10.0, (T.agc_on ? T.agc_db : 0.0) / 20.0);
+  double ga = pow(10.0, (T.agc_on && T.keyed ? T.agc_db : 0.0) / 20.0);
   for (int i = 0; i < n; i++) {
     T.trim_g += (target - T.trim_g) * 0.002;      // ~10 ms, no zipper noise
     double x = buf[2 * i] * T.trim_g * ga;
@@ -890,6 +935,14 @@ void rade_native_tx_set_trim_db(double db) {
 }
 
 double rade_native_tx_get_trim_db(void) { return T.trim_db; }
+
+void rade_native_tx_set_drive_db(double db) {
+  if (db < -6.0) { db = -6.0; }
+  if (db > 6.0) { db = 6.0; }
+  T.drive_db = db;
+}
+
+double rade_native_tx_get_drive_db(void) { return T.drive_db; }
 void rade_native_tx_set_agc(int on) { T.agc_on = on != 0; }
 int rade_native_tx_get_agc(void) { return T.agc_on; }
 
@@ -903,13 +956,20 @@ void rade_native_tx_level(rade_native_txlevel_t *l) {
   double pk = T.peak_acc > T.peak_hold ? T.peak_acc : T.peak_hold;
   l->peak_dbfs = 20.0 * log10(pk + 1e-9);
   l->limiting = T.limit_hold < 10;
-  l->agc_gain_db = T.agc_on ? T.agc_db : 0.0;
+  l->agc_gain_db = T.agc_on && T.keyed ? T.agc_db : 0.0;
   pthread_mutex_unlock(&T.mx);
 }
 
 void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   if (!T.enabled) { return; }
   pthread_mutex_lock(&T.mx);
+  if (transmitting && !T.keyed) {
+    // key-down: no memory of the last over - the leveller starts at 0 dB and the loudness average starts empty
+    T.agc_db = 0.0;
+    T.blk_n = T.blk_pos = T.acc_n = 0;
+    T.acc_ms = 0.0;
+  }
+  T.keyed = transmitting != 0;
   lv_process(buf, n);               // trim, level, limit and measure the mic, keyed or not
   if (!transmitting) {
     // discard whatever is in flight so the next over starts clean

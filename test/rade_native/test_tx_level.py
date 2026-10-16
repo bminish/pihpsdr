@@ -31,9 +31,11 @@ def lufs(x48):
     return -0.691 + 10 * np.log10(k.mean())
 
 
-def run(path, trim=0.0, agc=0, repeat=1):
-    r = subprocess.run([TOOL, "--trim", str(trim), "--agc", str(agc), "--repeat", str(repeat), path],
+def run(path, trim=0.0, agc=0, repeat=1, extra=(), raw=False):
+    r = subprocess.run([TOOL, "--trim", str(trim), "--agc", str(agc), "--repeat", str(repeat)] + list(extra) + [path],
                        capture_output=True, text=True)
+    if raw:
+        return r.stdout
     rows = []
     for l in r.stdout.splitlines():
         m = re.match(r"\s*(\d+) s: valid (\d) avg\s+(\S+) mom\s+(\S+) delta\s+(\S+) peak\s+(\S+) dBFS limiting (\d) agc\s+(\S+) dB", l)
@@ -68,13 +70,28 @@ m = mic * 10 ** (12 / 20)
 np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
 r = run(os.path.join(OUT, "lvl_t.f32"))[-1]
 check(r["limiting"] == 1 and r["peak"] > 3.0, "+12 dB over: limiter acting, peak %.1f dBFS reported before it" % r["peak"])
-print("leveller")
+print("leveller (works only while transmitting)")
 for gdb in (-24, -10, +8):
     m = mic * 10 ** (gdb / 20)
     np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
-    rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=9)
+    rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=12, extra=["--keyed"])
     r = rows[-1]
     check(abs(r["delta"]) <= 3.0, "mic %+d dB: after %d s the leveller has it at %+.1f dB of ideal (adding %+.1f dB)" %
           (gdb, r["t"], r["delta"], r["agc"]))
+m = mic * 10 ** (-24 / 20)
+np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
+rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=9)
+check(all(abs(r["agc"]) < 1e-9 for r in rows), "not transmitting: the leveller adds nothing (0.0 dB on every reading, mic -24 dB)")
+m = mic * 10 ** (-45 / 20)
+np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
+rows = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=40, extra=["--keyed"])
+check(max(r["agc"] for r in rows) <= 20.0 + 1e-9, "a very quiet mic (-45 dB): the leveller stops at %+.1f dB (limit +20)" % max(r["agc"] for r in rows))
+out = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=12, extra=["--rekey"], raw=True)
+mm = re.search(r"rekeyed: agc\s+(\S+)", out); um = re.search(r"unkeyed: agc\s+(\S+)", out)
+check(um and abs(float(um[1])) < 1e-9 and mm and abs(float(mm[1])) < 1e-9, "after the over: 0.0 dB unkeyed, and 0.0 dB at the next key-down (no value kept from the last over)")
+m = mic * 10 ** (-24 / 20)
+np.stack([m, 0 * m], 1).astype(np.float32).tofile(os.path.join(OUT, "lvl_t.f32"))
+r1 = run(os.path.join(OUT, "lvl_t.f32"), agc=1, repeat=1, extra=["--keyed"])
+check(max(abs(r["agc"]) for r in r1) <= 0.5 * 11, "11 s into an over (mic 24 dB low) the leveller has moved %+.1f dB: at most 0.5 dB a second" % r1[-1]["agc"])
 print("FAILED %d" % fails if fails else "all passed")
 sys.exit(1 if fails else 0)
