@@ -69,7 +69,7 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 - WDSP filter delay, offline (`rade-native-filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps, of which the linear-phase filters are
   21 ms (TX, two of them, at 96 kHz) and 43 ms (RX, two of them, at 48 kHz). The over-the-air delay is **not measured** (the Kiwi recordings carry no time stamps).
 
-- **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz); tooling to place the RF onset and end of an over, WDSP's output and the engine's events on the UTC axis is built and tested on synthetic recordings; **no real over measured yet** (`rade-native-gps-timing.md`).
+- **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz). First run with it (`rade-native-air-run3-20261016.md`, 12 overs): engine -> WDSP output 78.8 ms, WDSP -> RF 10.9 ms, key-down to RF 335 ms (V1) / 174 ms (V2) of which 240 / 80 ms is the prefill; RF rise 20 ms; the end-of-over frame and call decoded in every over and nothing of the end is missing; the radio is released about 115 ms after the RF has ended (dead time); **the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of the speech to acquisition** (sync 0.65 s / 0.27 s after the RF onset, at any SNR); the end-of-over frame is 2.4 dB (V1) below the speech's average power at 0 dB drive. The transmit frequency is within +-1 Hz of the GPS-corrected Kiwi: the +0.39 ppm seen earlier was the Kiwi's own, before its GPS (corrected).
 
 ## 8. Mic path (measured offline, `test_tx_level.py`)
 
