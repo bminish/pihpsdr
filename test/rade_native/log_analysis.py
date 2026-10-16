@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """What the parameter logs (rade-logs/*.csv) hold, how often each column changes, and what a reduced log would cost.
 
-  log_analysis.py [rade-logs/file.csv ...]        (default: every file in rade-logs/)
+  log_analysis.py [rade-logs/file.csv ... | rade-logs/<run>/ ...]   (default: every run directory, then every old single CSV)
+
+For a run directory of the current format it lists the table sizes and the overs heard and sent. The rest is for the old single-file logs.
 
 Prints, for the files together: rows and bytes by kind; how many transmit rows were while not keyed and receive rows while not in
 sync; for each column the share of rows that differ from the previous row (in sync / not, keyed / not); how well a 1, 2 or 4 Hz
@@ -46,8 +48,38 @@ def overs(rows, gap=1.5, min_s=1.0):
     return out
 
 
+def summarize_dir(d):
+    """A run of the current format (a directory of tables): sizes, rows, and the overs it lists."""
+    names = ["rx.csv", "tx.csv", "events.csv", "overs.csv", "tx_overs.csv", "meta.txt"]
+    sizes = {n: os.path.getsize(os.path.join(d, n)) for n in names if os.path.exists(os.path.join(d, n))}
+    rows = {}
+    for n in names[:5]:
+        p = os.path.join(d, n)
+        if os.path.exists(p):
+            rows[n] = max(0, sum(1 for _ in open(p)) - 1)
+    print("%s: %d bytes in %s; rows %s" % (os.path.basename(d.rstrip("/")), sum(sizes.values()), len(sizes), rows))
+    p = os.path.join(d, "overs.csv")
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p)):
+            print("   heard %s  %7.1f s  %8s Hz %-5s V%s  SNR mean %5s min %5s  offset %6s Hz  call %s" % (
+                r["utc_start"][:19], float(r["t_end"]) - float(r["t_start"]), r["dial_hz"], r["mode"], r["wave"][1:], r["snr_mean"], r["snr_min"],
+                r["foff_mean"], r["call"] or "-"))
+    p = os.path.join(d, "tx_overs.csv")
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p)):
+            print("   sent  %s  %7.1f s  %8s Hz V%s  drive %s dB  loudness %s  peak %s  underruns %s" % (
+                r["utc_start"][:19], float(r["t_end"]) - float(r["t_start"]), r["dial_hz"], r["wave"][1:], r["drive_db"], r["loud_mean"], r["peak_max"], r["underruns"]))
+
+
 def main():
-    files = sys.argv[1:] or sorted(glob.glob(os.path.join(ROOT, "rade-logs", "*.csv")))
+    dirs = [a for a in sys.argv[1:] if os.path.isdir(a)]
+    if dirs or (not sys.argv[1:] and glob.glob(os.path.join(ROOT, "rade-logs", "*", "meta.txt"))):
+        for d in dirs or sorted(os.path.dirname(x) for x in glob.glob(os.path.join(ROOT, "rade-logs", "*", "meta.txt"))):
+            summarize_dir(d)
+        if dirs:
+            return
+        print()
+    files = [a for a in sys.argv[1:] if not os.path.isdir(a)] or sorted(glob.glob(os.path.join(ROOT, "rade-logs", "*.csv")))
     kinds, bytes_by, rows_all, n_files, size = collections.Counter(), collections.Counter(), [], 0, 0
     for f in files:
         meta, rows, b = load(f)

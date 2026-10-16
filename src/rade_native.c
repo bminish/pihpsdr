@@ -309,7 +309,7 @@ static void *worker(void *arg) {
     if (log_it && rade_log_active()) {
       struct rade_stats rs;
       rade_get_stats(r, &rs);
-      rade_log_rx_t lr = { .rx_pos = consumed, .sync = E.st.sync, .nout = nout, .snr_db = E.st.snr_db,
+      rade_log_rx_t lr = { .rx_pos = consumed, .sync = E.st.sync, .eoo = has_eoo != 0, .nout = nout, .snr_db = E.st.snr_db,
                            .foff_hz = E.st.foff_hz, .delta_hat = rs.delta_hat, .est_foff = rs.freq_offset,
                            .gain = rs.gain, .snr_est = rs.snr_est, .in_fill = E.in_w - E.in_r,
                            .out_fill = E.out_w - E.out_r, .underruns = E.st.underruns, .overruns = E.st.overruns };
