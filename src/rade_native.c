@@ -298,7 +298,15 @@ static void *worker(void *arg) {
       }
     }
     if (C.active) { cap_row(consumed, nout); }
-    if (rade_log_active()) {
+    // Parameter log: with a lock every call is logged; without one, the change to it and then one row a second (nothing happens in
+    // between that is worth a row: the SNR and offset are not measurements without a lock)
+    static int log_prev_sync = -1;
+    static long log_nosync_next = 0;
+    int log_it = 1;
+    if (!E.st.sync && log_prev_sync == 0 && consumed < log_nosync_next) { log_it = 0; }
+    if (!E.st.sync && (log_prev_sync != 0 || consumed >= log_nosync_next)) { log_nosync_next = consumed + 8000; }
+    log_prev_sync = E.st.sync ? 1 : 0;
+    if (log_it && rade_log_active()) {
       struct rade_stats rs;
       rade_get_stats(r, &rs);
       rade_log_rx_t lr = { .rx_pos = consumed, .sync = E.st.sync, .nout = nout, .snr_db = E.st.snr_db,
@@ -905,7 +913,7 @@ static int lv_gated(double *avg, double *mom) {
 
 // one row of the parameter log per 100 ms block; the gated average once a second
 static void lv_log_row(void) {
-  if (!rade_log_active()) { return; }
+  if (!rade_log_active() || !T.keyed) { return; }          // transmit rows only while transmitting
   double avg = NAN, mom = NAN, a;
   if (T.blk_n >= 4) {
     double sum = 0.0;
