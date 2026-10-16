@@ -1,8 +1,9 @@
 ##############################################################################
 #
 # Native RADE V1/V2 (feature/rade-native). Included by the Makefile after
-# OBJS, OPTIONS and LIBS are defined, and the only thing the Makefile knows
-# about it. Needs librade, which tools/rade/build_rade.sh fetches and builds
+# PROGRAM, OPTIONS and LIBS are defined and before OBJS is. The Makefile has
+# three lines for it: the include, $(RADE_NATIVE_LIBS) in LIBS and
+# $(RADE_NATIVE_OBJS) in OBJS. Needs librade, which tools/rade/build_rade.sh fetches and builds
 # into third_party/. Off by default: make RADE_NATIVE=ON (or put it in
 # make.config.pihpsdr). See docs/rade-native.md.
 #
@@ -29,7 +30,7 @@ OPTIONS += -D RADE_NATIVE
 RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src) \
 	$(RADE_OPUS)/.libs/libopus.a
 
-OBJS    += src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o \
+RADE_NATIVE_OBJS = src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o \
 	src/rade_launch.o src/rade_native_log.o src/rade_native_test.o
 
 src/rade_native.o: src/rade_native.h src/rade_eoo_text.h src/rade_v2_text.h src/rade_native_log.h
