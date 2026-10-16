@@ -101,6 +101,22 @@ check(wait(lambda: s1.clients[-1]["auth"].get("role") == "view" or s1.clients[-1
 show("v1"); state(2); app._tick(); pump(0.3)
 check(app.report_key == "v2" and wait(lambda: s2.clients[-1]["auth"].get("role") == "report"),
       "showing V1 only with the radio on V2: reports still go to V2")
+print("reporting is switched off, not paused, without a connection or a valid frequency")
+def put(**kw):
+    d = {"running": 1, "updated": time.time(), "waveform": 1, "dial_hz": 14236000, "tx": 0, "call": "EI6IZ", "version": "t", "rx_sync": 0, "rx_snr": None}
+    d.update(kw); json.dump(d, open(core.state_path(), "w"))
+put(); app._tick(); pump(0.2)
+app.rep_chk.set_active(True); app._tick()
+check(app.rep_chk.get_active() and app.rep_chk.get_sensitive(), "connected, valid frequency: reporting can be on")
+put(dial_hz=0); app._tick(); pump(0.2)
+check(not app.rep_chk.get_active() and not app.rep_chk.get_sensitive() and not app.reporting, "a dial of 0: switched off and cannot be switched on")
+put(); app._tick(); pump(0.2)
+check(app.rep_chk.get_sensitive() and not app.rep_chk.get_active() and not app.reporting, "the frequency back: possible again, but it stays off until ticked")
+app.rep_chk.set_active(True); app._tick()
+put(updated=time.time() - 30); app._tick(); pump(0.2)
+check(not app.rep_chk.get_active() and not app.rep_chk.get_sensitive(), "piHPSDR's state gone stale (not connected): switched off")
+os.remove(core.state_path()); app._tick()
+check(not app.rep_chk.get_sensitive() and not app.reporting, "no state file: off and disabled")
 app._quit = lambda *a: None
 for lk in app.links.values():
     lk.close()
