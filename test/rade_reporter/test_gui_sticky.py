@@ -15,7 +15,7 @@ import gi
 gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, GLib
 import core
-core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0     # the pacing has its own test (test_reporter.py)
+core.Link.MIN_GAP_S = core.Link.STABLE_S = core.Link.RX_GAP_S = 0.0     # the pacing has its own test (test_reporter.py)
 from mock_server import MockServer
 
 fails = 0

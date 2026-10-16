@@ -245,6 +245,8 @@ class Link:
     """
 
     MIN_GAP_S = 5.0            # never two events of one kind within this long: remote servers are not to be burdened
+    RX_GAP_S = 1.0             # a reception report whose SNR has changed: up to once a second
+    RX_KEEPALIVE_S = 20.0      # an unchanged SNR, while genuinely in sync: repeated this often, so the station stays shown as receiving
     STABLE_S = 5.0             # the dial must stand still this long (or a signal be in sync) before the frequency is reported
 
     def __init__(self, roster, on_event, on_state, software, client_factory=SioClient, clock=time.time):
@@ -385,7 +387,8 @@ class Link:
 
     def _push(self):
         """Tell the server what is new - and nothing else. Only when reporting and the server is ready. At most one event of each
-        kind per MIN_GAP_S (what is waiting is merged, so the latest state goes out when the time comes); nothing that repeats what
+        kind per MIN_GAP_S (what is waiting is merged, so the latest state goes out when the time comes), except reception reports:
+        a changed SNR may go every RX_GAP_S, an unchanged one only as a keep-alive every RX_KEEPALIVE_S while in sync; nothing that repeats what
         the server already has; while the dial is being tuned nothing at all, until it has stood still for STABLE_S or a signal is
         in sync with an SNR."""
         if self.client is None or not self.fully or getattr(self, "role", "view") != "report":
@@ -422,13 +425,22 @@ class Link:
         if w["freq"] and s.get("freq") != w["freq"]:
             return                       # the server does not have our frequency yet: its reception reports would mean nothing
         item = self.rx_calls[0] if self.rx_calls else self.rx_blank
-        if item is not None and due("rx"):
-            if item[0]:
-                self.rx_calls.pop(0)
-            else:
-                self.rx_blank = None
+        if item is not None:
             payload = {"callsign": item[0], "mode": item[1], "snr": item[2]}
-            if payload != s.get("rx"):               # the same again is not news
+            since = now - t.get("rx", -1e9)
+            if payload == s.get("rx"):               # nothing new; only a keep-alive while really in sync with an SNR
+                if item[0]:
+                    self.rx_calls.pop(0)
+                else:
+                    self.rx_blank = None
+                if self.live and since >= self.RX_KEEPALIVE_S:
+                    self.client.emit("rx_report", payload)
+                    sent("rx")
+            elif since >= self.RX_GAP_S:             # changed: up to once a second
+                if item[0]:
+                    self.rx_calls.pop(0)
+                else:
+                    self.rx_blank = None
                 self.client.emit("rx_report", payload)
                 s["rx"] = payload
                 sent("rx")
