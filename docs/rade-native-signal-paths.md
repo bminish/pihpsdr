@@ -196,7 +196,9 @@ flowchart LR
 | Transmitting, as reported | Reporter `tx_report`, `tx_count`, state.json `tx` | `rade_is_tx()`: keyed **and** a RADE waveform on **and** the RADE transmit engine in use **and** not TUNE or two-tone | an SSB over or a tune in RADE mode is not reported | `radio_is_transmitting()` |
 | Frequency | VFO; Reporter `freq_change`; logs | the dial = carrier of the sideband in use | Hz | the energy centre `Fe` (state.json `centre_hz`) |
 | Received call | RADE window, `rade-calls.csv`, Reporter `rx_report` | end-of-over frame, LDPC decode | SNR with it is the over's smoothed SNR | |
-| Regular SNR report | Reporter `rx_report` every N s | librade SNR (live), call = last decoded or blank | `int(snr + 0.5)` | |
+| Reception report (SNR) | Reporter `rx_report` | librade SNR (live) while in sync, call = last decoded or blank | `int(snr + 0.5)`. A changed SNR is sent up to once a second, an unchanged one every 20 s only while in sync with an SNR; calls first; never repeated otherwise (`Link._push`) | |
+| Reporter traffic | Reporter to FreeDV Reporter servers | `Link._push` | nothing while the dial is being tuned; frequency after 5 s stable or at once with lock + SNR; frequency, transmit state, message at most once per 5 s each; identical events not sent; starts OFF, switched off without a fresh piHPSDR state or a valid dial | |
+| Callsign (Reporter) | Reporter | the call in piHPSDR's RADE window (state.json `call`), always; no entry box | | the grid, still entered in the Reporter |
 | Mode string | Reporter | `RADEV1` / `RADEV2` | | |
 
 ## 6. Taps and the tools that read them
@@ -303,6 +305,10 @@ Newest first. One line per change that can move a measurement. "Check" is the sc
 
 | Date | Commit | Change | Expected effect | Check | Status |
 |---|---|---|---|---|---|
+| 2026-10-16 | 60f3e3ee, d3d4b479, 11c0c8f1 | Reporter traffic paced: silent while tuning, frequency after 5 s stable (or lock + SNR), one event per kind per 5 s, reception reports 1 s when the SNR changes / 20 s keep-alive when steady and in sync, no repeats; Show follows the radio mode; call from the RADE window; blue only for stations receiving with a recent SNR | no RADE signal-path change; far fewer events to the servers | `test_reporter.py` `pacing()`, `test_gui_*.py` | tested against mock servers and a fake clock; not against a live reporter |
+| 2026-10-16 | 11a1791c | Parameter log: run directory of tables (rx / tx 2 Hz, events, overs, tx_overs, tar.gz) | no signal-path change | `test_log.py`, `log_analysis.py` | scripted scene only; first live run pending. Old logs converted (`tools/rade-logview/convert_old_logs.py`); viewer `tools/rade-logview/rade_logview.py` |
+| 2026-10-16 | 65ff05d7 | 60 m (5250-5450 kHz): V1 and V2 default to upper sideband, Invert below the carrier | dial = carrier of the USB sideband on 60 m | `test_geometry`, `modes_table` | built; not on air |
+| 2026-10-16 | ec490935 | `TX_TAIL` 8000 -> 5120 samples | radio released about 60 ms sooner, about 20 ms margin | `air_timing.py` (`unkey_after_wdsp_last_ms` about 64, EOO still decoded) | not yet re-measured |
 | 2026-10-16 | (this commit) | TX level into WDSP per waveform: V1 0.3 -> 0.357 (+1.5 dB), V2 0.3 -> 0.504 (+4.5 dB), 0.5 dB under the ALC ceiling on request | ALC meter peaks at -0.5 dB for both (was -2 V1, -5 V2, as read by the operator) | ALC meter on the next TX; `tx_shape.py` peak | compiled; **not on a radio**; ALC clamp at 1.0 will clip any overshoot, watch SNR |
 | 2026-10-16 | 1e4c3404 | Sideband stored; dial and VFO mode follow it (`rade_native_plan`); RADE off returns to USB/LSB on the same carrier; dial = CTUN freq | `Fe` constant across waveform / Invert / Off; Reporter frequency = carrier | `test_geometry`, `modes_table` | unit-tested; not on a radio |
 | 2026-10-16 | 73c3925c | Speech stages kept off while RADE TX is on (`tx_set_compressor/equalizer/phrot/dexp` guards, phase rotator off) | TX energy centre +1650 -> about +1457 Hz; tilt +4.8 -> 0 dB | `tx_shape.py` on the next TX capture | compiled; **next capture decides** |
