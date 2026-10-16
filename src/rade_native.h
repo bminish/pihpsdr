@@ -38,7 +38,10 @@ enum {
 #define RADE_NATIVE_FC_V2       1500.0
 #define RADE_NATIVE_BW_V1       1600.0   // channel / TX filter width, Hz
 #define RADE_NATIVE_BW_V2       1000.0
-#define RADE_NATIVE_V1_INV_BELOW_HZ 10000000L  // V1 default: inverted below this
+#define RADE_NATIVE_V1_INV_BELOW_HZ 10000000L  // V1 default: inverted (lower sideband) below this ...
+#define RADE_NATIVE_60M_LOW_HZ       5250000L   // ... except on 60 m, where USB is the convention and both V1 and V2 default
+#define RADE_NATIVE_60M_HIGH_HZ      5450000L   //     to upper sideband; Invert there means below the carrier, for both
+int rade_native_band_class(long long dial_hz);      // 0: below 10 MHz (not 60 m), 1: 60 m, 2: 10 MHz and above
 
 double rade_native_centre(int waveform);
 double rade_native_width(int waveform);
