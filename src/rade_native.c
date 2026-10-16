@@ -37,7 +37,7 @@ double rade_native_centre(int waveform) {
   return waveform == RADE_NATIVE_V2 ? RADE_NATIVE_FC_V2 : RADE_NATIVE_FC_V1;
 }
 
-double rade_native_width(int waveform) {
+static double rade_native_width(int waveform) {
   return waveform == RADE_NATIVE_V2 ? RADE_NATIVE_BW_V2 : RADE_NATIVE_BW_V1;
 }
 

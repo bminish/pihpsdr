@@ -3122,24 +3122,7 @@ static void radio_restore_state(void) {
   g_mutex_lock(&property_mutex);
   loadProperties(property_path);
 #ifdef RADE_NATIVE
-  {
-    char call[16] = "";
-    int inv = 0;
-    GetPropS0("rade_native.callsign", call);
-    GetPropI0("rade_native.invert", inv);
-    double trim = 0.0;
-    int agc = 1;
-    GetPropF0("rade_native.mic_trim_db", trim);
-    GetPropI0("rade_native.mic_agc", agc);
-    double drive = 0.0;
-    GetPropF0("rade_native.drive_db", drive);
-    rade_native_tx_set_drive_db(drive);
-    rade_native_tx_set_trim_db(trim);
-    rade_native_tx_set_agc(agc);
-    rade_native_set_callsign(call);
-    rade_native_configure(0, inv);
-    rade_native_state_start();
-  }
+  rade_native_restore_state();
 #endif
   //
   // For consistency, all variables should get default values HERE,
@@ -3375,11 +3358,7 @@ void radio_save_state(void) {
     tx_save_state(transmitter);
   }
 #ifdef RADE_NATIVE
-  SetPropS0("rade_native.callsign", rade_native_get_callsign());
-  SetPropI0("rade_native.invert", rade_native_user_invert());
-  SetPropF0("rade_native.mic_trim_db", rade_native_tx_get_trim_db());
-  SetPropI0("rade_native.mic_agc", rade_native_tx_get_agc());
-  SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db() < -6.0 ? -6.0 : rade_native_tx_get_drive_db());   // lower values are the test harness's, not kept
+  rade_native_save_state();
 #endif
   //
   // Obtain window position and save in props file

@@ -35,7 +35,6 @@
 static rade_test_exec_fn exec_fn;
 static char sock_path[256];
 
-const char *rade_test_socket_path(void) { return sock_path; }
 
 static double now_unix(void) {
   struct timespec ts;

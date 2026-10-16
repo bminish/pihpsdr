@@ -88,4 +88,11 @@ void        rade_log_context(const rade_log_ctx_t *c);
 // Events: GTK main thread only. "kind value" (see above); the value may contain spaces.
 void        rade_log_event(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+//
+// Makes dir ignore its own contents for git (a .gitignore of "*" inside it), if it has none. The run logs and captures are
+// written to the current directory, which is the source tree when piHPSDR is started from it, and must not be committed;
+// doing it from here keeps the repository's own .gitignore free of them.
+//
+void rade_ignore_dir(const char *dir);
+
 #endif
