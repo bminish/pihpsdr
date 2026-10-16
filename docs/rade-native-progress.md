@@ -16,6 +16,12 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (first automated air run, 28645 kHz, 18 runs V1/V2 -30..+6 dB): written up in
+  `docs/rade-native-air-run-20261016.md`. ALC ceiling at the P2 output is -0.97 dBFS and is reached at the
+  0 dB level; +3 dB buys 0.8 dB (V1) of power, +6 dB nothing, with no measurable decode cost;
+  sync holds to -24 dB, EOO/call need about SNR 7 dB (V1) / 5 dB (V2); V2's SNR estimate tops out near
+  18 dB. Harness bug found and fixed (capture started twice: harmless message). Air delay not measured.
+
 - 2026-10-16 (what counts as a RADE transmission): state.json `tx` and `tx_count`, which
   drive the Reporter's `tx_report`, now follow `rade_is_tx()`: keyed, a RADE waveform on,
   the RADE transmit engine in use, and not TUNE or two-tone. Before, any keying in RADE
