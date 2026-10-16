@@ -16,6 +16,12 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (GPS Kiwi): `docs/rade-native-gps-timing.md`. IQ recordings are now `--kiwi-wav` (GNSS time per block) when the Kiwi has a GPS solution;
+  `kiwi_gps_wav.py` reads them (sample rate fitted from the stamps: 11998.937 Hz), `kiwi_rx` puts the 8 kHz stream on GPS time and reports the decoder's
+  times in UTC and the clipping of the start / end of the speech; engine event times and `_txblocks.csv` in the build; `air_timing.py` for RF onset / end, WDSP
+  output, latencies. Validated on receive-only signals: Kiwi frequency +-0.03 ppm (WWV 10 and 15 MHz), time axis late by +2.2 ms (MSF 60 kHz), detector and
+  clock mapping on synthetic recordings (`test_timing.py`). **No real over recorded with GPS yet; the engine changes are compiled, not run on the radio.**
+
 - 2026-10-16 (filter lab): `test/rade_native/filter_lab.py` + `wdsp_probe --nc/--mp/--win/--nbpwin/--nbp`, results in
   `docs/rade-native-filter-lab.md`. V2 TX filter: edge carriers lose 1.7 dB at the default 2048/7-term/96 kHz, but no length,
   window or edge setting moves the decode by more than 0.05 dB; minimum phase costs about 1 dB (its group-delay spread, 3-5 ms TX and

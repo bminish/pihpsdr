@@ -62,6 +62,12 @@ white noise only (no fading), the noise is assumed flat across the 1.6 kHz band,
 `band_snr_db` (in `results.csv`) is the SNR from the band power on and off in the fixed-gain recording: independent of
 librade's estimate, which tops out near 32 dB (V1) and 18 dB (V2).
 
+## GPS-stamped Kiwi and timing
+
+With a GPS solution on the Kiwi (`--gps auto`) the IQ recordings carry GNSS time and `air_test.py` adds the timing columns (RF onset and end on the UTC
+axis, WDSP output times, the delays between them and the engine's events, clipping of the start and the end of the speech, the transmit frequency error).
+Method, validation, and the meaning of every column: `rade-native-gps-timing.md`.
+
 ## What a row holds
 
 | Column(s) | Meaning |
