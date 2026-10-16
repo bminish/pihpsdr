@@ -3131,6 +3131,9 @@ static void radio_restore_state(void) {
     int agc = 1;
     GetPropF0("rade_native.mic_trim_db", trim);
     GetPropI0("rade_native.mic_agc", agc);
+    double drive = 0.0;
+    GetPropF0("rade_native.drive_db", drive);
+    rade_native_tx_set_drive_db(drive);
     rade_native_tx_set_trim_db(trim);
     rade_native_tx_set_agc(agc);
     rade_native_set_callsign(call);
@@ -3376,6 +3379,7 @@ void radio_save_state(void) {
   SetPropI0("rade_native.invert", rade_native_user_invert());
   SetPropF0("rade_native.mic_trim_db", rade_native_tx_get_trim_db());
   SetPropI0("rade_native.mic_agc", rade_native_tx_get_agc());
+  SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db());
 #endif
   //
   // Obtain window position and save in props file

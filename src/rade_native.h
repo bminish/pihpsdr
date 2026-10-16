@@ -175,6 +175,12 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting);
 
 void rade_native_tx_set_trim_db(double db);       // -20 .. +20
 double rade_native_tx_get_trim_db(void);
+//
+// Level into the WDSP TX chain, in dB around the defined one (which is 0: the level at which the
+// ALC peaks just below its ceiling). -6 .. +6; above 0 the ALC starts to compress.
+//
+void rade_native_tx_set_drive_db(double db);
+double rade_native_tx_get_drive_db(void);
 void rade_native_tx_set_agc(int on);              // slow leveller towards the target
 int  rade_native_tx_get_agc(void);
 

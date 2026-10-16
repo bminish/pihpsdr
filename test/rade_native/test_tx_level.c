@@ -4,7 +4,10 @@
  * in I) through rade_native_tx_block() with the radio NOT keyed (the level is
  * measured before keying) and prints the meter once a second.
  *
- *   test_tx_level [--trim DB] [--agc 0|1] [--repeat N] in.f32
+ *   test_tx_level [--trim DB] [--agc 0|1] [--repeat N] [--keyed] [--rekey] in.f32
+ *
+ * --keyed transmits (the leveller only works while transmitting); --rekey adds an unkeyed block and a keyed
+ * block at the end and prints the leveller gain after them: the key-down must have forgotten the over.
  */
 #include <math.h>
 #include <stdio.h>
@@ -14,11 +17,13 @@
 
 int main(int argc, char **argv) {
   double trim = 0.0;
-  int agc = 0, rep = 1, i = 1;
+  int agc = 0, rep = 1, i = 1, keyed = 0, rekey = 0;
   for (; i < argc && argv[i][0] == '-'; i++) {
     if (!strcmp(argv[i], "--trim")) trim = atof(argv[++i]);
     else if (!strcmp(argv[i], "--agc")) agc = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--repeat")) rep = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--keyed")) keyed = 1;
+    else if (!strcmp(argv[i], "--rekey")) { keyed = 1; rekey = 1; }
   }
   if (argc - i != 1) { fprintf(stderr, "usage: test_tx_level [opts] in.f32\n"); return 1; }
   FILE *fi = fopen(argv[i], "rb");
@@ -38,7 +43,7 @@ int main(int argc, char **argv) {
       for (int k = 0; k < 2048; k++) buf[k] = in[2 * p + k];
       // the engine zeroes the block when not transmitting, so look at it through a keyed block's input:
       // tx_block processes the mic first either way, and the processed mic is what the meter saw.
-      rade_native_tx_block(buf, 1024, 0, 0);
+      rade_native_tx_block(buf, 1024, 0, keyed);
       if (done % 48000 == 47104) {
         rade_native_txlevel_t l;
         rade_native_tx_level(&l);
@@ -46,6 +51,18 @@ int main(int argc, char **argv) {
                done / 48000 + 1, l.valid, l.loud_avg, l.momentary, l.delta_db, l.peak_dbfs, l.limiting, l.agc_gain_db);
       }
     }
+  }
+  if (rekey) {
+    double buf[2048];
+    rade_native_txlevel_t l;
+    for (int k = 0; k < 2048; k++) buf[k] = in[k];
+    rade_native_tx_block(buf, 1024, 0, 0);
+    rade_native_tx_level(&l);
+    printf("unkeyed: agc %+5.1f dB\n", l.agc_gain_db);
+    for (int k = 0; k < 2048; k++) buf[k] = in[k];
+    rade_native_tx_block(buf, 1024, 0, 1);
+    rade_native_tx_level(&l);
+    printf("rekeyed: agc %+5.1f dB valid %d\n", l.agc_gain_db, l.valid);
   }
   (void)peak_out;
   rade_native_tx_enable(0);

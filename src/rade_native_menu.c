@@ -45,6 +45,7 @@
 #include "receiver.h"
 #include "mode.h"
 #include "version.h"
+#include "rade_native_log.h"
 #include "vfo.h"
 
 static GtkWidget *dialog = NULL;
@@ -68,6 +69,7 @@ static int want_tx = 1;                 // RADE transmit follows the waveform un
 static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
+static GtkWidget *drive_scale = NULL, *log_b = NULL, *log_label = NULL;
 static GtkWidget *capture_label = NULL;
 static guint timer_id = 0;
 static guint event_timer_id = 0;
@@ -269,6 +271,8 @@ static void state_exit(void) {
 
 static void band_default_changed(void);
 
+static char ev_last[120];               // last state written to the parameter log
+
 static int state_cb(gpointer arg) {
   static char last[200];
   static gint64 last_t = 0;
@@ -295,6 +299,15 @@ static int state_cb(gpointer arg) {
   prev_tx = tx_now;
   snprintf(now, sizeof now, "%d %lld %d %s %d %d", rade_native_waveform(), rade_dial(),
            tx_now, rade_native_get_callsign(), heard_seq, tx_count);
+  if (rade_log_active()) {
+    char ev[120];
+    snprintf(ev, sizeof ev, "wave=%d dial=%lld mode=%s invert=%d tx=%d", rade_native_waveform(), rade_dial(),
+             mode_string[vfo[0].mode], rade_native_get_invert(), tx_now);
+    if (strcmp(ev, ev_last) != 0) {
+      rade_log_event("%s", ev);
+      strcpy(ev_last, ev);
+    }
+  }
   gint64 t = g_get_monotonic_time();
   if (strcmp(now, last) != 0 || t - last_t >= 2000000) {
     state_write(1);
@@ -377,6 +390,42 @@ static void reporter_cb(GtkWidget *widget, gpointer data) {
 static void trim_cb(GtkWidget *widget, gpointer data) {
   if (updating) { return; }
   rade_native_tx_set_trim_db(gtk_range_get_value(GTK_RANGE(widget)));
+}
+
+static void drive_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  double db = gtk_range_get_value(GTK_RANGE(widget));
+  rade_native_tx_set_drive_db(db);
+  rade_log_event("drive %.1f dB", db);
+}
+
+//
+// ---- parameter log ----
+//
+static void log_cb(GtkWidget *widget, gpointer data) {
+  if (updating) { return; }
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+    int w = rade_native_waveform();
+    char meta[512];
+    snprintf(meta, sizeof meta,
+             "program: piHPSDR %s\nwaveform: %s\ndial_hz: %lld\nmode: %s\ninvert: %d\ntrim_db: %.1f\nagc: %d\n"
+             "drive_db: %.1f\nrade_tx: %d",
+             build_version, w == RADE_NATIVE_V1 ? "V1" : w == RADE_NATIVE_V2 ? "V2" : "off", rade_dial(),
+             mode_string[vfo[0].mode], rade_native_get_invert(), rade_native_tx_get_trim_db(),
+             rade_native_tx_get_agc(), rade_native_tx_get_drive_db(), rade_native_tx_enabled());
+    ev_last[0] = 0;                         // so the state at the start is the first event
+    if (rade_log_start(meta) != 0) {
+      updating = 1;
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+      updating = 0;
+      gtk_label_set_text(GTK_LABEL(log_label), "could not open the log file");
+      return;
+    }
+    gtk_label_set_text(GTK_LABEL(log_label), rade_log_path());
+  } else {
+    rade_log_stop();
+    gtk_label_set_text(GTK_LABEL(log_label), "not logging");
+  }
 }
 
 static void agc_cb(GtkWidget *widget, gpointer data) {
@@ -575,6 +624,7 @@ static void cleanup(void) {
   tx_b = mox_b = tx_label = inv_b = capture_b = capture_label = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   mic_scale = mic_agc_b = mic_bar = mic_text = note_label = NULL;
+  drive_scale = log_b = log_label = NULL;
   if (dialog != NULL) {
     //
     // This window is deliberately not "sub_menu": the main menu and the
@@ -876,8 +926,9 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), mic_scale, 1, 5, 3, 1);
   mic_agc_b = gtk_check_button_new_with_label("AGC");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), rade_native_tx_get_agc());
-  gtk_widget_set_tooltip_text(mic_agc_b, "Slowly moves the level to the ideal (about 1 dB a second, faster for a shout). "
-                                         "It holds when you stop talking.");
+  gtk_widget_set_tooltip_text(mic_agc_b, "Works only while you transmit, and starts each over at 0 dB with nothing kept from the last. "
+                                         "Moves the level slowly to the ideal (0.2 to 0.5 dB a second; 2 dB a second down for a shout), "
+                                         "adds at most 20 dB, may take off up to 30. It holds when you stop talking.");
   g_signal_connect(mic_agc_b, "toggled", G_CALLBACK(agc_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), mic_agc_b, 4, 5, 1, 1);
   mic_bar = gtk_level_bar_new_for_interval(0.0, 1.0);
@@ -941,6 +992,32 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_label_set_selectable(GTK_LABEL(note_label), TRUE);
   gtk_widget_set_halign(note_label, GTK_ALIGN_START);
   gtk_grid_attach(GTK_GRID(grid), note_label, 0, 12, 6, 1);
+  gtk_grid_insert_row(GTK_GRID(grid), 8);
+  gtk_grid_insert_row(GTK_GRID(grid), 8);
+  GtkWidget *drive_l = gtk_label_new("Drive");
+  gtk_widget_set_halign(drive_l, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), drive_l, 0, 8, 1, 1);
+  drive_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -6.0, 6.0, 0.1);
+  gtk_scale_set_value_pos(GTK_SCALE(drive_scale), GTK_POS_RIGHT);
+  gtk_scale_add_mark(GTK_SCALE(drive_scale), 0.0, GTK_POS_BOTTOM, NULL);
+  gtk_range_set_value(GTK_RANGE(drive_scale), rade_native_tx_get_drive_db());
+  gtk_widget_set_hexpand(drive_scale, TRUE);
+  gtk_widget_set_tooltip_text(drive_scale, "Level into the transmit chain, dB around the defined one (0: the modem peaks "
+                                           "just below the ALC ceiling). Above 0 the ALC starts to compress the peaks.");
+  g_signal_connect(drive_scale, "value-changed", G_CALLBACK(drive_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), drive_scale, 1, 8, 4, 1);
+  log_b = gtk_toggle_button_new_with_label("Log");
+  gtk_widget_set_tooltip_text(log_b, "Writes the decode parameters (sync, SNR, offset, librade statistics) and the "
+                                     "transmit parameters (loudness, peak, leveller gain, drive, buffers) to a new "
+                                     "file in rade-logs/ each time it is switched on. Written by a background thread; "
+                                     "the audio never waits for it.");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
+  g_signal_connect(log_b, "toggled", G_CALLBACK(log_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), log_b, 0, 9, 1, 1);
+  log_label = gtk_label_new(rade_log_active() ? rade_log_path() : "not logging");
+  gtk_widget_set_halign(log_label, GTK_ALIGN_START);
+  gtk_label_set_selectable(GTK_LABEL(log_label), TRUE);
+  gtk_grid_attach(GTK_GRID(grid), log_label, 1, 9, 4, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();
