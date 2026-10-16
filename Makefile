@@ -175,6 +175,7 @@ USBOZY_OPTIONS=-D USBOZY
 USBOZY_INCLUDE=`$(PKG_CONFIG) --cflags libusb-1.0`
 USBOZY_LIBS=`$(PKG_CONFIG) --libs libusb-1.0`
 USBOZY_OBJS= \
+$(RADE_NATIVE_OBJS) \
 src/ozyio.o
 endif
 CPP_DEFINES += -DUSBOZY
@@ -436,6 +437,8 @@ LIBS=	$(LDFLAGS) $(AUDIO_LIBS) $(USBOZY_LIBS) $(GTK_LIBS) $(GPIO_LIBS) \
 	$(SOAPYSDR_LIBS) $(STEMLAB_LIBS) $(MIDI_LIBS) $(TTS_LIBS) $(OPUS_LIBS) \
 	$(ZLIB_LIBS) $(DXCLUSTER_LIBS) $(CURL_LIBS) $(PNP_LIBS) $(TCI_LIBS) \
 	$(OPENSSL_LIBS) $(RADE_NATIVE_LIBS) $(WDSP_LIBS) -lm $(SYS_LIBS)
+
+include rade_native.mk
 
 ##############################################################################
 #
@@ -703,8 +706,6 @@ DIVCAP_SWITCH := $(shell test -f src/.divcap-on && \
     rm -f src/.divcap-on src/diversity_auto.o src/diversity_menu.o \
           src/diversity_capture.o)
 endif
-
-include rade_native.mk
 
 ##############################################################################
 #
