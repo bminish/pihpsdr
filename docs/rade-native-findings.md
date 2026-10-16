@@ -21,7 +21,7 @@ measured, on the air or offline, on the dates given; everything marked *not meas
 
 - The dial is the suppressed carrier of the sideband in use; the energy centre is `dial + 1500 Hz` (upper) or `dial - 1500`
   (lower) and **does not move** when the waveform, Invert or RADE changes: the dial moves instead, by 3 kHz when the sideband
-  changes (`rade_native_plan()`, `test_geometry`, `modes_table`). V1 is lower sideband below 10 MHz, V2 upper. Switching RADE off
+  changes (`rade_native_plan()`, `test_geometry`, `modes_table`). V1 is lower sideband below 10 MHz, V2 upper; **on 60 m (5250-5450 kHz) USB is the convention, so both V1 and V2 default to upper sideband and Invert there means below the carrier, for both** (`RADE_NATIVE_60M_*`, `rade_native_band_class()`). Switching RADE off
   hands back to USB or LSB on the same carrier. The Reporter is told the dial. (`rade-native-filtering.md`)
 - V1's carriers are centred on 1475 Hz, V2's on 1500 Hz; WDSP's convention is the conjugate of librade's, handled at the two interfaces.
 
