@@ -33,7 +33,7 @@
 // clients; a client that goes away during a play releases the transmitter.
 //
 //   status                                         what piHPSDR is doing
-//   set wave=0|1|2 dial=HZ invert=0|1 drive_db=-30..6 trim_db=-20..20 agc=0|1 tx=0|1
+//   set wave=0|1|2 dial=HZ invert=0|1 drive_db=-60..6 trim_db=-20..20 agc=0|1 tx=0|1
 //   capture on|off                                  the Capture button (reply: stem=)
 //   log on|off                                      the Log button (reply: file=)
 //   play file=/path.wav [gain_db=0] [max_s=90]      key, send the file as the mic, unkey, report times
