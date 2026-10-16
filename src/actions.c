@@ -190,6 +190,7 @@ ACTION_TABLE ActionTable[] = {
   {PREAMP,              "Preamp\nOn/Off",       "PRE",          AT_BTN},
   {PS,                  "PS On/Off",            "PST",          AT_BTN},
   {MENU_PS,             "PS Menu",              "PS",           AT_BTN},
+  {MENU_RADE,           "RADE\nMenu",           "RADE",         AT_BTN},
   {PTT,                 "PTT",                  "PTT",          AT_BTN},
   {MENU_RADIO,          "Radio\nMenu",          "RADIO",        AT_BTN},
   {RCL0,                "Rcl 0",                "RCL0",         AT_BTN},
@@ -1028,6 +1029,13 @@ int process_action(gpointer data) {
     if (a->mode == PRESSED) {
       start_ps_menu();
     }
+    break;
+  case MENU_RADE:
+#ifdef RADE_NATIVE
+    if (a->mode == PRESSED) {
+      start_rade_menu();
+    }
+#endif
     break;
   case MENU_RADIO:
     if (a->mode == PRESSED) {

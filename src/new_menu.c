@@ -432,9 +432,13 @@ static gboolean diversity_cb (GtkWidget *widget, GdkEventButton *event, gpointer
 
 #ifdef RADE_NATIVE
 // cppcheck-suppress constParameterCallback
-static gboolean rade_cb (GtkWidget *widget, GdkEventButton *event, gpointer data) {
+void start_rade_menu(void) {
   cleanup();
   rade_native_menu(top_window);
+}
+
+static gboolean rade_cb (GtkWidget *widget, GdkEventButton *event, gpointer data) {
+  start_rade_menu();
   return TRUE;
 }
 #endif
