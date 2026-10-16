@@ -843,7 +843,7 @@ static int lv_gated(double *avg, double *mom) {
 
 #define LV_MAX_DB   20.0                 // the leveller adds at most this ...
 #define LV_MIN_DB  (-30.0)               // ... and takes off up to this
-#define LV_FLOOR_LUFS (-50.0)            // speech is measured only above this, before the leveller's gain
+#define LV_FLOOR_LUFS (-35.0)            // speech is measured only above this, before the leveller's gain
 
 // one row of the parameter log per 100 ms block; the gated average once a second
 static void lv_log_row(void) {
