@@ -25,9 +25,11 @@
 void rade_native_menu(GtkWidget *parent);
 
 //
-// Starts publishing piHPSDR's RADE state for the separate RADE Reporter
-// program (see rade_native_menu.c). Call once the settings are restored.
+// radio_restore_state() / radio_save_state(): the RADE settings in the properties file (callsign, Invert, mic trim and
+// leveller, drive), and the start of the state file the separate RADE Reporter reads (see rade_native_menu.c). Restore
+// is called once the properties are loaded, with RADE off.
 //
-void rade_native_state_start(void);
+void rade_native_restore_state(void);
+void rade_native_save_state(void);
 
 #endif

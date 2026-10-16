@@ -44,7 +44,6 @@ enum {
 int rade_native_band_class(long long dial_hz);      // 0: below 10 MHz (not 60 m), 1: 60 m, 2: 10 MHz and above
 
 double rade_native_centre(int waveform);
-double rade_native_width(int waveform);
 
 //
 // Whether the modem is inverted (below the dial frequency) by default on
