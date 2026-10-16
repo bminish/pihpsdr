@@ -8,7 +8,7 @@ frequency (a complex, single-sideband output is all on one side; a real,
 I-copied-to-Q output is split 50/50).
 
 Tones are numpy I + jQ = exp(+j w t). Result recorded in
-docs/rade-native-progress.md: WDSP treats a POSITIVE filter as the signal
+docs/archive/rade/progress.md: WDSP treats a POSITIVE filter as the signal
 at NEGATIVE numpy frequency, so librade's positive-frequency convention
 needs a conjugation at both WDSP interfaces.
 """
