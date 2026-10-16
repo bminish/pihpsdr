@@ -110,6 +110,17 @@ def main():
     check(calls == ["W1AW/P"], "receive engine, another callsign: %s" % calls)
     calls, out = rx_engine(y3, None, "v2rx3")
     check(calls == [], "receive engine, no callsign sent: nothing reported (%s)" % calls)
+    # lock losses: a drop-out inside one over is the same reception (the call is reported once); another sender after a gap is
+    # not carried into (its call is reported, and a repeat of the same call from a different transmission is reported again)
+    n = len(y)
+    d = y.copy(); d[int(n * 0.4): int(n * 0.4) + 3 * 48000] = 0
+    calls, out = rx_engine(d, None, "v2rx_drop")
+    check(calls == [a.call], "a 3 s drop-out inside the over: the call is reported once: %s" % calls)
+    gapz = np.zeros(int(1.0 * 48000), dtype=y.dtype)
+    calls, out = rx_engine(np.concatenate([y2, gapz, y]), None, "v2rx_two")
+    check(calls == ["W1AW/P", a.call], "two senders one after the other: both reported, in order: %s" % calls)
+    calls, out = rx_engine(np.concatenate([y, np.zeros(int(1.0 * 48000) + 137, dtype=y.dtype), y]), None, "v2rx_again")
+    check(calls == [a.call, a.call], "the same call in a second transmission (other timing): reported again: %s" % calls)
     print("FAILED %d" % len(fails) if fails else "all passed")
     return 1 if fails else 0
 

@@ -269,6 +269,9 @@ static int rx_try(const float *window, rade_v2_text_fields_t *out) {
 }
 
 void rade_v2_text_rx_reset(rade_v2_text_rx_t *rx) {
+  rx->resets++;
+  rx->pend_n = 0;
+  rx->holding = 0;
   memset(rx->circ, 0, sizeof rx->circ);
   rx->wr = rx->filled = 0;
   rx->sweep_next = NBITS; rx->sweep_n = 0;
@@ -283,6 +286,7 @@ void rade_v2_text_rx_reset(rade_v2_text_rx_t *rx) {
 void rade_v2_text_rx_init(rade_v2_text_rx_t *rx) {
   memset(rx, 0, sizeof *rx);
   rade_v2_text_rx_reset(rx);
+  rx->resets = 0;
 }
 
 static int rx_ingest(rade_v2_text_rx_t *rx, const rade_v2_text_fields_t *f, char *msg) {
@@ -310,6 +314,16 @@ done:
   msg[n] = 0;
   rx->asm_delivered = 1;
   return 1;
+}
+
+static void rade_v2_text_rx_skip(rade_v2_text_rx_t *rx, int n) {
+  if (rx->filled < NBITS) { rade_v2_text_rx_reset(rx); return; }   // nothing worth keeping yet
+  for (int i = 0; i < n; i++) {
+    rx->circ[rx->wr] = 0.0f;                                         // erased: the window cannot decode until it is refilled
+    rx->wr = (rx->wr + 1) % NBITS;
+    for (int b = 0; b < RADE_V2_TEXT_BLOCKS; b++) { rx->acc_idx[b] = (rx->acc_idx[b] + 1) % ((b + 1) * NBITS); }
+  }
+  if (rx->total <= INT_MAX - n) { rx->total += n; }
 }
 
 int rade_v2_text_rx_symbol(rade_v2_text_rx_t *rx, float sym, char *msg) {
@@ -356,4 +370,70 @@ int rade_v2_text_rx_symbol(rade_v2_text_rx_t *rx, float sym, char *msg) {
     ok = rx_try(comb, &f);
   }
   return ok ? rx_ingest(rx, &f, msg) : 0;
+}
+
+// Correlation of the held symbols with accumulator b (cycle of b+1 blocks) at the predicted position, for an offset d (frames).
+static float join_corr(const rade_v2_text_rx_t *rx, int n, int gap, int b, int d, int *used) {
+  const int period = (b + 1) * NBITS;
+  const float *acc = rx->acc[b];
+  int pos = ((rx->acc_idx[b] + gap + d) % period + period) % period;
+  double sa = 0, ss = 0, sx = 0;
+  int u = 0;
+  for (int i = 0; i < n; i++) {
+    float a = acc[(pos + i) % period];
+    if (a == 0.0f) { continue; }                      // a position nothing was heard at
+    sa += (double)a * a; ss += (double)rx->pend[i] * rx->pend[i]; sx += (double)a * rx->pend[i];
+    u++;
+  }
+  *used = u;
+  return (sa > 0 && ss > 0) ? (float)(sx / sqrt(sa * ss)) : 0.0f;
+}
+
+#define JOIN_MIN_USED 32
+#define JOIN_Z 3.8f                                    // random symbols give a correlation of about 1/sqrt(used)
+
+static int feed_replay(rade_v2_text_rx_t *rx, char *msg) {
+  int got = 0;
+  char m[RADE_V2_TEXT_MAXCHARS + 1];
+  int n = rx->pend_n;
+  rx->pend_n = 0;
+  for (int i = 0; i < n; i++) {
+    if (rade_v2_text_rx_symbol(rx, rx->pend[i], m) && !got) { got = 1; strcpy(msg, m); }
+  }
+  return got;
+}
+
+int rade_v2_text_rx_feed(rade_v2_text_rx_t *rx, float sym, int gap, char *msg) {
+  if (gap > 0) {
+    if (rx->holding || rx->filled < NBITS || gap > RADE_V2_TEXT_MAXGAP) {
+      rade_v2_text_rx_reset(rx);                       // a loss while still undecided, nothing to carry, or too long a gap
+    } else {
+      rx->holding = 1;                                 // hold the next symbols until they can be checked
+      rx->pend_n = 0;
+      rx->pend_gap = gap;
+    }
+  }
+  if (!rx->holding) { return rade_v2_text_rx_symbol(rx, sym, msg); }
+  rx->pend[rx->pend_n++] = sym;
+  if (rx->pend_n < RADE_V2_TEXT_JOIN) { return 0; }
+  int best_d = 0, used = 0, bu = 0;
+  float best = -2.0f;
+  for (int b = 0; b < RADE_V2_TEXT_BLOCKS; b++) {      // the cycle length is not known until a call has been decoded
+    for (int d = -1; d <= 1; d++) {
+      float c = join_corr(rx, rx->pend_n, rx->pend_gap, b, d, &used);
+      if (used >= JOIN_MIN_USED && c * sqrtf((float)used) > best) { best = c * sqrtf((float)used); best_d = d; bu = used; }
+    }
+  }
+  if (bu >= JOIN_MIN_USED && best >= JOIN_Z) {
+    rade_v2_text_rx_skip(rx, rx->pend_gap + best_d);
+  } else {
+    int n = rx->pend_n;                                // another sender, or too little collected to tell: start afresh
+    float keep[RADE_V2_TEXT_JOIN];
+    memcpy(keep, rx->pend, sizeof(float) * n);
+    rade_v2_text_rx_reset(rx);
+    memcpy(rx->pend, keep, sizeof(float) * n);
+    rx->pend_n = n;
+  }
+  rx->holding = 0;
+  return feed_replay(rx, msg);
 }

@@ -233,6 +233,63 @@ static void part_d() {
     check(nd_ok, "900 s of pure noise: same (no) deliveries as freedv-gui's"); rade_text_destroy(th); }
 }
 
+
+// E  lock is the gate. While lock lasts the repetitions are combined; after a loss of lock the first symbols of the new lock are
+//    checked against what was collected, at the position the elapsed time predicts: the same sender's cycle correlates (drop-out:
+//    the call is pieced together over the whole transmission), another sender's does not (everything is thrown away, no mixing)
+static void part_e() {
+  printf("E  lock losses: drop-outs bridged, another sender not mixed in\n");
+  for (double sigma : {0.0, 1.0, 1.15}) {
+    int trials = 20, ok_same = 0, ok_gate = 0, ok_other = 0, no_mix = 0, ok_ref = 0, bridged_resets = 0;
+    for (int k = 0; k < trials; k++) {
+      std::mt19937 rng(900 + k); std::normal_distribution<float> nd(0.0f, 1.0f);
+      // the same sender, locked for 150 symbols (6 s), lost for 30-70 frames, five times over; no run is long enough for
+      // the call alone at this noise
+      rade_v2_text_t t; rade_v2_text_init(&t, "EI6IZ");
+      rade_v2_text_rx_t a, ref; rade_v2_text_rx_init(&a); rade_v2_text_rx_init(&ref);
+      std::string ra, rr; int gap = 0;
+      for (int burst = 0; burst < 5; burst++) {
+        for (int i = 0; i < 150; i++) {
+          char m[40];
+          float sym = rade_v2_text_next(&t) + (float)sigma * nd(rng);
+          if (rade_v2_text_rx_feed(&a, sym, i == 0 ? gap : 0, m) && ra.empty()) { ra = m; }
+          if (i == 0 && burst) { rade_v2_text_rx_reset(&ref); }          // freedv-gui: everything is lost with the sync
+          if (rade_v2_text_rx_symbol(&ref, sym, m) && rr.empty()) { rr = m; }
+        }
+        gap = 30 + (int)(rng() % 41);
+        for (int i = 0; i < gap; i++) { rade_v2_text_next(&t); }
+      }
+      ok_same += ra == "EI6IZ"; ok_ref += rr == "EI6IZ"; bridged_resets += a.resets;
+      // another sender (other call, other position in its cycle) after the gap: nothing of the first may carry over
+      rade_v2_text_t t1, t2; rade_v2_text_init(&t1, "EI6IZ"); rade_v2_text_init(&t2, "W1AW/P");
+      rade_v2_text_rx_t b; rade_v2_text_rx_init(&b);
+      std::string got1, got2; int mixed = 0;
+      for (int i = 0; i < 112 * 6; i++) {
+        char m[40]; float sym = rade_v2_text_next(&t1) + (float)sigma * nd(rng);
+        if (rade_v2_text_rx_feed(&b, sym, 0, m) && got1.empty()) { got1 = m; }
+      }
+      int skip = 20 + (int)(rng() % 400);
+      for (int i = 0; i < skip; i++) { rade_v2_text_next(&t2); }
+      int r0 = b.resets;
+      for (int i = 0; i < 112 * 12; i++) {
+        char m[40]; float sym = rade_v2_text_next(&t2) + (float)sigma * nd(rng);
+        if (rade_v2_text_rx_feed(&b, sym, i == 0 ? 40 : 0, m)) {
+          if (got2.empty()) { got2 = m; }
+          if (std::string(m) != "W1AW/P" && std::string(m) != "EI6IZ") { mixed = 1; }
+        }
+      }
+      ok_other += (b.resets == r0 + 1) && got2 == "W1AW/P";
+      no_mix += !mixed;
+      ok_gate += got1 == "EI6IZ";
+    }
+    char buf[200];
+    snprintf(buf, sizeof buf, "sigma %.1f: dropouts bridged, call built %d/%d (reset at each loss, as freedv-gui: %d/%d; carried-over resets %d); other sender detected and its call decoded %d/%d, never a mixture %d/%d",
+             sigma, ok_same, trials, ok_ref, trials, bridged_resets, ok_other, trials, no_mix, trials);
+    bool strict = sigma <= 1.0;          // beyond that the signal is at the edge of what any receiver decodes: no worse than freedv-gui's, nothing mixed
+    check((strict ? ok_same >= trials - 1 && bridged_resets == 0 : ok_same >= ok_ref) && ok_other >= trials - 2 && no_mix == trials && ok_gate >= trials - 2, buf);
+  }
+}
+
 static int decode_file(const char *path, const char *want) {
   FILE *f = fopen(path, "rb");
   if (!f) { perror(path); return 2; }
@@ -265,7 +322,7 @@ static int decode_file(const char *path, const char *want) {
 int main(int argc, char **argv) {
   ulog_set_quiet(true);                    // the receiver logs every block it decodes
   if (argc == 4 && !strcmp(argv[1], "--iq")) { return decode_file(argv[2], argv[3]); }
-  part_a(); part_b(); part_c(); part_d();
+  part_a(); part_b(); part_c(); part_d(); part_e();
   printf(fails ? "FAILED %d\n" : "all passed\n", fails);
   return fails ? 1 : 0;
 }
