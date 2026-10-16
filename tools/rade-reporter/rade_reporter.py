@@ -12,9 +12,14 @@ transmitting. It does not send receive reports.
   * piHPSDR tells it the mode, frequency, transmit state and callsign through
     ~/.local/state/pihpsdr-rade/state.json (rewritten every second or so).
     RADE off, or piHPSDR gone, ends the report at once.
-  * RADEV1 is reported to qso.freedv.org. RADEV2 goes to the "v3" reporter,
-    whose address is set in Settings; until it is, nothing is sent for V2.
+  * RADEV1 is reported to qso.freedv.org, RADEV2 to reporter-radev2.k6aq.net
+    (Settings can change either). Only the reporter for the mode piHPSDR has
+    selected is ever sent anything.
+  * What the list shows is separate: "Show" V1, V2 or both. The reporters shown
+    are watched (view role); if you are present, the one for your mode is joined
+    as a reporter whether or not it is shown.
 """
+import functools
 import fcntl
 import os
 import signal
@@ -61,11 +66,15 @@ class App(Gtk.Window):
         super().__init__(title="RADE Reporter")
         self._show = show                 # tests build the window without putting it on the screen
         self.cfg = core.load_config()
-        self.roster = core.Roster()
         self.dirty = True
-        self.state_text = "idle"
-        self.link = core.Link(self.roster, self._on_event, self._on_state, "pihpsdr-rade",
-                              )
+        # one connection to each reporter (V1, V2), each with its own roster; which are used is decided in _tick
+        self.rosters = {k: core.Roster() for k in self.cfg["servers"]}
+        self.states = {k: "idle" for k in self.cfg["servers"]}
+        self.links = {k: core.Link(self.rosters[k], functools.partial(self._on_event, k),
+                                   functools.partial(self._on_state, k), "pihpsdr-rade")
+                      for k in self.cfg["servers"]}
+        self.report_key = None
+        self.view_keys = []
         self.reporting = False            # never remembered
         # these are remembered: the message goes to every connection, the view stays as it was left
         self.message = self.cfg.get("message", "")
@@ -132,13 +141,13 @@ class App(Gtk.Window):
         self.idle.set_active(idles.index(self.cfg.get("idle", "off")) if self.cfg.get("idle", "off") in idles else 0)
         self.idle.connect("changed", self._on_view_filter)
         r2.pack_start(self.idle, False, False, 0)
-        r2.pack_start(Gtk.Label(label="Watching"), False, False, 12)
+        r2.pack_start(Gtk.Label(label="Show"), False, False, 12)
         self.view = Gtk.ComboBoxText()
-        for k in ("v1", "v3"):
-            self.view.append(k, core.DEFAULT_SERVERS[k]["label"])
-        self.view.set_active_id(self.cfg.get("view", "v1"))
-        self.view.set_tooltip_text("Which reporter to show when piHPSDR has no RADE mode selected. "
-                                   "With a mode selected, the matching reporter is shown.")
+        for k, label in (("v1", "RADE V1 only"), ("v2", "RADE V2 only"), ("all", "All (V1 and V2)")):
+            self.view.append(k, label)
+        self.view.set_active_id(self.cfg.get("view", "all"))
+        self.view.set_tooltip_text("Which reporter's stations the list shows. Reports are sent only to the reporter "
+                                   "for the RADE mode piHPSDR has selected, whatever is shown.")
         self.view.connect("changed", self._on_view_changed)
         r2.pack_start(self.view, False, False, 0)
         self.qsy_b = Gtk.Button(label="Request QSY")
@@ -222,14 +231,14 @@ class App(Gtk.Window):
         self._loading = False
 
     # ------------------------------------------------------------- callbacks
-    def _on_state(self, st, msg):
-        GLib.idle_add(self._set_state, st, msg)
+    def _on_state(self, key, st, msg):
+        GLib.idle_add(self._set_state, key, st, msg)
 
-    def _set_state(self, st, msg):
-        self.state_text = st + (": " + msg if msg else "")
+    def _set_state(self, key, st, msg):
+        self.states[key] = st + (": " + msg if msg else "")
         self.dirty = True
 
-    def _on_event(self, name, data):
+    def _on_event(self, key, name, data):
         if name == "qsy_request" and isinstance(data, dict):
             GLib.idle_add(self._qsy_request, data)
         self.dirty = True
@@ -255,7 +264,7 @@ class App(Gtk.Window):
         self._tick()
 
     def _on_view_changed(self, w):
-        self.cfg["view"] = w.get_active_id() or "v1"
+        self.cfg["view"] = w.get_active_id() or "all"
         core.save_config(self.cfg)
         self._tick()
 
@@ -292,7 +301,8 @@ class App(Gtk.Window):
         self._tick()
 
     def _on_web(self, *_):
-        k = self.current_key or self.cfg.get("view", "v1")
+        v = self.cfg.get("view", "all")
+        k = v if v in self.cfg["servers"] else (self.report_key or "v1")
         url = self.cfg["servers"][k].get("web") or ("https://%s/" % self.cfg["servers"][k]["host"]
                                                     if self.cfg["servers"][k]["host"] else "")
         if url:
@@ -306,8 +316,11 @@ class App(Gtk.Window):
         row = self._selected()
         if row is None or not self.pihpsdr or not self.pihpsdr.get("linked"):
             return
-        self.link.emit("qsy_request", {"dest_sid": row[C_SID], "message": "",
-                                       "frequency": int(self.pihpsdr.get("dial_hz", 0))})
+        key, _, sid = row[C_SID].partition(":")
+        if key != self.report_key:             # a QSY request is made as a reporter, on the reporter we are on
+            return
+        self.links[key].emit("qsy_request", {"dest_sid": sid, "message": "",
+                                             "frequency": int(self.pihpsdr.get("dial_hz", 0))})
 
     def _on_tree_click(self, tree, ev):
         if ev.button != 3:
@@ -342,7 +355,7 @@ class App(Gtk.Window):
         g = Gtk.Grid(column_spacing=8, row_spacing=8, margin=12)
         dlg.get_content_area().add(g)
         entries = {}
-        for r, k in enumerate(("v1", "v3")):
+        for r, k in enumerate(("v1", "v2")):
             s = self.cfg["servers"][k]
             g.attach(Gtk.Label(label=s["label"] + "  (" + s["mode"] + ")", xalign=1), 0, r, 1, 1)
             e = Gtk.Entry(width_chars=34)
@@ -351,15 +364,16 @@ class App(Gtk.Window):
             e.set_placeholder_text("host, host:port or https://host/  (empty: nothing is sent)")
             g.attach(e, 1, r, 1, 1)
             entries[k] = e
-        g.attach(Gtk.Label(label="RADEV1 is reported to qso.freedv.org. RADEV2 has its own (v3) reporter; "
-                                 "enter its address here.", xalign=0), 0, 2, 2, 1)
+        g.attach(Gtk.Label(label="RADEV1 is reported to qso.freedv.org, RADEV2 to reporter-radev2.k6aq.net "
+                                 "(what freedv-gui uses).", xalign=0), 0, 2, 2, 1)
         dlg.show_all()
         if dlg.run() == Gtk.ResponseType.OK:
             for k, e in entries.items():
                 host, port, secure = core.parse_server(e.get_text())
                 self.cfg["servers"][k].update(host=host, port=port, secure=secure)
             core.save_config(self.cfg)
-            self.link.close()               # reconnect to what is now wanted
+            for lk in self.links.values():
+                lk.close()                  # reconnect to what is now wanted
         dlg.destroy()
         self._tick()
 
@@ -367,7 +381,8 @@ class App(Gtk.Window):
         self.hide()                       # gone from the screen at once; the rest is tidying up
         self.cfg["size"] = list(self.get_size())
         core.save_config(self.cfg)
-        self.link.close()
+        for lk in self.links.values():
+            lk.close()
         Gtk.main_quit()
         return False
 
@@ -390,13 +405,21 @@ class App(Gtk.Window):
         if now - self._ident_since >= 1.5:
             self._stable = ident
         call, grid = getattr(self, "_stable", ("", ""))
-        srv, role, mode, freq, tx, why = core.decide(self.cfg, p, self.reporting, call, grid,
-                                                      self.cfg.get("view", "v1"))
-        self.current_key = next((k for k, s in self.cfg["servers"].items() if srv is s), None)
-        self.link.software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
-        self.link.set_target(srv, role, call, grid, freq, mode, tx, self.message)
+        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg.get("view", "all"))
+        self.report_key, self.view_keys = rkey, vkeys
+        software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
+        for k, lk in self.links.items():
+            lk.software = software
+            if k in targets:
+                srv, role, mode, freq, tx = targets[k]
+                lk.set_target(srv, role, call, grid, freq, mode, tx, self.message)
+            else:
+                lk.set_target(None, "view")
+        role = "report" if rkey else "view"
+        mode = targets[rkey][2] if rkey else ""
+        srv = self.cfg["servers"][rkey] if rkey else None
         self.why.set_text(why)
-        self._rx_note(p, srv, role, mode, call)
+        self._rx_note(p, rkey, role, mode, call)
         self.qsy_b.set_sensitive(role == "report")
         if self.dirty or now_t - self._last_fill >= 3.0:
             self.dirty = False
@@ -406,9 +429,13 @@ class App(Gtk.Window):
             {0: "off", 1: "V1", 2: "V2"}.get(int(p.get("waveform", 0)), "?"),
             "", p.get("dial_hz", 0) / 1e6, ", transmitting" if p.get("tx") else "")
             if p and p.get("linked") else "piHPSDR: not running")
-        where = "%s:%d" % (srv["host"], srv["port"]) if srv else "no server"
-        self.status.set_text("%s    |    %s  %s    |    %d stations" % (
-            link, where, self.state_text if srv else "", len(self.roster.snapshot())))
+        parts = []
+        for k in self.links:
+            if k in targets:
+                parts.append("%s %s%s" % (self.cfg["servers"][k]["label"], self.states[k],
+                                          " (reporting)" if k == rkey else ""))
+        self.status.set_text("%s    |    %s    |    %d stations" % (
+            link, "; ".join(parts) or "no server", len(self.store)))
         return True
 
     # ------------------------------------------------------------- receiving
@@ -416,7 +443,7 @@ class App(Gtk.Window):
     _tx_seen = None
     _heard_note = ""
 
-    def _rx_note(self, p, srv, role, mode, mycall):
+    def _rx_note(self, p, rkey, role, mode, mycall):
         """The live SNR, and the calls piHPSDR hears: shown, and reported while we are present."""
         if not p or not p.get("linked"):
             self.rxinfo.set_text("Receiving: piHPSDR is not running")
@@ -444,7 +471,7 @@ class App(Gtk.Window):
         for call, snr, seq in due:                      # every call decoded, in order
             self._heard_seq = max(self._heard_seq, seq)
             self.periodic.heard(call, time.time())
-            ok = self.link.report_rx(call, mode, snr)
+            ok = self.links[rkey].report_rx(call, mode, snr) if rkey else False
             self._heard_note = "last heard %s %s, SNR %.1f dB: %s" % (
                 time.strftime("%H:%M:%S"), call, snr, "reported as %s" % mode if ok else "not reported (not connected)")
         if not due and p.get("heard_call") and not self._heard_note:
@@ -455,7 +482,7 @@ class App(Gtk.Window):
             self._tx_seen = txc
         elif txc > self._tx_seen:
             if not p.get("tx"):
-                self.link.pulse_tx(mode)                # began and ended between two looks
+                self.links[rkey].pulse_tx(mode)         # began and ended between two looks
             self._tx_seen = txc                         # (if it is still on, tx_report transmitting goes as usual)
         self.rxinfo.set_text("Receiving: %s    |    %s" % (live, self._heard_note or "no call heard yet"))
         # the regular SNR report
@@ -464,7 +491,7 @@ class App(Gtk.Window):
             status = "waiting: not reporting (%s)" % self.why.get_text()
         else:
             send, pc, psnr, status = self.periodic.step(p, time.time())
-            if send and not self.link.report_rx(pc, mode, psnr):
+            if send and not self.links[rkey].report_rx(pc, mode, psnr):
                 status = "not connected yet"
         lastp = self.periodic.last
         lasttxt = "" if not lastp else "   last: %s%+d dB %ds ago" % (
@@ -485,7 +512,9 @@ class App(Gtk.Window):
         seen = set()
         structural = False
         filter_cols = False
-        for s in self.roster.snapshot():
+        stations = [(k, s) for k in self.view_keys for s in self.rosters[k].snapshot()]
+        for key, s in stations:
+            sid = "%s:%s" % (key, s.sid)               # the same id can come from both reporters
             dbg = core.distance_bearing(mygrid, s.grid)
             ts = iso_to_epoch(s.last_update)
             bg = "#d6ecff" if me and s.callsign.upper() == me else ("#ffe7c2" if s.transmitting else None)
@@ -493,11 +522,11 @@ class App(Gtk.Window):
             vals = [s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
                     s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
                     s.message, hhmm(s.last_tx), s.rx_call, snr, age_text(now - ts) if ts else "",
-                    s.sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
+                    sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
                     s.freq / 1e6 if s.freq else 0.0, s.rx_snr if s.rx_snr is not None else -99.0,
                     -ts if ts else 0.0]            # newest update sorts first; a time, not an age, so it keeps still
-            seen.add(s.sid)
-            it = rows.get(s.sid)
+            seen.add(sid)
+            it = rows.get(sid)
             if it is None:
                 self.store.append(vals)
                 structural = True

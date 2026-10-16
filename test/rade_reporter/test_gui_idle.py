@@ -20,7 +20,7 @@ from mock_server import MockServer
 mock = MockServer().start()
 cfg = core.load_config()
 cfg["servers"]["v1"].update(host="127.0.0.1", port=mock.port, secure=False)
-cfg["servers"]["v3"].update(host="127.0.0.1", port=mock.port, secure=False)
+cfg["servers"]["v2"].update(host="127.0.0.1", port=mock.port, secure=False)
 core.save_config(cfg)
 assert core.config_path().startswith(scratch)
 os.makedirs(os.path.dirname(core.state_path()), exist_ok=True)
@@ -35,7 +35,7 @@ def _counted(self):
 rr.App._tick = _counted
 app = rr.App(show=False)
 for i in range(60):
-    app.roster.event("new_connection", {"sid": "s%d" % i, "last_update": "2026-10-15T20:00:00+00:00",
+    app.rosters["v1"].event("new_connection", {"sid": "s%d" % i, "last_update": "2026-10-15T20:00:00+00:00",
                                         "callsign": "K%dABC" % i, "grid_square": "FN31", "version": "x",
                                         "rx_only": False, "connect_time": "x"})
 GLib.timeout_add(1000, lambda: (json.dump({"running": 1, "updated": time.time(), "waveform": 1, "dial_hz": 7184000,

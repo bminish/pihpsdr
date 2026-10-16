@@ -14,7 +14,9 @@ rx_only, os} to be listed), then events:
 
 What this program reports is presence: that the station is on a frequency in
 the RADE mode piHPSDR has selected (RADEV1 or RADEV2), and whether it is
-transmitting. It never sends receive reports.
+transmitting; and the receive reports (heard calls, SNR). All of it goes only to
+the reporter for the mode piHPSDR has selected: V1 to qso.freedv.org, V2 to
+reporter-radev2.k6aq.net. What is *shown* is chosen separately: V1, V2 or both.
 """
 import json
 import math
@@ -180,11 +182,13 @@ DEFAULT_SERVERS = {
     # key: the RADE mode piHPSDR has selected -> where it is reported
     "v1": {"label": "RADE V1", "mode": "RADEV1", "host": "qso.freedv.org", "port": 443, "secure": True,
            "web": "https://qso.freedv.org/"},
-    # RADE V2 is reported to the "v3" reporter, which has its own URL. It is not known here
-    # until it is entered in Settings: nothing is sent for V2 until then.
-    "v3": {"label": "RADE V2 (v3)", "mode": "RADEV2", "host": "", "port": 443, "secure": True, "web": ""},
+    # RADE V2 has its own reporter: freedv-gui's ms-rade-v2 branch hard-codes this host (GUI/main.cpp),
+    # TLS on 443 like the other. Settings can change it; empty means nothing is sent for V2.
+    "v2": {"label": "RADE V2", "mode": "RADEV2", "host": "reporter-radev2.k6aq.net", "port": 443, "secure": True,
+           "web": "https://reporter-radev2.k6aq.net/"},
 }
-WAVE_KEY = {1: "v1", 2: "v3"}
+WAVE_KEY = {1: "v1", 2: "v2"}
+VIEWS = ("v1", "v2", "all")          # what the list shows: V1 only, V2 only, both
 
 
 def parse_server(text):
@@ -476,6 +480,8 @@ def load_config(path=None):
                 if f in v:
                     servers[k][f] = v[f]
     c["servers"] = servers
+    v = c.get("view")
+    c["view"] = "v2" if v == "v3" else (v if v in VIEWS else "all")     # "v3" was V2's name before it had an address
     # reporting is never remembered: every start is "off"
     c.pop("reporting", None)
     return c
@@ -490,6 +496,27 @@ def save_config(c, path=None):
     with open(tmp, "w") as f:
         json.dump(out, f, indent=1)
     os.replace(tmp, path)
+
+
+def plan(cfg, pihpsdr, reporting, callsign, grid, view):
+    """Which servers to be connected to, and in what role.
+
+    view is "v1", "v2" or "all": what the list shows, so those servers are watched. If we are present
+    (decide() says so) the server of the RADE mode piHPSDR has selected is joined as a reporter - added
+    if it is not being watched - and it is the only one that is ever sent anything.
+
+    Returns (targets, why, report_key, view_keys); targets is {key: (server, role, mode, freq_hz, tx)}.
+    """
+    srv, role, mode, freq, tx, why = decide(cfg, pihpsdr, reporting, callsign, grid, "v1")
+    rkey = next((k for k, v in cfg["servers"].items() if v is srv), None) if role == "report" else None
+    vkeys = ["v1", "v2"] if view == "all" else [view if view in cfg["servers"] else "v1"]
+    targets = {}
+    for k in vkeys:
+        if cfg["servers"][k].get("host"):
+            targets[k] = (cfg["servers"][k], "view", "", 0, False)
+    if rkey:
+        targets[rkey] = (srv, "report", mode, freq, tx)
+    return targets, why, rkey, vkeys
 
 
 def decide(cfg, pihpsdr, reporting, callsign, grid, view_key):
