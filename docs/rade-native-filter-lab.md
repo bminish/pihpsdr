@@ -90,7 +90,7 @@ V1 is the same in kind: its edge carriers (750 and 2200 Hz) lose 1.3 dB (7-term)
 
 **On P1 (WDSP's TX at 48 kHz, no CFIR) the same 2048 taps give the P2 4096 result** (edge carriers -0.3 dB 7-term / 0.0 dB 4-term; 912 Hz down 47.8 / 96.6 dB), because a tap is twice as long in Hz; the P1 delay measured 106.6 ms. The tables are for P2, which is the radio used for every capture here.
 
-Where the delay goes (2048 taps): the linear-phase filters are 21 ms in the TX (two of them at 96 kHz, 10.7 ms each) of a 66 ms channel delay, and 43 ms in the RX (two at 48 kHz, 21.3 ms each) of 128 ms; the rest (45 ms TX, 85 ms RX) is WDSP's resamplers, buffers and other stages, not touched by these options.
+Where the delay goes (2048 taps): the linear-phase filters are 21 ms in the TX (two of them at 96 kHz, 10.7 ms each) of a 66 ms channel delay, and 43 ms in the RX (two at 48 kHz, 21.3 ms each) of 128 ms; the rest (45 ms TX, 85 ms RX) is WDSP's other stages (what they are was not identified here), not touched by these options.
 
 ## 4. What the decode says (V2, AWGN, SNR in 3 kHz; "change" is against the first row, negative is better)
 
@@ -124,8 +124,8 @@ Reading:
 
 - The V2 modem's own spectrum is bell-shaped: relative to the middle of the band, the carriers at 1062.5 and 1937.5 Hz are about **-11 dB and -18 dB** (librade output, with its own TX band-pass on or off: the same to 0.1 dB, so that band-pass is not the cause and does nothing visible). That is the "edge carriers -14 / -18.5 dB" that `tx_shape.py` has reported for every V2 capture; it is the modem, not the filter. (This also means the modem puts little power into the edge carriers; losing 1.7 dB of it costs the decode nothing, section 4.)
 - Local TX captures (V2, no ALC, 192 kHz, `rade-captures/20261016-120252_*`) agree with the lab's TX filter response within about 1.5 dB at the sampled frequencies (962 Hz: -10.6 dB measured, -10.7 dB lab; 912 Hz: -17.6 against -20.0; 1012 Hz: -3.6 against -4.9; at the edge carrier 1062.5 Hz the capture reads -0.1 dB against the lab's -1.7 dB): the lab is the reliable figure (deterministic), the capture comparison is limited by the speech the spectrum is taken from.
-- The Kiwi recordings of the same overs (on air, 8 runs averaged) show the received shape, which includes the radiated signal, the path and the Kiwi's own response: up to 10 dB different from the modem's at some frequencies (a loop antenna and a receiver with its own passband), so **they cannot be used to measure the TX filter** and were not. They do show that the received signal is not lopsided: the upper and lower edge carriers are within 3 dB of what the modem and local TX capture predict.
-- `rade_native.c` runs librade's V2 TX band-pass (on by default, `RADE_NO_TX_BPF` not set) and its V2 RX band-pass; neither has a visible effect on the spectrum or on the decode in these tests (the TX one changes the V2 modem by 0.1 dB, and a decode with and without it gives the same feature loss, 0.016 at 12 dB SNR). They add 6 ms of delay each (101 taps at 8 kHz). Left alone.
+- The Kiwi recordings of the same overs (on air, 8 runs averaged) show the received shape, which includes the radiated signal, the path and the Kiwi's own response: up to about 11 dB different from the modem's at some frequencies (a loop antenna and a receiver with its own passband), so **they cannot be used to measure the TX filter** and were not. They do show that the received signal is not lopsided: the upper and lower edge carriers are within 3 dB of what the modem and local TX capture predict.
+- `rade_native.c` runs librade's V2 TX band-pass (on by default, `RADE_NO_TX_BPF` not set) and its V2 RX band-pass; the TX one has no visible effect on the spectrum (0.1 dB) or on the decode (feature loss 0.016 at 12 dB SNR with and without it, measured); **the RX one was not tested**. Each adds 6 ms of delay (101 taps at 8 kHz). Left alone.
 
 ## 6. Recommendations (evidence strength in brackets; none applied)
 
@@ -134,7 +134,7 @@ Reading:
 3. **If maximum out-of-band rejection matters more than 21 ms: TX 4096 taps, 4-term**: edge carriers 0.0 dB, 97 dB down at 912 Hz, decode unchanged (measured); not needed for sensitivity.
 4. **Do not use minimum phase (low latency) for RADE, TX or RX**: about 1 dB at the threshold in the lab (measured), and the group-delay spread across the carriers (9-14 ms RX, 3-5 ms TX) is longer than the 4 ms cyclic prefix. The saving it buys is 7 ms (TX) and 36 ms (RX); on the radio the real cost would be larger on a multipath path (not measured).
 5. **Optional RX narrowing for V2 (1030..1970): +0.3 dB sync sensitivity, no change in the loss threshold, 2.6 dB off the edge carriers** (measured, white noise); worth an on-air A/B because the two effects cancel in the lab and may not on a real path. RX length: 2048 is as good as any (4096 is 0.08 dB worse and 43 ms slower).
-6. **To save latency without a sensitivity penalty there is nothing in these options**: 2048 taps is the smallest WDSP will take with piHPSDR's `dsp_size`, and the two filters in each direction are the filter's own 21 ms (TX) and 43 ms (RX) of 66 and 128 ms. The remaining 45 ms (TX) and 85 ms (RX) are in WDSP's other stages (resamplers, buffers) and would have to be found there.
+6. **To save latency without a sensitivity penalty there is nothing in these options**: 2048 taps is the smallest WDSP will take with piHPSDR's `dsp_size`, and the two filters in each direction are the filter's own 21 ms (TX) and 43 ms (RX) of 66 and 128 ms. The remaining 45 ms (TX) and 85 ms (RX) are in WDSP's other stages (not identified here) and would have to be found there.
 
 ## 7. Limits
 
