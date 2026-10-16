@@ -623,7 +623,8 @@ static void engine_stop(void) {
 #define TX_LEVEL_V1    0.357             // modem amplitude into WDSP: peaks at the ALC ceiling (offline), see alc_sweep.py
 #define TX_LEVEL_V2    0.504             // V2's peaks are lower for the same rms, so it needs 3 dB more than V1
 #define LV_BLOCK       4800              // 100 ms at 48 kHz
-#define TX_TAIL        8000              // 48 kHz samples held after the EOO (167 ms)
+#define TX_TAIL        5120              // 48 kHz samples held after the EOO (107 ms; was 8000 = 167 ms). Measured on the air: the last EOO sample
+                                         // is off WDSP 78 ms later and the RF is over 85 ms after it, so this leaves about 20 ms
 
 static struct {
   int enabled, running, flush;

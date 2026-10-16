@@ -70,5 +70,5 @@ uncorrected. With the GPS locked the same transmitter reads +0.1 Hz (V1) and -0.
 
 1. A **lead-in** of modem frames before the speech (recovers 0.5 s of V1 speech start and 0.2 s of V2): the biggest finding of the run.
 2. **Raise the end-of-over frame** to the speech's average power (up to +2.4 dB V1 at 0 dB drive).
-3. **Shorten `TX_TAIL`** to about 5000 samples: about 60 ms off every turnaround.
+3. **Shorten `TX_TAIL`** to about 5000 samples: about 60 ms off every turnaround. **Done (5120 samples, 107 ms) on request, same day; not yet measured on the air - re-run the GPS timing and check that `unkey_after_wdsp_last_ms` is about 64 ms, `tail_after_eoo_ms` is no worse and the end-of-over frame still decodes in every over.**
 4. Working drive +3 dB (from the ALC work): also reduces the first two items' gaps (EOO 1.2 dB below instead of 2.4).
