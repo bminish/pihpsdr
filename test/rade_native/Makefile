@@ -59,12 +59,16 @@ modes_table: modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
+test_ctl: test_ctl.c $(ROOT)/src/rade_native_test.c $(ROOT)/src/rade_native_test.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_ctl.c $(ROOT)/src/rade_native_test.c `pkg-config --cflags --libs glib-2.0` -lm
+
 test_log: test_log.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_native_log.h
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_log.c $(ROOT)/src/rade_native_log.c -lm
 
-check: test_geometry test_log
+check: test_geometry test_log test_ctl
 	./test_geometry
 	./test_log
+	python3 test_ctl.py
 
 clean:
-	rm -f modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log
+	rm -f modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl

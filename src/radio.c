@@ -3379,7 +3379,7 @@ void radio_save_state(void) {
   SetPropI0("rade_native.invert", rade_native_user_invert());
   SetPropF0("rade_native.mic_trim_db", rade_native_tx_get_trim_db());
   SetPropI0("rade_native.mic_agc", rade_native_tx_get_agc());
-  SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db());
+  SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db() < -6.0 ? -6.0 : rade_native_tx_get_drive_db());   // lower values are the test harness's, not kept
 #endif
   //
   // Obtain window position and save in props file
