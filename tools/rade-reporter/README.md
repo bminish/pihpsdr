@@ -20,9 +20,13 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   lost for 10 s. The window shows when it is doing this, and why when it is not. A V1 call arrives only at the end of an
   over, so there is no callsign to report with while the over is still going.
 - **Only in the active mode**: V1 goes to qso.freedv.org as `RADEV1`; V2 goes to
-  the v3 reporter as `RADEV2`. RADE off in piHPSDR, or piHPSDR gone, takes you
-  off the list at once. The address of the v3 reporter is set in *Settings*;
-  until it is, nothing is sent for V2.
+  reporter-radev2.k6aq.net (the host freedv-gui's ms-rade-v2 branch uses) as
+  `RADEV2`. Both can be changed in *Settings*. RADE off in piHPSDR, or piHPSDR
+  gone, takes you off the list at once. Nothing is ever sent to the other reporter.
+- **Show**: V1 only, V2 only, or All. That is only what the list shows (each
+  shown reporter is watched; the same station on both appears twice). If you are
+  present, the reporter for your mode is joined as a reporter even if it is not
+  the one shown. The choice is remembered.
 - piHPSDR tells it what it is doing through
   `~/.local/state/pihpsdr-rade/state.json`; settings (callsign, grid, servers)
   are in `~/.config/pihpsdr-rade/reporter.json`.
