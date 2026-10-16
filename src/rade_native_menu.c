@@ -56,7 +56,7 @@ static GtkWidget *call_e = NULL;
 static GtkWidget *call_label = NULL;
 static GtkWidget *recv_label = NULL;
 static guint calls_timer_id = 0;
-#define RECENT_CALLS 6
+#define RECENT_CALLS 4
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
 static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_text = NULL;
@@ -149,10 +149,9 @@ static void show_recent(void) {
   if (recv_label == NULL) { return; }
   char text[RECENT_CALLS * 164 + 32];
   text[0] = 0;
-  if (n_recent == 0) { snprintf(text, sizeof text, "none yet"); }
-  for (int i = 0; i < n_recent; i++) {
-    strcat(text, recent[i]);
-    strcat(text, "\n");
+  for (int i = 0; i < RECENT_CALLS; i++) {            // always the same number of lines, so the window does not change size
+    if (i < n_recent) { strcat(text, recent[i]); } else if (i == 0) { strcat(text, "none yet"); }
+    if (i < RECENT_CALLS - 1) { strcat(text, "\n"); }
   }
   gtk_label_set_text(GTK_LABEL(recv_label), text);
 }
@@ -203,9 +202,9 @@ static void log_call(const rade_native_call_t *c) {
   memmove(recent[1], recent[0], sizeof recent[0] * (n_recent - 1));
   char hms[16];
   strftime(hms, sizeof hms, "%H:%M:%S", localtime(&t));
-  char sn[24] = "SNR -";
-  if (c->snr_valid) { snprintf(sn, sizeof sn, "SNR %.1f dB", c->snr_db); }
-  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  %s  %+.1f Hz  %.4f MHz", hms, c->call,
+  char sn[24] = "    -   ";
+  if (c->snr_valid) { snprintf(sn, sizeof sn, "%5.1f dB", c->snr_db); }
+  snprintf(recent[0], sizeof recent[0], "%s  %-8s V%d  %s  %+6.1f Hz  %8.4f MHz", hms, c->call,
            c->waveform, sn, c->foff_hz, rade_dial() / 1e6);
   t_print("%s: RADE call %s\n", __func__, recent[0]);
 }
@@ -235,15 +234,7 @@ static void call_changed_cb(GtkWidget *widget, gpointer data) {
     gtk_entry_set_text(GTK_ENTRY(widget), c);
     busy = 0;
   }
-  char text[160];
-  if (c[0] == 0) {
-    snprintf(text, sizeof text, "no callsign: none is sent");
-  } else if (rade_native_waveform() == RADE_NATIVE_V2) {
-    snprintf(text, sizeof text, "%s: V2 callsign text is not implemented yet, nothing is sent", c);
-  } else {
-    snprintf(text, sizeof text, "%s is sent in the end-of-over frame", c);
-  }
-  if (call_label != NULL) { gtk_label_set_text(GTK_LABEL(call_label), text); }
+  (void)c;                                      // no commentary on it: what is sent is the Call box
 }
 
 
@@ -312,18 +303,19 @@ static int state_cb(gpointer arg) {
   static gint64 last_t = 0;
   static int prev_tx = 0;
   char now[200];
-  static int hf_side = -1;
-  if (rade_native_waveform() == RADE_NATIVE_V1) {
+  static int band_cls = -1;                       // 0 below 10 MHz, 1 60 m, 2 above: the default sideband changes between them
+  if (rade_native_waveform() != 0) {
     long long d = rade_dial();
-    int side = d < 9900000 ? 0 : d > 10100000 ? 1 : hf_side;
-    if (hf_side < 0) {
-      hf_side = side;
-    } else if (side != hf_side) {
-      hf_side = side;
+    int cls = rade_native_band_class(d);
+    if (cls != 1 && band_cls >= 0 && band_cls != 1 && llabs(d - RADE_NATIVE_V1_INV_BELOW_HZ) < 100000) { cls = band_cls; }   // 100 kHz of hysteresis at 10 MHz
+    if (band_cls < 0) {
+      band_cls = cls;
+    } else if (cls != band_cls) {
+      band_cls = cls;
       band_default_changed();
     }
   } else {
-    hf_side = -1;
+    band_cls = -1;
   }
   int tx_now = rade_is_tx() ? 1 : 0;
   if (tx_now && !prev_tx) {
@@ -474,42 +466,44 @@ static void agc_cb(GtkWidget *widget, gpointer data) {
 // The bar runs from 20 dB under the ideal to 10 dB over it, so the ideal is
 // two thirds of the way along; "about right" is 3 dB either side of it.
 //
+static gboolean pip_draw_cb(GtkWidget *w, cairo_t *cr, gpointer data) {
+  double x = gtk_widget_get_allocated_width(w) * 2.0 / 3.0, h = gtk_widget_get_allocated_height(w);
+  cairo_set_source_rgb(cr, 0.05, 0.05, 0.05);
+  cairo_rectangle(cr, x - 2.0, 0.0, 4.0, h);
+  cairo_fill(cr);
+  cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+  cairo_rectangle(cr, x - 1.0, 0.0, 2.0, h);
+  cairo_fill(cr);
+  return FALSE;
+}
+
 static void show_mic(void) {
   if (mic_bar == NULL) { return; }
-  char text[200];
+  //
+  // One line of fixed width, the values side by side: verdict LOW / OK / HI / CLIP, loudness (LUFS), peak (dBFS before the
+  // limiter) and the leveller's gain. With too little speech to measure the verdict is ---- and no number goes below -60: "--.-".
+  //
+  char text[120], lu[12] = "  --.-", pk[8] = " ---", ag[10] = "  off";
+  const char *verdict = "----";
+  rade_native_txlevel_t l;
   if (!rade_native_tx_enabled()) {
     gtk_level_bar_set_value(GTK_LEVEL_BAR(mic_bar), 0.0);
-    gtk_label_set_text(GTK_LABEL(mic_text), "RADE TX is off: the mic is not measured");
+    snprintf(text, sizeof text, "OFF   %s LUFS  pk %s dBFS  AGC %s", lu, pk, ag);
+    gtk_label_set_text(GTK_LABEL(mic_text), text);
     return;
   }
-  rade_native_txlevel_t l;
   rade_native_tx_level(&l);
-  double d = l.valid ? l.delta_db : l.momentary - RADE_NATIVE_TARGET_LUFS;
+  double lufs = l.valid ? l.loud_avg : l.momentary;
+  double d = lufs - RADE_NATIVE_TARGET_LUFS;
   double f = (d + 20.0) / 30.0;
-  gtk_level_bar_set_value(GTK_LEVEL_BAR(mic_bar), f < 0.0 ? 0.0 : f > 1.0 ? 1.0 : f);
-  if (!l.valid) {
-    snprintf(text, sizeof text, "Mic: speak normally for a few seconds to measure (now %.0f LUFS, peak %.0f dBFS)",
-             l.momentary, l.peak_dbfs);
-  } else {
-    const char *verdict;
-    char v[48];
-    if (l.delta_db < -RADE_NATIVE_RIGHT_DB) {
-      snprintf(v, sizeof v, "%.1f dB TOO LOW", -l.delta_db);
-      verdict = v;
-    } else if (l.delta_db > RADE_NATIVE_RIGHT_DB) {
-      snprintf(v, sizeof v, "%.1f dB TOO HIGH", l.delta_db);
-      verdict = v;
-    } else {
-      verdict = "about right";
-    }
-    snprintf(text, sizeof text, "Mic %.1f LUFS (ideal %.0f): %s   peak %.0f dBFS%s", l.loud_avg,
-             RADE_NATIVE_TARGET_LUFS, verdict, l.peak_dbfs, l.limiting ? "   CLIPPING" : "");
-    if (rade_native_tx_get_agc()) {
-      char a[40];
-      snprintf(a, sizeof a, "   AGC %+.1f dB", l.agc_gain_db);
-      strncat(text, a, sizeof text - strlen(text) - 1);
-    }
+  gtk_level_bar_set_value(GTK_LEVEL_BAR(mic_bar), lufs < -60.0 ? 0.0 : f < 0.0 ? 0.0 : f > 1.0 ? 1.0 : f);
+  if (lufs > -60.0) { snprintf(lu, sizeof lu, "%6.1f", lufs); }
+  if (l.peak_dbfs > -60.0) { snprintf(pk, sizeof pk, "%4.0f", l.peak_dbfs); }
+  if (rade_native_tx_get_agc()) { snprintf(ag, sizeof ag, "%+5.1f", l.agc_gain_db); }
+  if (l.valid) {
+    verdict = l.limiting ? "CLIP" : l.delta_db < -RADE_NATIVE_RIGHT_DB ? "LOW" : l.delta_db > RADE_NATIVE_RIGHT_DB ? "HI" : "OK";
   }
+  snprintf(text, sizeof text, "%-5s %s LUFS  pk %s dBFS  AGC %s", verdict, lu, pk, ag);
   gtk_label_set_text(GTK_LABEL(mic_text), text);
 }
 
@@ -693,6 +687,20 @@ static void apply(void) {
   rx_set_af_binaural(receiver[0]);
 }
 
+// A label of fixed width: the window does not grow or shrink when the text changes length (long text is cut with an ellipsis; the
+// full text is the tooltip). mono: a fixed-pitch font so that numbers line up.
+static void fixed_label(GtkWidget *l, int chars, int mono) {
+  gtk_label_set_width_chars(GTK_LABEL(l), chars);
+  gtk_label_set_max_width_chars(GTK_LABEL(l), chars);
+  gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+  if (mono) {
+    PangoAttrList *al = pango_attr_list_new();
+    pango_attr_list_insert(al, pango_attr_family_new("monospace"));
+    gtk_label_set_attributes(GTK_LABEL(l), al);
+    pango_attr_list_unref(al);
+  }
+}
+
 static void show_edges(void) {
   char text[128];
   int w = rade_native_waveform();
@@ -830,7 +838,7 @@ static void retune(int new_wave) {
 // left where the operator put it.
 //
 static void band_default_changed(void) {
-  int inv = rade_native_effective_invert(RADE_NATIVE_V1, rade_dial(), rade_native_user_invert());
+  int inv = rade_native_effective_invert(rade_native_waveform(), rade_dial(), rade_native_user_invert());
   if (inv == rade_native_get_invert()) { return; }
   rade_native_set_invert(inv);
   vfo_id_mode_changed(0, inv ? modeDIGL : modeDIGU);
@@ -872,11 +880,11 @@ static int update_cb(gpointer arg) {
   if (st.waveform == 0) {
     snprintf(text, sizeof text, "-");
   } else {
+    // fixed width, the fields in the same places whatever they hold; with no lock the SNR and the offset are not measurements: dashes
     if (st.sync) {
-      snprintf(text, sizeof text, "SYNC  SNR %.1f dB  offset %+.1f Hz  (underruns %lu, overruns %lu)", st.snr_db, st.foff_hz,
-               st.underruns, st.overruns);
-    } else {                      // no lock: no SNR and no offset to show (the values are not measurements)
-      snprintf(text, sizeof text, "searching  (underruns %lu, overruns %lu)", st.underruns, st.overruns);
+      snprintf(text, sizeof text, "SYNC     %6.1f dB %+7.1f Hz  u%-4lu o%-4lu", st.snr_db, st.foff_hz, st.underruns, st.overruns);
+    } else {
+      snprintf(text, sizeof text, "NO SYNC     --.- dB    --.- Hz  u%-4lu o%-4lu", st.underruns, st.overruns);
     }
   }
   gtk_label_set_text(GTK_LABEL(status_label), text);
@@ -944,9 +952,14 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), rep_b, 5, 0, 1, 1);
   edge_label = gtk_label_new("");
   gtk_widget_set_halign(edge_label, GTK_ALIGN_START);
+  fixed_label(edge_label, 64, 0);
+  gtk_widget_set_tooltip_text(edge_label, "The energy stays where it is: choosing V1 or V2, or Invert, moves the dial (3 kHz for a sideband "
+                                          "change) and sets DIGU or DIGL; Off returns to USB or LSB on the same carrier. V1 is lower sideband "
+                                          "below 10 MHz, V2 upper; on 60 m both are upper. Invert reverses it.");
   gtk_grid_attach(GTK_GRID(grid), edge_label, 0, 1, 5, 1);
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
+  fixed_label(status_label, 44, 1);
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, 2, 5, 1);
   mox_b = gtk_toggle_button_new_with_label("Transmit (space bar)");
   g_signal_connect(mox_b, "toggled", G_CALLBACK(mox_cb), NULL);
@@ -957,6 +970,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), tx_b, 3, 3, 1, 1);
   tx_label = gtk_label_new("");
   gtk_widget_set_halign(tx_label, GTK_ALIGN_START);
+  fixed_label(tx_label, 64, 0);
   gtk_grid_attach(GTK_GRID(grid), tx_label, 0, 4, 5, 1);
   GtkWidget *mic_l = gtk_label_new("Mic trim");
   gtk_widget_set_halign(mic_l, GTK_ALIGN_END);
@@ -994,9 +1008,18 @@ void rade_native_menu(GtkWidget *parent) {
                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(css);
   }
-  gtk_grid_attach(GTK_GRID(grid), mic_bar, 0, 6, 5, 1);
+  // a pip on the bar at the ideal level (-20 LUFS, two thirds along: the bar runs from 20 LU under it to 10 LU over)
+  GtkWidget *ov = gtk_overlay_new();
+  gtk_container_add(GTK_CONTAINER(ov), mic_bar);
+  GtkWidget *pip = gtk_drawing_area_new();
+  gtk_widget_set_can_focus(pip, FALSE);
+  g_signal_connect(pip, "draw", G_CALLBACK(pip_draw_cb), NULL);
+  gtk_overlay_add_overlay(GTK_OVERLAY(ov), pip);
+  gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(ov), pip, TRUE);
+  gtk_grid_attach(GTK_GRID(grid), ov, 0, 6, 5, 1);
   mic_text = gtk_label_new("");
   gtk_widget_set_halign(mic_text, GTK_ALIGN_START);
+  fixed_label(mic_text, 52, 1);
   gtk_grid_attach(GTK_GRID(grid), mic_text, 0, 7, 5, 1);
   capture_b = gtk_toggle_button_new_with_label("Capture");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
@@ -1004,8 +1027,9 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), capture_b, 0, 8, 1, 1);
   capture_label = gtk_label_new("not capturing");
   gtk_widget_set_halign(capture_label, GTK_ALIGN_START);
+  fixed_label(capture_label, 52, 0);
   gtk_grid_attach(GTK_GRID(grid), capture_label, 1, 8, 4, 1);
-  GtkWidget *call_l = gtk_label_new("My call");
+  GtkWidget *call_l = gtk_label_new("Call");
   gtk_widget_set_halign(call_l, GTK_ALIGN_END);
   gtk_grid_attach(GTK_GRID(grid), call_l, 0, 9, 1, 1);
   call_e = gtk_entry_new();
@@ -1013,9 +1037,6 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
   gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
   gtk_grid_attach(GTK_GRID(grid), call_e, 1, 9, 1, 1);
-  call_label = gtk_label_new("");
-  gtk_widget_set_halign(call_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), call_label, 2, 9, 3, 1);
   g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
   call_changed_cb(call_e, NULL);
   GtkWidget *recv_l = gtk_label_new("Received calls");
@@ -1024,14 +1045,10 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), recv_l, 0, 10, 1, 1);
   recv_label = gtk_label_new("");
   gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
+  fixed_label(recv_label, 62, 1);
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
   gtk_grid_attach(GTK_GRID(grid), recv_label, 1, 10, 4, 1);
   show_recent();
-  GtkWidget *hint = gtk_label_new("Receiver 0. The energy stays where it is: choosing V1 or V2, or Invert, moves the dial (3 kHz for a sideband change) and sets DIGU or DIGL; Off returns to USB or LSB on the same carrier. V1 is lower sideband below 10 MHz, V2 upper. This window stays open while you use other menus.");
-  gtk_label_set_line_wrap(GTK_LABEL(hint), TRUE);
-  gtk_label_set_max_width_chars(GTK_LABEL(hint), 60);
-  gtk_widget_set_halign(hint, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), hint, 0, 11, 5, 1);
   note_label = gtk_label_new("");
   gtk_label_set_line_wrap(GTK_LABEL(note_label), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(note_label), 60);
@@ -1062,6 +1079,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), log_b, 0, 9, 1, 1);
   log_label = gtk_label_new(rade_log_active() ? rade_log_path() : "not logging");
   gtk_widget_set_halign(log_label, GTK_ALIGN_START);
+  fixed_label(log_label, 52, 0);
   gtk_label_set_selectable(GTK_LABEL(log_label), TRUE);
   gtk_grid_attach(GTK_GRID(grid), log_label, 1, 9, 4, 1);
   gtk_grid_insert_row(GTK_GRID(grid), 10);
@@ -1073,6 +1091,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), test_b, 0, 10, 1, 1);
   test_label = gtk_label_new("off: a script can read the status only");
   gtk_widget_set_halign(test_label, GTK_ALIGN_START);
+  fixed_label(test_label, 52, 0);
   gtk_grid_attach(GTK_GRID(grid), test_label, 1, 10, 4, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();

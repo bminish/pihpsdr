@@ -511,3 +511,13 @@ T-11 (WDSP I/Q probe). All offline, none touching engine code. T-1 tells
 us whether the one-sided I/Q premise holds; T-11 tells us whether the
 WDSP chain carries complex RADE signals as section 4 assumes, before
 anything in the RX/TX design depends on either.
+
+
+## Plan notes added 2026-10-16
+
+- **60 m band**: USB (above the nominal carrier) is the convention there for SSB, so **V1 and V2 both default to upper sideband** on 5250-5450 kHz
+  (V1 elsewhere below 10 MHz stays lower sideband, V2 upper everywhere else), and **Invert on 60 m means below the carrier for both**. Implemented in
+  `rade_native_default_invert()` / `rade_native_band_class()`; tuning into or out of 60 m re-applies the default; `kiwi_rx.expected_invert` follows it.
+- **RADE window**: compact and stable. Fixed-width labels (the window does not change size when a value changes length), no explanatory text that
+  repeats the manual (it is tooltips), the callsign box reads "Call" with no commentary, the last four received calls only, the mic meter as one fixed-width
+  line `LOW / OK / HI / CLIP  <LUFS>  pk <dBFS>  AGC <dB>` with "--.-" when there is too little speech to measure and a pip on the bar at the ideal -20 LUFS.

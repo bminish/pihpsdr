@@ -16,6 +16,11 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (60 m, compact RADE window): 60 m (5250-5450 kHz) defaults to upper sideband for V1 and V2, Invert means below the carrier for both; band
+  class changes (10 MHz, 60 m) re-apply the default. RADE window: "Receiver 0 ..." text removed (tooltip), calls limited to the last 4 and fixed-format,
+  "My call" is "Call" with the end-of-over-frame text removed (wrong for V2), mic meter one fixed-width line (LOW/OK/HI/CLIP, values side by side,
+  no huge negative numbers without data) with a pip at -20 LUFS, every changing label fixed width. Built; the GTK layout has not been looked at on a screen.
+
 - 2026-10-16 (tail, and why the Reporter changes did not show): `TX_TAIL` 8000 -> 5120 samples (60 ms shorter; margin about 20 ms; to be re-measured with the GPS timing).
   Notes from run 3 kept for later decisions: the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of speech to acquisition (candidate: lead-in frames); the end-of-over
   frame is 2.4 dB (V1) below the speech power at 0 dB drive (candidate: raise it); working drive +3 dB. **The Reporter's missing features and the 0 SNR were an old Reporter
