@@ -78,6 +78,18 @@ int main(void) {
       CHECK(d + (inv ? -1 : 1) * 1500 == fe0);
     }
   }
+  // 60 m: upper sideband by default for both; Invert there is below the carrier for both
+  CHECK(rade_native_effective_invert(RADE_NATIVE_V1, 5357000, 0) == 0 && rade_native_effective_invert(RADE_NATIVE_V2, 5357000, 0) == 0);
+  CHECK(rade_native_effective_invert(RADE_NATIVE_V1, 5357000, 1) == 1 && rade_native_effective_invert(RADE_NATIVE_V2, 5357000, 1) == 1);
+  CHECK(rade_native_effective_invert(RADE_NATIVE_V1, 7053000, 0) == 1 && rade_native_effective_invert(RADE_NATIVE_V2, 7053000, 0) == 0);
+  CHECK(rade_native_effective_invert(RADE_NATIVE_V1, 5200000, 0) == 1 && rade_native_effective_invert(RADE_NATIVE_V1, 5500000, 0) == 1);   // 5 MHz either side of 60 m
+  CHECK(rade_native_band_class(5357000) == 1 && rade_native_band_class(3700000) == 0 && rade_native_band_class(14236000) == 2);
+  q = PLAN(0, 0, 1, 5357000, RADE_NATIVE_V1, 0);                    // from USB on 60 m: V1 stays upper, the dial does not move
+  CHECK(q.invert == 0 && q.dial == 5357000);
+  q = PLAN(RADE_NATIVE_V1, 0, 1, 5357000, RADE_NATIVE_V2, 0);
+  CHECK(q.invert == 0 && q.dial == 5357000);
+  q = PLAN(RADE_NATIVE_V2, 0, 1, 5357000, RADE_NATIVE_V2, 1);       // Invert: below the carrier, the dial 3 kHz up
+  CHECK(q.invert == 1 && q.dial == 5360000);
   // library
   char msg[200];
   int rc = rade_native_probe(msg, sizeof msg);
