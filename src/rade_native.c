@@ -573,8 +573,8 @@ static void engine_stop(void) {
 #define TX_INT_TAPS    48
 #define TX_PCM_RING    8192              // 16 kHz int16
 #define TX_OUT_RING    65536             // 48 kHz complex
-#define TX_LEVEL_V1    0.357             // modem amplitude into WDSP: peaks reach the ALC ceiling (0 dB)
-#define TX_LEVEL_V2    0.504             // V2's crest factor is lower, so it needs 3 dB more than V1 (was 0.3 for both: ALC -2 dB V1, -5 dB V2)
+#define TX_LEVEL_V1    0.357             // modem amplitude into WDSP: peaks at the ALC ceiling (offline), see alc_sweep.py
+#define TX_LEVEL_V2    0.504             // V2's peaks are lower for the same rms, so it needs 3 dB more than V1
 #define LV_BLOCK       4800              // 100 ms at 48 kHz
 #define TX_TAIL        8000              // 48 kHz samples held after the EOO (167 ms)
 
