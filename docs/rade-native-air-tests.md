@@ -27,18 +27,18 @@ WDSP's TX slew and the P2 output are the real ones.
   closes, off if unticked (which also stops any over at once). Unarmed, the socket answers `status` and refuses
   everything else.
 - **Hard limits** (constants at the end of `src/rade_native_menu.c`; a change is a rebuild, not a command):
-  the transmitter's drive setting at most `TEST_MAX_DRIVE_PCT` (1 %); the dial inside 28.000-29.700 MHz; an over
+  the transmitter's drive setting at most `TEST_MAX_DRIVE_PCT` (20 %; was 1 % for the first run); the dial inside 28.000-29.700 MHz; an over
   at most 90 s; not with PureSignal, tune or two-tone on.
 - **A script cannot change the drive setting or the antenna**; the operator sets those (ANT2, 28 MHz band,
-  drive 1 %) and `air_test.py` shows them at the start. What a script can set is the digital level into the
-  transmit chain (`drive_db`, -30..+6 dB around the defined level), the mic trim and the leveller.
+  drive 20 %) and `air_test.py` shows them at the start. What a script can set is the digital level into the
+  transmit chain (`drive_db`, -60..+6 dB around the defined level), the mic trim and the leveller.
 - A client that goes away during an over releases the transmitter; so does `abort`, and the harness only ever
   releases a key that it pressed.
 - The operator should be watching: `air_test.py` waits for Enter (`--yes` to skip it).
 
 ## Running
 
-1. piHPSDR running with `RADE_NATIVE=ON`, ANT2, drive 1 %, RADE window open, **Test harness** ticked.
+1. piHPSDR running with `RADE_NATIVE=ON`, ANT2, drive 20 %, RADE window open, **Test harness** ticked.
 2. `python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels -30,-24,-18,-12,-6,-3,0,3,6`
    (20 s clip of `rade_c`'s `david_vk5dgr.wav` by default; `--clip` for another, `--seconds`, `--repeat`,
    `--agc` to leave the leveller on, `--trim`). About 70 s a run.
@@ -46,6 +46,21 @@ WDSP's TX slew and the P2 output are the real ones.
 
 Single commands: `rade_ctl.py status | set wave=1 dial=28645000 drive_db=-6 | capture on | log on | play f.wav | abort`.
 `--dry-run` does the Kiwi side only (no harness, no transmission).
+
+## Weak signals from strong recordings (`air_weak.py`)
+
+The received power cannot be lowered on the air without changing the ALC state (the digital level is the only
+knob), so *does the ALC cost anything when the signal is weak?* is answered afterwards: `air_weak.py SESSION`
+takes the Kiwi's fixed-gain recording of each run and emulates a path loss of A dB - the signal scaled down by A,
+white noise added so that the noise in the modem band is what the Kiwi measured when nothing was sent - then decodes
+it as the real recordings are, with several noise realisations. Every transmit level is thereby judged against the
+same noise floor with its own received power, and the table (`weak.md`) shows, per path loss, sync, callsign,
+end-of-over and feature loss against the level. A few real runs at low level are in the plan to check the method
+(a real run at SNR s should read like an emulated one from a higher unclipped level at the same s). Limits: additive
+white noise only (no fading), the noise is assumed flat across the 1.6 kHz band, and one clip.
+
+`band_snr_db` (in `results.csv`) is the SNR from the band power on and off in the fixed-gain recording: independent of
+librade's estimate, which tops out near 32 dB (V1) and 18 dB (V2).
 
 ## What a row holds
 
@@ -56,6 +71,7 @@ Single commands: `rade_ctl.py status | set wave=1 dial=28645000 drive_db=-6 | ca
 | `capture_stem`, `log_file`, `kiwi_session` | where each side's data is |
 | `tx_peak_dbfs`, `tx_rms`, `tx_crest_db`, `tx_at_ceiling_pct` | the WDSP TX output block (192 kHz on P2): how close to, and how much of the over was against, the ALC ceiling |
 | `tx_shape`, `tx_shape_pass` | `tx_shape.py`: energy centre and tilt |
+| `band_snr_db`, `band_sig_dbfs`, `band_noise_dbfs` | from the fixed-gain recording (see above) |
 | `iq_*`, `iq_fixed_*` | the Kiwi (AGC on / fixed gain): `sync_pct`, `snr_mean`, `snr_min`, `snr_max`, `foff`, `eoo_ok`, `call_ok`, `feature_loss` and `speech_env_corr_vs_ideal` against the speech sent |
 | `kiwi_over_start_s` | where the over starts in the Kiwi recording (not tied to the key: the recordings have no time stamps, so the air delay is not measured) |
 | `mic_lufs`, `mic_peak_dbfs`, `mic_limiting_pct`, `tx_underruns`, `agc_db_max` | from the parameter log, while keyed: the mic as the engine measured it (gated LUFS, peak before the limiter, share of 100 ms blocks in which the mic limiter had acted in the last second), transmit underruns |

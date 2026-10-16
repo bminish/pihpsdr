@@ -16,6 +16,13 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (second air run planned): harness drive cap 1 % -> 20 % (rebuild), `drive_db` down to -60,
+  `air_test.py --kiwi-gain`, band-power SNR in the results, and `air_weak.py` (emulated path loss on the
+  Kiwi's fixed-gain recording: same noise floor for every transmit level) to answer whether the ALC costs
+  anything on a weak signal and where the best level is. Method run on the first session only (drive 1 %):
+  it works; one of the iq-fixed recordings there (V1 +6 dB) had a glitch the iq profile did not, so repeats
+  are in the plan.
+
 - 2026-10-16 (first automated air run, 28645 kHz, 18 runs V1/V2 -30..+6 dB): written up in
   `docs/rade-native-air-run-20261016.md`. ALC ceiling at the P2 output is -0.97 dBFS and is reached at the
   0 dB level; +3 dB buys 0.8 dB (V1) of power, +6 dB nothing, with no measurable decode cost;
