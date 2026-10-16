@@ -172,7 +172,7 @@ static int client_gone(int fd) {
 }
 
 static void say(int fd, int rc, const char *text) {
-  char out[1200];
+  char out[1400];
   int l = snprintf(out, sizeof out, "%s%s%s\n", rc == 0 ? "ok" : "err", *text ? " " : "", text);
   if (send(fd, out, l, MSG_NOSIGNAL) < 0) { /* the client has gone: not a reason to die of SIGPIPE */ }
 }
@@ -219,11 +219,14 @@ static void play(int fd, const char *args) {
   }
   t_seen = t_keyed;
   run("poll", "", reply, sizeof reply);
-  char out[512];
-  snprintf(out, sizeof out, "done=%s duration_s=%.3f t_call=%.3f t_keyed=%.3f t_inject_start=%.3f t_inject_end=%.3f "
-                            "t_unkey=%.3f t_released=%.3f consumed=%.3f",
+  char out[1000];
+  snprintf(out, sizeof out, "done=%s duration_s=%.3f t_call=%.6f t_keyed=%.6f t_inject_start=%.6f t_inject_end=%.6f "
+                            "t_unkey=%.6f t_released=%.6f consumed=%.3f ev_key=%.6f ev_end_req=%.6f ev_eoo_gen=%.6f "
+                            "ev_eoo_out=%.6f ev_done=%.6f ev_unkey=%.6f ev_out0=%.6f t_mox_on=%.6f t_mox_off=%.6f",
            why == 0 ? "complete" : why == 1 ? "timeout" : why == 2 ? "client_gone" : "tx_dropped", dur, t_call, t_seen,
-           rnum(reply, "t0"), rnum(reply, "t1"), t_unkey, t_rel, rnum(reply, "inj_frac"));
+           rnum(reply, "t0"), rnum(reply, "t1"), t_unkey, t_rel, rnum(reply, "inj_frac"),
+           rnum(reply, "ev_key"), rnum(reply, "ev_end_req"), rnum(reply, "ev_eoo_gen"), rnum(reply, "ev_eoo_out"),
+           rnum(reply, "ev_done"), rnum(reply, "ev_unkey"), rnum(reply, "ev_out0"), rnum(reply, "t_mox_on"), rnum(reply, "t_mox_off"));
   say(fd, why == 0 && t_rel > 0 ? 0 : -1, out);
 }
 

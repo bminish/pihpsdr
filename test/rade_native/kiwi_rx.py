@@ -54,6 +54,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 DECODER = os.path.join(HERE, "rade_decode_iq")
 RADE_BIN = os.path.join(ROOT, "third_party/rade_c-build/src")
 OUTDIR = os.path.join(ROOT, "rade-captures", "kiwi")
+import kiwi_gps_wav as KG
 FS_KIWI = 12000.0          # nominal; the wav header says 11999
 FC = {"v1": 1475.0, "v2": 1500.0}
 
@@ -69,11 +70,12 @@ def default_profiles(wave, freq_khz):
     return ["iq", "iq-fixed", "lsb" if expected_invert(wave, freq_khz) else "usb"]
 
 
-def profile_args(name, gain):
+def profile_args(name, gain, gps=False):
+    """gps: the IQ profiles are written as --kiwi-wav files, every block stamped with GNSS time (IQ mode only)."""
     if name == "iq":
-        return ["-m", "iq"]
+        return ["-m", "iq"] + (["-w"] if gps else [])
     if name == "iq-fixed":
-        return ["-m", "iq", "-g", str(gain)]
+        return ["-m", "iq", "-g", str(gain)] + (["-w"] if gps else [])
     if name in ("usb", "lsb"):
         return ["-m", name, "--ncomp"]
     raise SystemExit("unknown profile " + name)
@@ -102,15 +104,22 @@ def record(a):
     status = kiwi_status(a.host, a.port)
     print("Kiwi %s:%d  %s  (users %s/%s)" % (a.host, a.port, status.get("name", "?"),
                                               status.get("users", "?"), status.get("users_max", "?")))
+    gps = a.gps == "on" or (a.gps == "auto" and gps_ok(status))
+    if a.gps == "on" and not gps_ok(status):
+        print("warning: --gps on, but the Kiwi reports no GPS solution (gps_good=%s fixes=%s); the stamps may be invalid" % (
+            status.get("gps_good"), status.get("fixes")))
+    print("GPS time stamps: %s (gps_good=%s, fixes=%s)" % ("on" if gps else "off", status.get("gps_good"), status.get("fixes")))
     procs = {}
+    launched = {}
     t0 = datetime.datetime.now(datetime.timezone.utc)
     for p in profiles:
         cmd = [sys.executable, rec, "-s", a.host, "-p", str(a.port), "-f", "%g" % a.freq,
                "--tlimit", str(a.duration), "-d", sess, "--fn", p, "-u", "radetest-" + p,
                "-q", "--log-level", "warn", "--connect-retries", "3", "--busy-retries", "3",
-               "--busy-timeout", "5"] + profile_args(p, a.gain)
+               "--busy-timeout", "5"] + profile_args(p, a.gain, gps)
         if a.password:
             cmd += ["--pw", a.password]
+        launched[p] = time.time()
         procs[p] = subprocess.Popen(cmd, cwd=os.path.dirname(rec), stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True)
         time.sleep(a.launch_delay)
@@ -135,31 +144,53 @@ def record(a):
             "wave": wave, "expected_invert": expected_invert(wave, a.tx_freq or a.freq),
             "profiles": profiles, "gain": a.gain, "duration_s": a.duration,
             "start_utc": t0.strftime("%Y-%m-%dT%H:%M:%SZ"), "kiwi_status": status,
-            "results": results, "call": a.call}
+            "results": results, "call": a.call, "gps": bool(gps), "start_unix": t0.timestamp(), "launched_unix": launched}
     json.dump(meta, open(os.path.join(sess, "session.json"), "w"), indent=1)
     return sess
 
 
 # ------------------------------------------------------------------ analyse
 
-def to_baseband(path, profile, shift_khz_tx_minus_kiwi, fc):
-    """Recording -> 8 kHz complex baseband with the modem at +fc."""
-    fs, x = wavfile.read(path)
-    x = x.astype(np.float64) / 32768.0
-    delta = shift_khz_tx_minus_kiwi * 1000.0
-    if x.ndim == 2:
-        z = x[:, 0] + 1j * x[:, 1]              # Kiwi IQ: positive = above the tuned frequency
+def to_baseband(path, profile, shift_khz_tx_minus_kiwi, fc, ref_unix=None):
+    """Recording -> 8 kHz complex baseband with the modem at +fc. Returns (z, t0_unix): t0_unix is the UTC time of z[0]
+    for a GPS-stamped recording (the 8 kHz grid is then exactly on GPS time, resampled from the fitted rate), else None."""
+    rec = None
+    if ref_unix is not None and profile not in ("usb", "lsb"):
+        try:
+            rec = KG.read_kiwi_gps_wav(path, ref_unix)
+        except ValueError:
+            rec = None
+    if rec is not None:
+        z = rec.z.astype(np.complex128)
+        fs = rec.fs
+        delta = shift_khz_tx_minus_kiwi * 1000.0
     else:
-        z = hilbert(x)                          # audio: the sideband is already chosen by the profile
-        if profile == "lsb":
-            delta = -delta                      # LSB audio runs the other way
+        fs, x = wavfile.read(path)
+        x = x.astype(np.float64) / 32768.0
+        delta = shift_khz_tx_minus_kiwi * 1000.0
+        if x.ndim == 2:
+            z = x[:, 0] + 1j * x[:, 1]              # Kiwi IQ: positive = above the tuned frequency
+        else:
+            z = hilbert(x)                          # audio: the sideband is already chosen by the profile
+            if profile == "lsb":
+                delta = -delta                      # LSB audio runs the other way
+        fs = FS_KIWI
     n = np.arange(len(z))
     if abs(delta) > 1e-6:
         # bring the transmitter's dial to the Kiwi's, at 12 kHz so the modem is not clipped by
         # the 8 kHz filter on its way
-        z = z * np.exp(-2j * np.pi * delta * n / FS_KIWI)
-    z = resample_poly(z, 2, 3)                  # 12 kHz -> 8 kHz
-    return z
+        z = z * np.exp(-2j * np.pi * delta * n / fs)
+    z8 = resample_poly(z, 2, 3)                 # 12 kHz -> 8 kHz (at the nominal ratio)
+    if rec is None:
+        return z8, None
+    # the Kiwi's true sample rate is fs (11998.94 or so), not 12000: put the 8 kHz stream on exact 1/8000 s steps of GPS time
+    from scipy.interpolate import CubicSpline
+    step = 1.5 / fs                               # true seconds between z8 samples
+    m = int((len(z8) - 2) * step * 8000.0)
+    k = np.arange(m) / 8000.0 / step              # fractional index into z8
+    zr = CubicSpline(np.arange(len(z8)), z8.real)(k)
+    zi = CubicSpline(np.arange(len(z8)), z8.imag)(k)
+    return zr + 1j * zi, float(rec.t0_unix)
 
 
 def level(z):
@@ -230,6 +261,35 @@ def feature_loss(ref, rx, trim=25):
     return float(np.mean((r1 - x1) ** 2) / np.mean(r1 ** 2)), lag
 
 
+def feature_profile(ref, rx):
+    """How the decoded features line up with what was sent, with nothing trimmed, so the start and the end of the over show.
+
+    rx[k] corresponds to ref[k - lag]. lag >= 0: the decoder's first frame is at or before the first speech frame (nothing of
+    the start of the speech is lost); lag < 0: the first -lag frames (10 ms each) of the speech were not decoded. The same for the
+    end: frames of the speech after the decoder's last frame. Normalised errors (re the mean square of ref) over the first
+    second, the middle and the last second of the aligned stretch.
+    """
+    ref, rx = ref.reshape(-1, 36)[:, :20], rx.reshape(-1, 36)[:, :20]
+    if len(rx) < 300 or len(ref) < 300:
+        return None
+    a0, b0 = ref - ref.mean(0), rx - rx.mean(0)
+    score = sum(correlate(b0[:, c], a0[:, c], mode="full", method="fft") for c in range(20))
+    lag = int(np.argmax(score)) - (len(a0) - 1)
+    r1, x1 = ref[max(0, -lag):], rx[max(0, lag):]
+    m = min(len(r1), len(x1))
+    r1, x1 = r1[:m], x1[:m]
+    p = np.mean(r1 ** 2)
+    e = np.mean((r1 - x1) ** 2, axis=1) / p
+    first_clipped = max(0, -lag)
+    ref_frames_after = len(ref) - (max(0, -lag) + m)         # speech frames after the last decoded frame
+    return {"rx_start_vs_speech_frames": lag,
+            "speech_start_clipped_ms": 10 * first_clipped,
+            "speech_end_missing_ms": 10 * max(0, ref_frames_after),
+            "loss_first_1s": round(float(np.mean(e[:100])), 4), "loss_last_1s": round(float(np.mean(e[-100:])), 4),
+            "loss_middle": round(float(np.mean(e[100:-100])), 4) if m > 300 else None,
+            "loss_first_250ms": round(float(np.mean(e[:25])), 4)}
+
+
 def env(x, n=160):
     k = len(x) // n
     return np.sqrt((x[:k * n].reshape(k, n) ** 2).mean(1))
@@ -263,7 +323,8 @@ def analyze_one(path, profile, meta, a, refs):
     v2 = wave == "v2"
     inv = meta["expected_invert"]
     base = os.path.splitext(path)[0]
-    z = to_baseband(path, profile, meta["tx_freq_khz"] - meta["freq_khz"], FC[wave])
+    z, t0_unix = to_baseband(path, profile, meta["tx_freq_khz"] - meta["freq_khz"], FC[wave],
+                             meta.get("start_unix") if meta.get("gps") else None)
     is_iq = not profile in ("usb", "lsb")
     # IQ: an inverted signal sits below the dial, so conjugate it. Audio profiles
     # already put the modem at positive frequency when the sideband is right.
@@ -297,6 +358,10 @@ def analyze_one(path, profile, meta, a, refs):
              "eoo_count": len(eoos), "eoo_at_s": round(eoos[0][0], 2) if eoos else None,
              "eoo_after_end_s": round(eoos[0][0] - float(t1), 2) if eoos else None,
              "call": eoos[0][1] if eoos else None}
+        if t0_unix is not None:                        # GPS-stamped recording: the decoder's times as UTC (end of the block it was in)
+            o["start_unix"] = round(t0_unix + float(t0), 4)
+            o["end_unix"] = round(t0_unix + float(t1), 4)
+            o["eoo_at_unix"] = round(t0_unix + eoos[0][0], 4) if eoos else None
         o["eoo_ok"] = len(eoos) == 1
         want = a.call or meta.get("call")
         o["call_ok"] = None if (v2 or not want) else (len(eoos) >= 1 and eoos[0][1] == want.upper())
@@ -307,6 +372,9 @@ def analyze_one(path, profile, meta, a, refs):
             rx_feat = np.fromfile(base + ".feat.f32", dtype=np.float32).reshape(-1, 36)[f0:f1]
             fl = feature_loss(rf, rx_feat)
             o["feature_loss"] = round(fl[0], 4) if fl else None
+            pr = feature_profile(rf, rx_feat)
+            if pr:
+                o.update(pr)
             sp = wavfile.read(base + ".speech.wav")[1].astype(float)
             # speech starts after the 5 frame warm-up of the first over only
             s0 = max(0, (f0 - 5) * 160) if k else 0
@@ -334,6 +402,14 @@ def verdict(res, a):
         if a.max_loss is not None and (o.get("feature_loss") is None or o["feature_loss"] > a.max_loss):
             ok = False; why.append("over %d: feature loss %s > %s" % (o["n"], o.get("feature_loss"), a.max_loss))
     return ok, why
+
+
+def gps_ok(status):
+    """The Kiwi has a GPS solution now: it reports satellites in the solution (gps_good) and fixes."""
+    try:
+        return int(status.get("gps_good", "0")) > 0 and int(status.get("fixes", "0")) > 0
+    except ValueError:
+        return False
 
 
 def report(sess, results, a):
@@ -465,6 +541,8 @@ def main():
         p.add_argument("--gain", type=int, default=50, help="manual gain (dB) for iq-fixed")
         p.add_argument("--launch-delay", type=float, default=1.0)
         p.add_argument("--kiwiclient", default="~/sdr/kiwiclient")
+        p.add_argument("--gps", choices=["auto", "on", "off"], default="auto",
+                       help="GNSS-stamped IQ recordings (kiwirecorder -w): auto = when the Kiwi reports a GPS solution")
 
     p = sub.add_parser("record"); rec(p); common(p)
     p = sub.add_parser("analyze"); p.add_argument("session"); common(p)
