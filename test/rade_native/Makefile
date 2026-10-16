@@ -32,6 +32,10 @@ test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_nati
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
+test_tx_live: test_tx_live.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_live.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
+	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
+
 test_tx_engine: test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
@@ -78,11 +82,12 @@ test_ctl: test_ctl.c $(ROOT)/src/rade_native_test.c $(ROOT)/src/rade_native_test
 test_log: test_log.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_native_log.h
 	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_log.c $(ROOT)/src/rade_native_log.c -lm
 
-check: test_geometry test_log test_ctl
+check: test_geometry test_log test_ctl test_tx_live
 	./test_geometry
+	./test_tx_live
 	python3 test_log.py
 	python3 test_ctl.py
 	python3 test_timing.py
 
 clean:
-	rm -f v2_text_interop/interop v2_text_interop/*.o modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl
+	rm -f v2_text_interop/interop v2_text_interop/*.o modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl test_tx_live

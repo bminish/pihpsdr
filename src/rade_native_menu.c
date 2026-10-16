@@ -94,12 +94,13 @@ static long long rade_dial(void) {
 
 //
 // Transmitting RADE: keyed, a RADE waveform on and its transmit engine in use, and not a TUNE or two-tone
-// (which key the radio too but are not RADE). This, not radio_is_transmitting(), is what the Reporter is told:
+// (which key the radio too but are not RADE). rade_native_tx_live() is the engine's own word that a RADE over is going out: a
+// TUNE's flag clears a moment before the key does, and that moment is not a transmission. This, not radio_is_transmitting(), is what the Reporter is told:
 // an SSB over, or a tune, in RADE mode is not reported as a RADE transmission.
 //
 static int rade_is_tx(void) {
-  return radio_is_transmitting() && rade_native_waveform() != 0 && rade_native_tx_enabled() &&
-         transmitter != NULL && !transmitter->tune && !transmitter->twotone;
+  return radio_is_transmitting() && rade_native_waveform() != 0 && rade_native_tx_live() &&
+         transmitter != NULL && !transmitter->tune && !transmitter->twotone && !transmitter->txnoise;
 }
 
 static int vfo_mode_sign(void) {
