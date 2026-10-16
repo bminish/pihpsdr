@@ -89,7 +89,7 @@ def band_of(freq_hz):
 class Station:
     __slots__ = ("sid", "callsign", "grid", "version", "rx_only", "connect_time", "freq", "mode",
                  "transmitting", "last_tx", "message", "rx_call", "rx_snr", "rx_mode", "last_update",
-                 "seen")
+                 "seen", "rx_time")
 
     def __init__(self, sid):
         self.sid = sid
@@ -100,6 +100,7 @@ class Station:
         self.transmitting = False
         self.rx_call = self.rx_mode = ""
         self.rx_snr = None
+        self.rx_time = 0.0           # when the last rx_report with something in it arrived (our clock)
         self.seen = time.time()
 
     @property
@@ -109,6 +110,12 @@ class Station:
         if self.rx_only:
             return "Receive Only"
         return "Receiving"
+
+    def receiving_now(self, now):
+        """Shown as receiving, as freedv-gui does: not transmitting, not receive-only, and an rx_report with an SNR
+        arrived recently (20 s if it named a call, 5 s if not)."""
+        return (self.status == "Receiving" and self.rx_snr is not None and self.rx_time > 0 and
+                now - self.rx_time <= (RX_COLOUR_WITH_CALL_S if self.rx_call else RX_COLOUR_NO_CALL_S))
 
 
 class Roster:
@@ -172,7 +179,9 @@ class Roster:
                     s.rx_mode = d.get("mode", "")
                     snr = d.get("snr")
                     s.rx_snr = snr if isinstance(snr, (int, float)) and not isinstance(snr, bool) else None
+                    s.rx_time = time.time()
                     if not s.rx_call and not s.rx_mode:
+                        s.rx_time = 0.0
                         # The server sends this (with an snr of 0) to everyone when a station changes frequency or connects: it
                         # means "nothing heard now", not an SNR of 0. freedv-gui blanks the call, mode and SNR for it
                         # (FreeDVReporterDataModel::onReceiveUpdateFn_); so do we.
@@ -193,7 +202,18 @@ DEFAULT_SERVERS = {
            "web": "https://reporter-radev2.k6aq.net/"},
 }
 WAVE_KEY = {1: "v1", 2: "v2"}
-VIEWS = ("v1", "v2", "all")          # what the list shows: V1 only, V2 only, both
+VIEWS = ("follow", "v1", "v2", "all")   # what the list shows: the radio's RADE mode, V1 only, V2 only, both
+RX_COLOUR_WITH_CALL_S = 20.0           # freedv-gui: a station shows as receiving for 20 s after an rx_report with a call ...
+RX_COLOUR_NO_CALL_S = 5.0              # ... and for 5 s after one without
+
+
+def resolve_view(view, pihpsdr):
+    """"follow" shows the reporter of the RADE mode piHPSDR has selected (both while RADE is off or piHPSDR is not running)."""
+    if view != "follow":
+        return view
+    if pihpsdr and pihpsdr.get("linked"):
+        return {1: "v1", 2: "v2"}.get(int(pihpsdr.get("waveform", 0) or 0), "all")
+    return "all"
 
 
 def parse_server(text):
@@ -492,7 +512,9 @@ def load_config(path=None):
                     servers[k][f] = v[f]
     c["servers"] = servers
     v = c.get("view")
-    c["view"] = "v2" if v == "v3" else (v if v in VIEWS else "all")     # "v3" was V2's name before it had an address
+    c["view"] = "v2" if v == "v3" else (v if v in VIEWS else "follow")  # "v3" was V2's name before it had an address
+    if c.get("view_v") != 2:        # Follow became the default: take it up once, then whatever is chosen is remembered
+        c["view"], c["view_v"] = "follow", 2
     # reporting is never remembered: every start is "off"
     c.pop("reporting", None)
     return c
@@ -537,6 +559,7 @@ def plan(cfg, pihpsdr, reporting, callsign, grid, view):
 
     Returns (targets, why, report_key, view_keys); targets is {key: (server, role, mode, freq_hz, tx)}.
     """
+    view = resolve_view(view, pihpsdr)
     srv, role, mode, freq, tx, why = decide(cfg, pihpsdr, reporting, callsign, grid, "v1")
     rkey = next((k for k, v in cfg["servers"].items() if v is srv), None) if role == "report" else None
     vkeys = ["v1", "v2"] if view == "all" else [view if view in cfg["servers"] else "v1"]
