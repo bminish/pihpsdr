@@ -463,7 +463,8 @@ class App(Gtk.Window):
             lk.software = software
             if k in targets:
                 srv, role, mode, freq, tx = targets[k]
-                lk.set_target(srv, role, call, grid, freq, mode, tx, self.message)
+                lk.set_target(srv, role, call, grid, freq, mode, tx, self.message,
+                              live=bool(p and p.get("rx_sync") and isinstance(p.get("rx_snr"), (int, float))))
             else:
                 lk.set_target(None, "view")
         role = "report" if rkey else "view"
