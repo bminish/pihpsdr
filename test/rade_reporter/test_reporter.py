@@ -177,6 +177,20 @@ def periodic():
                               3, "EI6IZ", now) == [], "an older piHPSDR's latest call with no SNR: not reported")
     check(core.Link(core.Roster(), lambda n, d: None, lambda st, m: None, "x").report_rx("G4ABC", "RADEV1", None) is False,
           "report_rx refuses an SNR of None")
+    # what the server sends about a station: a blank report (no call, no mode, snr 0) is "nothing heard", as freedv-gui treats it
+    ro = core.Roster()
+    ro.event("new_connection", {"sid": "x", "callsign": "EI6IZ", "grid_square": "IO53", "version": "v", "last_update": "", "connect_time": ""})
+    ro.event("rx_report", {"sid": "x", "callsign": "", "mode": "", "snr": 0, "receiver_callsign": "EI6IZ"})
+    st = ro.snapshot()[0]
+    check(st.rx_snr is None and st.rx_call == "" and st.rx_mode == "", "a blank rx_report (no call, no mode, snr 0) clears the SNR: it is not an SNR of 0")
+    ro.event("rx_report", {"sid": "x", "callsign": "", "mode": "RADEV1", "snr": 12})
+    check(ro.snapshot()[0].rx_snr == 12, "an SNR-only report (blank call, a mode) is an SNR: 12")
+    ro.event("rx_report", {"sid": "x", "callsign": "", "mode": "RADEV1", "snr": 0})
+    check(ro.snapshot()[0].rx_snr == 0, "an SNR-only report of 0 is an SNR of 0 (the receiver is locked at 0 dB)")
+    ro.event("rx_report", {"sid": "x", "callsign": "", "mode": "", "snr": 0})
+    check(ro.snapshot()[0].rx_snr is None, "and a blank one clears it again")
+    ro.event("bulk_update", [["rx_report", {"sid": "x", "callsign": "G4ABC", "mode": "RADEV1", "snr": -3}], ["rx_report", {"sid": "x", "callsign": "", "mode": "", "snr": 0}]])
+    check(ro.snapshot()[0].rx_snr is None, "the same inside a bulk_update")
     check(core.PeriodicSnr(1.0).interval == 1.0, "interval is settable (freedv-gui itself sends about once a second)")
 
 
