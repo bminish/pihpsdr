@@ -62,8 +62,8 @@ FC = {"v1": 1475.0, "v2": 1500.0}
 # ------------------------------------------------------------------ geometry
 
 def expected_invert(wave, freq_khz):
-    """V1 is sent as lower sideband below 10 MHz, V2 never (see rade_native.h)."""
-    return wave == "v1" and freq_khz < 10000.0
+    """V1 is sent as lower sideband below 10 MHz, V2 never, and on 60 m (5250-5450 kHz) neither: USB (see rade_native.h)."""
+    return wave == "v1" and freq_khz < 10000.0 and not (5250.0 <= freq_khz <= 5450.0)
 
 
 def default_profiles(wave, freq_khz):

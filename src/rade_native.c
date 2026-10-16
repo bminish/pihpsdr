@@ -40,8 +40,14 @@ double rade_native_width(int waveform) {
   return waveform == RADE_NATIVE_V2 ? RADE_NATIVE_BW_V2 : RADE_NATIVE_BW_V1;
 }
 
+int rade_native_band_class(long long dial_hz) {
+  if (dial_hz >= RADE_NATIVE_60M_LOW_HZ && dial_hz <= RADE_NATIVE_60M_HIGH_HZ) { return 1; }
+  return dial_hz < RADE_NATIVE_V1_INV_BELOW_HZ ? 0 : 2;
+}
+
 int rade_native_default_invert(int waveform, long long dial_hz) {
-  return waveform == RADE_NATIVE_V1 && dial_hz < RADE_NATIVE_V1_INV_BELOW_HZ;
+  // V1 below 10 MHz is lower sideband, V2 and everything above 10 MHz upper; on 60 m, upper for both
+  return waveform == RADE_NATIVE_V1 && rade_native_band_class(dial_hz) == 0;
 }
 
 int rade_native_effective_invert(int waveform, long long dial_hz, int user_invert) {
