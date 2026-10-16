@@ -1500,12 +1500,6 @@ gpointer client_sidetone_thread(gpointer arg) {
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifdef RADE_NATIVE
-static int tx_rade_invert(void) {
-  return rade_native_get_invert();
-}
-#endif
-
 static void tx_full_buffer(TRANSMITTER *tx) {
   ASSERT_SERVER();
   double *dp;
@@ -1588,7 +1582,7 @@ static void tx_full_buffer(TRANSMITTER *tx) {
       // Native RADE: the mic samples are replaced by the modem signal
       // (complex, so the panel is in "I and Q" mode, see rade_native_menu.c)
       //
-      rade_native_tx_block(tx->mic_input_buffer, tx->buffer_size, tx_rade_invert(),
+      rade_native_tx_block(tx->mic_input_buffer, tx->buffer_size, rade_native_get_invert(),
                            radio_is_transmitting() && !tx->tune && !tx->twotone && !tx->txnoise);
     }
 #endif
@@ -2168,7 +2162,7 @@ void tx_set_filter(TRANSMITTER *tx) {
     // invert, not the mode's filter.
     //
     double lo, hi;
-    rade_native_wdsp_edges(rade_native_waveform(), tx_rade_invert(), 0.0, &lo, &hi);
+    rade_native_wdsp_edges(rade_native_waveform(), rade_native_get_invert(), 0.0, &lo, &hi);
     tx->filter_low = (int)lround(lo);
     tx->filter_high = (int)lround(hi);
   }
