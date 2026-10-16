@@ -56,9 +56,25 @@ def resolve(path, folder):
 
 
 def log_side(log):
-    """The parameter log of a run: the mic as the engine saw it, the buffers, whether the transmitter underran."""
+    """The parameter log of a run (a directory of tables; an old single CSV still reads): the mic as the engine saw it while keyed,
+    the buffers, whether the transmitter underran."""
     out = {}
     if not (log and os.path.exists(log)):
+        return out
+    if os.path.isdir(log):
+        try:
+            txo = list(csv.DictReader(open(os.path.join(log, "tx_overs.csv"))))
+            tx = list(csv.DictReader(open(os.path.join(log, "tx.csv"))))
+        except OSError:
+            return out
+        if not txo:
+            return out
+        o = txo[-1]
+        out.update(mic_lufs=float(o["loud_mean"]), mic_peak_dbfs=float(o["peak_max"]), mic_limiting_pct=float(o["limiting_pct"]),
+                   tx_underruns=int(float(o["underruns"])), agc_db_max=float(o["agc_db_end"]),
+                   keyed_s=round(float(o["t_end"]) - float(o["t_start"]), 1), tx_hold_ms=float(o["hold_ms"]))
+        if tx:
+            out["tx_out_fill_min"] = int(min(float(x["out_fill_min"]) for x in tx))
         return out
     rows = [r for r in csv.DictReader(l for l in open(log) if not l.startswith("#")) if r["kind"] == "tx" and r["tx"] == "1"]
     if not rows:

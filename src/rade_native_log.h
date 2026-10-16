@@ -20,34 +20,38 @@
 #define _RADE_NATIVE_LOG_H_
 
 //
-// Parameter log for RADE: what librade gives us on receive (sync, SNR, frequency offset, the
-// per-call statistics, buffer fill) and what the transmit side is doing (mic loudness, peak,
-// leveller gain, drive, buffer fill), as one CSV file per run, for analysis and graphs later.
+// Parameter log for RADE, for analysis and graphs: what librade gives us on receive and what the transmit side is doing, reduced
+// to what is worth keeping (see docs/rade-native-logging.md for what was measured and why).
 //
-// The producers are the receive worker and the transmit audio thread; they must never wait.
-// Each has a single-producer ring buffer: logging a row is a copy and an atomic store. A
-// writer thread wakes 5 times a second, formats and writes what is there, and flushes. If the
-// writer falls behind the ring overwrites nothing: the row is dropped and counted (the count
-// is written at the end of the file). Nothing is done when logging is off but one flag test.
+// The producers are the receive worker and the transmit audio thread; they never wait: each has a single-producer ring and
+// logging a row is a copy and an atomic store. A writer thread wakes 5 times a second and does all the rest: it averages,
+// finds the overs (stretches in sync, keyed stretches), puts the dial, mode and call to them, and writes the files below. If it
+// falls behind a row is dropped and counted (in meta.txt at the end).
 //
-// rade_log_event() is for the GTK main thread only (menu changes); it is a third ring.
+// A run is a directory rade-logs/<time>/ (a new one each time logging is started) of plain CSV tables with no empty columns, and
+// rade-logs/<time>.tar.gz of it when logging stops. t is seconds since the start (0.01 s); utc_* are ISO 8601 UTC.
 //
-// The file is rade-logs/<time>_<kHz>_RADE-V<n>.csv, a new one each time logging is started. Lines
-// starting with # are settings; the header row follows; the columns are the same for every row
-// kind (rx, tx, ev) and left empty where they do not apply:
+//   meta.txt     settings at the start; at the end the number of dropped rows
+//   rx.csv       only while in sync, 2 rows a second, means over the half second:
+//                  t, snr_mean, snr_min, foff_mean, n  (and for V2 the means of librade's delta_hat, gain, snr_est, est_foff)
+//   tx.csv       only while keyed, 2 rows a second: t, loud_lufs, peak_dbfs, agc_db, limiting_pct, out_fill_min
+//   events.csv   on change: t, kind, value. Kinds: wave dial mode invert tx_enabled drive trim agc (the settings, at the start and
+//                when they change), key_down key_up sync_on sync_off (overs), call (value: CALL snr=x), eoo, underrun overrun
+//                (counts since the last), tx_underrun
+//   overs.csv    one row per heard over (in sync for at least 1 s, gaps under 1.5 s joined), written when it ends:
+//                  utc_start, t_start, t_end, dial_hz, mode, wave, invert, snr_mean, snr_min, snr_max, foff_mean, foff_sd,
+//                  sync_pct, eoo, call, call_snr
+//   tx_overs.csv one row per transmitted over: utc_start, t_start, t_end, dial_hz, wave, drive_db, trim_db, agc_db_end,
+//                  loud_mean, peak_max, limiting_pct, underruns, hold_ms
 //
-//   t_unix,t,kind,rx_pos,sync,snr_db,foff_hz,nout,delta_hat,est_foff,gain,snr_est,in_fill,out_fill,
-//   rx_underruns,rx_overruns,tx,trim_db,agc_db,drive_db,loud_mom,loud_avg,peak_dbfs,limiting,
-//   tx_underruns,tx_out_fill,tx_pcm_fill,end_state,note
+// With no lock nothing is written for the receiver (the SNR is not a measurement then); while not keyed nothing for the transmitter.
 //
-// t is seconds since the log was started; rx_pos is the 8 kHz sample count handed to librade
-// (the same clock as rx_pos in a capture's _stats.csv).
-//
+
 typedef struct {
   long   rx_pos;
-  int    sync, nout;
+  int    sync, nout, eoo;                   // eoo: this call of librade saw an end-of-over frame
   float  snr_db, foff_hz;                  // as shown in the RADE window
-  float  delta_hat, est_foff, gain, snr_est;   // rade_get_stats()
+  float  delta_hat, est_foff, gain, snr_est;   // rade_get_stats() (librade's V2 statistics; zero for V1)
   long   in_fill, out_fill;                // 8 kHz samples queued to librade / 16 kHz speech queued to play
   unsigned long underruns, overruns;
 } rade_log_rx_t;
@@ -64,15 +68,24 @@ typedef struct {
   int    end_state;
 } rade_log_tx_t;
 
-// Starts a new file (stopping any current one). meta: lines of settings, without the leading #.
-// Returns 0, or -1 with the log left off.
+// What the radio was doing, kept up to date by the menu (about 4 times a second); the writer takes it at the start of an over.
+typedef struct {
+  long long dial_hz;
+  char   mode[8];
+  int    wave;                             // 0 off, 1 V1, 2 V2
+  int    invert;
+} rade_log_ctx_t;
+
+// Starts a new run (stopping any current one). meta: lines of settings. Returns 0, or -1 with the log left off.
 int         rade_log_start(const char *meta);
 void        rade_log_stop(void);
 int         rade_log_active(void);
-const char *rade_log_path(void);
+const char *rade_log_path(void);              // the run's directory
 
 void        rade_log_rx(const rade_log_rx_t *r);
 void        rade_log_tx(const rade_log_tx_t *r);
+void        rade_log_context(const rade_log_ctx_t *c);
+// Events: GTK main thread only. "kind value" (see above); the value may contain spaces.
 void        rade_log_event(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 #endif
