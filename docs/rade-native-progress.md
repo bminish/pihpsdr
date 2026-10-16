@@ -16,6 +16,13 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (filter lab): `test/rade_native/filter_lab.py` + `wdsp_probe --nc/--mp/--win/--nbpwin/--nbp`, results in
+  `docs/rade-native-filter-lab.md`. V2 TX filter: edge carriers lose 1.7 dB at the default 2048/7-term/96 kHz, but no length,
+  window or edge setting moves the decode by more than 0.05 dB; minimum phase costs about 1 dB (its group-delay spread, 3-5 ms TX and
+  9-14 ms RX, exceeds the 4 ms cyclic prefix); narrowing the V2 RX to 1030..1970 gains 0.3 dB of sync sensitivity and no more. The V2
+  spectrum's edge carriers are weak (-11 / -18 dB) in the modem itself. Nothing applied. `docs/rade-native-findings.md`: the
+  consolidated summary of all findings.
+
 - 2026-10-16 (air run 2, ALC strong/weak): `docs/rade-native-air-run2-20261016.md`. The ALC costs nothing measurable
   on weak signals and does not lower the strong-signal power: received power stops rising at about +1.5 dB (V1 +1.0 dB, V2
   +0.4 dB over the 0 dB level); decode quality at +3..+6 dB equals or beats 0 dB at every noise level tested. V1's own SNR
