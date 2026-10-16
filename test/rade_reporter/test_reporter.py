@@ -191,6 +191,16 @@ def periodic():
     check(ro.snapshot()[0].rx_snr is None, "and a blank one clears it again")
     ro.event("bulk_update", [["rx_report", {"sid": "x", "callsign": "G4ABC", "mode": "RADEV1", "snr": -3}], ["rx_report", {"sid": "x", "callsign": "", "mode": "", "snr": 0}]])
     check(ro.snapshot()[0].rx_snr is None, "the same inside a bulk_update")
+    # reporting is only possible with piHPSDR connected and a valid frequency
+    ok, why = core.report_gate({"linked": True, "dial_hz": 28645000})
+    check(ok, "connected, 28.645 MHz: may report")
+    for bad in (0, -1, None, "28645000", float("nan"), True, 50, 1e12):
+        ok, why = core.report_gate({"linked": True, "dial_hz": bad})
+        check(not ok and "frequency" in why, "dial %r: no reporting (%s)" % (bad, why))
+    check(not core.report_gate(None)[0] and not core.report_gate({"linked": False, "dial_hz": 14236000})[0], "piHPSDR not connected (no state, or stale): no reporting")
+    cfgg = core.load_config(os.path.join(tempfile.mkdtemp(), "none.json"))
+    d = core.decide(cfgg, {"linked": True, "waveform": 1, "dial_hz": 0, "tx": False}, True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "view" and "frequency" in d[5], "decide() reports nothing for a dial of 0: %s" % d[5])
     check(core.PeriodicSnr(1.0).interval == 1.0, "interval is settable (freedv-gui itself sends about once a second)")
 
 

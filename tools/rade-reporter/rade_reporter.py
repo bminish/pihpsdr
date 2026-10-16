@@ -457,6 +457,14 @@ class App(Gtk.Window):
         if now - self._ident_since >= 1.5:
             self._stable = ident
         call, grid = getattr(self, "_stable", ("", ""))
+        # Reporting needs piHPSDR connected and a valid frequency. Without them it is switched OFF (the tick comes out and cannot be put
+        # back until they are there), never merely paused: nothing may be reported with a bad frequency or a state that is not known.
+        ok_gate, why_gate = core.report_gate(p)
+        if not ok_gate and self.reporting:
+            self.rep_chk.set_active(False)                  # -> _on_report_toggled: reporting False
+        self.rep_chk.set_sensitive(ok_gate)
+        self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\nAlways off when this program starts."
+                                      + ("" if ok_gate else "\nDisabled: " + why_gate + "."))
         targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg.get("view", "all"))
         self.report_key, self.view_keys = rkey, vkeys
         software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
