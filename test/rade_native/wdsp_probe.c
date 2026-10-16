@@ -14,6 +14,11 @@
  *     --dsp HZ --out HZ    TX: WDSP rates (48000 each by default; piHPSDR P2: 96000 and 192000)
  *     --speech-stages      TX: the leveler, CFC and phase rotator as one SSB profile of ours sets them (see source)
  *     --cfir               TX: run the CFIR (P2 firmware compensation), as piHPSDR does in P2
+ *     --nc N               filter length (taps) of this channel's filters (default: piHPSDR's 2048)
+ *     --mp 0|1             1: minimum-phase (low latency) filters, 0: linear phase (piHPSDR's setting)
+ *     --win 0|1            bandpass window: 0 4-term, 1 7-term Blackman-Harris (piHPSDR's setting)
+ *     --nbpwin 0|1         RX: window of the notch-bandpass nbp0, the main RX filter (WDSP's default: 0)
+ *     --nbp 0|1            RX: 1 leave nbp0 running (default, as piHPSDR); 0 not
  *
  * Files are interleaved float32 I,Q at 48 kHz. Input is padded with zeros
  * to a whole number of buffers; output has the same length.
@@ -36,6 +41,7 @@ int main(int argc, char **argv) {
   int speech = 0;
   int dsp_rate = 48000, out_rate = 48000, cfir = 0;
   double top = 80.0, fixed = 0.0, low = 300, high = 3000, gain_db = 0;
+  int nc = 0, mp = 0, win = 1, nbpwin = 0, nbp = 1;
   if (argc < 4) { fprintf(stderr, "usage: wdsp_probe rx|tx [opts] in out\n"); return 1; }
   tx = !strcmp(argv[1], "tx");
   for (; i < argc - 2; i++) {
@@ -47,6 +53,11 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--dsp")) dsp_rate = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--out")) out_rate = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--cfir")) cfir = 1;
+    else if (!strcmp(argv[i], "--nc")) nc = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--mp")) mp = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--win")) win = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--nbpwin")) nbpwin = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--nbp")) nbp = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--speech-stages")) speech = 1;
     else if (!strcmp(argv[i], "--speech-stages-eq")) speech = 2;
     else if (!strcmp(argv[i], "--top")) top = atof(argv[++i]);
@@ -69,6 +80,11 @@ int main(int argc, char **argv) {
   if (!tx) {
     OpenChannel(ch, BUF, 2 * BUF, 48000, 48000, 48000, 0, 1, 0.0, 0.025, 0.0, 0.010, 1);
     SetRXAMode(ch, RXA_DIGU_MODE);
+    RXASetNC(ch, nc > 0 ? nc : 2048);
+    RXASetMP(ch, mp);
+    SetRXABandpassWindow(ch, win);
+    RXANBPSetWindow(ch, nbpwin);
+    if (!nbp) { RXANBPSetRun(ch, 0); }
     SetRXABandpassRun(ch, nobp ? 0 : 1);
     RXASetPassband(ch, low, high);
     SetRXAPanelRun(ch, 1);
@@ -86,8 +102,9 @@ int main(int argc, char **argv) {
     }
   } else {
     OpenChannel(ch, BUF, 2 * BUF, 48000, dsp_rate, out_rate, 1, 0, 0.0, 0.025, 0.0, 0.010, 1);
-    TXASetMP(ch, 0);
-    SetTXABandpassWindow(ch, 1);
+    TXASetMP(ch, mp);
+    TXASetNC(ch, nc > 0 ? nc : 2048);
+    SetTXABandpassWindow(ch, win);
     SetTXABandpassRun(ch, nobp ? 0 : 1);
     SetTXAAMSQRun(ch, 0);
     SetTXAALCAttack(ch, 1);
