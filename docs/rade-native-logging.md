@@ -1,5 +1,9 @@
 # RADE native: the parameter log - what it holds, what is worth keeping
 
+> **Built (2026-10-16): section 4 is the format now written.** Sections 1-3 describe the old single-file log and why it was reduced; section 5 lists what was done first.
+> The questions of section 6 were answered: split tables yes; V2's librade statistics kept (in `rx.csv`, for V2 rows); a `tar.gz` copy made when a run stops.
+> Details of the implemented tables: the comment at the top of `src/rade_native_log.h`; test: `test/rade_native/test_log.py`.
+
 Measured on the 77 logs in `rade-logs/` (2.83 MB, 14 118 receive rows, 17 116 transmit rows, 194 events), by `test/rade_native/log_analysis.py`
 (repeatable: `python3 test/rade_native/log_analysis.py [files]`). The log is meant to feed an application that graphs SNR, offsets and so on
 and lets transmissions be found by frequency, time and the call heard at the end of the over. Nothing below the "Done" heading has been changed.
@@ -66,8 +70,18 @@ One directory per run, `rade-logs/<start>/`, plain CSV tables with no empty colu
 - **With no lock, receive rows are written at the change of state and then once a second** (76 % of the receive rows were without a lock, and carried nothing a graph can use).
 These two alone remove about 60 % of the bytes of a receive-only log; the rest of section 4 is the larger change.
 
-## 6. Questions for the decision
+## 6. Questions for the decision (answered: 1 yes, 2 keep for V2, 3 yes)
 
 1. Go ahead with the split tables of section 4 (and the over summaries)? The rates (2 Hz) and the minimum SNR column are the main choices.
 2. Keep V2's `delta_hat` / `gain` / `snr_est` / `est_foff` in `rx.csv` for V2 overs? (They are librade's own V2 statistics and show how the decoder sees the channel, but they are constant for V1 and unexplained for graphs.)
 3. A compressed copy (gzip on close) as well? About 5-10 times smaller again, but unreadable while the run is going.
+
+## 7. As built
+
+- A run is `rade-logs/<YYYYMMDD-HHMMSS>/` with `meta.txt`, `rx.csv`, `tx.csv`, `events.csv`, `overs.csv`, `tx_overs.csv`, and `rade-logs/<same>.tar.gz` made in the background when the run stops (needs `tar`).
+- **rx.csv**: only while in sync, 2 rows a second: `t, snr_mean, snr_min, foff_mean, n` and, for V2 rows, `delta_hat, gain, snr_est, est_foff` (empty for V1). **tx.csv**: only while keyed, 2 a second. **events.csv**: the settings as events (wave, dial, mode, invert, tx_enabled, drive,
+  trim, agc: all at the start, then on change), `key_down`/`key_up`, `sync_on`/`sync_off`, `eoo`, `call` (value `CALL snr=x`, `snr=none` if there was no lock behind it), `underrun`/`overrun` (counts), `tx_underruns`. The file is in the order written: sort by `t`.
+- **overs.csv** and **tx_overs.csv** as in section 4, with the dial, mode, waveform and invert taken when the over starts (from the menu's 250 ms poll) and the call attached from the call event arriving up to 2.5 s after the over ends.
+- Rules: an over is a stretch in sync of at least 1 s, joined across gaps under 1.5 s; a transmitted over ends when no keyed row has come for 0.5 s; `hold_ms` is the time the engine spent in the end-of-over hold (100 ms steps).
+- Sizes, scripted scene (`test_log.py`): 2 runs in 2.6 KB; the producers' cost is unchanged (mean about 0.6 us per row, worst about 23 us on a busy machine). The old single CSVs in `rade-logs/*.csv` are left alone; `log_analysis.py` reads both; `air_test.py` reads the new `tx_overs.csv` for the mic columns.
+- **Not yet tried on a live run**: only the scripted scene and the unit build. The first real use will show whether the over rules (1.5 s gap, 1 s minimum) suit real fading.
