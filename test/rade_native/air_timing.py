@@ -12,7 +12,8 @@ and the harness's key/unkey times) are on the PC's clock. So:
                    WDSP - ev_out0 (WDSP's own delay); wdsp_out_to_rf_onset is then the rest: the radio protocol, the radio, the air
   wdsp_out_last_to_rf_end   the same at the end: equal to wdsp_out_to_rf_onset if the radio sent everything WDSP gave it;
                    less means the radio was released with samples still on their way (a clipped tail)
-  mox_off_after_wdsp_last   t_mox_off - the last modem energy out of WDSP: negative = key-up was called before WDSP had finished
+  unkey_after_wdsp_last   ev_unkey (the engine's first unkeyed block) - the last modem energy out of WDSP: negative = released before WDSP had finished.
+                   (mox_off_after_wdsp_last is the harness's key-up REQUEST, made before the engine's end-of-over hold: always about -500 ms, not an early release)
   tx_start_latency   RF onset (-10 dB) - ev_out0  (the first modem sample handed to WDSP)   : WDSP + radio, no engine delay
   tx_end_latency     RF end   (-10 dB) - ev_eoo_out (the last end-of-over sample handed to WDSP): should equal the start
                    latency; shorter means the tail was cut (the radio released before the pipeline had emptied)
