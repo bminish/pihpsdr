@@ -69,6 +69,8 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 - WDSP filter delay, offline (`rade-native-filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps, of which the linear-phase filters are
   21 ms (TX, two of them, at 96 kHz) and 43 ms (RX, two of them, at 48 kHz). The over-the-air delay is **not measured** (the Kiwi recordings carry no time stamps).
 
+- **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz); tooling to place the RF onset and end of an over, WDSP's output and the engine's events on the UTC axis is built and tested on synthetic recordings; **no real over measured yet** (`rade-native-gps-timing.md`).
+
 ## 8. Mic path (measured offline, `test_tx_level.py`)
 
 - Trim, a slow leveller (0.2-0.5 dB/s up, 2 dB/s down for a shout; +20 / -30 dB limits; changes only while transmitting and only on speech above -35 LUFS, held through receive
