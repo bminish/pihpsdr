@@ -48,6 +48,7 @@
 #include "rade_native_log.h"
 #include "rade_native_test.h"
 #include "vfo.h"
+#include "property.h"
 
 static GtkWidget *dialog = NULL;
 static GtkWidget *status_label = NULL;
@@ -157,6 +158,7 @@ static void show_recent(void) {
 static void log_call(const rade_native_call_t *c) {
   const RECEIVER *rx = receiver[0];
   mkdir(CAPTURE_DIR, 0755);
+  rade_ignore_dir(CAPTURE_DIR);
   const char *path = CAPTURE_DIR "/rade-calls.csv";
   int fresh = access(path, F_OK) != 0;
   FILE *f = fopen(path, "a");
@@ -360,7 +362,36 @@ static int state_cb(gpointer arg) {
 
 static int test_exec(const char *verb, const char *args, char *reply, size_t n);
 
-void rade_native_state_start(void) {
+static void rade_native_state_start(void);
+
+void rade_native_restore_state(void) {
+  char call[16] = "";
+  int inv = 0;
+  GetPropS0("rade_native.callsign", call);
+  GetPropI0("rade_native.invert", inv);
+  double trim = 0.0;
+  int agc = 1;
+  GetPropF0("rade_native.mic_trim_db", trim);
+  GetPropI0("rade_native.mic_agc", agc);
+  double drive = 0.0;
+  GetPropF0("rade_native.drive_db", drive);
+  rade_native_tx_set_drive_db(drive);
+  rade_native_tx_set_trim_db(trim);
+  rade_native_tx_set_agc(agc);
+  rade_native_set_callsign(call);
+  rade_native_configure(0, inv);
+  rade_native_state_start();
+}
+
+void rade_native_save_state(void) {
+  SetPropS0("rade_native.callsign", rade_native_get_callsign());
+  SetPropI0("rade_native.invert", rade_native_user_invert());
+  SetPropF0("rade_native.mic_trim_db", rade_native_tx_get_trim_db());
+  SetPropI0("rade_native.mic_agc", rade_native_tx_get_agc());
+  SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db() < -6.0 ? -6.0 : rade_native_tx_get_drive_db());   // lower values are the test harness's, not kept
+}
+
+static void rade_native_state_start(void) {
   if (state_timer_id != 0) { return; }
   rade_test_start(test_exec);
   const char *base = g_getenv("XDG_STATE_HOME");
@@ -630,6 +661,7 @@ static void capture_stop(void) {
 
 static void capture_start(void) {
   mkdir(CAPTURE_DIR, 0755);
+  rade_ignore_dir(CAPTURE_DIR);
   int w = rade_native_waveform();
   int inv = rade_native_get_invert();
   time_t t = time(NULL);

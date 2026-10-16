@@ -17,11 +17,12 @@
 */
 
 //
-// RADE V2 callsign on the data symbol channel, as freedv-gui sends it. A C port of the transmit half of the V2
+// RADE V2 callsign on the data symbol channel, as freedv-gui sends it. A C port of the V2
 // text channel in freedv-gui's backend (src/pipeline/rade_text.cpp and ldpc_code.h, HRA_56_56.h) by David Rowe and
 // Mooneer Salem, whose terms apply to the matrix header it includes (rade_eoo_text_hra.h, a copy of
-// src/pipeline/HRA_56_56.h) and to the format. Nothing here is shared with the receive side: freedv-gui's own
-// receiver decodes this stream (test/rade_native/test_v2_text.sh checks that against its code).
+// src/pipeline/HRA_56_56.h) and to the format. The receive half is further down. Both are checked against
+// freedv-gui's own code, built unmodified: test/rade_native/v2_text_interop (stream, receiver, modem) and
+// test/rade_native/test_v2_text.py (the engines).
 //
 // Per block of 8 characters (an empty callsign sends nothing and the symbol stays -1.0):
 //   characters  0 null, '0'-'9' 1-10, 'A'-'Z' 11-36, '/' 37; others dropped, at most 32 characters, 1-4 blocks

@@ -45,7 +45,6 @@
 typedef int (*rade_test_exec_fn)(const char *verb, const char *args, char *reply, size_t n);
 
 void        rade_test_start(rade_test_exec_fn fn);        // once; starts the socket thread
-const char *rade_test_socket_path(void);
 
 // 48 kHz mono PCM16 or float32 WAV -> samples (malloc'd, scaled by gain_db). 0 ok, -1 with a message.
 int         rade_test_load_wav(const char *path, double gain_db, double max_s, float **out, long *n, char *err, size_t errn);

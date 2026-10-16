@@ -406,6 +406,14 @@ static FILE *open_table(const char *name, const char *header) {
   return f;
 }
 
+void rade_ignore_dir(const char *dir) {
+  char p[300];
+  snprintf(p, sizeof p, "%s/.gitignore", dir);
+  if (access(p, F_OK) == 0) { return; }
+  FILE *f = fopen(p, "w");
+  if (f) { fputs("*\n", f); fclose(f); }
+}
+
 int rade_log_start(const char *meta) {
   rade_log_stop();
   if (!rx_ring) {
@@ -415,6 +423,7 @@ int rade_log_start(const char *meta) {
     if (!rx_ring || !tx_ring || !ev_ring) { return -1; }
   }
   mkdir(LOG_DIR, 0755);
+  rade_ignore_dir(LOG_DIR);
   time_t tt = time(NULL);
   struct tm tm;
   localtime_r(&tt, &tm);
