@@ -15,6 +15,7 @@ import gi
 gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, GLib
 import core
+core.Link.MIN_GAP_S = core.Link.STABLE_S = 0.0     # the pacing has its own test (test_reporter.py)
 from mock_server import MockServer
 
 fails = 0
@@ -63,8 +64,8 @@ def s2():
 def s3():
     r = [x[1] for x in rx()]
     print("  rx_reports so far:", r)
-    check(len(r) >= 2 and all(x == {"callsign": "", "mode": "RADEV1", "snr": 6} for x in r),
-          "in sync with no call decoded: the SNR goes out every few seconds with no callsign (%d)" % len(r))
+    check(len(r) == 1 and r[0] == {"callsign": "", "mode": "RADEV1", "snr": 6},
+          "in sync with no call decoded: the SNR goes out once, with no callsign, and is not repeated while unchanged (%d)" % len(r))
     print("  indicator:", app.snr_ind.get_text())
     check("no call decoded yet" in app.snr_ind.get_text(), "and the window says so")
     put(rx_snr=9.0, heard_seq=1, heard_call="OH2BCD", heard_snr=7.0, heard_foff=2.5, heard_t=time.time())
