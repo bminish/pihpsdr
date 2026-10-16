@@ -43,6 +43,9 @@ extern void start_radio_menu(void);
 extern void start_tx_menu(void);
 extern void start_diversity_menu(void);
 extern void start_ps_menu(void);
+#ifdef RADE_NATIVE
+extern void start_rade_menu(void);
+#endif
 extern void start_server_menu(void);
 
 extern int menu_active_receiver_changed(void *data);
