@@ -86,6 +86,7 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     v.pvars["TX loudness (LUFS)"].set(True); v.evars["Key down/up"].set(True); v.evars["Dial / mode / settings"].set(True)
     v.replot(); root.update()
     check("window: three panels", len(v.axes) == 3)
+    check("window: no legend boxes over the data; the lines are named in the axis label", all(a.get_legend() is None for a in v.axes) and "solid mean" in v.axes[0].get_ylabel(), v.axes[0].get_ylabel())
     v.tree.selection_set(v.tree.get_children()[1]); root.update()
     x0, x1 = v.axes[0].get_xlim()
     check("window: choosing an over zooms to it", 15 < v.from_x(x0) - T0 + 0 + 5 < 40 and (v.from_x(x1) - v.from_x(x0)) < 10)
