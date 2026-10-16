@@ -1157,6 +1157,11 @@ static void wset(GtkWidget *w, int on) {
   if (w != NULL) { gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w), on ? TRUE : FALSE); }
 }
 
+// show a state in a button without running its callback (the harness has already done the work)
+static void wshow(GtkWidget *w, int on) {
+  if (w != NULL) { updating = 1; gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w), on ? TRUE : FALSE); updating = 0; }
+}
+
 static int test_exec(const char *verb, const char *args, char *reply, size_t n) {
   char v[300];
   reply[0] = 0;
@@ -1195,12 +1200,12 @@ static int test_exec(const char *verb, const char *args, char *reply, size_t n) 
       if (rade_native_waveform() == 0) { snprintf(reply, n, "RADE is off"); return -1; }
       if (!rade_native_capture_active()) { capture_start(); }
       if (!rade_native_capture_active()) { snprintf(reply, n, "could not start the capture"); return -1; }
-      wset(capture_b, 1);
-      snprintf(reply, n, "stem=%s", rade_native_capture_stem());
+      wshow(capture_b, 1);                          // not wset(): that would run capture_cb and start it twice
+      snprintf(reply, n, "stem=%s", rade_native_capture_stem());    // the path as piHPSDR sees it, rade-captures/<stem>
     } else {
       capture_stop();
-      wset(capture_b, 0);
-      snprintf(reply, n, "stem=%s", test_stem);
+      wshow(capture_b, 0);
+      snprintf(reply, n, "stem=%s/%s", CAPTURE_DIR, test_stem);
     }
     return 0;
   }
