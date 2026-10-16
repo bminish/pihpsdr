@@ -24,16 +24,16 @@ wdsp_probe: wdsp_probe.c $(WDSP)/libwdsp.a
 	  $(ROOT)/libspecbleach/libspecbleach.a \
 	  `pkg-config --libs fftw3` `pkg-config --libs fftw3f` -lm
 
-test_geometry: test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
+test_geometry: test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_geometry.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
-test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
+test_rx_engine: test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_rx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
-test_tx_engine: test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
+test_tx_engine: test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_engine.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
 # interoperability of src/rade_eoo_text.c with freedv-gui's own V1 text code,
@@ -48,15 +48,28 @@ text_interop/interop: text_interop/interop.cpp $(ROOT)/src/rade_eoo_text.c
 text_interop: text_interop/interop
 	./text_interop/interop
 
-test_tx_level: test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
+# the V2 callsign (src/rade_v2_text.c) against freedv-gui's V2 text code, and through the V2 modem
+FREEDV3_SRC ?= $(HOME)/sdr/freedv-gui3/build_linux/_deps/freedv_backend-src/src
+v2_text_interop/interop: v2_text_interop/interop.cpp $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_v2_text.h
+	gcc -O1 -std=gnu11 -I$(ROOT)/src -c $(ROOT)/src/rade_v2_text.c -o v2_text_interop/rade_v2_text.o
+	gcc -O1 -I$(FREEDV3_SRC) -c $(FREEDV3_SRC)/util/logging/ulog.c -o v2_text_interop/ulog.o
+	g++ -O1 -std=c++17 -I$(ROOT)/src -I$(FREEDV3_SRC) -I$(FREEDV3_SRC)/pipeline -I$(RSRC) -I$(OPUS) -I$(OPUS)/include -I$(OPUS)/celt -I$(OPUS)/dnn \
+	  v2_text_interop/interop.cpp $(FREEDV3_SRC)/pipeline/rade_text.cpp v2_text_interop/rade_v2_text.o v2_text_interop/ulog.o \
+	  -o $@ $(LDFLAGS) $(OPUS)/.libs/libopus.a -lpthread
+
+v2_text_interop: v2_text_interop/interop test_tx_engine
+	./v2_text_interop/interop
+	python3 test_v2_text.py
+
+test_tx_level: test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ test_tx_level.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
 test_launch: test_launch.c $(ROOT)/src/rade_launch.c $(ROOT)/src/rade_launch.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src -o $@ test_launch.c $(ROOT)/src/rade_launch.c `pkg-config --cflags --libs glib-2.0`
 
-modes_table: modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_native.h
-	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c \
+modes_table: modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c $(ROOT)/src/rade_native.h
+	$(CC) $(CFLAGS) -pthread -I$(ROOT)/src -o $@ modes_table.c $(ROOT)/src/rade_native.c $(ROOT)/src/rade_native_log.c $(ROOT)/src/rade_eoo_text.c $(ROOT)/src/rade_v2_text.c \
 	  $(LDFLAGS) $(OPUS)/.libs/libopus.a
 
 test_ctl: test_ctl.c $(ROOT)/src/rade_native_test.c $(ROOT)/src/rade_native_test.h
@@ -72,4 +85,4 @@ check: test_geometry test_log test_ctl
 	python3 test_timing.py
 
 clean:
-	rm -f modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl
+	rm -f v2_text_interop/interop v2_text_interop/*.o modes_table test_launch test_tx_level rade_decode_iq text_interop/interop test_tx_engine test_rx_engine rade_tx_iq rade_rx_iq wdsp_probe test_geometry test_log test_ctl
