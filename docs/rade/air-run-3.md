@@ -3,7 +3,7 @@
 Session `rade-captures/air/20261016-143040_28645kHz` (git-ignored; `results.csv`): V1 and V2, levels 0 and +3 dB, three repeats each, 12 runs, the
 clip `david_vk5dgr.wav` (11.5 s), Kiwi GPS-stamped (`iq`, `iq-fixed`; time axis corrected by -2.2 ms, `kiwi_time_check.py`), the engine's event times and
 WDSP's output capture on the PC's clock (chrony). Method, accuracy (about +-3 ms Kiwi side, +-5 ms WDSP side) and the meaning of the columns:
-`rade-native-gps-timing.md`.
+`gps-timing.md`.
 
 ## Summary
 
@@ -46,7 +46,7 @@ WDSP's output capture on the PC's clock (chrony). Method, accuracy (about +-3 ms
 ## The end of the over
 
 - The end-of-over frame is transmitted 2.4 dB (V1) / 0.6 dB (V2) **below the average power of the speech frames at the 0 dB level**, and 1.2 dB / 0.1 dB below at +3 dB (power over its last 100-150 ms against the steady level); the last 50-100 ms are lower still
-  (the slew and the TX filter's ring-down). The callsign decoded every time here (SNR 18-33 dB), but the end-of-over frame needs about 8.5 dB for V1 and its level is part of that threshold (`rade-native-air-run2-20261016.md`): raising the end-of-over frame by the
+  (the slew and the TX filter's ring-down). The callsign decoded every time here (SNR 18-33 dB), but the end-of-over frame needs about 8.5 dB for V1 and its level is part of that threshold (`air-run-2.md`): raising the end-of-over frame by the
   difference (+2.4 dB at 0 dB drive, still within the ALC ceiling since its crest is lower) would be worth about that much at the margin. **Not done; not tested.**
 - **The hold is longer than it needs to be.** From the last EOO sample into WDSP, the last energy leaves WDSP 78 ms later and the RF is over 7 ms after that: 85 ms. The engine holds the radio for `TX_TAIL` = 8000 samples (167 ms, measured 159 ms after the last sample), so the key is down for
   about 115 ms with nothing on the air. A tail of about 5000 samples (104 ms) would leave a 20 ms margin and shorten every transmit-to-receive turnaround by about 60 ms. **Not changed.**

@@ -11,7 +11,7 @@ is arranged so that only a few lines of it have to meet upstream's code.
 |---|---|---|---|
 | 1 hooks | lines added to files upstream owns, each behind `#ifdef RADE_NATIVE` | 8 files, 172 lines added, 1 changed (Makefile) | yes: the only layer that can |
 | 2 core | `src/rade_*.[ch]`, `rade_native.mk`: files that exist only here | about 7,100 lines | no |
-| 3 extras | `tools/` (Reporter, log viewer, librade build), `test/`, `docs/rade-native*.md` | about 14,600 lines | no; none of it is built into piHPSDR |
+| 3 extras | `tools/` (Reporter, log viewer, librade build), `test/`, `docs/rade/`, `docs/archive/rade/` | about 14,600 lines | no; none of it is built into piHPSDR |
 
 Rules that keep layer 1 small (check them when adding anything):
 
@@ -66,7 +66,7 @@ It works from committed content (`HEAD`): commit first.
 ## Current state
 
 Checked against `upstream/master` `dbcaa64d` ("Auto Diversity" from the TEST branch) on 2026-10-16: see the entry in
-`rade-native-progress.md` for the result of the last run of `check`.
+`progress.md` for the result of the last run of `check`.
 
 ## Not done, and why
 
