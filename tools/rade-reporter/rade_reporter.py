@@ -103,8 +103,7 @@ class App(Gtk.Window):
         self.reporting = False            # never remembered
         # these are remembered: the message goes to every connection, the view stays as it was left
         self.message = self.cfg.get("message", "")
-        self.periodic = core.PeriodicSnr(float(self.cfg.get("snr_interval", 5.0)))
-        self.periodic.enabled = bool(self.cfg.get("snr_enabled", True))
+        self.periodic = core.PeriodicSnr(5.0)      # always on: sent whenever reporting and in sync with an SNR
         self._loading = True
         self.last_qsy = None
         # list filters set from the headings (right click km: distance, MHz: frequency range); 0 = no limit on that side
@@ -125,15 +124,15 @@ class App(Gtk.Window):
 
         r1 = Gtk.Box(spacing=8)
         v.pack_start(r1, False, False, 0)
-        self.rep_chk = Gtk.CheckButton(label="Report my presence")
-        self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\n"
+        self.rep_chk = Gtk.CheckButton(label="Reporting")
+        self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected, with the callsign "
+                                      "from piHPSDR's RADE window,\nand sends the SNR of a signal in sync every 5 s.\n"
                                       "Always off when this program starts.")
         self.rep_chk.connect("toggled", self._on_report_toggled)
         r1.pack_start(self.rep_chk, False, False, 0)
-        r1.pack_start(Gtk.Label(label="Callsign"), False, False, 0)
-        self.call_e = Gtk.Entry(width_chars=9, max_length=12, text=self.cfg.get("callsign", ""))
-        self.call_e.connect("changed", self._on_ident_changed)
-        r1.pack_start(self.call_e, False, False, 0)
+        self.call_l = Gtk.Label(label="")
+        self.call_l.set_tooltip_text("The callsign set in piHPSDR's RADE window")
+        r1.pack_start(self.call_l, False, False, 0)
         r1.pack_start(Gtk.Label(label="Grid"), False, False, 0)
         self.grid_e = Gtk.Entry(width_chars=8, max_length=8, text=self.cfg.get("grid", ""))
         self.grid_e.connect("changed", self._on_ident_changed)
@@ -174,10 +173,11 @@ class App(Gtk.Window):
         r2.pack_start(self.idle, False, False, 0)
         r2.pack_start(Gtk.Label(label="Show"), False, False, 12)
         self.view = Gtk.ComboBoxText()
-        for k, label in (("v1", "RADE V1 only"), ("v2", "RADE V2 only"), ("all", "All (V1 and V2)")):
+        for k, label in (("follow", "Follow radio mode"), ("v1", "RADE V1 only"), ("v2", "RADE V2 only"), ("all", "All (V1 and V2)")):
             self.view.append(k, label)
-        self.view.set_active_id(self.cfg.get("view", "all"))
-        self.view.set_tooltip_text("Which reporter's stations the list shows. Reports are sent only to the reporter "
+        self.view.set_active_id(self.cfg.get("view", "follow"))
+        self.view.set_tooltip_text("Which reporter's stations the list shows: Follow radio mode shows the reporter of the RADE mode "
+                                   "piHPSDR has selected (both while RADE is off). Reports are sent only to the reporter "
                                    "for the RADE mode piHPSDR has selected, whatever is shown.")
         self.view.connect("changed", self._on_view_changed)
         open_below(self.view)
@@ -215,20 +215,6 @@ class App(Gtk.Window):
 
         r4 = Gtk.Box(spacing=8)
         v.pack_start(r4, False, False, 0)
-        self.snr_chk = Gtk.CheckButton(label="Report RADE SNR every")
-        self.snr_chk.set_active(self.periodic.enabled)
-        self.snr_chk.set_tooltip_text(
-            "While a signal is in sync, sends its SNR to the reporter every few seconds, as an rx_report,\n"
-            "the way freedv-gui does. No callsign is needed: until one has been decoded the report goes\n"
-            "without one; after that it carries the last call decoded, until sync has been lost for 10 s.\n"
-            "The call decoded at the end of an over is reported when it arrives.")
-        self.snr_chk.connect("toggled", self._on_snr_changed)
-        r4.pack_start(self.snr_chk, False, False, 0)
-        self.snr_spin = Gtk.SpinButton.new_with_range(1, 30, 1)
-        self.snr_spin.set_value(self.periodic.interval)
-        self.snr_spin.connect("value-changed", self._on_snr_changed)
-        r4.pack_start(self.snr_spin, False, False, 0)
-        r4.pack_start(Gtk.Label(label="s"), False, False, 0)
         self.snr_ind = Gtk.Label(xalign=0, use_markup=True)
         r4.pack_start(self.snr_ind, True, True, 6)
 
@@ -266,7 +252,12 @@ class App(Gtk.Window):
             btn.connect("button-press-event", self._on_header_click, name)      # right click: columns, filters
         self.tree.connect("button-press-event", self._on_tree_click)
         self.tree.connect("columns-changed", self._on_cols_changed)
-        self.sort.set_sort_column_id(C_UPDV, Gtk.SortType.ASCENDING)   # C_UPDV is minus the update time: newest first
+        # the sort is remembered; the first time it is newest update first (C_UPDV is minus the update time)
+        sc, so = self.cfg.get("sort", [C_UPDV, 0]) if isinstance(self.cfg.get("sort"), list) and len(self.cfg.get("sort")) == 2 else [C_UPDV, 0]
+        if sc not in set(numeric.values()) | set(range(len(HEAD))) or so not in (0, 1):
+            sc, so = C_UPDV, 0
+        self.sort.set_sort_column_id(sc, Gtk.SortType.DESCENDING if so else Gtk.SortType.ASCENDING)
+        self.sort.connect("sort-column-changed", self._on_sort_changed)
         sw = Gtk.ScrolledWindow()
         sw.add(self.tree)
         v.pack_start(sw, True, True, 0)
@@ -308,15 +299,20 @@ class App(Gtk.Window):
         self._tick()
 
     def _on_ident_changed(self, w):
-        self.call_e.set_text(self.call_e.get_text().upper())
         self.grid_e.set_text(self.grid_e.get_text().upper())
-        self.cfg["callsign"] = self.call_e.get_text().strip()
         self.cfg["grid"] = self.grid_e.get_text().strip()
         core.save_config(self.cfg)
         self._tick()
 
+    def _on_sort_changed(self, model):
+        if self._loading:
+            return
+        col, order = model.get_sort_column_id()
+        if col is not None and col >= 0:
+            self._remember(sort=[col, 1 if order == Gtk.SortType.DESCENDING else 0])
+
     def _on_view_changed(self, w):
-        self.cfg["view"] = w.get_active_id() or "all"
+        self.cfg["view"] = w.get_active_id() or "follow"
         core.save_config(self.cfg)
         self._tick()
 
@@ -344,16 +340,8 @@ class App(Gtk.Window):
                        idle=self.idle.get_active_text() or "off")
         self._refilter()
 
-    def _on_snr_changed(self, *_):
-        if self._loading:
-            return
-        self.periodic.enabled = self.snr_chk.get_active()
-        self.periodic.interval = float(self.snr_spin.get_value())
-        self._remember(snr_enabled=self.periodic.enabled, snr_interval=self.periodic.interval)
-        self._tick()
-
     def _on_web(self, *_):
-        v = self.cfg.get("view", "all")
+        v = core.resolve_view(self.cfg.get("view", "follow"), self.pihpsdr)
         k = v if v in self.cfg["servers"] else (self.report_key or "v1")
         url = self.cfg["servers"][k].get("web") or ("https://%s/" % self.cfg["servers"][k]["host"]
                                                     if self.cfg["servers"][k]["host"] else "")
@@ -446,11 +434,14 @@ class App(Gtk.Window):
     def _tick(self):
         self.pihpsdr = core.read_pihpsdr_state()
         p = self.pihpsdr
-        if p and p.get("linked") and not self.call_e.get_text().strip() and p.get("call"):
-            self.call_e.set_text(p["call"])
+        mycall = ((p.get("call") or "") if p and p.get("linked") else "").strip().upper()
+        if mycall != getattr(self, "_shown_call", None):
+            self._shown_call = mycall
+            self.call_l.set_markup("Call <b>%s</b>" % GLib.markup_escape_text(mycall) if mycall
+                                   else "Call <i>(none set in the RADE window)</i>")
         # An identity that is still being typed is not announced: it has to stand still for 1.5 s,
         # or the server would see a new station for every key press.
-        ident = (self.call_e.get_text().strip().upper(), self.grid_e.get_text().strip().upper())
+        ident = (mycall, self.grid_e.get_text().strip().upper())
         now = now_t = time.time()
         if ident != getattr(self, "_ident", None):
             self._ident, self._ident_since = ident, now
@@ -465,7 +456,7 @@ class App(Gtk.Window):
         self.rep_chk.set_sensitive(ok_gate)
         self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\nAlways off when this program starts."
                                       + ("" if ok_gate else "\nDisabled: " + why_gate + "."))
-        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg.get("view", "all"))
+        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg.get("view", "follow"))
         self.report_key, self.view_keys = rkey, vkeys
         software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
         for k, lk in self.links.items():
@@ -481,7 +472,7 @@ class App(Gtk.Window):
         self.why.set_text(why)
         self._rx_note(p, rkey, role, mode, call)
         self.qsy_b.set_sensitive(role == "report")
-        if self.dirty or now_t - self._last_fill >= 3.0:
+        if self.dirty or now_t - self._last_fill >= 1.0:     # once a second: the blue "receiving" marks time out
             self.dirty = False
             self._last_fill = now_t
             self._fill()
@@ -567,7 +558,6 @@ class App(Gtk.Window):
         """Bring the list up to date, changing only what changed (rebuilding it, as before, re-sorted
         and re-filtered the whole list for every row, several times a second)."""
         now = time.time()
-        me = self.call_e.get_text().strip().upper()
         mygrid = self.grid_e.get_text().strip()
         self._dial = (self.pihpsdr or {}).get("dial_hz", 0)
         rows = {r[C_SID]: r.iter for r in self.store}
@@ -579,7 +569,8 @@ class App(Gtk.Window):
             sid = "%s:%s" % (key, s.sid)               # the same id can come from both reporters
             dbg = core.distance_bearing(mygrid, s.grid)
             ts = iso_to_epoch(s.last_update)
-            bg = "#d6ecff" if me and s.callsign.upper() == me else ("#ffe7c2" if s.transmitting else None)
+            # as freedv-gui: orange while transmitting; blue while receiving, i.e. an rx_report with an SNR arrived lately
+            bg = "#ffe7c2" if s.transmitting else ("#d6ecff" if s.receiving_now(now) else None)
             snr = "" if s.rx_snr is None else ("%+d" % round(s.rx_snr))
             vals = [s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
                     s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
