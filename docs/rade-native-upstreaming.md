@@ -18,8 +18,8 @@ Rules that keep layer 1 small (check them when adding anything):
 - **No RADE logic in an upstream file.** A hook is a guard or a call into `src/rade_native*.c` and nothing else. Anything with
   more than a few lines goes into layer 2 and is called from the hook (the properties save/restore in `radio.c` is two calls
   for that reason).
-- **Nothing in the Makefile except `include rade_native.mk` and `$(RADE_NATIVE_LIBS)` in `LIBS`.** The Makefile hunks used to
-  sit next to the TEST branch's DIVCAP block and conflicted with upstream, which has no such block; the options, objects,
+- **Nothing in the Makefile except three lines: `include rade_native.mk`, `$(RADE_NATIVE_LIBS)` in `LIBS`, `$(RADE_NATIVE_OBJS)` in `OBJS`.** The Makefile hunks used to
+  sat next to the TEST branch's DIVCAP block, which upstream does not have, and conflicted; the three lines now have the same neighbours in both; the options, objects,
   dependencies and the default are now in `rade_native.mk` (which also keeps the Makefile's default goal).
 - **Nothing in `.gitignore`.** The run logs and captures write their own `.gitignore` into the directories they create
   (`rade_ignore_dir()`); `third_party/`, `tools/` and `test/` carry theirs.
@@ -34,7 +34,7 @@ Rules that keep layer 1 small (check them when adding anything):
 | `src/radio.c` | 34 | `radio_set_mox()`: the end of an over is held until the end-of-over frame has gone out; properties save/restore |
 | `src/new_menu.c`, `.h` | 25 | RADE menu button and entry point |
 | `src/actions.c`, `.h` | 9 | `MENU_RADE` action (assignable to a toolbar button) |
-| `Makefile` | 3 | `include rade_native.mk`, `$(RADE_NATIVE_LIBS)` |
+| `Makefile` | 3 | `include rade_native.mk`, `$(RADE_NATIVE_LIBS)`, `$(RADE_NATIVE_OBJS)` |
 
 What the hooks rely on in upstream (a change to any of these is what breaks the build or the behaviour):
 `RECEIVER` (`audio_output_buffer`, `output_samples`, `volume`, `filter_low/high`), `TRANSMITTER` (`mic_input_buffer`,
