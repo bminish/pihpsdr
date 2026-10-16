@@ -16,6 +16,11 @@ Updated with every commit that moves the work. Newest entry first.
 
 ## Log
 
+- 2026-10-16 (what counts as a RADE transmission): state.json `tx` and `tx_count`, which
+  drive the Reporter's `tx_report`, now follow `rade_is_tx()`: keyed, a RADE waveform on,
+  the RADE transmit engine in use, and not TUNE or two-tone. Before, any keying in RADE
+  mode (tune, an SSB over) was reported as a RADE transmission. Built; not on a radio.
+
 - 2026-10-16 (leveller revised on request): the gain is **held** through
   receive and from one over to the next (no reset at key-down; the loudness
   average does start empty each over). It changes only while transmitting and
