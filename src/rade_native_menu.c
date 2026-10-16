@@ -926,9 +926,9 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), mic_scale, 1, 5, 3, 1);
   mic_agc_b = gtk_check_button_new_with_label("AGC");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), rade_native_tx_get_agc());
-  gtk_widget_set_tooltip_text(mic_agc_b, "Works only while you transmit, and starts each over at 0 dB with nothing kept from the last. "
-                                         "Moves the level slowly to the ideal (0.2 to 0.5 dB a second; 2 dB a second down for a shout), "
-                                         "adds at most 20 dB, may take off up to 30. It holds when you stop talking.");
+  gtk_widget_set_tooltip_text(mic_agc_b, "Changes its gain only while you transmit and are speaking: pauses, hiss and the room never raise it. "
+                                         "The gain is held through receive and from one over to the next. Moves slowly towards the ideal "
+                                         "(0.2 to 0.5 dB a second; 2 dB a second down for a shout), adds at most 20 dB, may take off up to 30.");
   g_signal_connect(mic_agc_b, "toggled", G_CALLBACK(agc_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), mic_agc_b, 4, 5, 1, 1);
   mic_bar = gtk_level_bar_new_for_interval(0.0, 1.0);

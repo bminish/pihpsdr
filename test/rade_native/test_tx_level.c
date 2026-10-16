@@ -7,7 +7,7 @@
  *   test_tx_level [--trim DB] [--agc 0|1] [--repeat N] [--keyed] [--rekey] in.f32
  *
  * --keyed transmits (the leveller only works while transmitting); --rekey adds an unkeyed block and a keyed
- * block at the end and prints the leveller gain after them: the key-down must have forgotten the over.
+ * block at the end and prints the leveller gain after them: it must be unchanged by receive and by the key-down.
  */
 #include <math.h>
 #include <stdio.h>
@@ -55,14 +55,16 @@ int main(int argc, char **argv) {
   if (rekey) {
     double buf[2048];
     rade_native_txlevel_t l;
+    rade_native_tx_level(&l);
+    printf("end of over: agc %+8.4f dB\n", l.agc_gain_db);
     for (int k = 0; k < 2048; k++) buf[k] = in[k];
     rade_native_tx_block(buf, 1024, 0, 0);
     rade_native_tx_level(&l);
-    printf("unkeyed: agc %+5.1f dB\n", l.agc_gain_db);
+    printf("unkeyed: agc %+8.4f dB\n", l.agc_gain_db);
     for (int k = 0; k < 2048; k++) buf[k] = in[k];
     rade_native_tx_block(buf, 1024, 0, 1);
     rade_native_tx_level(&l);
-    printf("rekeyed: agc %+5.1f dB valid %d\n", l.agc_gain_db, l.valid);
+    printf("rekeyed: agc %+8.4f dB valid %d\n", l.agc_gain_db, l.valid);
   }
   (void)peak_out;
   rade_native_tx_enable(0);

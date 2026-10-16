@@ -622,6 +622,7 @@ static struct {
   double trim_db, trim_g;                // asked for / smoothed linear
   double drive_db;                       // level into WDSP relative to the defined one, -6 .. +6
   int keyed;                             // transmitting, for the leveller and the log
+  double pk_ref;                         // loudest speech this over (400 ms, before the leveller's gain), LUFS
   int log_blocks;                        // 100 ms blocks since the loudness average was last logged
   int agc_on;
   double agc_db;                         // leveller gain, dB
@@ -842,6 +843,7 @@ static int lv_gated(double *avg, double *mom) {
 
 #define LV_MAX_DB   20.0                 // the leveller adds at most this ...
 #define LV_MIN_DB  (-30.0)               // ... and takes off up to this
+#define LV_FLOOR_LUFS (-50.0)            // speech is measured only above this, before the leveller's gain
 
 // one row of the parameter log per 100 ms block; the gated average once a second
 static void lv_log_row(void) {
@@ -857,7 +859,7 @@ static void lv_log_row(void) {
     double m;
     if (lv_gated(&a, &m)) { avg = a; }
   }
-  rade_log_tx_t l = { .tx = T.keyed, .trim_db = T.trim_db, .agc_db = T.agc_on && T.keyed ? T.agc_db : 0.0,
+  rade_log_tx_t l = { .tx = T.keyed, .trim_db = T.trim_db, .agc_db = T.agc_on ? T.agc_db : 0.0,
                       .drive_db = T.drive_db, .loud_mom = isnan(mom) ? -99.0 : mom, .loud_avg = avg,
                       .peak_dbfs = 20.0 * log10((T.peak_hold > T.peak_acc ? T.peak_hold : T.peak_acc) + 1e-9),
                       .limiting = T.limit_hold < 10, .underruns = T.underruns,
@@ -875,18 +877,23 @@ static void lv_block_done(void) {
   T.peak_acc = 0.0;
   if (T.limit_hold < 1000) { T.limit_hold++; }
   //
-  // The leveller works only while transmitting: it starts each over at 0 dB (rade_native_tx_block resets
-  // it and the loudness history at key-down) and moves like a slow hand on a fader. It can add at most
-  // 20 dB; it can take off more.
+  // The leveller changes its gain only while transmitting, and only on speech: the 400 ms loudness, before
+  // this gain, must be above LV_FLOOR_LUFS (a mic's hiss and the room are below it), within 15 LU of the
+  // loudest speech of this over and within 10 LU of the speech average, so a pause - even one with the room
+  // still audible, and even one longer than the 10 s average - never raises the gain. In every
+  // other case the gain is held where it is, through receive and from one over to the next. It can add at
+  // most 20 dB and take off 30, moving like a slow hand on a fader.
   //
   if (!T.keyed || !T.agc_on) {
-    if (T.keyed) { T.agc_db *= 0.9; }             // switched off during the over: let go
     lv_log_row();
     return;
   }
   double avg, mom;
   int ok = lv_gated(&avg, &mom);
-  if (ok && mom >= -55.0) {                       // otherwise nothing to level: leave the gain, do not lift noise
+  double pre = mom - T.agc_db;                    // the mic itself, before the gain
+  if (!ok) { pre = -200.0; }
+  if (pre > T.pk_ref) { T.pk_ref = pre; } else { T.pk_ref -= 0.003; }    // forgets 0.03 dB/s
+  if (ok && pre >= LV_FLOOR_LUFS && pre >= T.pk_ref - 15.0 && mom >= avg - 10.0) {
     double step = 0.0;
     if (mom > RADE_NATIVE_TARGET_LUFS + 8.0) {
       step = -0.2;                                // a shout: down 2 dB/s
@@ -907,7 +914,7 @@ static void lv_process(double *buf, int n) {
   static const double a1[2] = {-1.69065929318241, 0.73248077421585};
   static const double a2[2] = {-1.99004745483398, 0.99007225036621};
   double target = pow(10.0, T.trim_db / 20.0);
-  double ga = pow(10.0, (T.agc_on && T.keyed ? T.agc_db : 0.0) / 20.0);
+  double ga = pow(10.0, (T.agc_on ? T.agc_db : 0.0) / 20.0);
   for (int i = 0; i < n; i++) {
     T.trim_g += (target - T.trim_g) * 0.002;      // ~10 ms, no zipper noise
     double x = buf[2 * i] * T.trim_g * ga;
@@ -956,7 +963,7 @@ void rade_native_tx_level(rade_native_txlevel_t *l) {
   double pk = T.peak_acc > T.peak_hold ? T.peak_acc : T.peak_hold;
   l->peak_dbfs = 20.0 * log10(pk + 1e-9);
   l->limiting = T.limit_hold < 10;
-  l->agc_gain_db = T.agc_on && T.keyed ? T.agc_db : 0.0;
+  l->agc_gain_db = T.agc_on ? T.agc_db : 0.0;
   pthread_mutex_unlock(&T.mx);
 }
 
@@ -964,10 +971,10 @@ void rade_native_tx_block(double *buf, int n, int invert, int transmitting) {
   if (!T.enabled) { return; }
   pthread_mutex_lock(&T.mx);
   if (transmitting && !T.keyed) {
-    // key-down: no memory of the last over - the leveller starts at 0 dB and the loudness average starts empty
-    T.agc_db = 0.0;
+    // key-down: the leveller keeps its gain, but the loudness average starts empty (measured in this over only)
     T.blk_n = T.blk_pos = T.acc_n = 0;
     T.acc_ms = 0.0;
+    T.pk_ref = -200.0;
   }
   T.keyed = transmitting != 0;
   lv_process(buf, n);               // trim, level, limit and measure the mic, keyed or not
