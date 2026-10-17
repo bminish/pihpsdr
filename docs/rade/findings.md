@@ -11,7 +11,7 @@ measured, on the air or offline, on the dates given; everything marked *not meas
 |---|---|---|
 | librade (V1, V2) built into piHPSDR, RX and TX engines on the WDSP I/Q chain | `src/rade_native.[ch]`, `tools/rade/build_rade.sh` (`make RADE_NATIVE=ON`) | works on the air, both directions |
 | RADE window (waveform, Invert, TX, mic trim/AGC/drive, capture, parameter log, calls, test harness), assignable to a toolbar button | `src/rade_native_menu.c`, `MENU_RADE` | built; the GTK side of the newer parts is not covered by tests |
-| V1 callsign in the end-of-over frame (freedv-gui's LDPC text) | `src/rade_eoo_text.c` | interoperates; **V2 callsign on the data-symbol channel: `src/rade_v2_text.c`, sent with every V2 transmission, decoded by freedv-gui's receiver offline, and decoded on receive by a port of freedv-gui's receiver (same file); neither yet on air** |
+| V1 callsign in the end-of-over frame (freedv-gui's LDPC text) | `src/rade_eoo_text.c` | interoperates; **V2 callsign on the data-symbol channel: `src/rade_v2_text.c`, sent with every V2 transmission, decoded by freedv-gui's receiver offline, and decoded on receive by a port of freedv-gui's receiver (same file); our transmission decoded by freedv-gui's receiver on air 2026-10-17 (28645 kHz; `air-tests.md`); freedv-gui -> our receiver not yet** |
 | RADE Reporter (FreeDV Reporter client, V1 / V2 / both) | `tools/rade-reporter/` | reports only to the reporter of the active mode, only for a RADE transmission |
 | Parameter log (non-blocking, one file per run) | `src/rade_native_log.[ch]` | producer cost 0.3 us mean |
 | Test harness (control socket, operator-armed, guarded) + automated air runs + Kiwi analysis | `src/rade_native_test.[ch]`, `test/rade_native/{rade_ctl,air_test,air_weak,kiwi_rx}.py` | run on the air twice (see 6) |
@@ -85,7 +85,7 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 ## 10. Open items
 
 1. Filter optimisation (this document's sibling): see `filter-lab.md` for the options measured and the recommendation; not applied until agreed.
-2. V2 callsign: **transmit and receive built 2026-10-16** (`rade_v2_text.c`; tests `v2_text_interop` part D = our receiver identical to freedv-gui's symbol by symbol, `test_v2_text.py` = real TX and RX engines); on-air check against a real freedv-gui, in both directions, still to do.
+2. V2 callsign: **transmit and receive built 2026-10-16** (`rade_v2_text.c`; tests `v2_text_interop` part D = our receiver identical to freedv-gui's symbol by symbol, `test_v2_text.py` = real TX and RX engines); on air, our transmission -> freedv-gui's receiver done 2026-10-17 (two overs at -12 / -6 dB, `EI6IZ` on all Kiwi profiles and in the freedv-gui GUI); freedv-gui -> our receiver still to do.
 3. The over-the-air delay needs a time reference in the recording.
 4. The PA and the radiated spectrum (Kiwi spectrum of the over versus the TX output) are not characterised; fading is not tested; one clip.
 5. The working TX level (+3 dB) is a recommendation, not a change.
