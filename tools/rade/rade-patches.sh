@@ -65,12 +65,11 @@ check)
     objs="src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o src/rade_launch.o src/rade_native_log.o src/rade_native_test.o src/receiver.o src/transmitter.o src/radio.o src/actions.o src/new_menu.o"
     if make RADE_NATIVE=ON -k $objs > "$tmp/build.log" 2>&1; then
       echo "  build:  all RADE objects and the files with hooks compile"
-      # what the compile does not show: the default goal is still the program, and the RADE objects are on its link line
-      if [ "$(make RADE_NATIVE=ON -pn 2>/dev/null | sed -n 's/^\.DEFAULT_GOAL := //p')" != pihpsdr ] \
-         || ! make RADE_NATIVE=ON -n pihpsdr 2>/dev/null | grep -q -- "-o pihpsdr .*src/rade_native.o"; then
-        ok=0; echo "  link:   FAILS: the default goal is not pihpsdr, or the RADE objects are not on its link line"
+      # what the compile does not show: a plain make (the default goal) still links the program, with the RADE objects
+      if ! make RADE_NATIVE=ON -n 2>/dev/null | grep -q -- "-o pihpsdr .*src/rade_native.o"; then
+        ok=0; echo "  link:   FAILS: a plain make does not link the program with the RADE objects"
       else
-        echo "  link:   default goal is pihpsdr, RADE objects on the link line"
+        echo "  link:   a plain make links the program with the RADE objects"
       fi
     else
       ok=0
