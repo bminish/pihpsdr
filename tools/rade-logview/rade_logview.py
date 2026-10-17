@@ -22,6 +22,7 @@ else:
 import matplotlib.dates as mdates
 from matplotlib.figure import Figure
 import logdata as ld
+import tidy_logs
 
 # (label, table, [(column, legend, style)])
 PARAMS = [
@@ -595,6 +596,12 @@ def ld_settings():
 
 
 def main(argv):
+    # Runs that ended without piHPSDR stopping them cleanly (killed, crashed) are left as directories: finish every one but the newest
+    # (compress, check, remove the directory) before anything is opened. What was named on the command line is left alone.
+    try:
+        tidy_logs.tidy(tidy_logs.default_root(), keep=[a for a in argv[1:]])
+    except Exception as e:                                   # never stops the viewer from starting
+        print("tidy_logs: %s" % e)
     root = tk.Tk()
     Viewer(root, argv[1:])
     root.mainloop()
