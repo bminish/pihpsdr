@@ -1582,19 +1582,8 @@ static void tx_full_buffer(TRANSMITTER *tx) {
       // Native RADE: the mic samples are replaced by the modem signal
       // (complex, so the panel is in "I and Q" mode, see rade_native_menu.c)
       //
-      //
-      // TUNE, two-tone and noise end by clearing their flag while the radio is still keyed, for a moment that looks like a
-      // RADE transmission. So once one of them has been seen during a key-down, that key-down is not RADE: the latch is let
-      // go only when the radio is unkeyed.
-      //
-      static int not_rade = 0;
-      if (!radio_is_transmitting()) {
-        not_rade = 0;
-      } else if (tx->tune || tx->twotone || tx->txnoise) {
-        not_rade = 1;
-      }
       rade_native_tx_block(tx->mic_input_buffer, tx->buffer_size, rade_native_get_invert(),
-                           radio_is_transmitting() && !not_rade);
+                           radio_is_transmitting() && !tx->tune && !tx->twotone && !tx->txnoise);
     }
 #endif
     xdexp(0);
