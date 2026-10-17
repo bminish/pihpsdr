@@ -60,7 +60,6 @@ static guint calls_timer_id = 0;
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
 static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_text = NULL;
-static GtkWidget *note_label = NULL;     // messages that must stay: the reporter's start, failures
 static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
 static GtkWidget *mox_b = NULL;         // the transmit button
 static GtkWidget *wave_b[3] = {NULL, NULL, NULL};
@@ -409,7 +408,6 @@ static void rade_native_state_start(void) {
 }
 
 static void say(const char *msg) {
-  if (note_label != NULL) { gtk_label_set_text(GTK_LABEL(note_label), msg); }
   t_print("%s: %s\n", __func__, msg);
 }
 
@@ -707,7 +705,7 @@ static void cleanup(void) {
   recv_label = call_e = NULL;
   tx_b = mox_b = inv_b = capture_b = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
-  mic_scale = mic_agc_b = mic_bar = mic_text = note_label = NULL;
+  mic_scale = mic_agc_b = mic_bar = mic_text = NULL;
   drive_scale = log_b = test_b = NULL;
   if (dialog != NULL) {
     //
@@ -1018,11 +1016,16 @@ void rade_native_menu(GtkWidget *parent) {
   fixed_label(status_label, 48, 1);
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, row++, 6, 1);
 
-  // transmit: the button says what a press will send; RADE TX; the drive trim, short, beside them
-  mox_b = gtk_toggle_button_new_with_label("TX (Select Mode)");
-  gtk_widget_set_size_request(mox_b, 200, -1);
-  g_signal_connect(mox_b, "toggled", G_CALLBACK(mox_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), mox_b, 0, row, 3, 1);
+  GtkWidget *call_l = gtk_label_new("Call");
+  gtk_widget_set_halign(call_l, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), call_l, 0, row, 1, 1);
+  call_e = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
+  gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
+  gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
+  gtk_grid_attach(GTK_GRID(grid), call_e, 1, row, 2, 1);
+  g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
+  call_changed_cb(call_e, NULL);
   tx_b = gtk_check_button_new_with_label("RADE TX");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
   g_signal_connect(tx_b, "toggled", G_CALLBACK(tx_cb), NULL);
@@ -1090,7 +1093,18 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_halign(mic_text, GTK_ALIGN_START);
   fixed_label(mic_text, 48, 1);
   gtk_grid_attach(GTK_GRID(grid), mic_text, 0, row++, 6, 1);
+  // the button says what a press will send
+  mox_b = gtk_toggle_button_new_with_label("TX (Select Mode)");
+  gtk_widget_set_size_request(mox_b, 200, -1);
+  g_signal_connect(mox_b, "toggled", G_CALLBACK(mox_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), mox_b, 0, row++, 3, 1);
 
+  recv_label = gtk_label_new("");                          // the calls heard, no heading: the lines say what they are
+  gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
+  gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
+  fixed_label(recv_label, 46, 1);
+  gtk_grid_attach(GTK_GRID(grid), recv_label, 0, row++, 6, 1);
+  show_recent();
   // Log, Capture and the test harness on one line; their state is the state of the button
   log_b = gtk_toggle_button_new_with_label("Log");
   gtk_widget_set_tooltip_text(log_b, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on "
@@ -1111,29 +1125,6 @@ void rade_native_menu(GtkWidget *parent) {
                                       "Ticked: a script can key the transmitter.");
   g_signal_connect(test_b, "toggled", G_CALLBACK(test_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), test_b, 2, row++, 2, 1);
-
-  GtkWidget *call_l = gtk_label_new("Call");
-  gtk_widget_set_halign(call_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), call_l, 0, row, 1, 1);
-  call_e = gtk_entry_new();
-  gtk_entry_set_max_length(GTK_ENTRY(call_e), 7);
-  gtk_entry_set_width_chars(GTK_ENTRY(call_e), 8);
-  gtk_entry_set_text(GTK_ENTRY(call_e), rade_native_get_callsign());
-  gtk_grid_attach(GTK_GRID(grid), call_e, 1, row++, 1, 1);
-  g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
-  call_changed_cb(call_e, NULL);
-  recv_label = gtk_label_new("");                          // the calls heard, no heading: the lines say what they are
-  gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
-  gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
-  fixed_label(recv_label, 46, 1);
-  gtk_grid_attach(GTK_GRID(grid), recv_label, 0, row++, 6, 1);
-  show_recent();
-  note_label = gtk_label_new("");
-  gtk_label_set_line_wrap(GTK_LABEL(note_label), TRUE);
-  gtk_label_set_max_width_chars(GTK_LABEL(note_label), 50);
-  gtk_label_set_selectable(GTK_LABEL(note_label), TRUE);
-  gtk_widget_set_halign(note_label, GTK_ALIGN_START);
-  gtk_grid_attach(GTK_GRID(grid), note_label, 0, row++, 6, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();
