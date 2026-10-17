@@ -90,3 +90,6 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 4. The PA and the radiated spectrum (Kiwi spectrum of the over versus the TX output) are not characterised; fading is not tested; one clip.
 5. The working TX level (+3 dB) is a recommendation, not a change.
 6. Pi CPU cost of the engines is unmeasured.
+7. **Reporter tuning (2026-10-17), not yet tried against a radio**: `command_poll()` in `rade_native_menu.c` (click a station's MHz, kHz box, per-mode list) is compiled, and the Reporter's side is tested (`test_gui_tune.py`), but a real mode change and dial set through `command.json` has not been seen. To check: click a V1 and a V2 station from the other mode and see the RADE window follow; a request while transmitting is refused; one left in the file before piHPSDR starts is ignored.
+8. **TX state at the end of a TUNE (2026-10-17), not yet tried on a radio**: the `not_rade` latch in `transmitter.c` and the two-poll confirmation in `state_cb`. To check: TUNE for a few seconds during Reporting; the Reporter must send no `tx_report` and no TX pulse, at the start or the end. Then a real RADE over must still be reported (about 0.25 s late).
+9. Plain `make` does not compile any of the RADE code (`make RADE_NATIVE=ON` does): a change here has only been built once it has been built with that.

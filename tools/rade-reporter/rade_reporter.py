@@ -6,12 +6,15 @@ not own it, so it stays up when piHPSDR is closed. It shows who is on the
 FreeDV Reporter, like freedv-gui's Reporter window, and, only if you turn it
 on, reports that you are present: your callsign, grid square, dial frequency,
 the RADE mode piHPSDR has selected (RADEV1 or RADEV2) and whether you are
-transmitting. It does not send receive reports.
+transmitting; with a lock it also sends the SNR, and the callsign heard in an end-of-over frame (rx_report).
+It can also tune piHPSDR: click a station's MHz, type kHz, or pick from the per-mode list (command.json, see README.md).
 
   * It always starts with reporting OFF; the setting is not remembered.
   * piHPSDR tells it the mode, frequency, transmit state and callsign through
     ~/.local/state/pihpsdr-rade/state.json (rewritten every second or so).
     RADE off, or piHPSDR gone, ends the report at once.
+  * It tells piHPSDR what to do through ~/.local/state/pihpsdr-rade/command.json
+    (RADE mode and/or dial frequency); piHPSDR answers in state.json.
   * RADEV1 is reported to qso.freedv.org, RADEV2 to reporter-radev2.k6aq.net
     (Settings can change either). Only the reporter for the mode piHPSDR has
     selected is ever sent anything.
@@ -22,6 +25,7 @@ transmitting. It does not send receive reports.
 import functools
 import fcntl
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -30,7 +34,7 @@ import time
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core  # noqa: E402
@@ -183,20 +187,43 @@ class App(Gtk.Window):
         self.view.connect("changed", self._on_view_changed)
         open_below(self.view)
         r2.pack_start(self.view, False, False, 0)
+        st = Gtk.Button(label="Settings")
+        st.connect("clicked", self._on_settings)
+        r2.pack_end(st, False, False, 0)
+        vw = Gtk.Button(label="Filters")
+        vw.set_tooltip_text("Which columns to show, and the distance (km) and frequency (MHz) filters (the same menu as a right click on a column heading).\nDrag a heading to move a column.")
+        vw.connect("clicked", lambda b: self._header_menu(None).popup_at_widget(b, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None))
+        r2.pack_end(vw, False, False, 0)
+        web = Gtk.Button(label="Website")
+        web.set_tooltip_text("Opens the reporter's website: the one for the mode shown, or both when both are shown")
+        web.connect("clicked", self._on_web)
+        r2.pack_end(web, False, False, 0)
         self.qsy_b = Gtk.Button(label="Request QSY")
         self.qsy_b.set_tooltip_text("Asks the selected station to move to your frequency")
         self.qsy_b.connect("clicked", self._on_qsy)
         r2.pack_end(self.qsy_b, False, False, 0)
-        web = Gtk.Button(label="Website")
-        web.connect("clicked", self._on_web)
-        r2.pack_end(web, False, False, 0)
-        vw = Gtk.Button(label="Columns / filters")
-        vw.set_tooltip_text("The same menu as a right click on a column heading: which columns to show, and the distance (km) and frequency (MHz) filters.\nDrag a heading to move a column.")
-        vw.connect("clicked", lambda b: self._header_menu(None).popup_at_widget(b, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None))
-        r2.pack_end(vw, False, False, 0)
-        st = Gtk.Button(label="Settings")
-        st.connect("clicked", self._on_settings)
-        r2.pack_end(st, False, False, 0)
+
+        rt = Gtk.Box(spacing=8)
+        v.pack_start(rt, False, False, 0)
+        rt.pack_start(Gtk.Label(label="Tune"), False, False, 0)
+        self.tune_e = Gtk.Entry(width_chars=9, max_length=8, xalign=1.0)
+        self.tune_e.set_placeholder_text("kHz")
+        self.tune_e.set_tooltip_text("Frequency in kHz, to 0.1 kHz, up to 999999.9. Enter tunes piHPSDR's dial to it")
+        self.tune_e.connect("changed", self._on_tune_changed)
+        self._tune_good = ""
+        self.tune_e.connect("activate", self._on_tune_go)
+        rt.pack_start(self.tune_e, False, False, 0)
+        rt.pack_start(Gtk.Label(label="or"), False, False, 4)
+        self.flist = Gtk.ComboBoxText()
+        self.flist.set_tooltip_text("The usual frequencies for the RADE mode in use (V1 or V2). Edit them in Settings > Frequencies")
+        self.flist.connect("changed", self._on_flist_changed)
+        open_below(self.flist)
+        rt.pack_start(self.flist, False, False, 0)
+        self.tune_l = Gtk.Label(xalign=0)
+        rt.pack_start(self.tune_l, True, True, 6)
+        self._flist_wave = None
+        self._flist_hz = []
+        self._fill_flist(1)
 
         r3 = Gtk.Box(spacing=8)
         v.pack_start(r3, False, False, 0)
@@ -253,6 +280,7 @@ class App(Gtk.Window):
             btn.connect("button-press-event", self._on_header_click, name)      # right click: columns, filters
         self.tree.connect("button-press-event", self._on_tree_click)
         self.tree.connect("columns-changed", self._on_cols_changed)
+        self.tree.get_selection().connect("changed", self._refresh_qsy)
         # the sort is remembered; the first time it is newest update first (C_UPDV is minus the update time)
         sc, so = self.cfg.get("sort", [C_UPDV, 0]) if isinstance(self.cfg.get("sort"), list) and len(self.cfg.get("sort")) == 2 else [C_UPDV, 0]
         if sc not in set(numeric.values()) | set(range(len(HEAD))) or so not in (0, 1):
@@ -283,16 +311,37 @@ class App(Gtk.Window):
         self.dirty = True
 
     def _on_event(self, key, name, data):
-        if name == "qsy_request" and isinstance(data, dict):
-            GLib.idle_add(self._qsy_request, data)
+        if name == "qsy_request" and valid_qsy(data):
+            GLib.idle_add(self._qsy_request, data, key)
         self.dirty = True
 
-    def _qsy_request(self, d):
-        dlg = Gtk.MessageDialog(transient_for=self, modal=False, message_type=Gtk.MessageType.INFO,
-                                buttons=Gtk.ButtonsType.CLOSE,
-                                text="QSY request from %s" % d.get("callsign", "?"))
-        dlg.format_secondary_text("%.4f MHz\n%s" % (d.get("frequency", 0) / 1e6, d.get("message", "")))
-        dlg.connect("response", lambda w, r: w.destroy())
+    def _qsy_request(self, d, key=None):
+        """A request to QSY. As freedv-gui does when it can change frequency: the dialog offers Change Frequency or Cancel. Here the
+        radio is piHPSDR: the mode is the one of the reporter the request came on (V1 or V2), the frequency the one asked; not while
+        transmitting. If piHPSDR is not there to be asked, the dialog only tells."""
+        srv = self.cfg["servers"].get(key) or {}
+        wave = {"v1": 1, "v2": 2}.get(key)
+        p = self.pihpsdr
+        can = bool(p and p.get("linked") and wave and core.valid_freq(d["frequency"]) and not p.get("tx"))
+        hz = d["frequency"]
+        dlg = Gtk.MessageDialog(transient_for=self, modal=False,
+                                message_type=Gtk.MessageType.QUESTION if can else Gtk.MessageType.INFO,
+                                buttons=Gtk.ButtonsType.NONE,
+                                text="%s has requested that you QSY to %.4f MHz." % (d["callsign"], hz / 1e6))
+        dlg.format_secondary_text("%s%s%s" % (d["message"] + "\n" if d["message"] else "",
+                                              "(on the %s reporter)" % srv["label"] if srv.get("label") else "",
+                                              "\n\nWould you like to change to that frequency now?" if can else ""))
+        if can:
+            dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+            dlg.add_button("Change Frequency", Gtk.ResponseType.YES)
+        else:
+            dlg.add_button("OK", Gtk.ResponseType.OK)
+
+        def answered(w, r):
+            w.destroy()
+            if r == Gtk.ResponseType.YES:
+                self._tune(wave, hz, "RADE V%d, %s kHz (QSY from %s)" % (wave, core.fmt_khz(hz), d["callsign"]))
+        dlg.connect("response", answered)
         dlg.show()
 
     def _on_report_toggled(self, w):
@@ -343,28 +392,133 @@ class App(Gtk.Window):
         self._refilter()
 
     def _on_web(self, *_):
+        """The reporter's website for the mode shown; both sites when both are shown (or RADE is off and Show follows it)."""
         v = core.resolve_view(self.cfg.get("view", "follow"), self.pihpsdr)
-        k = v if v in self.cfg["servers"] else (self.report_key or "v1")
-        url = self.cfg["servers"][k].get("web") or ("https://%s/" % self.cfg["servers"][k]["host"]
-                                                    if self.cfg["servers"][k]["host"] else "")
-        if url:
-            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        keys = list(self.cfg["servers"]) if v == "all" else [v if v in self.cfg["servers"] else (self.report_key or "v1")]
+        for k in keys:
+            srv = self.cfg["servers"][k]
+            url = srv.get("web") or ("https://%s/" % srv["host"] if srv["host"] else "")
+            if url:
+                subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _selected(self):
         model, it = self.tree.get_selection().get_selected()
         return model[it] if it else None
 
-    def _on_qsy(self, *_):
+    def _qsy_check(self):
+        """May a QSY request be sent to the selected station? -> (row, sid, "") or (None, None, why). The conditions are freedv-gui's
+        (FreeDVReporterDialog::refreshQSYButtonState): a station is selected, we are reporting (call and grid set, on the reporter we are on),
+        it is not our own callsign, we have a frequency, RADE is running, and the station is not already on our frequency."""
         row = self._selected()
-        if row is None or not self.pihpsdr or not self.pihpsdr.get("linked"):
-            return
+        p = self.pihpsdr
+        if row is None:
+            return None, None, "select a station"
+        if not p or not p.get("linked") or not core.valid_freq(p.get("dial_hz")):
+            return None, None, "piHPSDR is not running, or has no frequency"
+        if not int(p.get("waveform", 0) or 0):
+            return None, None, "RADE is off"
         key, _, sid = row[C_SID].partition(":")
-        if key != self.report_key:             # a QSY request is made as a reporter, on the reporter we are on
+        if not self.report_key or key != self.report_key:       # a request is made as a reporter, on the reporter we are on
+            return None, None, "reporting is off (or this station is on the other reporter)"
+        mycall = (p.get("call") or "").strip().upper()
+        if row[C_CALL].strip().upper() == mycall:
+            return None, None, "that is you"
+        if int(round(row[C_MHZV] * 1e6)) == int(p["dial_hz"]):
+            return None, None, "already on your frequency"
+        return row, sid, ""
+
+    def _refresh_qsy(self, *_):
+        row, sid, why = self._qsy_check()
+        self.qsy_b.set_sensitive(row is not None)
+        self.qsy_b.set_tooltip_text("Asks the selected station to move to your frequency" + ("" if row is not None else "\nNot now: " + why))
+
+    def _on_qsy(self, *_):
+        row, sid, why = self._qsy_check()
+        if row is None:
+            self.tune_l.set_text("No QSY request: %s" % why)
             return
-        self.links[key].emit("qsy_request", {"dest_sid": sid, "message": "",
-                                             "frequency": int(self.pihpsdr.get("dial_hz", 0))})
+        if self.links[self.report_key].emit("qsy_request", {"dest_sid": sid, "message": "",
+                                                            "frequency": int(self.pihpsdr["dial_hz"])}):
+            self.tune_l.set_text("QSY request sent to %s" % row[C_CALL])
+        else:
+            self.tune_l.set_text("No QSY request: not connected to the reporter yet")
+
+    # ------------------------------------------------------------- tuning piHPSDR
+    def _tune(self, wave=None, hz=None, what=""):
+        """Asks piHPSDR for a RADE mode (1, 2) and/or a dial frequency (Hz) through command.json."""
+        if not self.pihpsdr or not self.pihpsdr.get("linked"):
+            self.tune_l.set_text("piHPSDR is not running")
+            return
+        self._cmd_seq = core.send_command(wave, hz)
+        self._cmd_shown = None
+        self.tune_l.set_text("Asked piHPSDR for %s ..." % what)
+
+    def _tune_result(self, p):
+        """piHPSDR's answer to the last request (cmd_seq / cmd_err in its state)."""
+        seq = getattr(self, "_cmd_seq", None)
+        if not seq or not p or p.get("cmd_seq") != seq or self._cmd_shown == seq:
+            return
+        self._cmd_shown = seq
+        err = p.get("cmd_err") or ""
+        self.tune_l.set_markup("<span foreground='#b00020'>piHPSDR: %s</span>" % GLib.markup_escape_text(err) if err else "Tuned")
+
+    def _on_tune_changed(self, e):
+        t = e.get_text()
+        if re.fullmatch(r"\d{0,6}(\.\d?)?", t):
+            self._tune_good = t
+        else:                                                  # digits and one decimal place only: back to what was fine
+            e.handler_block_by_func(self._on_tune_changed)
+            e.set_text(self._tune_good)
+            e.set_position(-1)
+            e.handler_unblock_by_func(self._on_tune_changed)
+
+    def _on_tune_go(self, *_):
+        hz = core.parse_khz(self.tune_e.get_text())
+        if hz is None:
+            self.tune_l.set_text("Enter a frequency in kHz, e.g. 14236.0")
+            return
+        self._tune(hz=hz, what="%s kHz" % core.fmt_khz(hz))
+
+    def _on_flist_changed(self, combo):
+        i = combo.get_active()
+        if self._loading or i < 0 or i >= len(self._flist_hz):
+            return
+        hz = self._flist_hz[i]
+        self.tune_e.set_text(core.fmt_khz(hz) if hz < 1_000_000_000 else "")
+        self._tune(hz=hz, what="%s kHz" % core.fmt_khz(hz))
+
+    def _fill_flist(self, wave):
+        """The list for the RADE mode in use, lowest first. The box shows the title until one is picked."""
+        self._flist_wave = wave
+        self._flist_hz = core.clean_freqs(self.cfg["freqs"]["v%d" % wave])
+        self.flist.handler_block_by_func(self._on_flist_changed)
+        self.flist.remove_all()
+        for hz in self._flist_hz:
+            self.flist.append_text("%s kHz" % core.fmt_khz(hz))
+        self.flist.set_active(-1)
+        self.flist.handler_unblock_by_func(self._on_flist_changed)
+
+    def _flist_mode(self, p):
+        """V1 or V2 as 1 or 2: the mode piHPSDR is in; with RADE off the one the list is Showing (V1 when both)."""
+        w = int((p or {}).get("waveform", 0) or 0) if p and p.get("linked") else 0
+        if w in (1, 2):
+            return w
+        return 2 if self.cfg.get("view") == "v2" else 1
 
     def _on_tree_click(self, tree, ev):
+        double = ev.button == 1 and ev.type == Gdk.EventType._2BUTTON_PRESS       # a double click tunes; a single one only selects
+        hit = tree.get_path_at_pos(int(ev.x), int(ev.y)) if double else None
+        if hit and hit[1] is self.cols["MHz"]:
+            row = self.sort[hit[0]]
+            wave = {"RADEV1": 1, "RADEV2": 2}.get(row[C_MODE])
+            hz = int(round(row[C_MHZV] * 1e6))
+            if not hz:
+                self.tune_l.set_text("%s has sent no frequency" % row[C_CALL])
+            elif wave is None:
+                self.tune_l.set_text("%s is not on a RADE mode (%s)" % (row[C_CALL], row[C_MODE] or "unknown"))
+            else:
+                self._tune(wave, hz, "RADE V%d, %.1f kHz (%s)" % (wave, hz / 1000.0, row[C_CALL]))
+            return False                                  # the row is selected as usual
         if ev.button != 3:
             return False
         hit = tree.get_path_at_pos(int(ev.x), int(ev.y))
@@ -391,11 +545,14 @@ class App(Gtk.Window):
         return True
 
     def _on_settings(self, *_):
-        dlg = Gtk.Dialog(title="Reporter servers", transient_for=self, modal=True)
+        dlg = Gtk.Dialog(title="Reporter settings", transient_for=self, modal=True)
         dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("OK", Gtk.ResponseType.OK)
+        nb = Gtk.Notebook()
+        dlg.get_content_area().add(nb)
+
         g = Gtk.Grid(column_spacing=8, row_spacing=8, margin=12)
-        dlg.get_content_area().add(g)
+        nb.append_page(g, Gtk.Label(label="Servers"))
         entries = {}
         for r, k in enumerate(("v1", "v2")):
             s = self.cfg["servers"][k]
@@ -408,16 +565,84 @@ class App(Gtk.Window):
             entries[k] = e
         g.attach(Gtk.Label(label="RADEV1 is reported to qso.freedv.org, RADEV2 to reporter-radev2.k6aq.net "
                                  "(what freedv-gui uses).", xalign=0), 0, 2, 2, 1)
+
+        fb = Gtk.Box(spacing=16, margin=12)
+        nb.append_page(fb, Gtk.Label(label="Frequencies"))
+        work = {k: core.clean_freqs(self.cfg["freqs"][k]) for k in ("v1", "v2")}      # edited here, kept on OK
+        for k, title in (("v1", "RADE V1"), ("v2", "RADE V2")):
+            fb.pack_start(self._freq_editor(title, work[k]), True, True, 0)
+
         dlg.show_all()
         if dlg.run() == Gtk.ResponseType.OK:
             for k, e in entries.items():
                 host, port, secure = core.parse_server(e.get_text())
                 self.cfg["servers"][k].update(host=host, port=port, secure=secure)
+            self.cfg["freqs"] = {k: core.clean_freqs(work[k]) for k in work}
             core.save_config(self.cfg)
+            self._fill_flist(self._flist_wave or 1)
             for lk in self.links.values():
                 lk.close()                  # reconnect to what is now wanted
         dlg.destroy()
         self._tick()
+
+    def _freq_editor(self, title, hzs):
+        """A basic editor for one mode's list of frequencies (hzs is changed in place). Always lowest first; kHz to 0.1.
+        Double click a frequency to change it."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.pack_start(Gtk.Label(label="<b>%s</b>  (kHz)" % title, use_markup=True, xalign=0), False, False, 0)
+        store = Gtk.ListStore(str, GObject.TYPE_INT64)     # 64 bit: 10489640000 Hz is in the list
+        tree = Gtk.TreeView(model=store, headers_visible=False)
+        cell = Gtk.CellRendererText(editable=True, xalign=0.0)
+        tree.append_column(Gtk.TreeViewColumn("kHz", cell, text=0))
+        sw = Gtk.ScrolledWindow(min_content_height=260, min_content_width=170)
+        sw.add(tree)
+        box.pack_start(sw, True, True, 0)
+
+        def refill(select=None):
+            hzs[:] = core.clean_freqs(hzs)
+            store.clear()
+            for hz in hzs:
+                it = store.append([core.fmt_khz(hz), hz])
+                if hz == select:
+                    tree.get_selection().select_iter(it)
+                    tree.scroll_to_cell(store.get_path(it), None, False, 0, 0)
+
+        def edited(_c, path, text):
+            hz = core.parse_khz(text)
+            if hz is not None:
+                hzs.remove(store[path][1])
+                hzs.append(hz)
+                refill(hz)
+
+        cell.connect("edited", edited)
+        row = Gtk.Box(spacing=4)
+        box.pack_start(row, False, False, 0)
+        add_e = Gtk.Entry(width_chars=9, max_length=8, xalign=0.0, placeholder_text="kHz")
+        row.pack_start(add_e, True, True, 0)
+
+        def add(*_):
+            hz = core.parse_khz(add_e.get_text())
+            if hz is not None:
+                hzs.append(hz)
+                add_e.set_text("")
+                refill(hz)
+
+        add_e.connect("activate", add)
+        b = Gtk.Button(label="Add")
+        b.connect("clicked", add)
+        row.pack_start(b, False, False, 0)
+        d = Gtk.Button(label="Delete")
+
+        def delete(*_):
+            model, it = tree.get_selection().get_selected()
+            if it:
+                hzs.remove(model[it][1])
+                refill()
+
+        d.connect("clicked", delete)
+        row.pack_start(d, False, False, 0)
+        refill()
+        return box
 
     def _quit(self, *_):
         self.hide()                       # gone from the screen at once; the rest is tidying up
@@ -473,8 +698,12 @@ class App(Gtk.Window):
         mode = targets[rkey][2] if rkey else ""
         srv = self.cfg["servers"][rkey] if rkey else None
         self.why.set_text(why)
+        fw = self._flist_mode(p)
+        if fw != self._flist_wave:
+            self._fill_flist(fw)
+        self._tune_result(p)
         self._rx_note(p, rkey, role, mode, call)
-        self.qsy_b.set_sensitive(role == "report")
+        self._refresh_qsy()
         if self.dirty or now_t - self._last_fill >= 1.0:     # once a second: the blue "receiving" marks time out
             self.dirty = False
             self._last_fill = now_t
@@ -751,6 +980,12 @@ class App(Gtk.Window):
         if force or fp != self._fp or fp[4]:
             self._fp = fp
             self.filt.refilter()
+
+
+def valid_qsy(d):
+    """A qsy_request as freedv-gui accepts it (onFreeDVReporterQsyRequest_): callsign a string, frequency an unsigned integer, message a string."""
+    return (isinstance(d, dict) and isinstance(d.get("callsign"), str) and isinstance(d.get("message"), str)
+            and isinstance(d.get("frequency"), int) and not isinstance(d.get("frequency"), bool) and d["frequency"] >= 0)
 
 
 def code_id():
