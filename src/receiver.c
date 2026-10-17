@@ -1779,6 +1779,16 @@ void rx_set_af_gain(const RECEIVER *rx) {
   } else {
     amplitude = pow(10.0, 0.05 * volume);
   }
+#ifdef RADE_NATIVE
+  if (id == 0 && rade_native_waveform() != 0) {
+    //
+    // Native RADE: what WDSP delivers goes to the codec, which needs a level that does not depend on the volume
+    // (at the minimum the panel would deliver silence). The volume is applied to the decoded speech instead
+    // (see the receive path), so the panel stays at unity.
+    //
+    amplitude = 1.0;
+  }
+#endif
   SetRXAPanelGain1 (id, amplitude);
   //
   // Update mode settings, if this is RX1
