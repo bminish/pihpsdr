@@ -175,7 +175,6 @@ USBOZY_OPTIONS=-D USBOZY
 USBOZY_INCLUDE=`$(PKG_CONFIG) --cflags libusb-1.0`
 USBOZY_LIBS=`$(PKG_CONFIG) --libs libusb-1.0`
 USBOZY_OBJS= \
-$(RADE_NATIVE_OBJS) \
 src/ozyio.o
 endif
 CPP_DEFINES += -DUSBOZY
@@ -558,6 +557,7 @@ src/xvtr_menu.c
 ##############################################################################
 
 OBJS= \
+$(RADE_NATIVE_OBJS) \
 src/MacOS.o \
 src/about_menu.o \
 src/actions.o \
