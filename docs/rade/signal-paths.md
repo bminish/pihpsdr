@@ -65,8 +65,8 @@ flowchart TB
   NB --> RXA
   subgraph RXA[WDSP RXA - fexchange0]
     direction TB
-    r1[shift] --> r2[ADC meter] --> r3[nbp0 notch/passband] --> r4[S-meter] --> r5[RX EQ, NR, ANF]
-    r5 --> r6[bp1 RADE passband\n675..2275 V1, 1000..2000 V2\nnegative if lower sideband]
+    r1[shift] --> r2[ADC meter] --> r3[nbp0 = the RADE passband\n675..2275 V1, 1000..2000 V2\nnegative if lower sideband] --> r4[S-meter] --> r5[RX EQ, NR, ANF if on]
+    r5 --> r6[bp1: off in DIGU / DIGL\nunless NR or ANF is on]
     r6 --> r7[AGC medium, top 80 dB] --> r8[AGC meter] --> r9[panel: binaural, copy 0\ngain = volume] --> r10[resample to 48 kHz]
   end
   RXA --> T1([TAP rx48.wav\ncomplex 48k, WDSP sign])
@@ -90,7 +90,7 @@ flowchart TB
 | 1 | radio I/Q, diversity combine | rx rate, complex | `receiver.c` `rx_add_iq_samples`, `rx_add_div_iq_samples` | combines two antennas when diversity is on | diversity menu |
 | 2 | noise blanker | rx rate | `rx_full_buffer` (`xanbEXT` / `xnobEXT`) | in place, **before** the display and WDSP | rx->nb |
 | 3 | panadapter feed | rx rate | `Spectrum0(1, rx->id, ..., rx->iq_input_buffer)` | none (display only); shows the **whole** band, not the RADE passband | |
-| 4 | WDSP RXA | to 48 kHz | `wdsp/RXA.c` `xrxa` order above | shift, notch, S-meter, EQ/NR/ANF if on, **bp1 = the RADE passband**, AGC, panel | `rx_set_filter`, `rx_set_agc`, `rx_set_af_binaural` |
+| 4 | WDSP RXA | to 48 kHz | `wdsp/RXA.c` `xrxa` order above | shift, notch, S-meter, EQ/NR/ANF if on, AGC, panel; **nbp0 is the RADE passband**, `bp1` is off in DIGU/DIGL unless NR/ANF is on (`RXAbp1Set`, `wdsp-review.md`) | `rx_set_filter`, `rx_set_agc`, `rx_set_af_binaural` |
 | 5 | RADE passband override | | `rx_set_filter` (`#ifdef RADE_NATIVE`) | edges from `rade_native_wdsp_edges()`, stored sideband | `RADE_NATIVE_BW_V1` 1600, `_V2` 1000, centre 1475 / 1500 |
 | 6 | panel in binaural | 48 kHz complex | `rx_set_af_binaural` | copy 0 keeps I and Q; gain1 is the volume | |
 | 7 | **tap `rx48.wav`** | 48 kHz float32 stereo, I = L, Q = R | `cap_push_iq` | none | |
@@ -229,7 +229,7 @@ flowchart LR
 
 | Part | Value | Note |
 |---|---|---|
-| WDSP TXA + RXA with the default filters | 248.6 ms | linear-phase FIRs; `TXASetNC` / `RXASetNC` could shorten it; **not tuned** |
+| WDSP TXA + RXA with the default filters | 248.6 ms measured with `bp1` forced on; about 227 ms as the radio runs it (RX 106.6 ms, not 128) | linear-phase FIRs; of the rest, `dsp_size` 2048 buffering is 85 ms RX / 43 ms TX (`wdsp-review.md`); kept as is |
 | RX play-out cushion | 200 ms V1, 100 ms V2 | speech arrives a modem frame at a time (120 ms V1, 40 ms V2) |
 | TX cushion | 2 modem frames: 240 ms V1, 80 ms V2 | stops holes of zeros in the signal |
 | End of over hold | 0.58 to 0.62 s V1, 0.38 s V2 | |
@@ -294,7 +294,7 @@ sync, SNR 25.3 dB (min 12.8, max 26.9), +5.6 Hz offset, EOO 0.12 s after sync en
 | | leveller | gain held through RX and between overs; changes only while transmitting and only on speech (400 ms loudness before the gain >= -35 LUFS, within 15 LU of the over's loudest, within 10 LU of the speech average); up 0.2..0.5 dB/s, down 0.5 dB/s, 2 dB/s for a shout > 8 dB over, range -30..+20 dB |
 | | limiter | knee 0.9, ceiling 1.0 |
 | WDSP (TX filter) | `bp0` | 2048 taps at the WDSP DSP rate (96 kHz on P2), 7-term BH, linear phase, edges V1 675..2275 / V2 1000..2000; see `filter-lab.md` |
-| WDSP (RX filter) | `nbp0` + `bp1` in series | 2048 taps at 48 kHz, windows 4-term (nbp0) and 7-term (bp1), linear phase (`low_latency` 0), same edges |
+| WDSP (RX filter) | `nbp0` alone (`bp1` off in DIGU / DIGL; on, with gain 2.0 and +21 ms, if NR or ANF is on) | 2048 taps at 48 kHz, 4-term window, linear phase (`low_latency` 0), RADE edges |
 | WDSP (operator) | RX AGC | medium, top 80 dB |
 | WDSP (ours) | TX panel | select 3, copy 0, gain 1; EQ, leveler, CFC, compressor, DEXP, phase rotator off |
 
