@@ -453,6 +453,57 @@ def state_path():
     return os.path.join(base, "pihpsdr-rade", "state.json")
 
 
+def command_path():
+    return os.path.join(os.path.dirname(state_path()), "command.json")
+
+
+def send_command(wave=None, dial_hz=None, path=None):
+    """Asks piHPSDR to select RADE V1/V2 (wave 1 or 2) and/or tune its dial (Hz). The file is written atomically; its 'seq' is
+    the time in ms so that every request is new, and piHPSDR acts on a request once, only if it is newer than the last one it
+    saw and less than 10 s old. Returns the seq (piHPSDR answers in state.json with cmd_seq and cmd_err)."""
+    path = path or command_path()
+    seq = int(time.time() * 1000)
+    cmd = {"seq": seq}
+    if wave in (1, 2):
+        cmd["wave"] = wave
+    if dial_hz is not None:
+        cmd["dial_hz"] = int(dial_hz)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cmd, f)
+    os.replace(tmp, path)
+    return seq
+
+
+# The usual RADE frequencies, from freedv-gui's default Reporting frequency list (the same in the V1 and the V2 trees today).
+# Kept per mode in the config (cfg["freqs"]["v1"] / ["v2"], Hz) so that they can differ.
+DEFAULT_FREQS_HZ = [1870000, 3625000, 3643000, 3693000, 3697000, 3803000, 5368500, 5403500, 7177000, 7197000,
+                    14236000, 14240000, 18118000, 21313000, 24933000, 28330000, 28720000, 10489640000]
+
+
+def clean_freqs(lst):
+    """Hz values, whole multiples of 100 Hz (the 0.1 kHz the box allows), each once, lowest first."""
+    out = set()
+    for v in lst or []:
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and v > 0:
+            out.add(int(round(v / 100.0)) * 100)
+    return sorted(out)
+
+
+def parse_khz(text):
+    """'14236.0' -> 14236000 (Hz), or None. One decimal place at most, 0 < f <= 999999.9 kHz."""
+    t = (text or "").strip().replace(",", ".")
+    if not re.fullmatch(r"\d{1,6}(\.\d?)?", t):
+        return None
+    hz = int(round(float(t) * 10)) * 100
+    return hz if hz > 0 else None
+
+
+def fmt_khz(hz):
+    return "%.1f" % (hz / 1000.0)
+
+
 def config_path():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
     return os.path.join(base, "pihpsdr-rade", "reporter.json")
@@ -590,6 +641,14 @@ def load_config(path=None):
         c["view"], c["view_v"] = "follow", 2
     # reporting is never remembered: every start is "off"
     c.pop("reporting", None)
+    f = c.get("freqs") if isinstance(c.get("freqs"), dict) else {}
+    seeded = not all(k in f for k in ("v1", "v2"))
+    c["freqs"] = {k: clean_freqs(f[k]) if k in f else list(DEFAULT_FREQS_HZ) for k in ("v1", "v2")}
+    if seeded:
+        try:
+            save_config(c, path)          # the lists are put in the config file the first time
+        except OSError:
+            pass
     return c
 
 
@@ -597,6 +656,7 @@ def save_config(c, path=None):
     path = path or config_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     out = {k: v for k, v in c.items() if k != "reporting"}
+    out["freqs"] = {k: clean_freqs(c.get("freqs", {}).get(k)) for k in ("v1", "v2")}
     out["servers"] = {k: {f: v[f] for f in ("host", "port", "secure")} for k, v in c["servers"].items()}
     tmp = path + ".tmp"
     with open(tmp, "w") as f:

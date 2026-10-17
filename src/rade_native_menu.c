@@ -253,7 +253,11 @@ static void call_changed_cb(GtkWidget *widget, gpointer data) {
 // older than 8 s takes it that piHPSDR has gone.
 //
 static char state_file[512];
+static char command_file[512];
 static guint state_timer_id = 0;
+static int tx_confirmed = 0;            // what the Reporter is told: rade_is_tx() on two polls running (see state_cb)
+static long long cmd_seq = 0;           // the last request from the Reporter acted on (or seen when we started)
+static char cmd_err[96] = "";           // how it went: empty is well
 
 static void state_write(int running) {
   if (state_file[0] == 0) { return; }
@@ -280,11 +284,11 @@ static void state_write(int running) {
            "\"tx\":%d,\"call\":\"%s\",\"version\":\"%s\","
            "\"rx_sync\":%d,\"rx_snr\":%s,\"rx_foff\":%.1f,\"rx_call\":\"%s\","
            "\"heard_seq\":%d,\"heard_call\":\"%s\",\"heard_snr\":%s,\"heard_foff\":%.1f,\"heard_t\":%.0f,"
-           "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"heard\":[%s]}\n",
+           "\"tx_count\":%d,\"tx_last_t\":%.0f,\"centre_hz\":%lld,\"cmd_seq\":%lld,\"cmd_err\":\"%s\",\"heard\":[%s]}\n",
            running, g_get_real_time() / 1e6, (int)getpid(), rade_native_waveform(),
-           rade_dial(), rade_is_tx() ? 1 : 0, call, ver,
+           rade_dial(), tx_confirmed, call, ver,
            st.sync ? 1 : 0, rx_snr_s, st.foff_hz, st.rx_call, heard_seq, heard_call, heard_snr_s, heard_foff, heard_t, tx_count, tx_last_t,
-           rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, hist);
+           rade_dial() + (rade_native_get_invert() ? -1LL : 1LL) * RADE_NATIVE_DIAL_OFFSET, cmd_seq, cmd_err, hist);
   snprintf(tmp, sizeof tmp, "%s.tmp", state_file);
   FILE *f = fopen(tmp, "w");
   if (!f) { return; }
@@ -298,6 +302,52 @@ static void state_exit(void) {
 }
 
 static void band_default_changed(void);
+
+//
+// The Reporter asks for a station's mode and frequency (click on its MHz) or a frequency of the operator's choosing, through
+// command.json next to state.json: {"seq":<ms>,"wave":1|2,"dial_hz":<Hz>}, either of the last two. A request is acted on once (its seq
+// must be newer than the last one) and only if it is under 10 s old, so one left in the file by a Reporter that has gone is not obeyed
+// at the next start. The mode comes first (it may move the dial 3 kHz for Invert), then the dial is set to exactly what was asked.
+// The answer goes in state.json: cmd_seq, and cmd_err (empty when it was done). Never while transmitting.
+//
+static long long cmd_num(const char *text, const char *key, long long none) {
+  char pat[32];
+  snprintf(pat, sizeof pat, "\"%s\":", key);
+  const char *q = strstr(text, pat);
+  return q ? atoll(q + strlen(pat)) : none;
+}
+
+static void command_poll(int first) {
+  char text[300];
+  if (command_file[0] == 0) { return; }
+  FILE *f = fopen(command_file, "r");
+  if (!f) { return; }
+  size_t n = fread(text, 1, sizeof text - 1, f);
+  fclose(f);
+  text[n] = 0;
+  long long seq = cmd_num(text, "seq", 0);
+  if (seq <= cmd_seq) { return; }
+  cmd_seq = seq;
+  if (first) { return; }                                  // what was there before we started is not ours to do
+  cmd_err[0] = 0;
+  long long age_ms = g_get_real_time() / 1000 - seq;
+  long long wave = cmd_num(text, "wave", 0), dial = cmd_num(text, "dial_hz", 0);
+  if (age_ms > 10000 || age_ms < -10000) {
+    snprintf(cmd_err, sizeof cmd_err, "request too old or clock differs");
+  } else if (radio_is_transmitting()) {
+    snprintf(cmd_err, sizeof cmd_err, "not while transmitting");
+  } else if (wave != 0 && ((wave != 1 && wave != 2) || wave_b[wave] == NULL)) {
+    snprintf(cmd_err, sizeof cmd_err, "open the RADE window to change mode");
+  } else if (dial != 0 && (dial < 100000 || dial > 450000000)) {
+    snprintf(cmd_err, sizeof cmd_err, "frequency out of range");
+  } else {
+    if (wave != 0 && rade_native_waveform() != (int)wave) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(wave_b[wave]), TRUE);     // as a click on the radio button
+    }
+    if (dial != 0) { vfo_id_set_frequency(0, dial); }
+  }
+  state_write(1);                                          // the answer now, not at the next 2 s
+}
 
 static int log_events_fresh = 0;        // set when logging starts: the next poll writes every setting as an event
 
@@ -320,7 +370,17 @@ static int state_cb(gpointer arg) {
   } else {
     band_cls = -1;
   }
-  int tx_now = rade_is_tx() ? 1 : 0;
+  command_poll(0);
+  //
+  // A transmission is told to the Reporter only once it has been seen on two polls running (250 ms or more): the key, the TUNE flag
+  // and the engine's live count are set and cleared at different moments, and a TUNE starting or ending can show all of RADE's
+  // conditions for an instant. A real RADE over lasts seconds, so this costs nothing but a quarter of a second at its start, and
+  // an instant that is not an over is never reported, nor counted in tx_count (which makes the Reporter send a short TX pulse).
+  //
+  static int tx_run = 0;
+  tx_run = rade_is_tx() ? (tx_run < 2 ? tx_run + 1 : 2) : 0;
+  tx_confirmed = tx_run >= 2;
+  int tx_now = tx_confirmed;
   if (tx_now && !prev_tx) {
     tx_count++;
     tx_last_t = g_get_real_time() / 1e6;
@@ -398,6 +458,8 @@ static void rade_native_state_start(void) {
   }
   g_mkdir_with_parents(dir, 0755);
   snprintf(state_file, sizeof state_file, "%s/state.json", dir);
+  snprintf(command_file, sizeof command_file, "%s/command.json", dir);
+  command_poll(1);
   atexit(state_exit);
   state_write(1);
   state_timer_id = g_timeout_add(250, state_cb, NULL);

@@ -18,7 +18,7 @@ class MockServer:
         self._ready = threading.Event()
 
     async def _handler(self, ws):
-        c = {"auth": None, "events": [], "closed": False, "left": False}
+        c = {"auth": None, "events": [], "closed": False, "left": False, "ws": ws}
         self.clients.append(c)
         await ws.send('0' + json.dumps({"sid": "eio", "upgrades": [], "pingInterval": 25000,
                                         "pingTimeout": 20000, "maxPayload": 1000000}))
@@ -64,6 +64,11 @@ class MockServer:
         threading.Thread(target=run, daemon=True).start()
         self._ready.wait(5)
         return self
+
+    def push(self, client, event, data):
+        """Send an event to one connected client, as the server does (for tests of what the Reporter does on receiving it)."""
+        msg = "42" + json.dumps([event, data])
+        asyncio.run_coroutine_threadsafe(client["ws"].send(msg), self._loop).result(5)
 
     def stop(self):
         if self._loop:

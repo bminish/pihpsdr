@@ -33,6 +33,7 @@ flowchart LR
   TXA -->|I/Q 48k or 192k| DAC
   RXE -.->|state.json| REP[RADE Reporter]
   TXE -.->|state.json| REP
+  REP -.->|command.json: mode, dial| MENU[RADE window]
 ```
 
 | Fact | Value |
@@ -193,7 +194,7 @@ flowchart LR
 | ALC meter | TX panel | WDSP ALC (stage 10) | idle by design at our level | the mic level |
 | TX panadapter | TX panel | TX stage 11: TXA output | | what the PA radiates |
 | Transmitting / Status | RADE window | `radio_is_transmitting()` (held through the end of over) | | |
-| Transmitting, as reported | Reporter `tx_report`, `tx_count`, state.json `tx` | `rade_is_tx()`: keyed **and** a RADE waveform on **and** the RADE transmit engine in use **and** not TUNE or two-tone | an SSB over or a tune in RADE mode is not reported | `radio_is_transmitting()` |
+| Transmitting, as reported | Reporter `tx_report`, `tx_count`, state.json `tx` | `rade_is_tx()`: keyed **and** a RADE waveform on **and** the RADE transmit engine in use (170 ms of RADE samples, none since a TUNE / two-tone / noise began in this key-down) **and** not TUNE or two-tone, **and** seen on two 250 ms polls running (`state_cb`) | an SSB over or a tune in RADE mode is not reported | `radio_is_transmitting()` |
 | Frequency | VFO; Reporter `freq_change`; logs | the dial = carrier of the sideband in use | Hz | the energy centre `Fe` (state.json `centre_hz`) |
 | Received call | RADE window, `rade-calls.csv`, Reporter `rx_report` | end-of-over frame, LDPC decode | SNR with it is the over's smoothed SNR | |
 | Reception report (SNR) | Reporter `rx_report` | librade SNR (live) while in sync, call = last decoded or blank | `int(snr + 0.5)`. A changed SNR is sent up to once a second, an unchanged one every 20 s only while in sync with an SNR; calls first; never repeated otherwise (`Link._push`) | |
