@@ -60,11 +60,9 @@ static guint calls_timer_id = 0;
 static char recent[RECENT_CALLS][160];
 static int n_recent = 0;
 static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_text = NULL;
-static GtkWidget *tx_b = NULL;          // "RADE TX" check box: process transmit audio as RADE
 static GtkWidget *mox_b = NULL;         // the transmit button
 static GtkWidget *wave_b[3] = {NULL, NULL, NULL};
 static GtkWidget *inv_b = NULL;
-static int want_tx = 1;                 // RADE transmit follows the waveform unless switched off
 static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
@@ -703,7 +701,7 @@ static void cleanup(void) {
     timer_id = 0;
   }
   recv_label = call_e = NULL;
-  tx_b = mox_b = inv_b = capture_b = status_label = edge_label = NULL;
+  mox_b = inv_b = capture_b = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   mic_scale = mic_agc_b = mic_bar = mic_text = NULL;
   drive_scale = log_b = test_b = NULL;
@@ -815,25 +813,13 @@ static void show_tx_state(void) {
 // there is a transmitter, no PureSignal).
 //
 static void tx_enable_now(void) {
-  if (!want_tx || transmitter == NULL || transmitter->puresignal || rade_native_waveform() == 0) {
+  if (transmitter == NULL || transmitter->puresignal || rade_native_waveform() == 0) {
     show_tx_state();
     return;
   }
   if (!rade_native_tx_enabled()) { rade_native_tx_enable(1); }
   if (rade_native_tx_enabled()) { tx_apply(1); }
   show_tx_state();
-}
-
-static void tx_cb(GtkWidget *widget, gpointer data) {
-  if (updating) { return; }
-  want_tx = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
-  if (want_tx) {
-    tx_enable_now();
-  } else {
-    rade_native_tx_enable(0);
-    tx_apply(0);
-    show_tx_state();
-  }
 }
 
 //
@@ -953,8 +939,6 @@ static int update_cb(gpointer arg) {
   // the waveform and the TX processing are not changed in mid-over
   for (int i = 0; i < 3; i++) { gtk_widget_set_sensitive(wave_b[i], !tx); }
   gtk_widget_set_sensitive(inv_b, !tx);
-  gtk_widget_set_sensitive(tx_b, !tx);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
   updating = 0;
   show_tx_state();
   show_mic();
@@ -1026,13 +1010,9 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_grid_attach(GTK_GRID(grid), call_e, 1, row, 2, 1);
   g_signal_connect(call_e, "changed", G_CALLBACK(call_changed_cb), NULL);
   call_changed_cb(call_e, NULL);
-  tx_b = gtk_check_button_new_with_label("RADE TX");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tx_b), want_tx);
-  g_signal_connect(tx_b, "toggled", G_CALLBACK(tx_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), tx_b, 3, row, 1, 1);
   GtkWidget *drive_l = gtk_label_new("Drive");
   gtk_widget_set_halign(drive_l, GTK_ALIGN_END);
-  gtk_grid_attach(GTK_GRID(grid), drive_l, 4, row, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), drive_l, 3, row, 1, 1);
   drive_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -6.0, 6.0, 0.1);
   gtk_scale_set_value_pos(GTK_SCALE(drive_scale), GTK_POS_RIGHT);
   gtk_scale_set_digits(GTK_SCALE(drive_scale), 1);
@@ -1042,7 +1022,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_tooltip_text(drive_scale, "Level into the transmit chain, dB around the defined one (0: the modem peaks "
                                            "just below the ALC ceiling). Above 0 the ALC starts to compress the peaks.");
   g_signal_connect(drive_scale, "value-changed", G_CALLBACK(drive_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), drive_scale, 5, row++, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), drive_scale, 4, row++, 2, 1);
 
   GtkWidget *mic_l = gtk_label_new("Mic trim");
   gtk_widget_set_halign(mic_l, GTK_ALIGN_END);
@@ -1269,7 +1249,6 @@ static int test_exec(const char *verb, const char *args, char *reply, size_t n) 
     if (rade_test_arg(args, "drive_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_drive_db(d); if (drive_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(drive_scale), d < -6.0 ? -6.0 : d); updating = 0; } }
     if (rade_test_arg(args, "trim_db", v, sizeof v)) { double d = atof(v); rade_native_tx_set_trim_db(d); if (mic_scale) { updating = 1; gtk_range_set_value(GTK_RANGE(mic_scale), d); updating = 0; } }
     if (rade_test_arg(args, "agc", v, sizeof v)) { int a = atoi(v); rade_native_tx_set_agc(a); if (mic_agc_b) { updating = 1; gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mic_agc_b), a); updating = 0; } }
-    if (rade_test_arg(args, "tx", v, sizeof v)) { wset(tx_b, atoi(v)); }
     test_status(reply, n);
     return 0;
   }
