@@ -56,6 +56,8 @@ class Viewer:
         self.root = root
         self.runs = []
         self.xlim = None
+        self.logroot = None                # where the runs are (default: rade-logs/ of the piHPSDR directory)
+        self.yuser = {}                    # y ranges set by the operator, by axis label: kept when the plot is redrawn
         self.measure = []                  # clicked points: (time_num, axes_index, y)
         root.title("RADE log viewer")
         root.geometry("1250x800")
@@ -70,6 +72,7 @@ class Viewer:
         ttk.Button(bar, text="Files…", command=self.open_dialog).pack(side="left")
         ttk.Button(bar, text="Folder…", command=self.open_folder).pack(side="left", padx=4)
         ttk.Button(bar, text="Remove", command=self.remove_run).pack(side="left")
+        ttk.Button(bar, text="Remove all", command=self.remove_all).pack(side="left", padx=4)
         ttk.Button(bar, text="Fit all", command=self.fit_all).pack(side="left", padx=4)
         self.runlist = tk.Listbox(left, height=6, exportselection=False)
         self.runlist.pack(fill="x", padx=4)
@@ -151,15 +154,39 @@ class Viewer:
         p = filedialog.askdirectory(title="Open a run directory (live runs can be updated), or a folder of runs",
                                     initialdir=self.initialdir(), mustexist=True)
         if p:
-            self.add_any(p)
+            self.add_any(p, choose=True)
             self.replot()
 
-    def add_any(self, p):
-        """A run (directory, file in one, .tar.gz) or a folder of runs: all of them are opened."""
+    def pick_runs(self, found):
+        """Several runs in a folder: a list to choose from (shift / ctrl click), all selected to begin with."""
+        top = tk.Toplevel(self.root)
+        top.title("Choose runs")
+        top.transient(self.root)
+        lb = tk.Listbox(top, selectmode="extended", width=60, height=min(20, len(found)), exportselection=False)
+        for q in found:
+            lb.insert("end", os.path.basename(q))
+        lb.selection_set(0, "end")
+        lb.pack(fill="both", expand=True, padx=6, pady=6)
+        chosen = []
+
+        def ok():
+            chosen.extend(found[i] for i in lb.curselection())
+            top.destroy()
+        row = ttk.Frame(top); row.pack(fill="x", padx=6, pady=(0, 6))
+        ttk.Button(row, text="Open", command=ok).pack(side="right")
+        ttk.Button(row, text="Cancel", command=top.destroy).pack(side="right", padx=4)
+        top.grab_set()
+        self.root.wait_window(top)
+        return chosen
+
+    def add_any(self, p, choose=False):
+        """A run (directory, file in one, .tar.gz) or a folder of runs: all of them are opened (choose: pick from the list)."""
         if os.path.isdir(p):
             found = ld.find_runs(p)
             if not found:
                 self.error("Cannot open", "%s\n\nno run (a directory with meta.txt) or .tar.gz in it" % p)
+            if choose and len(found) > 1 and not getattr(self, "quiet", False):
+                found = self.pick_runs(found)
             for q in found:
                 self.add_path(q)
         else:
@@ -172,6 +199,8 @@ class Viewer:
             messagebox.showerror(title, msg)
 
     def initialdir(self):
+        if self.logroot:
+            return self.logroot
         d = os.path.join(HERE, "..", "..", "rade-logs")
         return os.path.abspath(d) if os.path.isdir(d) else os.getcwd()
 
@@ -232,9 +261,19 @@ class Viewer:
                 t.append(r.events[-1][0])
         return max(t) if t else None
 
+    def open_newest(self):
+        """The most recent run directory in rade-logs/, opened if it is not open already. 1 if it was opened."""
+        runs = [q for q in ld.find_runs(self.initialdir()) if os.path.isdir(q)]
+        if not runs:
+            return 0
+        q = max(runs, key=os.path.basename)                 # the names are start times
+        if any(os.path.abspath(r.source) == os.path.abspath(q) for r in self.runs):
+            return 0
+        return 1 if self.add_path(q) is not None else 0
+
     def update_live(self):
         """Reload every live run whose files have changed; keep the view, or follow the newest data."""
-        changed = 0
+        changed = self.open_newest()
         for i, r in enumerate(self.runs):
             if not r.live or ld.signature(r.source) == r.sig:
                 continue
@@ -275,6 +314,15 @@ class Viewer:
         self.runlist.delete(sel[0])
         self.colour_runs()
         self.refresh_overs()
+        self.replot()
+
+    def remove_all(self):
+        self.runs = []
+        self.runlist.delete(0, "end")
+        self.yuser = {}
+        self.refresh_overs()
+        self.live_note()
+        self.set_text("")
         self.replot()
 
     def show_run_text(self):
@@ -330,8 +378,12 @@ class Viewer:
     def replot(self):
         old = self.axes_xlim() if getattr(self, "axes", None) else None
         was_utc = getattr(self, "_was_utc", self.utc.get())
+        for ax, key, auto in getattr(self, "ykeys", []):         # a y range the operator set (zoom, pan) is kept
+            if tuple(np.round(ax.get_ylim(), 6)) != tuple(np.round(auto, 6)):
+                self.yuser[key] = ax.get_ylim()
         self.fig.clear()
         self.measure = []
+        self.ykeys = []
         self.axes = []
         params = self.selected_params()
         if not self.runs or not params:
@@ -355,7 +407,12 @@ class Viewer:
             if len(series) > 1:                              # what the lines are, in the axis label: no box over the data
                 label += "\n" + " / ".join("%s %s" % ({"-": "solid", ":": "dotted"}.get(st, st), leg) for _c, leg, st in series)
             ax.set_ylabel(label, fontsize=8)
+            if "(Hz)" in label:                              # frequency: centred on 0, a few Hz wide unless the data is wider
+                ax.set_ylim(*self.yuser.get(label, self.freq_range(ax)))
             ax.grid(True, alpha=0.3)
+            self.ykeys.append((ax, label, ax.get_ylim()))
+            if label in self.yuser and "(Hz)" not in label:
+                ax.set_ylim(*self.yuser[label])
             ax.tick_params(labelsize=8)
             self.draw_marks(ax, first=(ax is axs[0]))
         self.axes = list(axs)
@@ -371,6 +428,17 @@ class Viewer:
         self._was_utc = self.utc.get()
         self.fig.subplots_adjust(left=0.09, right=0.99, top=0.98, bottom=0.08, hspace=0.12)
         self.canvas.draw_idle()
+
+    def freq_range(self, ax):
+        """Symmetric about 0 Hz: the largest value drawn, at least +-2 Hz."""
+        m = 0.0
+        for ln in ax.get_lines():
+            y = np.asarray(ln.get_ydata(), float)
+            y = y[np.isfinite(y)]
+            if len(y):
+                m = max(m, float(np.max(np.abs(y))))
+        h = max(2.0, m * 1.1)
+        return (-h, h)
 
     def axes_xlim(self):
         return self.axes[0].get_xlim() if self.axes else None
@@ -417,9 +485,8 @@ class Viewer:
         t = [r.t0 for r in self.runs]
         e = [max([r.t0] + [x[0] for x in r.events] + [o["t_end"] for o in r.overs + r.tx_overs]) for r in self.runs]
         self.set_xlim(min(t), max(e) + 1)
-        for ax in self.axes:
-            ax.relim(); ax.autoscale_view(scalex=False)
-        self.canvas.draw_idle()
+        self.yuser = {}
+        self.replot()
 
     # ---------------------------------------------------------------- pointer and measuring
     def from_x(self, xv):
