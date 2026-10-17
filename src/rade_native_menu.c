@@ -729,6 +729,7 @@ static gboolean close_cb(void) {
 static void apply(void) {
   rx_filter_changed(receiver[0]);
   rx_set_af_binaural(receiver[0]);
+  rx_set_af_gain(receiver[0]);          // the panel gain is unity while RADE is on, the RX volume otherwise
 }
 
 // A label of fixed width: the window does not grow or shrink when the text changes length (long text is cut with an ellipsis; the
