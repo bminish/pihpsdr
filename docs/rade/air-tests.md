@@ -68,6 +68,15 @@ With a GPS solution on the Kiwi (`--gps auto`) the IQ recordings carry GNSS time
 axis, WDSP output times, the delays between them and the engine's events, clipping of the start and the end of the speech, the transmit frequency error).
 Method, validation, and the meaning of every column: `gps-timing.md`.
 
+## V2 callsign check
+
+`kiwi_rx.py` decodes the V2 callsign of a recording with freedv-gui's own text receiver (`v2_text_interop/interop --iq`, build it with
+`make v2_text_interop/interop`) and compares it with `--call`; `call_ok` is set for V2 as it is for V1, a wrong call fails the run.
+First on-air result, 2026-10-17, 28645 kHz, V2, levels -12 and -6 dB, 11 s clip: `EI6IZ` decoded on the `iq`, `iq-fixed` and `usb` profiles of both
+overs (sync 100 %, one EOO frame each). The USB recording converted to 48 kHz and played into the freedv-gui GUI (`ms-rade-v2` build,
+`-ut rx -utmode RADEV2 -rxfile`) logged `received EI6IZ`. Two things about that GUI run: the callsign is only decoded when reporting is
+enabled in its configuration, and the GUI's V2 reporter host is hard-coded to the live reporter, so it was run under `bwrap --unshare-net`.
+
 ## What a row holds
 
 | Column(s) | Meaning |

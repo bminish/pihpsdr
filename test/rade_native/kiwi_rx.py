@@ -44,7 +44,7 @@ Everything goes in rade-captures/kiwi/<utc>_<kHz>_<wave>/ (git-ignored):
 <profile>.wav (as recorded), .8k.f32, .stats.csv, .events.txt, .feat.f32,
 .speech.wav (decoded), session.json, analysis.json and report.txt.
 """
-import argparse, datetime, json, os, shutil, subprocess, sys, time, urllib.request
+import argparse, datetime, json, os, re, shutil, subprocess, sys, time, urllib.request
 import numpy as np
 from scipy.io import wavfile
 from scipy.signal import resample_poly, hilbert, correlate
@@ -221,6 +221,19 @@ def run_decoder(z, v2, base):
     return st, ev
 
 
+V2_INTEROP = os.path.join(HERE, "v2_text_interop", "interop")
+
+
+def v2_call(z8k_path, want):
+    """The V2 callsign as freedv-gui's own text receiver delivers it from the 8 kHz baseband file (the whole recording:
+    the receiver follows the sync flag, so each over is its own stream). Returns (text delivered last, times, ok)."""
+    r = subprocess.run([V2_INTEROP, "--iq", z8k_path, want or "-"], capture_output=True, text=True)
+    m = re.search(r"delivered '([^']*)' \((\d+) times\)", r.stdout)
+    if not m:
+        raise SystemExit("v2_text_interop/interop (make v2_text_interop/interop) failed: " + (r.stdout + r.stderr)[-300:])
+    return m.group(1), int(m.group(2))
+
+
 def segments(st, merge_s=1.5, min_s=1.0):
     """Overs: runs of sync, gaps shorter than merge_s joined, runs shorter than min_s dropped."""
     t, s = st["t_sec"], st["sync"] > 0.5
@@ -338,6 +351,11 @@ def analyze_one(path, profile, meta, a, refs):
         so, _ = run_decoder(zo, v2, base + ".other")
         out["sync_pct_other_orientation"] = round(100.0 * float(np.mean(so["sync"] > 0.5)), 1)
     segs = segments(st)
+    want = a.call or meta.get("call")
+    v2call = v2n = None
+    if v2 and want:
+        v2call, v2n = v2_call(base + ".8k.f32", want.upper())
+        out["v2_call"], out["v2_call_times"] = v2call, v2n
     nframes_cum = np.concatenate([[0], np.cumsum((st["nout"] / 36).astype(int))])
     for k, (i, j) in enumerate(segs):
         t0, t1 = st["t_sec"][i], st["t_sec"][j]
@@ -363,8 +381,11 @@ def analyze_one(path, profile, meta, a, refs):
             o["end_unix"] = round(t0_unix + float(t1), 4)
             o["eoo_at_unix"] = round(t0_unix + eoos[0][0], 4) if eoos else None
         o["eoo_ok"] = len(eoos) == 1
-        want = a.call or meta.get("call")
-        o["call_ok"] = None if (v2 or not want) else (len(eoos) >= 1 and eoos[0][1] == want.upper())
+        if v2:
+            o["call"] = v2call
+            o["call_ok"] = None if not want else (v2n > 0 and v2call == want.upper())
+        else:
+            o["call_ok"] = None if not want else (len(eoos) >= 1 and eoos[0][1] == want.upper())
         # quality against what was sent
         if refs is not None:
             rf, rdec = refs
@@ -521,7 +542,7 @@ def main():
 
     def common(p, rec=True):
         p.add_argument("--out", default=OUTDIR, help="where sessions go (default rade-captures/kiwi)")
-        p.add_argument("--call", help="callsign the transmitter sends (V1); checked in the EOO")
+        p.add_argument("--call", help="callsign the transmitter sends; V1: checked in the EOO, V2: delivered by freedv-gui's text receiver")
         p.add_argument("--ref", help="the speech that was sent (16 kHz wav), for the quality figures")
         p.add_argument("--tx-freq", type=float, help="transmitter dial, kHz, if not the Kiwi's tuning")
         p.add_argument("--invert", type=lambda s: s.lower() in ("1", "true", "yes"),
