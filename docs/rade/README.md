@@ -77,7 +77,7 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
   follow freedv-gui bit for bit. V2 receive uses **sync as the gate**: symbols are only taken while `librade` is in sync;
   after a loss the new lock is joined to the old reception only if its timing correlates with the call's repetition cycle
   (a dropout), otherwise it starts afresh (a different station). Tests: `v2_text_interop` (our code against freedv-gui's
-  unmodified code, symbol by symbol), `test_v2_text.py` (real engines). Checked on air, our transmission -> freedv-gui's receiver (2026-10-17, 28645 kHz, Kiwi recording, also in the freedv-gui GUI); freedv-gui's transmission -> our receiver not yet.
+  unmodified code, symbol by symbol), `test_v2_text.py` (real engines). Checked on air, our transmission -> freedv-gui's receiver (2026-10-17, 28645 kHz, Kiwi recording, also in the freedv-gui GUI); freedv-gui's transmission -> our receiver graded in noise against freedv-gui's receiver, equal ([air-tests.md](air-tests.md)); not yet on air.
 - **Only a real RADE signal counts as a transmission.** The Reporter is told "transmitting" only while the engine has had
   the key for speech for 170 ms (`rade_native_tx_live()`), never for TUNE, two-tone or noise. Test: `test_tx_live`.
 - **Reporter** is a separate process (so a network fault cannot touch the audio), driven by `state.json`; V1 reports to
@@ -90,7 +90,7 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
 
 ## Not done / not known
 
-- V2 callsign over the air, freedv-gui transmitting and our receiver decoding (the other direction is done).
+- V2 callsign over the air with freedv-gui transmitting and our receiver decoding (done in simulation from freedv-gui's own transmission, not yet on air).
 - Over-the-air delay end to end, PA and radiated spectrum, fading, Pi CPU cost of the engines (PC: V2 text receive 0.5-0.9 % of a core).
 - Working TX level (+3 dB) and the filter recommendations in [filter-lab.md](filter-lab.md) are proposals.
 
