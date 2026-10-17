@@ -11,9 +11,11 @@
 
 RADE_NATIVE ?= OFF
 
-# The rules below must not become the default goal: until the Makefile's own first rule is seen, that is the program
+# The rules below must not become the default goal: until the Makefile's own first rule is seen, that is the program.
+# (PROGRAM is set further down the Makefile, after this include, so the name is written out;
+# tools/rade/rade-patches.sh check tests that the default goal is still the program.)
 ifeq ($(.DEFAULT_GOAL),)
-.DEFAULT_GOAL := $(PROGRAM)
+.DEFAULT_GOAL := pihpsdr
 endif
 
 ifeq ($(RADE_NATIVE),ON)
