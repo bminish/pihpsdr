@@ -66,8 +66,8 @@ signals use the band-power SNR or the feature loss. The weak-signal emulation (`
 
 - Hold after the last speech sample before the transmitter is released: **0.65 s V1, 0.43-0.47 s V2** (0.4 s of it is the end-of-over frame and WDSP's TX filter tail).
 - First speech sample within about 0.05 s of the key. No transmit underruns in 64 runs.
-- WDSP filter delay, offline (`filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps, of which the linear-phase filters are
-  21 ms (TX, two of them, at 96 kHz) and 43 ms (RX, two of them, at 48 kHz). The over-the-air delay is **not measured** (the Kiwi recordings carry no time stamps).
+- WDSP filter delay, offline (`filter-lab.md`): TX chain 66 ms and RX chain 128 ms at the default 2048 taps (RX with `bp1` forced on; the radio runs one RX filter, 106.6 ms), of which the linear-phase filters are
+  21 ms (TX, two of them, at 96 kHz) and 21 ms (RX live, one at 48 kHz; 43 ms with two). The over-the-air delay is **not measured** (the Kiwi recordings carry no time stamps).
 
 - **GPS-stamped Kiwi** (2026-10-16): the Kiwi's frequency is right to +-0.03 ppm (WWV 10 / 15 MHz), its time axis late by about 2.2 ms (MSF 60 kHz). First run with it (`air-run-3.md`, 12 overs): engine -> WDSP output 78.8 ms, WDSP -> RF 10.9 ms, key-down to RF 335 ms (V1) / 174 ms (V2) of which 240 / 80 ms is the prefill; RF rise 20 ms; the end-of-over frame and call decoded in every over and nothing of the end is missing; the radio is released about 115 ms after the RF has ended (dead time); **the receiver loses the first 0.52 s (V1) / 0.21 s (V2) of the speech to acquisition** (sync 0.65 s / 0.27 s after the RF onset, at any SNR); the end-of-over frame is 2.4 dB (V1) below the speech's average power at 0 dB drive. The transmit frequency is within +-1 Hz of the GPS-corrected Kiwi: the +0.39 ppm seen earlier was the Kiwi's own, before its GPS (corrected).
 

@@ -1,5 +1,7 @@
 # RADE native: the WDSP TX and RX filters, measured offline
 
+**Correction 2026-10-17 (`wdsp-review.md`):** in DIGU / DIGL the radio runs **one** RX filter, `nbp0` (4-term window); `bp1` is off unless NR or ANF is on. This lab (`wdsp_probe`) forces `bp1` on, so every RX row and RX delay below is for two filters in series (nbp0 4-term + bp1 as listed). The live RX is the nbp0 alone: delay 106.6 ms instead of 128.0 ms (21.3 ms less); edge carriers about the 4-term figures; the `bp1` window column does not apply. The decode conclusions are not re-run for the single filter.
+
 Question: is the V2 transmit filter as good as it can be, and how do the DSP options (filter size, window, linear
 phase against minimum phase / low latency) change what the transmitted and received RADE signal sees? Answer, in
 short: **the default V2 TX filter costs the edge carriers 1.7 dB but this has no measurable effect on the decode;
@@ -13,9 +15,9 @@ at the P2 rates (see 1). **Nothing was changed in piHPSDR; no on-air A/B of the 
 
 | | TX | RX |
 |---|---|---|
-| Filter that shapes the RADE band | `bp0` (TXA band-pass), edges from `rade_native_wdsp_edges()`: V2 1000..2000 Hz, V1 675..2275 Hz | **two in series**: `nbp0` (notch/band-pass, window 4-term, WDSP's default) and `bp1` (7-term), same edges |
+| Filter that shapes the RADE band | `bp0` (TXA band-pass), edges from `rade_native_wdsp_edges()`: V2 1000..2000 Hz, V1 675..2275 Hz | `nbp0` (notch/band-pass, window 4-term, WDSP's default); `bp1` (7-term) is **off** in DIGU / DIGL unless NR or ANF is on, though this lab forces it on (see the correction above) |
 | Length (taps) | `tx->fft_size` = 2048 (`TXASetNC`) at the **WDSP DSP rate: 96 kHz on P2**, 48 kHz on P1 | `rx->fft_size` = 2048 (`RXASetNC`), at 48 kHz |
-| Window | 7-term Blackman-Harris, hard-coded (`SetTXABandpassWindow(.., 1)`, `transmitter.c`) | `nbp0` 4-term (default, never changed), `bp1` 7-term (`create_bandpass`) |
+| Window | 7-term Blackman-Harris, hard-coded (`SetTXABandpassWindow(.., 1)`, `transmitter.c`) | `nbp0` 4-term (default, never changed); `bp1` 7-term (`create_bandpass`), not running live |
 | Phase | linear, hard-coded (`TXASetMP(.., 0)`) | `rx->low_latency` = 0 (`RXASetMP`), a saved option |
 | Also in the path | CFIR (P2 only, run when the output rate is 192 kHz), a 96 -> 192 kHz resampler | the AGC and others (not the filters) |
 
@@ -90,7 +92,7 @@ V1 is the same in kind: its edge carriers (750 and 2200 Hz) lose 1.3 dB (7-term)
 
 **On P1 (WDSP's TX at 48 kHz, no CFIR) the same 2048 taps give the P2 4096 result** (edge carriers -0.3 dB 7-term / 0.0 dB 4-term; 912 Hz down 47.8 / 96.6 dB), because a tap is twice as long in Hz; the P1 delay measured 106.6 ms. The tables are for P2, which is the radio used for every capture here.
 
-Where the delay goes (2048 taps): the linear-phase filters are 21 ms in the TX (two of them at 96 kHz, 10.7 ms each) of a 66 ms channel delay, and 43 ms in the RX (two at 48 kHz, 21.3 ms each) of 128 ms; the rest (45 ms TX, 85 ms RX) is WDSP's other stages (what they are was not identified here), not touched by these options.
+Where the delay goes (2048 taps): the linear-phase filters are 21 ms in the TX (two of them at 96 kHz, 10.7 ms each) of a 66 ms channel delay, and 43 ms in the RX as measured here (two at 48 kHz, 21.3 ms each; the live radio has one, 21 ms, of 106.6 ms); the rest (45 ms TX, 85 ms RX) is the channel's `dsp_size` buffering (2048 samples in and out: 2 x 2048 / 96000 and 2 x 2048 / 48000), identified in `wdsp-review.md`, not touched by these options.
 
 ## 4. What the decode says (V2, AWGN, SNR in 3 kHz; "change" is against the first row, negative is better)
 
@@ -134,7 +136,7 @@ Reading:
 3. **If maximum out-of-band rejection matters more than 21 ms: TX 4096 taps, 4-term**: edge carriers 0.0 dB, 97 dB down at 912 Hz, decode unchanged (measured); not needed for sensitivity.
 4. **Do not use minimum phase (low latency) for RADE, TX or RX**: about 1 dB at the threshold in the lab (measured), and the group-delay spread across the carriers (9-14 ms RX, 3-5 ms TX) is longer than the 4 ms cyclic prefix. The saving it buys is 7 ms (TX) and 36 ms (RX); on the radio the real cost would be larger on a multipath path (not measured).
 5. **Optional RX narrowing for V2 (1030..1970): +0.3 dB sync sensitivity, no change in the loss threshold, 2.6 dB off the edge carriers** (measured, white noise); worth an on-air A/B because the two effects cancel in the lab and may not on a real path. RX length: 2048 is as good as any (4096 is 0.08 dB worse and 43 ms slower).
-6. **To save latency without a sensitivity penalty there is nothing in these options**: 2048 taps is the smallest WDSP will take with piHPSDR's `dsp_size`, and the two filters in each direction are the filter's own 21 ms (TX) and 43 ms (RX) of 66 and 128 ms. The remaining 45 ms (TX) and 85 ms (RX) are in WDSP's other stages (not identified here) and would have to be found there.
+6. **To save latency without a sensitivity penalty there is nothing in these options**: 2048 taps is the smallest WDSP will take with piHPSDR's `dsp_size`, and the filters are 21 ms (TX, two) and 21 ms (RX live, one) of 66 and 107 ms. The remaining 45 ms (TX) and 85 ms (RX) are the `dsp_size` 2048 buffering (`wdsp-review.md`: 512 would save about 53 ms RX and 16 ms TX; decided to keep 2048).
 
 ## 7. Limits
 

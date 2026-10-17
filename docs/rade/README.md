@@ -103,5 +103,6 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
 | [upstreaming.md](upstreaming.md) | patch layers and the upstream check |
 | [logging.md](logging.md) | what the parameter log holds |
 | [filtering.md](filtering.md), [filter-lab.md](filter-lab.md) | passband and WDSP filter measurements |
+| [wdsp-review.md](wdsp-review.md) | how we use WDSP checked against the WDSP Guide 2.1.1: `dsp_size`, the single RX filter, AGC, TX chain |
 | [air-tests.md](air-tests.md), [air-run-1](air-run-1.md), [air-run-2](air-run-2.md), [air-run-3](air-run-3.md), [gps-timing.md](gps-timing.md) | over-the-air test method and the three runs |
 | [../archive/rade/](../archive/rade/) | the original plan and the day-by-day progress log (history, not maintained) |
