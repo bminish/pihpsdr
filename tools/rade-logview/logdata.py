@@ -147,6 +147,40 @@ def load_run(path):
     return run
 
 
+CALL_WAIT_S = 2.5            # a call may arrive this long after its over ends (V1: the end-of-over frame)
+
+
+def heard_calls(run):
+    """Every call the run has, as dicts: call, v2, t_call, t_start, t_end (None while the over is still going).
+
+    From the call events, so a call is known as soon as it is decoded, before the over's row is written to
+    overs.csv; the over is the logged one the call falls in, else the one that sync_on opened.  Once an over
+    has a call, a repeat of the same call in it is not listed again."""
+    waves = [(t, v.strip()) for t, k, v in run.events if k == "wave"]
+    ons = [t for t, k, _v in run.events if k == "sync_on"]
+    offs = [t for t, k, _v in run.events if k == "sync_off"]
+    out, seen = [], set()
+    for t, k, v in run.events:
+        if k != "call" or not v.split():
+            continue
+        call = v.split()[0]
+        ov = next((o for o in run.overs if o["t_start"] <= t <= o["t_end"] + CALL_WAIT_S), None)
+        if ov is not None:
+            t0, t1, wave = ov["t_start"], ov["t_end"], ov.get("wave", "")
+        else:
+            t0 = max([x for x in ons if x <= t], default=t)
+            t1 = min([x for x in offs if x >= t0], default=None)
+            wave = ""
+        if not wave:
+            w = [x for tw, x in waves if tw <= t0]
+            wave = "V" + w[-1] if w else ""
+        if (call, t0) in seen:
+            continue
+        seen.add((call, t0))
+        out.append({"call": call, "v2": wave == "V2", "t_call": t, "t_start": t0, "t_end": t1})
+    return out
+
+
 def with_gaps(t, y, gap=GAP_S):
     """Insert NaN where the table has a break, so a line is not drawn across silence."""
     if len(t) < 2:
