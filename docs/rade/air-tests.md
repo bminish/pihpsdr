@@ -77,6 +77,31 @@ overs (sync 100 %, one EOO frame each). The USB recording converted to 48 kHz an
 `-ut rx -utmode RADEV2 -rxfile`) logged `received EI6IZ`. Two things about that GUI run: the callsign is only decoded when reporting is
 enabled in its configuration, and the GUI's V2 reporter host is hard-coded to the live reporter, so it was run under `bwrap --unshare-net`.
 
+## V2 callsign, freedv-gui transmitting (`rx_grade.py`, `rx_grade_gui.py`)
+
+freedv-gui3 (`ms-rade-v2`, callsign `EI6IZ`) transmitted into a null sink (`-ut tx -utmode RADEV2`, recorded: an 11 s over from `brian_g8sez.wav`
+and a 51 s one from `all.wav`; the GUI sends the whole file, `-txtime` has no effect here). Both decode clean in both receivers. `rx_grade.py`
+cuts the signal to N callsign cycles (1 cycle = 112 frames = 4.48 s; window = 0.5 s lead + 0.7 s sync + N cycles + 0.5 s tail), adds flat
+complex noise (SNR in 3 kHz) and gives the same noisy signal to freedv-gui's unmodified text receiver (`v2_text_interop/interop --iq`) and to piHPSDR's
+receive engine (`test_rx_engine --v2`); success is the callsign delivered. `rx_grade_gui.py` does the same trial in the real freedv-gui GUI
+(under `bwrap --unshare-net`; its callsign decoding needs reporting on and its reporter host is the live one). Offline simulation, one clip, white
+noise only, no fading, 2026-10-17.
+
+| window | SNR for 50 % | SNR for 90 % | trials per SNR |
+|---|---|---|---|
+| 1 cycle (6.2 s), freedv-gui / piHPSDR | 2 / 2 dB | 4 / 3 dB | 60 |
+| 5 cycles (24 s), freedv-gui / piHPSDR | below -6 / below -6 dB (100 / 98 % at -6, 10 / 18 % at -7, 0 at -8) | -6 / -6 dB | 40 |
+
+- **No difference between the receivers.** The rates agree within sampling error at every SNR (at 1 cycle the differences are -6 to +13 points with 60
+  trials, a standard error of about 6 points). That is expected: our text receiver is a port of freedv-gui's, tested symbol for symbol, and both sit behind the
+  same librade. The sync gate and gap bridging only matter when lock is lost, which these windows do not do. **No SNR gain was found**, and none is claimed.
+- **Combining the repeats is worth about 8 dB**: 50 % decode at about +2 dB from one cycle, at about -6.5 dB from five. Below that the limit is librade's sync (nothing is delivered
+  at -8 dB), not the text code.
+- **The GUI agrees with the offline freedv-gui receiver trial by trial**: 1 cycle at 1 dB, 20 seeds: GUI 6, offline 6, the same seeds; 5 cycles at -6 dB: 8 / 8, at -7 dB: 2 / 2;
+  2 cycles at 3 dB: 8 / 8. piHPSDR on those seeds: 8, 8 and 1 (it decoded 4 seeds the GUI did not and missed 2 that it did at 1 dB, within chance).
+- A test mistake worth remembering: audio for the GUI made as the real part of the noisy complex signal carries 3 dB more noise than intended (noise from both
+  sides folds in). It must be the positive-frequency side only, as an SSB receiver gives; the GUI then matched the offline receiver (GUI 1 of 12 before, 8 of 8 after, at 3 dB).
+
 ## What a row holds
 
 | Column(s) | Meaning |
