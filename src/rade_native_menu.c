@@ -1127,7 +1127,7 @@ void rade_native_menu(GtkWidget *parent) {
   recv_label = gtk_label_new("");                          // the calls heard, no heading: the lines say what they are
   gtk_widget_set_halign(recv_label, GTK_ALIGN_START);
   gtk_label_set_selectable(GTK_LABEL(recv_label), TRUE);
-  fixed_label(recv_label, 46, 1);
+  fixed_label(recv_label, 52, 1);
   gtk_grid_attach(GTK_GRID(grid), recv_label, 0, row++, 6, 1);
   show_recent();
   // Log, Capture and the test harness on one line; their state is the state of the button

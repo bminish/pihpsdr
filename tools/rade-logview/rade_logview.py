@@ -468,21 +468,36 @@ class Viewer:
                     ax.axvspan(self.x(o["t_start"]), self.x(o["t_end"]), color=col, alpha=0.07, lw=0)
                 for o in run.tx_overs:
                     ax.axvspan(self.x(o["t_start"]), self.x(o["t_end"]), color="red", alpha=0.07, lw=0)
+            if on["End-of-over / calls"]:
+                self.draw_calls(ax, run, first)
             for t, kind, val in run.events:
                 if kind in ("key_down", "key_up") and on["Key down/up"]:
                     ax.axvline(self.x(t), color="green" if kind == "key_down" else "firebrick", lw=0.7, ls="--")
                 elif kind == "eoo" and on["End-of-over / calls"]:
                     ax.axvline(self.x(t), color="darkorange", lw=0.9)
-                elif kind == "call" and on["End-of-over / calls"]:
-                    ax.axvline(self.x(t), color="purple", lw=0.9)
-                    if first:
-                        ax.annotate(val.split()[0] if val else "", (self.x(t), 1.0), xycoords=("data", "axes fraction"),
-                                    rotation=90, fontsize=7, color="purple", va="top", ha="right")
                 elif kind in ld_settings() and on["Dial / mode / settings"]:
                     ax.axvline(self.x(t), color="gray", lw=0.4, ls=":")
                     if first and kind == "dial":
                         ax.annotate("%.1f" % (float(val) / 1e3) if val else "", (self.x(t), 0.0), xycoords=("data", "axes fraction"),
                                     rotation=90, fontsize=6, color="gray", va="bottom", ha="left")
+
+    def draw_calls(self, ax, run, first):
+        """V1: a line where the call arrived, labelled on the top graph.  V2: the call small at the upper left of
+        the over on every graph, from the moment it is decoded, and a line at the end of the over once that is known."""
+        for c in ld.heard_calls(run):
+            if not c["v2"]:
+                ax.axvline(self.x(c["t_call"]), color="purple", lw=0.9)
+                if first:
+                    ax.annotate(c["call"], (self.x(c["t_call"]), 1.0), xycoords=("data", "axes fraction"),
+                                rotation=90, fontsize=7, color="purple", va="top", ha="right")
+                continue
+            ax.annotate(c["call"], (self.x(c["t_start"]), 1.0), xycoords=("data", "axes fraction"), xytext=(2, -2),
+                        textcoords="offset points", fontsize=6, color="purple", va="top", ha="left", clip_on=True)
+            if c["t_end"] is not None:
+                ax.axvline(self.x(c["t_end"]), color="purple", lw=0.9)
+                if first:
+                    ax.annotate(c["call"], (self.x(c["t_end"]), 1.0), xycoords=("data", "axes fraction"),
+                                rotation=90, fontsize=7, color="purple", va="top", ha="right")
 
     # ---------------------------------------------------------------- zoom
     def set_xlim(self, a, b):
