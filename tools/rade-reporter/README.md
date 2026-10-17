@@ -14,8 +14,8 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   (`rx_report`: the call, the mode, the SNR to the whole dB). Only while reporting is on,
   only in the active mode, never your own call, and not calls heard before you went on.
   The window also shows the live receive state (SNR and offset, from piHPSDR every
-  couple of seconds) and the last call heard. **Regular SNR**, as freedv-gui does it: while a signal is in sync it sends the live SNR every few
-  seconds (fixed at 5 s, no tick box: it is sent whenever you are Reporting and there is an SNR; freedv-gui sends about once a second). No callsign is needed: until one has
+  couple of seconds) and the last call heard. **Regular SNR**, as freedv-gui does it: while a signal is in sync it offers the live SNR every second (no tick box: whenever you are
+  Reporting and there is an SNR) and `Link._push` decides what goes: a changed SNR up to once a second, an unchanged one every 20 s (see "Traffic to the servers" below). No callsign is needed: until one has
   been decoded the report carries a blank one; after that it carries the last call decoded, until sync has been
   lost for 10 s. The window shows when it is doing this, and why when it is not. A V1 call arrives only at the end of an
   over, so there is no callsign to report with while the over is still going.
@@ -61,3 +61,30 @@ not reported. The RADE window and the received-calls log show "-" rather than 0 
 - **Show**: *Follow radio mode* (the default; shows the reporter of the RADE mode piHPSDR has selected, both while RADE is off) , V1 only, V2 only, All. The choice is remembered; Follow was made the default once, when this version first ran.
 - **Colours**, as freedv-gui: orange while a station transmits; blue only while its status is Receiving and an rx_report with an SNR arrived in the last 20 s (5 s if the report had no call). Your own row is no longer marked.
 - **Traffic to the servers is kept to what is new** (`Link._push`): while the dial is being tuned nothing is sent at all (no frequency, transmit state, message or reception report); the frequency goes out once the dial has stood still for 5 s, or at once when a signal is in sync with an SNR. After that, at most one event of each kind (frequency, transmit, message) per 5 s; reception reports are limited by their own rule: a changed SNR up to once a second, an unchanged one repeated every 20 s only while genuinely in sync with an SNR (a keep-alive, so the station stays shown as receiving), otherwise not at all; what is waiting is merged so the newest goes out when its turn comes (a decoded call goes before a live SNR), and anything identical to what the server already has is not sent.  A transmit on/off still goes out, delayed to the next 5 s slot if it follows another within 5 s. Tests: `pacing()` in `test/rade_reporter/test_reporter.py`.
+
+## Tuning piHPSDR from the Reporter
+
+- **Double-click a station's MHz** (a single click only selects the row): piHPSDR selects that station's RADE mode (V1 or V2) and tunes its dial to the
+  station's frequency. A station on any other mode, or with no frequency, is not acted on, and the line under the buttons says why.
+- **Tune box**: a frequency in kHz to 0.1 (up to 999999.9), then Enter: the dial only, the mode is left alone.
+- **Frequency list** (drop-down next to it): the usual frequencies for the RADE mode piHPSDR is in (with RADE off, the mode *Show* is set to; V1 when both).
+  Picking one tunes the dial. The lists start as freedv-gui's default Reporting frequencies (identical in the V1 and V2 trees today), are kept
+  per mode in `reporter.json` (`freqs.v1`, `freqs.v2`, Hz) and are always shown lowest first.
+- **Settings > Frequencies**: a basic editor for the two lists (Add, Delete, double click a frequency to change it); applied on OK.
+- How: the Reporter writes `~/.local/state/pihpsdr-rade/command.json` (`{"seq", "wave", "dial_hz"}`, atomic); piHPSDR polls it with its state
+  timer (250 ms), acts once on each `seq` and only if the request is under 10 s old (one left from before piHPSDR started is ignored),
+  never while transmitting, and answers in `state.json` (`cmd_seq`, `cmd_err`), which the Reporter shows. The mode is set first (it can move the
+  dial 3 kHz for Invert), then the dial to exactly the frequency asked. Changing the mode needs piHPSDR's RADE window open. Test: `test/rade_reporter/test_gui_tune.py`.
+
+## Request QSY (checked against freedv-gui, 2026-10-17)
+
+Same protocol as freedv-gui's `FreeDVReporter::requestQSY` / `onFreeDVReporterQsyRequest_` (identical in both its trees):
+- **Sent** as `qsy_request {dest_sid, message, frequency}`: the selected station's sid, an empty message (freedv-gui's is also empty, "custom message TBD"), and our dial in Hz as an unsigned integer.
+  The button is enabled only as in freedv-gui's `refreshQSYButtonState`: a station is selected, we are Reporting on its reporter (call and grid set), it is not our own callsign, we have a frequency, RADE is on, and it is not already on our frequency.
+  Sent, the line under the buttons says "QSY request sent to CALL" (freedv-gui pops up a box).
+- **Received** as `qsy_request {callsign, frequency, message}`; anything where callsign or message is not a string, or frequency is not an unsigned integer, is dropped (as freedv-gui does). It opens a box: "CALL has requested that you QSY to X MHz." (freedv-gui's default of MHz to 4 places; it shows kHz to 1 place if its "frequency as kHz" option is on), with the message and the reporter it came on.
+- **Change Frequency**, as freedv-gui offers when it can change frequency: the box has *Cancel* and *Change Frequency*; the latter selects the RADE mode of the reporter the request came on (V1 or V2) and tunes to the frequency asked. Not offered (the box only tells) while piHPSDR is transmitting or is not running. Not checked: what the live servers do with it (tests use the mock only): `test/rade_reporter/test_gui_qsy.py`.
+
+## Buttons
+
+Left to right: **Request QSY**, **Website** (the reporter's site for the mode shown; both sites when both are shown, or RADE is off and Show is Follow), **Filters** (the columns / distance / frequency menu), **Settings**.
