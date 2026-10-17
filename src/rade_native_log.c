@@ -479,8 +479,15 @@ void rade_log_stop(void) {
     fprintf(m, "ended_utc: %s\ndropped_rows: %lu\n", u, (unsigned long)atomic_load(&dropped));
     fclose(m);
   }
-  // a compressed copy of the run, made in the background (tar is not waited for; if it is missing there is no copy)
-  char cmd[500];
-  snprintf(cmd, sizeof cmd, "tar czf '%s/%s.tar.gz' -C '%s' '%s' >/dev/null 2>&1 &", LOG_DIR, stem, LOG_DIR, stem);
+  // A compressed copy of the run, made in the background (tar is not waited for; if it is missing there is no copy).
+  // Once the copy is made and tar has succeeded, the run directory goes; so do the directories of earlier ended runs that
+  // already have a copy. A directory without a copy, or without ended_utc in its meta.txt, is never touched.
+  char cmd[900];
+  snprintf(cmd, sizeof cmd,
+           "( tar czf '%s/%s.tar.gz' -C '%s' '%s' && rm -rf -- '%s/%s' ;"
+           " for d in '%s'/*/ ; do d=${d%%/} ;"
+           " [ -f \"$d.tar.gz\" ] && grep -q '^ended_utc:' \"$d/meta.txt\" 2>/dev/null && rm -rf -- \"$d\" ;"
+           " done ) >/dev/null 2>&1 &",
+           LOG_DIR, stem, LOG_DIR, stem, LOG_DIR, stem, LOG_DIR);
   if (system(cmd) != 0) { /* no copy: not an error */ }
 }

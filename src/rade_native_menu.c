@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -363,9 +364,7 @@ static void rade_native_state_start(void);
 
 void rade_native_restore_state(void) {
   char call[16] = "";
-  int inv = 0;
   GetPropS0("rade_native.callsign", call);
-  GetPropI0("rade_native.invert", inv);
   double trim = 0.0;
   int agc = 1;
   GetPropF0("rade_native.mic_trim_db", trim);
@@ -376,13 +375,12 @@ void rade_native_restore_state(void) {
   rade_native_tx_set_trim_db(trim);
   rade_native_tx_set_agc(agc);
   rade_native_set_callsign(call);
-  rade_native_configure(0, inv);
+  rade_native_configure(0, 0);                 // Invert is not kept: see session_invert[]
   rade_native_state_start();
 }
 
 void rade_native_save_state(void) {
   SetPropS0("rade_native.callsign", rade_native_get_callsign());
-  SetPropI0("rade_native.invert", rade_native_user_invert());
   SetPropF0("rade_native.mic_trim_db", rade_native_tx_get_trim_db());
   SetPropI0("rade_native.mic_agc", rade_native_tx_get_agc());
   SetPropF0("rade_native.drive_db", rade_native_tx_get_drive_db() < -6.0 ? -6.0 : rade_native_tx_get_drive_db());   // lower values are the test harness's, not kept
@@ -469,9 +467,35 @@ static void drive_cb(GtkWidget *widget, gpointer data) {
   rade_native_tx_set_drive_db(db);
 }
 
-//
-// ---- parameter log ----
-//
+// Starts the standalone log viewer on the newest run in rade-logs/ (the run being written, if one is): run names are
+// the start time, so the largest name is the newest. Needs Python 3 with tkinter, numpy and matplotlib; not waited for.
+static void logview_cb(GtkWidget *widget, gpointer data) {
+  char newest[400] = "";
+  DIR *d = opendir("rade-logs");
+  struct dirent *e;
+  while (d && (e = readdir(d)) != NULL) {
+    if (e->d_name[0] < '0' || e->d_name[0] > '9') { continue; }
+    char stem[300];
+    snprintf(stem, sizeof stem, "%s", e->d_name);
+    char *gz = strstr(stem, ".tar.gz");
+    if (gz) { *gz = 0; }
+    char path[400];
+    snprintf(path, sizeof path, "rade-logs/%s", stem);
+    struct stat sb;
+    if (stat(path, &sb) != 0 && gz) { snprintf(path, sizeof path, "rade-logs/%s", e->d_name); }
+    if (strcmp(path, newest) > 0) { snprintf(newest, sizeof newest, "%s", path); }
+  }
+  if (d) { closedir(d); }
+  gchar *argv[] = { "python3", "tools/rade-logview/rade_logview.py", newest[0] ? newest : NULL, NULL };
+  GError *err = NULL;
+  if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                     NULL, NULL, NULL, &err)) {
+    t_print("%s: could not start the log viewer: %s\n", __func__, err->message);
+    say("could not start the log viewer");
+    g_error_free(err);
+  }
+}
+
 static void log_cb(GtkWidget *widget, gpointer data) {
   if (updating) { return; }
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
@@ -859,9 +883,28 @@ static gboolean key_cb(GtkWidget *widget, GdkEventKey *event, gpointer data) {
 // carrier, so the same place in the band) when RADE is switched off. The state is set before the mode and
 // frequency change, because that recomputes the receive and transmit passbands.
 //
+// Invert belongs to the waveform: switching from V1 with Invert ticked arrives on V2 with it clear, and back again
+// with it set; Invert ticked while RADE is off is used by the waveform RADE is switched on with, so entering RADE
+// is one frequency change, not two. It is remembered for the operating session only (not saved), so switching to and fro is painless.
+static int session_invert[3];            // by waveform (V1, V2)
+
+static void invert_cb(GtkWidget *widget, gpointer data);
+
 static void retune(int new_wave) {
   int old_wave = rade_native_waveform();
   if (old_wave == 0 && new_wave == 0) { return; }
+  if (new_wave != old_wave) {
+    if (old_wave != 0) { session_invert[old_wave] = rade_native_user_invert(); }
+    else if (new_wave != 0) { session_invert[new_wave] = rade_native_user_invert(); }   // Invert set while RADE was off is the one entered with
+    if (new_wave != 0) {
+      rade_native_configure(old_wave, session_invert[new_wave]);   // the plan below uses the new waveform's Invert
+      if (inv_b != NULL) {
+        g_signal_handlers_block_by_func(inv_b, G_CALLBACK(invert_cb), NULL);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(inv_b), session_invert[new_wave]);
+        g_signal_handlers_unblock_by_func(inv_b, G_CALLBACK(invert_cb), NULL);
+      }
+    }
+  }
   rade_native_plan_t p = rade_native_plan(old_wave, rade_native_get_invert(), vfo_mode_sign(), rade_dial(),
                                           new_wave, rade_native_user_invert());
   rade_native_set_invert(p.invert);
@@ -905,6 +948,7 @@ static void waveform_cb(GtkWidget *widget, gpointer data) {
 }
 
 static void invert_cb(GtkWidget *widget, gpointer data) {
+  if (rade_native_waveform() != 0) { session_invert[rade_native_waveform()] = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)); }
   rade_native_configure(rade_native_waveform(), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
   retune(rade_native_waveform());       // the sideband flips and the dial moves 3 kHz, the energy stays
   apply();
@@ -1099,13 +1143,17 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(capture_b), rade_native_capture_active());
   g_signal_connect(capture_b, "toggled", G_CALLBACK(capture_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), capture_b, 1, row, 1, 1);
+  GtkWidget *logview_b = gtk_button_new_with_label("Logview");
+  gtk_widget_set_tooltip_text(logview_b, "Opens the log viewer (tools/rade-logview/rade_logview.py) on the newest run in rade-logs/, or the run being written.");
+  g_signal_connect(logview_b, "clicked", G_CALLBACK(logview_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), logview_b, 2, row, 1, 1);
   test_b = gtk_check_button_new_with_label("Test harness");
   gtk_widget_set_tooltip_text(test_b, "Lets a script (test/rade_native/rade_ctl.py) key the transmitter and send a file as the "
                                       "mic, for repeatable over-the-air tests. Off when piHPSDR starts and when this window closes. "
                                       "Limits: drive TEST_MAX_DRIVE_PCT, the 10 m band, 90 s an over. Untick to stop at once. "
                                       "Ticked: a script can key the transmitter.");
   g_signal_connect(test_b, "toggled", G_CALLBACK(test_cb), NULL);
-  gtk_grid_attach(GTK_GRID(grid), test_b, 2, row++, 2, 1);
+  gtk_grid_attach(GTK_GRID(grid), test_b, 3, row++, 1, 1);
   gtk_container_add(GTK_CONTAINER(content), grid);
   show_edges();
   show_tx_state();
