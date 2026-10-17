@@ -36,6 +36,12 @@ check("events and overs", len(run.events) == 5 and len(run.overs) == 2 and len(r
 check("tar.gz gives the same run", len(ld.load_run(tgz).rx["t"]) == 20 and ld.load_run(tgz).name == "20261016-120000")
 check("file inside the run resolves", ld.load_run(run_dir + "/rx.csv").path == run_dir)
 check("energy centre inverted / normal", ld.energy_centre_hz(7177000, 1) == 7175500 and ld.energy_centre_hz(14236000, 0) == 14237500)
+hc = ld.heard_calls(run)
+check("V1 call pairs with its over", len(hc) == 1 and hc[0]["call"] == "EI6IZ" and not hc[0]["v2"] and abs(hc[0]["t_end"] - (T0 + 5.0)) < 1e-6)
+run.events += [(T0 + 40.0, "sync_on", ""), (T0 + 40.0, "wave", "2"), (T0 + 43.0, "call", "G4XYZ snr=3.0"), (T0 + 44.0, "call", "G4XYZ snr=4.0")]
+run.events.sort(key=lambda e: e[0])
+hc = ld.heard_calls(run)
+check("V2 call known mid-over, no end yet, listed once", len(hc) == 2 and hc[1]["v2"] and hc[1]["t_end"] is None and abs(hc[1]["t_start"] - (T0 + 40.0)) < 1e-6)
 t, y = ld.with_gaps(run.rx["t"], run.rx["snr_mean"])
 check("gap becomes a break", len(t) == 21 and np.isnan(t[10]) and np.isnan(y[10]))
 st = ld.window_stats(run.rx["t"], run.rx["snr_mean"], T0 + 20, T0 + 25)
