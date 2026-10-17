@@ -37,6 +37,7 @@ PARAMS = [
     ("TX limiting (%)", "tx", [("limiting_pct", "limiting", "-")]),
     ("TX output fill (min)", "tx", [("out_fill_min", "fill", "-")]),
 ]
+SNR_LIMITS = (-12.0, 30.0)          # RADE is never better than +30 dB or worse than -12 dB: the SNR panels cannot be zoomed outside this
 DEFAULT_ON = {"SNR (dB)", "Frequency offset (Hz)"}
 EVENT_GROUPS = [
     ("Overs shaded", None),
@@ -413,6 +414,8 @@ class Viewer:
             self.ykeys.append((ax, label, ax.get_ylim()))
             if label in self.yuser and "(Hz)" not in label:
                 ax.set_ylim(*self.yuser[label])
+            if "SNR" in label:
+                self.limit_y(ax, *SNR_LIMITS)
             ax.tick_params(labelsize=8)
             self.draw_marks(ax, first=(ax is axs[0]))
         self.axes = list(axs)
@@ -428,6 +431,19 @@ class Viewer:
         self._was_utc = self.utc.get()
         self.fig.subplots_adjust(left=0.09, right=0.99, top=0.98, bottom=0.08, hspace=0.12)
         self.canvas.draw_idle()
+
+    @staticmethod
+    def limit_y(ax, lo, hi):
+        """Keep ax's y range inside lo..hi, now and after any zoom or pan."""
+        def clamp(a):
+            y0, y1 = a.get_ylim()
+            n0, n1 = max(min(y0, y1), lo), min(max(y0, y1), hi)
+            if n0 >= n1:
+                n0, n1 = lo, hi
+            if (n0, n1) != (y0, y1):
+                a.set_ylim(n0, n1)              # the callback runs once more and finds nothing to change
+        clamp(ax)
+        ax.callbacks.connect("ylim_changed", clamp)
 
     def freq_range(self, ax):
         """Symmetric about 0 Hz: the largest value drawn, at least +-2 Hz."""
@@ -479,11 +495,23 @@ class Viewer:
             self.axes[0].set_xlim(a - base, b - base)
         self.canvas.draw_idle()
 
+    @staticmethod
+    def run_end(r):
+        """The last time the run has anything for: its tables, events and overs; never the current time."""
+        ends = [r.t0] + [x[0] for x in r.events] + [o["t_end"] for o in r.overs + r.tx_overs]
+        for data in (r.rx, r.tx):
+            if "t" in data and len(data["t"]):
+                tt = np.asarray(data["t"], dtype=float)
+                tt = tt[np.isfinite(tt)]
+                if len(tt):
+                    ends.append(float(tt.max()))
+        return max(ends)
+
     def fit_all(self):
         if not self.axes:
             return
         t = [r.t0 for r in self.runs]
-        e = [max([r.t0] + [x[0] for x in r.events] + [o["t_end"] for o in r.overs + r.tx_overs]) for r in self.runs]
+        e = [self.run_end(r) for r in self.runs]
         self.set_xlim(min(t), max(e) + 1)
         self.yuser = {}
         self.replot()
