@@ -152,10 +152,11 @@ class App(Gtk.Window):
         open_below(self.band)
         r2.pack_start(self.band, False, False, 0)
         self.track = Gtk.CheckButton(label="Track")
-        self.track.set_tooltip_text("Show only stations on piHPSDR's band or frequency")
+        self.track.set_tooltip_text("Show only stations on piHPSDR's band or frequency (replaces the Band filter while ticked)")
         self.track.set_active(bool(self.cfg.get("track", False)))
         self.track.connect("toggled", self._on_view_filter)
         r2.pack_start(self.track, False, False, 0)
+        self.band.set_sensitive(not self.track.get_active())
         self.t_band = Gtk.RadioButton.new_with_label(None, "band")
         self.t_freq = Gtk.RadioButton.new_with_label_from_widget(self.t_band, "freq.")
         self.t_freq.set_active(self.cfg.get("track_mode", "band") == "freq")
@@ -338,6 +339,7 @@ class App(Gtk.Window):
         self._remember(band=self.band.get_active_text() or "All", track=self.track.get_active(),
                        track_mode="band" if self.t_band.get_active() else "freq",
                        idle=self.idle.get_active_text() or "off")
+        self.band.set_sensitive(not self.track.get_active())      # Track supersedes the Band filter
         self._refilter()
 
     def _on_web(self, *_):
@@ -721,7 +723,7 @@ class App(Gtk.Window):
     def _visible(self, model, it, _d):
         dial, band, tracking, by_band, idle = self._fp
         f = model[it][C_MHZV] * 1e6
-        if band not in (None, "All") and core.band_of(f) != band:
+        if not tracking and band not in (None, "All") and core.band_of(f) != band:   # Track supersedes the Band filter
             return False
         if tracking and dial:
             if by_band and core.band_of(f) != core.band_of(dial):
