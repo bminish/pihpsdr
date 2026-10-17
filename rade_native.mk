@@ -26,6 +26,13 @@ RADE_OPUS=$(RADE_BLD)/build_opus-prefix/src/build_opus
 RADE_NATIVE_INCLUDE=-I$(RADE_SRC) -I$(RADE_OPUS) -I$(RADE_OPUS)/include \
 	-I$(RADE_OPUS)/celt -I$(RADE_OPUS)/dnn
 
+# Fail early and clearly when librade has not been fetched and built.
+ifneq ($(filter-out clean distclean,$(or $(MAKECMDGOALS),all)),)
+ifneq ($(words $(wildcard $(RADE_SRC)/rade_api.h $(RADE_BLD)/src/librade.so)),2)
+$(error RADE_NATIVE=ON needs librade: run tools/rade/build_rade.sh first)
+endif
+endif
+
 OPTIONS += -D RADE_NATIVE
 # librade carries its own opus. The Makefile puts $(RADE_NATIVE_LIBS) before the WDSP libraries, as it always has
 # (the order matters: both carry an nnet).
