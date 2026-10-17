@@ -1,7 +1,7 @@
 # RADE in piHPSDR: what was built, what it touches, why
 
 Branch `feature/rade-native`. Build with `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
-Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-17 (Reporter tuning and the TX latch added; log tidy-up).
+Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-17 (Reporter tuning added; log tidy-up; the TX latch tried and removed).
 
 ## What it does
 
@@ -49,7 +49,7 @@ Only guarded by `#ifdef RADE_NATIVE`, and each is a call into `src/rade_native*.
 | File | Change | Why |
 |---|---|---|
 | `receiver.c` `rx_full_buffer` | WDSP's audio output replaced by the engine's speech; `rx_set_filter` sets the RADE passband; `rx_set_af_binaural` keeps I and Q apart | the engine needs the complex signal, and must be the audio source |
-| `transmitter.c` `tx_full_buffer` | mic block replaced by the modem signal; TX capture; a latch (`not_rade`) that holds a key-down as "not RADE" once TUNE, two-tone or noise has been seen in it, until the radio unkeys | the engine is the signal source; TUNE ends by clearing its flag while the radio is still keyed, which looked like a RADE transmission to the Reporter |
+| `transmitter.c` `tx_full_buffer` | mic block replaced by the modem signal; TX capture | the engine is the signal source |
 | `transmitter.c` `tx_set_filter`, `tx_set_compressor/equalizer/phrot/dexp` | RADE passband; speech processors held off while RADE transmit is on | the SSB profile's leveller and CFC were re-shaping the modem signal (energy centre +1650 Hz against +1457, 5 dB tilt); also re-enabled after TUNE |
 | `radio.c` `radio_set_mox` | the end of an over waits for the end-of-over frame | otherwise the callsign frame is cut off |
 | `radio.c` load/save | one call each into `rade_native_restore_state()` / `rade_native_save_state()` | callsign, Invert, trim, leveller, drive persist |
@@ -80,11 +80,11 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
   (a dropout), otherwise it starts afresh (a different station). Tests: `v2_text_interop` (our code against freedv-gui's
   unmodified code, symbol by symbol), `test_v2_text.py` (real engines). Checked on air, our transmission -> freedv-gui's receiver (2026-10-17, 28645 kHz, Kiwi recording, also in the freedv-gui GUI); freedv-gui's transmission -> our receiver graded in noise against freedv-gui's receiver, equal ([air-tests.md](air-tests.md)); not yet on air.
 - **Only a real RADE signal counts as a transmission.** The Reporter is told "transmitting" only while the engine has had
-  the key for speech for 170 ms (`rade_native_tx_live()`), never for TUNE, two-tone or noise. Three guards, because the key, the
-  TUNE flag and the engine's count change at different moments: (1) the engine is given "keyed for RADE" only if no TUNE, two-tone or
-  noise has been seen since the key went down (`not_rade` in `tx_full_buffer`; **the end of a TUNE clears its flag before the radio
-  unkeys**, which is the case this was added for); (2) `rade_is_tx()` also needs the engine's 170 ms; (3) `state_cb` reports it
-  only after two 250 ms polls in a row, and counts `tx_count` (the short TX pulse) from that. Test: `test_tx_live` (guards 1 and 2); guard 3 and the latch are **not yet tested**, on the bench or in a test.
+  the key for speech for 170 ms (`rade_native_tx_live()`), never for TUNE, two-tone or noise. Two guards, because the key, the
+  TUNE flag and the engine's count change at different moments (the end of a TUNE clears its flag before the radio unkeys): (1) `rade_is_tx()`
+  needs the engine's 170 ms of real speech as well as the key and no TUNE / two-tone / noise flag; (2) `state_cb` reports it
+  only after two 250 ms polls in a row, and counts `tx_count` (the short TX pulse) from that. Test: `test_tx_live` (guard 1); guard 2 is **not yet tested**, on the bench or in a test.
+  A latch in `tx_full_buffer` that kept the engine from being keyed after a TUNE, once seen, was tried on 2026-10-17 and **removed: it left RADE with no RF at all** (TUNE worked, RADE keyed with nothing on the power meter); the guards above are what remain.
 - **Reporter** is a separate process (so a network fault cannot touch the audio), driven by `state.json`; V1 reports to
   qso.freedv.org, V2 to the radev2 reporter. It reports only to the reporter of the active mode. Tests use mock servers
   only. [tools/rade-reporter/README.md](../../tools/rade-reporter/README.md).
