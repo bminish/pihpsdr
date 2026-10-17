@@ -104,6 +104,7 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     root2 = tk.Tk(); root2.withdraw()
     v2 = rv.Viewer(root2, [folder, tgz])
     v2.quiet = True
+    v2.logroot = folder
     root2.update()
     check("window: a folder of runs opens all of them (the .tar.gz of an open directory is the same run)", len(v2.runs) == 3, str([r.name for r in v2.runs]))
     check("window: live runs are marked", v2.runlist.get(0).startswith("● ") and not v2.runlist.get(2).startswith("●"), v2.runlist.get(0))
@@ -121,6 +122,19 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     v2.update_live()
     check("window: a run that has ended is no longer live", not v2.runs[0].live and not v2.runlist.get(0).startswith("●"))
     check("window: Update with nothing live changed does nothing", v2.update_live() == 0)
+    # frequency panel centred on 0, y zoom held on update, remove all, F5 opens the newest run
+    v2.pvars["Frequency offset (Hz)"].set(True); v2.replot(); root2.update()
+    fa = [a for a in v2.axes if a.get_ylabel().startswith("Frequency")][0]
+    lo, hi = fa.get_ylim()
+    check("window: frequency panel is centred on 0 Hz", abs(lo + hi) < 1e-9 and hi >= 2.0, str((lo, hi)))
+    fa.set_ylim(-0.5, 0.5); v2.replot(); root2.update()
+    fa = [a for a in v2.axes if a.get_ylabel().startswith("Frequency")][0]
+    check("window: the operator's frequency zoom is kept when the plot is redrawn", fa.get_ylim() == (-0.5, 0.5), str(fa.get_ylim()))
+    v2.remove_all(); root2.update()
+    check("window: remove all", not v2.runs and v2.runlist.size() == 0)
+    v2.update_live()
+    check("window: F5 with nothing open opens the newest run", len(v2.runs) == 1 and v2.runs[0].name == "20261016-130000", str([r.name for r in v2.runs]))
+    check("window: and not twice", v2.open_newest() == 0 and len(v2.runs) == 1)
     v2.auto.set(True); v2.auto_changed(); root2.update(); v2.auto.set(False); v2.auto_changed()
     root2.destroy()
 
