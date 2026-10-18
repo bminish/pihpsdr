@@ -1155,7 +1155,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_halign(edge_label, GTK_ALIGN_START);
   fixed_label(edge_label, 58, 0);
   gtk_widget_set_tooltip_text(edge_label, "The energy stays where it is: choosing V1 or V2, or Invert, moves the dial (3 kHz for a sideband "
-                                          "change) and sets DIGU or DIGL; Off returns to USB or LSB on the same carrier. V1 is lower sideband "
+                                          "change) and sets DIGU or DIGL; Off returns to USB or LSB (V2 below 10 MHz returns to LSB, the dial 3 kHz up). V1 is lower sideband "
                                           "below 10 MHz, V2 upper; on 60 m both are upper. Invert reverses it.");
   gtk_grid_attach(GTK_GRID(grid), edge_label, 0, row++, 6, 1);
   status_label = gtk_label_new("-");

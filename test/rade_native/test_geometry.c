@@ -47,11 +47,19 @@ int main(void) {
   CHECK(q.invert == 0 && q.dial == 1984000);
   q = PLAN(RADE_NATIVE_V1, 0, 1, 1984000, RADE_NATIVE_V1, 0);
   CHECK(q.invert == 1 && q.dial == 1987000);
-  // leaving RADE: stay on the carrier of the last sideband, in LSB or USB
+  // leaving RADE: stay on the carrier of the last sideband, in LSB or USB (V2 below 10 MHz, not 60 m: LSB, the dial 3 kHz up)
   q = PLAN(RADE_NATIVE_V1, 1, -1, 1987000, 0, 0);
   CHECK(q.invert == 1 && q.dial == 1987000);          // -> LSB at 1987.0
   q = PLAN(RADE_NATIVE_V2, 0, 1, 1984000, 0, 0);
-  CHECK(q.invert == 0 && q.dial == 1984000);          // -> USB at 1984.0
+  CHECK(q.invert == 1 && q.dial == 1987000);          // -> V2 below 10 MHz leaves in LSB: the carrier 3 kHz up, the energy stays
+  q = PLAN(RADE_NATIVE_V2, 1, -1, 1987000, 0, 0);
+  CHECK(q.invert == 1 && q.dial == 1987000);          // V2 already inverted: LSB where it is
+  q = PLAN(RADE_NATIVE_V2, 0, 1, 14236000, 0, 0);
+  CHECK(q.invert == 0 && q.dial == 14236000);         // 20 m: USB, nothing moves
+  q = PLAN(RADE_NATIVE_V2, 0, 1, 5357000, 0, 0);
+  CHECK(q.invert == 0 && q.dial == 5357000);          // 60 m is upper sideband
+  q = PLAN(RADE_NATIVE_V2, 0, 1, 7053000, 0, 0);
+  CHECK(q.invert == 1 && q.dial == 7056000);          // 40 m
   // 14 MHz: V1 and V2 are both upper sideband, nothing moves between them; Invert moves 3 kHz
   q = PLAN(0, 0, 1, 14236000, RADE_NATIVE_V1, 0);
   CHECK(q.invert == 0 && q.dial == 14236000);
