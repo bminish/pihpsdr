@@ -346,7 +346,12 @@ static void command_poll(int first) {
     if (wave != 0 && rade_native_waveform() != (int)wave) {
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(wave_b[wave]), TRUE);     // as a click on the radio button
     }
-    if (dial != 0) { vfo_id_set_frequency(0, dial); }
+    if (dial != 0) {
+      vfo_id_set_frequency(0, dial);
+      // The mode above chose its sideband at the old dial. state_cb only notices a band crossing it has seen from RADE on,
+      // and after RADE was switched on by this very request it has not (7 MHz LSB, asked for 14.236 MHz: arrived in LSB).
+      if (rade_native_waveform() != 0) { band_default_changed(); }
+    }
   }
   state_write(1);                                          // the answer now, not at the next 2 s
 }
