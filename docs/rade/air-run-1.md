@@ -84,7 +84,7 @@ callsign decoded as sent. TX columns are from the WDSP TX output block (192 kHz,
   in every other run): unexplained, a single run.
 - **Not covered:** one clip and one path/day (the band and the Kiwi's noise change); the effect of the leveller on
   air; the PA and its linearity; weak-signal behaviour between -24 and -30 dB in finer steps; a second callsign length
-  for V2 (V2 has no callsign text yet).
+  for V2 (V2 had no callsign text when this was written; it was added 2026-10-16 and validated on air 2026-10-17, `air-tests.md`).
 
 ## Suggested next runs
 
