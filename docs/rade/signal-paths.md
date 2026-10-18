@@ -178,7 +178,7 @@ flowchart LR
 - The sideband is **stored** when chosen (waveform, Invert), not recomputed from the dial. V1 is lower sideband
   below 10 MHz by default, V2 upper, **both upper on 60 m (5250-5450 kHz, where USB is the convention)**; Invert is an exclusive-or on that.
 - Any change moves the dial so that `Fe` is constant: 160 m with `Fe` 1985.5 kHz, V1 is the LSB carrier 1987.0,
-  V2 is the USB carrier 1984.0, Off leaves the radio on LSB 1987.0 or USB 1984.0. Table of all cases:
+  V2 is the USB carrier 1984.0, Off leaves the radio on LSB 1987.0 (V2 below 10 MHz also leaves in LSB, dial +3 kHz) or on USB at 20 m and up and on 60 m. Table of all cases:
   `test/rade_native/modes_table`.
 - Tuning across 10 MHz by over 100 kHz, or into or out of 60 m, re-applies the band default (sideband and mode only).
 
