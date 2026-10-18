@@ -70,6 +70,8 @@ Method, validation, and the meaning of every column: `gps-timing.md`.
 
 ## V2 callsign check
 
+**Status (2026-10-17): sending a V2 callsign is validated on air.** piHPSDR transmitted V2 on 28645 kHz with the Call box set to `EI6IZ`, a Kiwi SDR recorded it, and freedv-gui built for V2 decoded the call from the recording (its text receiver, and its GUI). **Receiving a V2 callsign on air has also been seen**, from the parameter logs (`rade-logs/`): DF6VI decoded in 6 V2 overs on 5354 kHz, 2026-10-17 18:06-18:18 UTC (runs `20261017-190002` and `20261017-191431`; over lengths 57-94 s, mean SNR -2.9 to +3.7 dB, `call_snr` -7.1 to +8.9 dB). DF6VI was running freedv-gui. The other V2 overs in those runs, which show no call, were from stations running an experimental Thetis build (per the operator); whether that build sends a V2 callsign is not known, so they say nothing about our receiver's threshold. Too few overs and one freedv-gui station for a threshold. Graded in simulation as well (next section).
+
 `kiwi_rx.py` decodes the V2 callsign of a recording with freedv-gui's own text receiver (`v2_text_interop/interop --iq`, build it with
 `make v2_text_interop/interop`) and compares it with `--call`; `call_ok` is set for V2 as it is for V1, a wrong call fails the run.
 First on-air result, 2026-10-17, 28645 kHz, V2, levels -12 and -6 dB, 11 s clip: `EI6IZ` decoded on the `iq`, `iq-fixed` and `usb` profiles of both

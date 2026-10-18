@@ -134,7 +134,7 @@ band SNR after the loss.
 | | sync holds to | end-of-over frame reliable from | V1 callsign reliable from |
 |---|---|---|---|
 | V1 | about 0 dB band SNR (97 % at -0.7, falls apart below -4) | about +1.7 dB (6/6 from 1.7; 2/6 at -2.3) | about +8.5 dB (6/6 at 8.5; 5/6 at 7.8 and 5.7 is 1/6) |
-| V2 | about -1 dB (100 % at -1.0, 98 % at -2.8, none at -4.9) | about +6 to +7 dB (6/6 at 7.0; 2/6 at 5.0; 5/6 at 7.0 in another set) | n/a (no V2 callsign text yet) |
+| V2 | about -1 dB (100 % at -1.0, 98 % at -2.8, none at -4.9) | about +6 to +7 dB (6/6 at 7.0; 2/6 at 5.0; 5/6 at 7.0 in another set) | n/a (no V2 callsign text yet when measured; added since, `air-tests.md`) |
 
 ## Does the emulation agree with reality? (run 2: real weak runs, 1 per cell)
 
