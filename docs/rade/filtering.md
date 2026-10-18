@@ -22,7 +22,7 @@ centre 1500).
    and not beyond, for any filter width from 0.9 to 2.4 kHz.
 4. **Changing mode at a fixed dial moved the transmitted energy by 3 kHz** in four of the common cases
    (invert on/off, and V1 -> V2 below 10 MHz), the opposite of the principle. Now the dial moves instead, and
-   RADE off hands back to USB or LSB on the same carrier; see "Mode changes".
+   RADE off hands back to USB or LSB on the same carrier (V2 below 10 MHz, not 60 m, hands back LSB with the dial 3 kHz up, as SSB there is lower sideband); see "Mode changes".
 
 ## What was scored
 

@@ -68,7 +68,8 @@ void rade_native_set_invert(int invert);
 // The centre of the energy, Fe = dial + sign * 1500, is what is kept still: when the waveform, the invert
 // or the mode changes, the dial moves so that Fe does not. So V1 on 1985.5 kHz is the LSB carrier 1987.0,
 // V2 on 1985.5 kHz is the USB carrier 1984.0, and leaving RADE leaves the radio on the carrier of the last
-// RADE sideband, in LSB or USB.
+// RADE sideband, in LSB or USB, except V2 (upper everywhere) below 10 MHz outside 60 m, which leaves in LSB, the energy kept
+// (the dial 3 kHz up).
 //
 #define RADE_NATIVE_DIAL_OFFSET  1500
 
