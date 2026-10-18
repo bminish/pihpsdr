@@ -47,6 +47,7 @@
 #include "mode.h"
 #include "version.h"
 #include "rade_native_log.h"
+#include "rade_native_track.h"
 #include "rade_native_test.h"
 #include "vfo.h"
 #include "property.h"
@@ -64,6 +65,7 @@ static GtkWidget *mic_scale = NULL, *mic_agc_b = NULL, *mic_bar = NULL, *mic_tex
 static GtkWidget *mox_b = NULL;         // the transmit button
 static GtkWidget *wave_b[3] = {NULL, NULL, NULL};
 static GtkWidget *inv_b = NULL;
+static GtkWidget *track_b = NULL;
 static int updating = 0;                // ignore our own changes to the widgets
 static int tx_applied = 0;
 static GtkWidget *capture_b = NULL;
@@ -351,6 +353,38 @@ static void command_poll(int first) {
 
 static int log_events_fresh = 0;        // set when logging starts: the next poll writes every setting as an event
 
+//
+// Track: the RIT follows the station being received (rade_native_track.c). Polled with the state, so it goes on with the window closed.
+// The RIT is the receiver's alone, so nothing is done while the radio is transmitting.
+//
+static int track_on = 0;
+static rade_track_t track;
+
+static long long rit_in_force(void) {
+  return vfo[0].rit_enabled ? vfo[0].rit : 0;
+}
+
+static void track_poll(void) {
+  if (!track_on || radio_is_transmitting()) { return; }
+  rade_native_status_t st;
+  rade_native_get_status(&st);
+  int sign = vfo_mode_sign();
+  long long rit;
+  if (st.waveform == 0 || sign == 0) {                // RADE off, or a mode with no sideband: nothing to follow
+    rade_track_reset(&track);
+    return;
+  }
+  if (rade_track_update(&track, g_get_monotonic_time() / 1e6, st.sync, st.foff_hz, sign, rit_in_force(), &rit)) {
+    vfo_id_rit_value(0, rit);
+  }
+}
+
+static void track_cb(GtkWidget *widget, gpointer data) {
+  track_on = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  rade_track_reset(&track);
+  if (!track_on && rit_in_force() != 0) { vfo_id_rit_value(0, 0); }          // the RIT was ours: it goes with it
+}
+
 static int state_cb(gpointer arg) {
   static char last[200];
   static gint64 last_t = 0;
@@ -371,6 +405,7 @@ static int state_cb(gpointer arg) {
     band_cls = -1;
   }
   command_poll(0);
+  track_poll();
   //
   // A transmission is told to the Reporter only once it has been seen on two polls running (250 ms or more): the key, the TUNE flag
   // and the engine's live count are set and cleared at different moments, and a TUNE starting or ending can show all of RADE's
@@ -787,7 +822,7 @@ static void cleanup(void) {
     timer_id = 0;
   }
   recv_label = call_e = NULL;
-  mox_b = inv_b = capture_b = status_label = edge_label = NULL;
+  mox_b = inv_b = track_b = capture_b = status_label = edge_label = NULL;
   wave_b[0] = wave_b[1] = wave_b[2] = NULL;
   mic_scale = mic_agc_b = mic_bar = mic_text = NULL;
   drive_scale = log_b = test_b = NULL;
@@ -1105,7 +1140,14 @@ void rade_native_menu(GtkWidget *parent) {
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   fixed_label(status_label, 48, 1);
-  gtk_grid_attach(GTK_GRID(grid), status_label, 0, row++, 6, 1);
+  gtk_grid_attach(GTK_GRID(grid), status_label, 0, row, 5, 1);
+  track_b = gtk_check_button_new_with_label("Track");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(track_b), track_on);
+  gtk_widget_set_tooltip_text(track_b, "Moves the RIT to follow the station's frequency offset: an average over the lock, at most 3 Hz a second at "
+                                       "first and settling to 1 Hz in 5 s. After a lock is lost and regained the average starts again; at the end of "
+                                       "an over (no lock for 1.5 s) the RIT goes to zero. Off: the RIT is cleared.");
+  g_signal_connect(track_b, "toggled", G_CALLBACK(track_cb), NULL);
+  gtk_grid_attach(GTK_GRID(grid), track_b, 5, row++, 1, 1);
 
   GtkWidget *call_l = gtk_label_new("Call");
   gtk_widget_set_halign(call_l, GTK_ALIGN_END);

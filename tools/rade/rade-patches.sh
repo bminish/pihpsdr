@@ -62,7 +62,7 @@ check)
   if [ $ok = 1 ]; then
     # objects only (no linking): enough to catch an upstream API we call having changed
     ln -s "$OLDPWD/third_party" third_party 2>/dev/null || true
-    objs="src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o src/rade_launch.o src/rade_native_log.o src/rade_native_test.o src/receiver.o src/transmitter.o src/radio.o src/actions.o src/new_menu.o"
+    objs="src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o src/rade_launch.o src/rade_native_log.o src/rade_native_test.o src/rade_native_track.o src/receiver.o src/transmitter.o src/radio.o src/actions.o src/new_menu.o"
     if make RADE_NATIVE=ON -k $objs > "$tmp/build.log" 2>&1; then
       echo "  build:  all RADE objects and the files with hooks compile"
       # what the compile does not show: a plain make (the default goal) still links the program, with the RADE objects
