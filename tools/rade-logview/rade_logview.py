@@ -3,8 +3,8 @@
 
     rade_logview.py [run-directory | run.tar.gz | folder-of-runs ...]
 
-Pick runs (Open), tick the parameters to plot, zoom/pan with the toolbar, tick Measure and click
-twice on the graph for the time and level difference and the statistics between the two points.
+Pick runs (Open), tick the parameters to plot, zoom/pan with the toolbar, tick Measure: a click puts a cursor on every graph and
+lists the value of every line there, a drag draws a box over the same times on every graph and lists max, mean and min of every line in it.
 Choosing an over in the list zooms to it and shows what is known about it in the text area.
 """
 import os, sys, math, datetime
@@ -46,6 +46,7 @@ EVENT_GROUPS = [
     ("End-of-over / calls", ("eoo", "call")),
     ("Dial / mode / settings", ("dial", "mode", "wave", "invert", "drive", "trim", "agc")),
 ]
+DRAG_PX = 5                         # a press and release less than this far apart is a click, not a drag
 COLOURS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2"]
 
 
@@ -60,7 +61,9 @@ class Viewer:
         self.xlim = None
         self.logroot = None                # where the runs are (default: rade-logs/ of the piHPSDR directory)
         self.yuser = {}                    # y ranges set by the operator, by axis label: kept when the plot is redrawn
-        self.measure = []                  # clicked points: (time_num, axes_index, y)
+        self.measure = []
+        self.drag = None                   # a press waiting for its release: (pixel x, time_num)
+        self.marks_on = False              # a cursor or range is on the graphs
         root.title("RADE log viewer")
         root.geometry("1250x800")
         pw = ttk.PanedWindow(root, orient="horizontal")
@@ -104,6 +107,9 @@ class Viewer:
             v = tk.BooleanVar(value=label in ("Overs shaded", "End-of-over / calls"))
             self.evars[label] = v
             ttk.Checkbutton(ef, text=label, variable=v, command=self.replot).pack(anchor="w")
+        self.full = tk.BooleanVar(value=True)
+        ttk.Checkbutton(left, text="Every call of librade (rx_full.csv), where a run has it", variable=self.full,
+                        command=self.replot).pack(anchor="w", padx=4)
         self.utc = tk.BooleanVar(value=True)
         ttk.Checkbutton(left, text="UTC clock on the axis (off: seconds from first run start)", variable=self.utc,
                         command=self.replot).pack(anchor="w", padx=4)
@@ -126,8 +132,8 @@ class Viewer:
         self.toolbar = NavigationToolbar2Tk(self.canvas, tb)
         self.toolbar.update()
         self.mvar = tk.BooleanVar(value=False)
-        ttk.Checkbutton(tb, text="Measure (click A, click B)", variable=self.mvar,
-                        command=self.clear_measure).pack(side="left", padx=8)
+        ttk.Checkbutton(tb, text="Measure (click: values, drag: range)", variable=self.mvar,
+                        command=self.measure_toggled).pack(side="left", padx=8)
         self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
         self.readout = ttk.Label(right, text="", anchor="w", font=("monospace", 9))
         self.readout.pack(fill="x")
@@ -135,7 +141,9 @@ class Viewer:
         self.text.pack(fill="x")
         self.text.configure(state="disabled")
         self.canvas.mpl_connect("motion_notify_event", self.on_move)
-        self.canvas.mpl_connect("button_press_event", self.on_click)
+        self.canvas.mpl_connect("button_press_event", self.on_press)
+        self.canvas.mpl_connect("button_release_event", self.on_release)
+        self.canvas.mpl_connect("scroll_event", self.on_scroll)
         root.bind("<Key-Escape>", lambda e: self.clear_measure())
         root.bind("<F5>", lambda e: self.update_live())
         for p in paths:
@@ -280,7 +288,7 @@ class Viewer:
             if not r.live or ld.signature(r.source) == r.sig:
                 continue
             try:
-                new = ld.load_run(r.source)
+                new = ld.load_run(r.source, prev=r)
             except Exception as e:                           # caught mid-write, or gone: keep what is shown
                 self.live_note("update of %s failed: %s" % (r.name, e))
                 continue
@@ -396,7 +404,7 @@ class Viewer:
         axs = self.fig.subplots(len(params), 1, sharex=True, squeeze=False)[:, 0]
         for ax, (label, table, series) in zip(axs, params):
             for ri, run in enumerate(self.runs):
-                data = run.rx if table == "rx" else run.tx
+                data = self.rx_data(run) if table == "rx" else run.tx
                 if "t" not in data:
                     continue
                 for col, leg, style in series:
@@ -432,6 +440,20 @@ class Viewer:
         self._was_utc = self.utc.get()
         self.fig.subplots_adjust(left=0.09, right=0.99, top=0.98, bottom=0.08, hspace=0.12)
         self.canvas.draw_idle()
+
+    def rx_data(self, run):
+        """The receive columns to plot: rx.csv (2 Hz, in sync), or with the box ticked and the run holding it, rx_full.csv: every call of
+        librade, the values blanked where there was no lock. snr_min has no full-rate column (each point is its own minimum)."""
+        f = run.rxf
+        if not self.full.get() or "t" not in f or "sync" not in f:
+            return run.rx
+        locked = f["sync"] == 1
+        out = {"t": f["t"]}
+        for col, src in (("snr_mean", "snr_db"), ("foff_mean", "foff_hz"), ("delta_hat", "delta_hat"), ("est_foff", "est_foff"),
+                         ("gain", "gain"), ("snr_est", "snr_est")):
+            if src in f:
+                out[col] = np.where(locked, f[src], np.nan)
+        return out
 
     @staticmethod
     def limit_y(ax, lo, hi):
@@ -539,11 +561,16 @@ class Viewer:
         return float(xv) + min(r.t0 for r in self.runs)
 
     def on_move(self, ev):
+        if self.drag is not None and ev.xdata is not None:
+            self.drag_last = ev.xdata
+            if abs(ev.x - self.drag[0]) >= DRAG_PX:                  # the box follows the pointer
+                self.mark_range(self.drag[1], ev.xdata, final=False)
+            return
         if ev.inaxes is None or ev.xdata is None:
             return
         t = self.from_x(ev.xdata)
-        self.readout.configure(text="%s   y = %.3f" % (ld.utc_str(t), ev.ydata) if not self.measure or len(self.measure) >= 2
-                               else "A set - click B   (Esc clears)   %s" % ld.utc_str(t))
+        self.readout.configure(text="%s   y = %.3f" % (ld.utc_str(t), ev.ydata) if not self.mvar.get() or not self.marks_on else
+                               self.readout.cget("text"))
 
     def clear_measure(self):
         for ax in self.axes:
@@ -554,41 +581,104 @@ class Viewer:
                     pass
             ax._mlines = []
         self.measure = []
-        self.readout.configure(text="Measure: click A, then B" if self.mvar.get() else "")
+        self.marks_on = False
+        self.drag = None
+        self.readout.configure(text="Measure: click for the values at a time, drag for max / mean / min over a range" if self.mvar.get() else "")
         self.canvas.draw_idle()
 
-    def on_click(self, ev):
-        if not self.mvar.get() or ev.inaxes is None or ev.xdata is None or self.toolbar.mode != "":
+    def measure_toggled(self):
+        """Measure on: the toolbar's pan and zoom tools are let go, so the pointer is the cursor."""
+        if self.mvar.get():
+            if self.toolbar.mode == "pan/zoom":
+                self.toolbar.pan()
+            elif self.toolbar.mode == "zoom rect":
+                self.toolbar.zoom()
+        self.clear_measure()
+
+    def on_scroll(self, ev):
+        """The wheel zooms the time axis about the pointer (all graphs share it); with Ctrl, the level axis of the graph under the pointer."""
+        if ev.inaxes is None or ev.xdata is None or ev.ydata is None or not ev.step:
             return
-        if len(self.measure) >= 2:
-            self.clear_measure()
-        idx = self.axes.index(ev.inaxes)
-        self.measure.append((ev.xdata, idx, ev.ydata))
-        for ax in self.axes:
-            ax._mlines = getattr(ax, "_mlines", []) + [ax.axvline(ev.xdata, color="black", lw=1.0)]
-        if len(self.measure) == 2:
-            self.readout.configure(text=self.measure_text())
+        f = 1.25 ** (-ev.step)                     # wheel up: in
+        if ev.key == "control":
+            lo, hi = ev.inaxes.get_ylim()
+            ev.inaxes.set_ylim(ev.ydata - (ev.ydata - lo) * f, ev.ydata + (hi - ev.ydata) * f)
+        else:
+            lo, hi = self.axes[0].get_xlim()
+            self.axes[0].set_xlim(ev.xdata - (ev.xdata - lo) * f, ev.xdata + (hi - ev.xdata) * f)
         self.canvas.draw_idle()
 
-    def measure_text(self):
-        (xa, ia, ya), (xb, ib, yb) = self.measure
-        ta, tb = self.from_x(xa), self.from_x(xb)
-        parts = ["dt = %.3f s (A %s  B %s)" % (tb - ta, ld.utc_str(ta)[11:], ld.utc_str(tb)[11:])]
-        if ia == ib:
-            parts.append("dy = %+.3f (%s)" % (yb - ya, self.selected_params()[ia][0]))
-        out = ["   ".join(parts)]
+    def on_press(self, ev):
+        if not self.mvar.get() or ev.button != 1 or ev.inaxes is None or ev.xdata is None or self.toolbar.mode != "":
+            return
+        self.drag = (ev.x, ev.xdata)
+        self.drag_last = ev.xdata
+
+    def on_release(self, ev):
+        if self.drag is None:
+            return
+        (px, x0), self.drag = self.drag, None
+        x1 = ev.xdata if ev.xdata is not None else self.drag_last
+        if abs(ev.x - px) < DRAG_PX or x1 is None:
+            self.mark_cursor(x0)
+        else:
+            self.mark_range(x0, x1, final=True)
+
+    def _clear_marks(self):
+        for ax in self.axes:
+            for l in getattr(ax, "_mlines", []):
+                try:
+                    l.remove()
+                except ValueError:
+                    pass
+            ax._mlines = []
+
+    def mark_cursor(self, xv):
+        """One cursor on every graph; the value of every plotted series there goes to the text area."""
+        self._clear_marks()
+        for ax in self.axes:
+            ax._mlines = [ax.axvline(xv, color="black", lw=1.0)]
+        self.marks_on = True
+        tc = self.from_x(xv)
+        out = ["Cursor  %s" % ld.utc_str(tc)]
+        for ri, label, leg, t, y in self.series_data():
+            i = int(np.searchsorted(t, tc))
+            j = min(range(max(i - 1, 0), min(i + 1, len(t))), key=lambda k: abs(t[k] - tc), default=None) if len(t) else None
+            ok = j is not None and abs(t[j] - tc) <= ld.GAP_S and not np.isnan(y[j])
+            out.append("  run %d  %-26s %-8s %s" % (ri + 1, label, leg, "%10.3f   (sample %+.2f s)" % (y[j], t[j] - tc) if ok else "      no data"))
+        self.set_text("\n".join(out))
+        self.readout.configure(text="Cursor %s" % ld.utc_str(tc)[11:])
+        self.canvas.draw_idle()
+
+    def mark_range(self, xa, xb, final):
+        """A box over the same times on every graph; max, mean and min of every plotted series in it (when the drag is finished)."""
+        self._clear_marks()
+        lo, hi = min(xa, xb), max(xa, xb)
+        for ax in self.axes:
+            ax._mlines = [ax.axvspan(lo, hi, color="black", alpha=0.12, lw=0), ax.axvline(lo, color="black", lw=0.8), ax.axvline(hi, color="black", lw=0.8)]
+        self.marks_on = True
+        ta, tb = sorted((self.from_x(xa), self.from_x(xb)))
+        self.readout.configure(text="Range dt = %.3f s  (%s to %s)" % (tb - ta, ld.utc_str(ta)[11:], ld.utc_str(tb)[11:]))
+        if final:
+            out = ["Range  %s  to  %s   dt = %.3f s" % (ld.utc_str(ta), ld.utc_str(tb)[11:], tb - ta),
+                   "  %-5s %-26s %-8s %7s %10s %10s %10s" % ("run", "graph", "line", "n", "max", "mean", "min")]
+            for ri, label, leg, t, y in self.series_data():
+                st = ld.window_stats(t, y, ta, tb)
+                out.append("  run %d %-26s %-8s %7s %10s %10s %10s" % (ri + 1, label, leg, *(
+                    (st["n"], "%.3f" % st["max"], "%.3f" % st["mean"], "%.3f" % st["min"]) if st else ("0", "-", "-", "-"))))
+            self.set_text("\n".join(out))
+        self.canvas.draw_idle()
+
+    def series_data(self):
+        """(run index, graph label, line name, t, y) for every line on the graphs, as plotted."""
         for label, table, series in self.selected_params():
             for ri, run in enumerate(self.runs):
-                data = run.rx if table == "rx" else run.tx
+                data = self.rx_data(run) if table == "rx" else run.tx
                 if "t" not in data:
                     continue
                 for col, leg, _s in series:
-                    st = ld.window_stats(data["t"], data.get(col, np.array([])), ta, tb) if col in data else None
-                    if st:
-                        out.append("  run %d %s %s: n=%d mean %.2f min %.2f max %.2f" % (ri + 1, label, leg, st["n"], st["mean"], st["min"], st["max"]))
-        text = "\n".join(out)
-        self.set_text(text)
-        return parts[0] + ("   " + parts[1] if len(parts) > 1 else "")
+                    if col in data:
+                        yield ri, label, leg, data["t"], data[col]
 
 
 def ld_settings():

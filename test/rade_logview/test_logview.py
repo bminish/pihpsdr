@@ -25,6 +25,9 @@ open(run_dir + "/events.csv", "w").write("t,kind,value\n0.1,dial,7177000\n5.2,eo
 open(run_dir + "/overs.csv", "w").write("utc_start,t_start,t_end,dial_hz,mode,wave,invert,snr_mean,snr_min,snr_max,foff_mean,foff_sd,sync_pct,eoo,call,call_snr\n"
     "x,0.00,5.00,7177000,DIGL,V1,1,9.0,6.0,10.0,-2.0,0.1,100,1,EI6IZ,9.1\nx,20.00,25.00,14236000,USB,V2,0,3.0,1.0,5.0,-2.5,0.2,95,0,,\n")
 open(run_dir + "/tx_overs.csv", "w").write("utc_start,t_start,t_end,dial_hz,wave,drive_db,trim_db,agc_db_end,loud_mean,peak_max,limiting_pct,underruns,hold_ms\nx,30.0,31.0,7177000,V1,0,0,1.5,-20.5,-2,5,0,500\n")
+full = "t,rx_pos,sync,eoo,snr_db,foff_hz,nout,in_fill,out_fill,delta_hat,est_foff,gain,snr_est\n" + "".join(
+    "%.3f,%d,%d,0,%.2f,%.2f,144,0,0,1.5,%.2f,3.0,%.2f\n" % (0.04 * i, 0, 1 if i % 10 else 0, 8.0, -2.0, -2.0, 8.0) for i in range(50))
+open(run_dir + "/rx_full.csv", "w").write(full)
 tgz = run_dir + ".tar.gz"
 with tarfile.open(tgz, "w:gz") as tf:
     tf.add(run_dir, arcname=os.path.basename(run_dir))
@@ -36,6 +39,13 @@ check("events and overs", len(run.events) == 5 and len(run.overs) == 2 and len(r
 check("tar.gz gives the same run", len(ld.load_run(tgz).rx["t"]) == 20 and ld.load_run(tgz).name == "20261016-120000")
 check("file inside the run resolves", ld.load_run(run_dir + "/rx.csv").path == run_dir)
 check("energy centre inverted / normal", ld.energy_centre_hz(7177000, 1) == 7175500 and ld.energy_centre_hz(14236000, 0) == 14237500)
+check("rx_full.csv loads whole", len(run.rxf["t"]) == 50 and abs(run.rxf["t"][1] - (T0 + 0.04)) < 1e-6 and run.rxf_off > 0)
+open(run_dir + "/rx_full.csv", "a").write("2.000,0,1,0,9.00,-1.00,144,0,0,1.5,-1.00,3.0,9.00\n2.040,0,1,0,9.0")      # the last line half written
+more = ld.load_run(run_dir, prev=run)
+check("live: only the new complete lines are added, the half line waits", len(more.rxf["t"]) == 51 and more.rxf_off > run.rxf_off)
+open(run_dir + "/rx_full.csv", "a").write("0,-1.00,144,0,0,1.5,-1.00,3.0,9.00\n")
+check("live: the finished line arrives next time", len(ld.load_run(run_dir, prev=more).rxf["t"]) == 52)
+check("same result as reading it all", np.allclose(ld.load_run(run_dir, prev=more).rxf["snr_db"], ld.load_run(run_dir).rxf["snr_db"]))
 hc = ld.heard_calls(run)
 check("V1 call pairs with its over", len(hc) == 1 and hc[0]["call"] == "EI6IZ" and not hc[0]["v2"] and abs(hc[0]["t_end"] - (T0 + 5.0)) < 1e-6)
 run.events += [(T0 + 40.0, "sync_on", ""), (T0 + 40.0, "wave", "2"), (T0 + 43.0, "call", "G4XYZ snr=3.0"), (T0 + 44.0, "call", "G4XYZ snr=4.0")]
@@ -97,11 +107,34 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     x0, x1 = v.axes[0].get_xlim()
     check("window: choosing an over zooms to it", 15 < v.from_x(x0) - T0 + 0 + 5 < 40 and (v.from_x(x1) - v.from_x(x0)) < 10)
     v.mvar.set(True)
+    v.full.set(False); v.replot(); root.update()          # the synthetic rx_full.csv covers 0-2 s only: measure on rx.csv here
     class E: pass
-    for xd in (v.x(T0 + 21), v.x(T0 + 24)):
-        e = E(); e.inaxes = v.axes[0]; e.xdata = float(xd); e.ydata = 3.0; v.on_click(e)
-    root.update()
-    check("window: measure dt = 3 s", "dt = 3.000" in v.readout.cget("text"), v.readout.cget("text"))
+    def ev(t, ax=0, px=100):
+        e = E(); e.inaxes = v.axes[ax]; e.xdata = float(v.x(t)); e.ydata = 3.0; e.x = px; e.button = 1; return e
+    v.on_press(ev(T0 + 21)); v.on_release(ev(T0 + 21)); root.update()
+    txt = v.text.get("1.0", "end")
+    check("window: a click is a cursor on every graph", all(len(a._mlines) == 1 for a in v.axes), [len(a._mlines) for a in v.axes])
+    check("window: the cursor lists every line (SNR mean and min, offset, loudness)", txt.count("run 1") == 4 and "Cursor" in txt, txt)
+    check("window: the value at the cursor is the sample there (offset -2.5 at 21 s)", "-2.500" in txt, txt)
+    v.on_press(ev(T0 + 21, px=100)); v.on_move(ev(T0 + 24, px=160)); v.on_release(ev(T0 + 24, px=160)); root.update()
+    txt = v.text.get("1.0", "end")
+    check("window: a drag is a box on every graph", all(len(a._mlines) == 3 for a in v.axes), [len(a._mlines) for a in v.axes])
+    check("window: the range readout has dt", "dt = 3.000" in v.readout.cget("text"), v.readout.cget("text"))
+    check("window: max, mean and min for every line", "max" in txt and txt.count("run 1") == 4 and "3.000" in txt, txt)
+    v.clear_measure()
+    x0, x1 = v.axes[0].get_xlim(); xm = float(v.x(T0 + 22))
+    e = ev(T0 + 22); e.step = 1; e.key = None; v.on_scroll(e)
+    n0, n1 = v.axes[0].get_xlim()
+    check("window: wheel up zooms the time axis in about the pointer", abs((n1 - n0) - (x1 - x0) / 1.25) < 1e-9 and abs((xm - n0) / (n1 - n0) - (xm - x0) / (x1 - x0)) < 1e-6)
+    check("window: ...on every graph (shared axis)", all(a.get_xlim() == v.axes[0].get_xlim() for a in v.axes))
+    e = ev(T0 + 22); e.step = -1; e.key = None; v.on_scroll(e)
+    check("window: wheel down zooms back out", abs(v.axes[0].get_xlim()[0] - x0) < 1e-9 and abs(v.axes[0].get_xlim()[1] - x1) < 1e-9)
+    y0, y1 = v.axes[1].get_ylim(); e = ev(T0 + 22, ax=1); e.step = 1; e.key = "control"; v.on_scroll(e)
+    check("window: Ctrl + wheel zooms the level axis of that graph only", v.axes[1].get_ylim() != (y0, y1) and v.axes[0].get_xlim() == (n0 if False else v.axes[0].get_xlim()))
+    v.toolbar.pan(); root.update(); v.mvar.set(True); v.measure_toggled()
+    check("window: Measure lets go of the toolbar's pan", v.toolbar.mode == "")
+    v.clear_measure()
+    check("window: Esc clears the marks", all(len(a._mlines) == 0 for a in v.axes))
     v.utc.set(False); v.replot(); root.update(); v.fit_all()
     check("window: seconds axis", len(v.axes) == 3)
     v.remove_run if False else None
