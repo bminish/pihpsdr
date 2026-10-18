@@ -40,15 +40,16 @@ RADE_NATIVE_LIBS=-L$(RADE_BLD)/src -lrade -Wl,-rpath,$(abspath $(RADE_BLD)/src) 
 	$(RADE_OPUS)/.libs/libopus.a
 
 RADE_NATIVE_OBJS = src/rade_native.o src/rade_native_menu.o src/rade_eoo_text.o src/rade_v2_text.o \
-	src/rade_launch.o src/rade_native_log.o src/rade_native_test.o
+	src/rade_launch.o src/rade_native_log.o src/rade_native_test.o src/rade_native_track.o
 
 src/rade_native.o: src/rade_native.h src/rade_eoo_text.h src/rade_v2_text.h src/rade_native_log.h
 src/rade_native_log.o: src/rade_native_log.h
 src/rade_native_test.o: src/rade_native_test.h
 src/rade_eoo_text.o: src/rade_eoo_text.h src/rade_eoo_text_hra.h
 src/rade_v2_text.o: src/rade_v2_text.h src/rade_eoo_text_hra.h
-src/rade_native_menu.o: src/rade_native.h src/rade_native_menu.h src/rade_native_test.h src/rade_launch.h
+src/rade_native_menu.o: src/rade_native_track.h src/rade_native.h src/rade_native_menu.h src/rade_native_test.h src/rade_launch.h
 src/rade_launch.o: src/rade_launch.h
+src/rade_native_track.o: src/rade_native_track.h
 src/receiver.o src/transmitter.o src/radio.o: src/rade_native.h
 # librade's headers include a "nnet.h" of their own (opus), which clashes with
 # wdsp/nnet.h. Only this object sees librade, with its own include path.
