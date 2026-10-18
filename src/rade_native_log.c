@@ -57,7 +57,7 @@ static pthread_t    thread;
 static int          have_thread;
 static double       t0;
 static char         dir[200], stem[40];
-static FILE *f_rx, *f_tx, *f_ev, *f_overs, *f_txo;
+static FILE *f_rx, *f_tx, *f_ev, *f_overs, *f_txo, *f_rxf;
 
 static pthread_mutex_t ctx_mx = PTHREAD_MUTEX_INITIALIZER;
 static rade_log_ctx_t ctx;
@@ -233,6 +233,12 @@ static void rx_item(const item_t *it) {
   int was_active = ov.active;
   over_rx(it);
   if (!was_active && ov.active && ov.n == 1) { event(ov.t0, "sync_on", ""); }
+  // every call of librade, in sync or not (the V2 statistics blank for V1): rx_full.csv
+  pthread_mutex_lock(&ctx_mx);
+  int wave = ctx.wave;
+  pthread_mutex_unlock(&ctx_mx);
+  fprintf(f_rxf, "%.3f,%ld,%d,%d,%.2f,%.2f,%d,%ld,%ld", it->t - t0, r->rx_pos, r->sync, r->eoo, r->snr_db, r->foff_hz, r->nout, r->in_fill, r->out_fill);
+  if (wave == 2) { fprintf(f_rxf, ",%.3f,%.3f,%.4f,%.3f\n", r->delta_hat, r->est_foff, r->gain, r->snr_est); } else { fputs(",,,,\n", f_rxf); }
   if (!r->sync) { return; }                           // no lock: nothing for the table
   long bin = (long)floor((it->t - t0) * 2.0);
   if (bin != rxa.bin) { rx_flush(); rxa.bin = bin; rxa.snr = rxa.foff = rxa.dh = rxa.g = rxa.se = rxa.ef = 0.0; rxa.snr_min = 1e9; rxa.n = 0; }
@@ -382,7 +388,7 @@ static void drain(int final) {
   if (final) { rx_flush(); tx_flush(); tov_write(); if (ov.active) { over_close(0); } if (ov.pending) { over_write(); } }
   else if (ov.pending && now_unix() - HOLD_S > ov.t1 + CALL_WAIT_S) { over_write(); }
   else if (ov.active && now_unix() - HOLD_S > ov.last_sync_t + OVER_GAP_S + 0.5 && n_items == 0) { over_close(0); }
-  FILE *fl[] = { f_rx, f_tx, f_ev, f_overs, f_txo };
+  FILE *fl[] = { f_rx, f_rxf, f_tx, f_ev, f_overs, f_txo };
   for (size_t k = 0; k < sizeof fl / sizeof fl[0]; k++) { if (fl[k]) { fflush(fl[k]); } }
 }
 
@@ -443,10 +449,11 @@ int rade_log_start(const char *meta) {
   fclose(m);
   f_rx = open_table("rx.csv", "t,snr_mean,snr_min,foff_mean,n,delta_hat,gain,snr_est,est_foff\n");
   f_tx = open_table("tx.csv", "t,loud_lufs,peak_dbfs,agc_db,limiting_pct,out_fill_min\n");
+  f_rxf = open_table("rx_full.csv", "t,rx_pos,sync,eoo,snr_db,foff_hz,nout,in_fill,out_fill,delta_hat,est_foff,gain,snr_est\n");
   f_ev = open_table("events.csv", "t,kind,value\n");
   f_overs = open_table("overs.csv", "utc_start,t_start,t_end,dial_hz,mode,wave,invert,snr_mean,snr_min,snr_max,foff_mean,foff_sd,sync_pct,eoo,call,call_snr\n");
   f_txo = open_table("tx_overs.csv", "utc_start,t_start,t_end,dial_hz,wave,drive_db,trim_db,agc_db_end,loud_mean,peak_max,limiting_pct,underruns,hold_ms\n");
-  if (!f_rx || !f_tx || !f_ev || !f_overs || !f_txo) { dir[0] = 0; return -1; }
+  if (!f_rx || !f_rxf || !f_tx || !f_ev || !f_overs || !f_txo) { dir[0] = 0; return -1; }
   memset(&ov, 0, sizeof ov); memset(&tov, 0, sizeof tov);
   rxa.bin = -1; rxa.n = 0; txa.bin = -1; txa.n = 0;
   last_under = last_over_cnt = 0;
@@ -468,7 +475,7 @@ void rade_log_stop(void) {
   if (!atomic_load(&on)) { return; }
   atomic_store_explicit(&on, 0, memory_order_release);
   if (have_thread) { pthread_join(thread, NULL); have_thread = 0; }
-  FILE **fl[] = { &f_rx, &f_tx, &f_ev, &f_overs, &f_txo };
+  FILE **fl[] = { &f_rx, &f_rxf, &f_tx, &f_ev, &f_overs, &f_txo };
   for (size_t k = 0; k < sizeof fl / sizeof fl[0]; k++) { if (*fl[k]) { fclose(*fl[k]); *fl[k] = NULL; } }
   char p[300];
   snprintf(p, sizeof p, "%s/meta.txt", dir);
