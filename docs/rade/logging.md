@@ -90,3 +90,12 @@ These two alone remove about 60 % of the bytes of a receive-only log; the rest o
   `main`), passing what was named on its command line as `--keep`. By hand: `python3 tools/rade-logview/tidy_logs.py [--dry-run] [rade-logs-dir]`. Test: `test/rade_logview/test_tidy_logs.py`. The old single-file `*_RADE.csv` logs are not touched.
 - Sizes, scripted scene (`test_log.py`): 2 runs in 2.6 KB; the producers' cost is unchanged (mean about 0.6 us per row, worst about 23 us on a busy machine). The old single CSVs in `rade-logs/*.csv` are left alone; `log_analysis.py` reads both; `air_test.py` reads the new `tx_overs.csv` for the mic columns.
 - **Not yet tried on a live run**: only the scripted scene and the unit build. The first real use will show whether the over rules (1.5 s gap, 1 s minimum) suit real fading.
+
+## 8. Development setting: log always on, and every point kept (2026-10-18) - **not intended to ship**
+
+While the modem and the diversity correlator are being developed:
+
+- **The log starts when RADE is switched on and stops when it is switched off** (`retune()` in `rade_native_menu.c`: Off to V1/V2 starts a run, to Off stops it; V1 to V2 keeps the run). The Log button follows and can still stop or start a run by hand. A release should leave logging to the operator again: remove the two `rade_log_*` calls at the end of `retune()`.
+- **`rx_full.csv`** is written with every run: every call of librade, in sync or not (V1 8.3 rows/s, V2 about 50/s): `t, rx_pos, sync, eoo, snr_db, foff_hz, nout, in_fill, out_fill` and, for V2, `delta_hat, est_foff, gain, snr_est` (blank for V1). `rx.csv` is unchanged, so the viewer and `tidy_logs.py` work as before; the viewer does not plot `rx_full.csv` yet.
+- **Cost (estimated from `rade-captures/*_stats.csv`, which has the same columns; not measured in the writer)**: about 62-68 bytes a row, 16 compressed. Receiving all the time: V1 1.9 MB/h raw, 0.5 MB/h compressed; V2 12 MB/h raw, 2.9 MB/h compressed (about 70 MB a day). The writer thread formats about 1 us a row, so 50 rows/s is about 0.005 % of a core; the audio threads still only push into the ring (4096 rows, about 80 s of V2).
+- piHPSDR exiting with RADE on does not stop the run: the directory is left without `ended_utc`, and `tidy_logs.py` finishes it the next time the viewer starts.

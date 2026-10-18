@@ -13,16 +13,26 @@ work = tempfile.mkdtemp()
 r = subprocess.run([os.path.join(HERE, "test_log")], cwd=work, capture_output=True, text=True, timeout=120)
 out = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l and not l.startswith("producer"))
 print(r.stdout.strip().splitlines()[-1])
+import tarfile
+def unpack(run):
+    """A stopped run is a .tar.gz (the directory is removed once the copy is made): open it where it was."""
+    if not os.path.isdir(os.path.join(work, run)) and os.path.exists(os.path.join(work, run + ".tar.gz")):
+        with tarfile.open(os.path.join(work, run + ".tar.gz")) as t: t.extractall(os.path.dirname(os.path.join(work, run)))
 def table(run, name):
+    unpack(run)
     with open(os.path.join(work, run, name)) as f:
         return list(csv.DictReader(f))
 def meta(run):
+    unpack(run)
     return open(os.path.join(work, run, "meta.txt")).read()
 
 a, b = out["first"], out["second"]
-check(a != b and os.path.isdir(os.path.join(work, a)) and os.path.isdir(os.path.join(work, b)), "each start makes a new directory: %s, %s" % (a, b))
+check(a != b and all(os.path.exists(os.path.join(work, x + ".tar.gz")) for x in (a, b)), "each start makes a new directory: %s, %s" % (a, b))
 print("run 1 (V2: 6 s in sync, a call at -3.5 dB, 4 s with no lock, 2 s keyed)")
 rx = table(a, "rx.csv")
+rf = table(a, "rx_full.csv")
+check(len(rf) > 10 * len(rx) and any(x["sync"] == "0" for x in rf) and all(len(x) == 13 for x in rf), "rx_full.csv: every call, in sync or not (%d rows, %d in rx.csv)" % (len(rf), len(rx)))
+check(all(x["delta_hat"] != "" for x in rf), "...with the V2 statistics for a V2 run")
 check(10 <= len(rx) <= 14, "receive samples: %d rows for 6 s in sync (2 a second)" % len(rx))
 check(all(abs(float(x["t"]) - float(y["t"]) - 0.5) < 0.2 for x, y in zip(rx[1:], rx)), "...half a second apart")
 check(all(int(x["n"]) >= 10 for x in rx[1:-1]), "...each the mean of about 12 calls (n = %s)" % [x["n"] for x in rx][:4])
@@ -58,6 +68,7 @@ time.sleep(1.5)
 for run in (a, b):
     check(os.path.exists(os.path.join(work, run + ".tar.gz")),
           "compressed copy %s.tar.gz" % run)
+for x in (a, b): unpack(x)
 sizes = sum(os.path.getsize(os.path.join(work, x, f)) for x in (a, b) for f in os.listdir(os.path.join(work, x)))
 print("  size of the two runs: %d bytes" % sizes)
 check("worst" in r.stdout, "producer cost measured")
