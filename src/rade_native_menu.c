@@ -593,32 +593,42 @@ static void logview_cb(GtkWidget *widget, gpointer data) {
   }
 }
 
+#define LOG_TIP "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on. " \
+                "While we develop it is on whenever RADE is, and every call of librade is kept in rx_full.csv."
+
+// Starts a run; 0 if it is going. The button follows (log_sync).
+static int log_begin(void) {
+  int w = rade_native_waveform();
+  char meta[512];
+  snprintf(meta, sizeof meta,
+           "program: piHPSDR %s\nwaveform: %s\ndial_hz: %lld\nmode: %s\ninvert: %d\ntrim_db: %.1f\nagc: %d\n"
+           "drive_db: %.1f\nrade_tx: %d",
+           build_version, w == RADE_NATIVE_V1 ? "V1" : w == RADE_NATIVE_V2 ? "V2" : "off", rade_dial(),
+           mode_string[vfo[0].mode], rade_native_get_invert(), rade_native_tx_get_trim_db(),
+           rade_native_tx_get_agc(), rade_native_tx_get_drive_db(), rade_native_tx_enabled());
+  log_events_fresh = 1;                   // so the settings at the start are the first events
+  return rade_log_start(meta);
+}
+
+static void log_sync(void) {
+  if (log_b == NULL) { return; }
+  char tip[300];                           // the state is the button; where it is writing is the tooltip
+  snprintf(tip, sizeof tip, "Logging to %s (press to stop)", rade_log_path());
+  int was = updating;
+  updating = 1;
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
+  updating = was;
+  gtk_widget_set_tooltip_text(log_b, rade_log_active() ? tip : LOG_TIP);
+}
+
 static void log_cb(GtkWidget *widget, gpointer data) {
   if (updating) { return; }
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
-    int w = rade_native_waveform();
-    char meta[512];
-    snprintf(meta, sizeof meta,
-             "program: piHPSDR %s\nwaveform: %s\ndial_hz: %lld\nmode: %s\ninvert: %d\ntrim_db: %.1f\nagc: %d\n"
-             "drive_db: %.1f\nrade_tx: %d",
-             build_version, w == RADE_NATIVE_V1 ? "V1" : w == RADE_NATIVE_V2 ? "V2" : "off", rade_dial(),
-             mode_string[vfo[0].mode], rade_native_get_invert(), rade_native_tx_get_trim_db(),
-             rade_native_tx_get_agc(), rade_native_tx_get_drive_db(), rade_native_tx_enabled());
-    log_events_fresh = 1;                   // so the settings at the start are the first events
-    if (rade_log_start(meta) != 0) {
-      updating = 1;
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
-      updating = 0;
-      say("could not open the log file");
-      return;
-    }
-    char tip[300];                           // the state is the button; where it is writing is the tooltip
-    snprintf(tip, sizeof tip, "Logging to %s (press to stop)", rade_log_path());
-    gtk_widget_set_tooltip_text(widget, tip);
+    if (log_begin() != 0) { say("could not open the log file"); }
   } else {
     rade_log_stop();
-    gtk_widget_set_tooltip_text(widget, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on.");
   }
+  log_sync();
 }
 
 static void agc_cb(GtkWidget *widget, gpointer data) {
@@ -1009,6 +1019,12 @@ static void retune(int new_wave) {
   int mode = new_wave ? (p.invert ? modeDIGL : modeDIGU) : (p.invert ? modeLSB : modeUSB);
   if (p.dial != rade_dial()) { vfo_id_set_frequency(0, p.dial); }
   if (vfo[0].mode != mode) { vfo_id_mode_changed(0, mode); }
+  //
+  // Development: the log runs for as long as RADE is on (a run per visit), whatever the Log button said before. Not meant to ship:
+  // a release would leave the log to the operator (see docs/rade/logging.md).
+  //
+  if (old_wave == 0 && new_wave != 0 && !rade_log_active()) { log_begin(); log_sync(); }
+  if (old_wave != 0 && new_wave == 0 && rade_log_active()) { rade_log_stop(); log_sync(); }
 }
 
 //
@@ -1236,9 +1252,7 @@ void rade_native_menu(GtkWidget *parent) {
   show_recent();
   // Log, Capture and the test harness on one line; their state is the state of the button
   log_b = gtk_toggle_button_new_with_label("Log");
-  gtk_widget_set_tooltip_text(log_b, "Writes the decode and transmit parameters to a new run folder in rade-logs/ each time it is switched on "
-                                     "(overs heard and sent, SNR and offset, events; see docs/rade/logging.md). Written by a "
-                                     "background thread; the audio never waits for it.");
+  gtk_widget_set_tooltip_text(log_b, rade_log_active() ? "Logging (press to stop)" : LOG_TIP);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(log_b), rade_log_active());
   g_signal_connect(log_b, "toggled", G_CALLBACK(log_cb), NULL);
   gtk_grid_attach(GTK_GRID(grid), log_b, 0, row, 1, 1);

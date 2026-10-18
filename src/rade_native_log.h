@@ -34,6 +34,8 @@
 //   meta.txt     settings at the start; at the end the number of dropped rows
 //   rx.csv       only while in sync, 2 rows a second, means over the half second:
 //                  t, snr_mean, snr_min, foff_mean, n  (and for V2 the means of librade's delta_hat, gain, snr_est, est_foff)
+//   rx_full.csv  every call of librade (V1 8.3/s, V2 about 50/s), in sync or not: t, rx_pos, sync, eoo, snr_db, foff_hz, nout, in_fill,
+//                  out_fill, and for V2 delta_hat, est_foff, gain, snr_est (blank for V1). About 3 MB an hour compressed on V2.
 //   tx.csv       only while keyed, 2 rows a second: t, loud_lufs, peak_dbfs, agc_db, limiting_pct, out_fill_min
 //   events.csv   on change: t, kind, value. Kinds: wave dial mode invert tx_enabled drive trim agc (the settings, at the start and
 //                when they change), key_down key_up sync_on sync_off (overs), call (value: CALL snr=x), eoo, underrun overrun

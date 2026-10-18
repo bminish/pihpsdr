@@ -80,7 +80,7 @@ def signature(path):
     """What changes when a run directory is written to: the size and time of its tables and meta.txt."""
     d = path if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
     sig = []
-    for n in ("meta.txt", "rx.csv", "tx.csv", "events.csv", "overs.csv", "tx_overs.csv"):
+    for n in ("meta.txt", "rx.csv", "rx_full.csv", "tx.csv", "events.csv", "overs.csv", "tx_overs.csv"):
         try:
             st = os.stat(os.path.join(d, n))
             sig.append((n, st.st_size, st.st_mtime_ns))
