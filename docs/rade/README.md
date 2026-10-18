@@ -1,7 +1,7 @@
 # RADE in piHPSDR: what was built, what it touches, why
 
 Branch `feature/rade-native`. Build with `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
-Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-17 (Reporter tuning added; log tidy-up; the TX latch tried and removed).
+Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-18 (Reporter tuning added; log tidy-up; the TX latch tried and removed).
 
 ## What it does
 
@@ -78,7 +78,7 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
   follow freedv-gui bit for bit. V2 receive uses **sync as the gate**: symbols are only taken while `librade` is in sync;
   after a loss the new lock is joined to the old reception only if its timing correlates with the call's repetition cycle
   (a dropout), otherwise it starts afresh (a different station). Tests: `v2_text_interop` (our code against freedv-gui's
-  unmodified code, symbol by symbol), `test_v2_text.py` (real engines). Checked on air, our transmission -> freedv-gui's receiver (2026-10-17, 28645 kHz, Kiwi recording, also in the freedv-gui GUI); freedv-gui's transmission -> our receiver graded in noise against freedv-gui's receiver, equal ([air-tests.md](air-tests.md)); not yet on air.
+  unmodified code, symbol by symbol), `test_v2_text.py` (real engines). **Sending is validated on air** (2026-10-17, 28645 kHz): our V2 transmission, recorded by a Kiwi SDR, is decoded as the Call box's callsign by freedv-gui built for V2, offline and in its GUI ([air-tests.md](air-tests.md)). **Receiving is validated on air too**, though thinly: freedv-gui's V2 transmission from another station was decoded by our receiver in 6 overs (DF6VI running freedv-gui, 5354 kHz, 2026-10-17; details in [air-tests.md](air-tests.md)). In simulation, freedv-gui's transmission graded in noise against freedv-gui's own receiver gives equal results.
 - **Only a real RADE signal counts as a transmission.** The Reporter is told "transmitting" only while the engine has had
   the key for speech for 170 ms (`rade_native_tx_live()`), never for TUNE, two-tone or noise. Two guards, because the key, the
   TUNE flag and the engine's count change at different moments (the end of a TUNE clears its flag before the radio unkeys): (1) `rade_is_tx()`
@@ -96,13 +96,13 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
   piHPSDR's side, `command_poll()`, has been **compiled but not yet run against a radio**).
 - **Logging never blocks the engines** (0.3 µs per row). One directory per run with `meta.txt`, `rx.csv`, `tx.csv`, `events.csv`, `overs.csv`, `tx_overs.csv`;
   the viewer reads them live. A run stopped cleanly is compressed by piHPSDR; one that ended any other way is finished by `tools/rade-logview/tidy_logs.py`,
-  which the viewer runs at start (every run directory but the newest). [logging.md](logging.md), [tools/rade-logview/README.md](../../tools/rade-logview/README.md).
+  which the viewer runs at start (every run directory but the newest). **While we develop, the log is on whenever RADE is, and `rx_full.csv` keeps every point (logging.md section 8; not for release).** [logging.md](logging.md), [tools/rade-logview/README.md](../../tools/rade-logview/README.md).
 - **Weak signals.** Sync holds to about 0 dB band SNR (V1) / -1 dB (V2); the end-of-over frame needs about +2 / +6 dB; the
   V1 callsign about +8.5 dB. Test: `air_weak.py`. Numbers and conditions: [findings.md](findings.md).
 
 ## Not done / not known
 
-- V2 callsign over the air with freedv-gui transmitting and our receiver decoding (done in simulation from freedv-gui's own transmission, not yet on air).
+- V2 callsign receive on air is only six overs from one freedv-gui station (DF6VI, one band, one afternoon): no threshold measured. The other V2 overs logged are from an experimental Thetis build and carry no call; whether it sends one is not known.
 - Over-the-air delay end to end, PA and radiated spectrum, fading, Pi CPU cost of the engines (PC: V2 text receive 0.5-0.9 % of a core).
 - Working TX level (+3 dB) and the filter recommendations in [filter-lab.md](filter-lab.md) are proposals.
 
