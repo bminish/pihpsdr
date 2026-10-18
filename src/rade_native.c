@@ -80,6 +80,10 @@ rade_native_plan_t rade_native_plan(int old_wave, int old_invert, int mode_sign,
   if (new_wave == 0) {
     p.invert = old_wave ? old_invert : (mode_sign < 0);
     p.dial = dial;                           // already on the carrier of that sideband
+    if (old_wave == RADE_NATIVE_V2 && !old_invert && rade_native_band_class(fe) == 0) {
+      p.invert = 1;                          // V2 is upper everywhere; below 10 MHz (not 60 m) SSB is lower: LSB, the energy stays
+      p.dial = fe + RADE_NATIVE_DIAL_OFFSET;
+    }
     return p;
   }
   p.invert = rade_native_effective_invert(new_wave, fe, user_invert);
