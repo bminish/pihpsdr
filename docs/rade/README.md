@@ -111,6 +111,7 @@ Keeping these small and rebasing onto upstream: [upstreaming.md](upstreaming.md)
 | Document | Use |
 |---|---|
 | [signal-paths.md](signal-paths.md) | every stage, rate, level, and where each displayed/reported number comes from; **keep current** |
+| [data-channel.md](data-channel.md) | the V2 data-symbol channel: what is sent, and what else it could carry (exploration, not built) |
 | [findings.md](findings.md) | measured results, thresholds, open items |
 | [upstreaming.md](upstreaming.md) | patch layers and the upstream check |
 | [logging.md](logging.md) | what the parameter log holds |

@@ -1157,7 +1157,7 @@ void rade_native_menu(GtkWidget *parent) {
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   fixed_label(status_label, 48, 1);
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, row, 5, 1);
-  track_b = gtk_check_button_new_with_label("Track");
+  track_b = gtk_check_button_new_with_label("RIT");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(track_b), track_on);
   gtk_widget_set_tooltip_text(track_b, "Moves the RIT to follow the station's frequency offset: an average over the lock, at most 3 Hz a second at "
                                        "first and settling to 1 Hz in 5 s. After a lock is lost and regained the average starts again; at the end of "
