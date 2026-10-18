@@ -24,6 +24,8 @@ class Run:
         self.overs = []           # dicts, t_start / t_end absolute
         self.tx_overs = []
         self.source = path        # what it was opened from (a directory, or a .tar.gz)
+        self.rxf = {}             # rx_full.csv: every librade call, column name -> array (t absolute); empty if the run has none
+        self.rxf_off = 0          # bytes of rx_full.csv taken so far (a live run is read on from there)
         self.live = False         # a directory whose run has not ended (no ended_utc in meta.txt): it can be updated
 
 
@@ -53,6 +55,37 @@ def _columns(rows, t0):
     if "t" in cols:
         cols["t"] = cols["t"] + t0
     return cols
+
+
+def load_rxfull(path, t0, prev=None):
+    """rx_full.csv as arrays. With prev (the same run, loaded before) only the lines written since are read: at V2's 50 rows a second the
+    whole file is too much to parse again at every update. Returns (columns, bytes taken)."""
+    cols, off = {}, 0
+    if prev is not None and prev.rxf and prev.rxf_off:
+        cols, off = prev.rxf, prev.rxf_off
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return {}, 0
+    if size < off:                                   # the file is not the one we read from: start again
+        cols, off = {}, 0
+    with open(path, "rb") as f:
+        head = f.readline().decode().strip()
+        if not cols:
+            off = f.tell()
+        f.seek(off)
+        raw = f.read()
+    end = raw.rfind(b"\n") + 1                      # a line being written is left for the next time
+    if end == 0 or not head:
+        return cols, off
+    names = head.split(",")
+    new = np.genfromtxt(io.StringIO(raw[:end].decode()), delimiter=",", ndmin=2)
+    new = new.reshape(-1, len(names))
+    out = {}
+    for i, n in enumerate(names):
+        col = new[:, i] + (t0 if n == "t" else 0.0)
+        out[n] = np.concatenate([cols[n], col]) if n in cols else col
+    return out, off + end
 
 
 def resolve(path):
@@ -110,7 +143,7 @@ def find_runs(path):
     return out
 
 
-def load_run(path):
+def load_run(path, prev=None):
     d = resolve(path)
     run = Run(d)
     is_tar = path.endswith((".tar.gz", ".tgz"))
@@ -132,6 +165,8 @@ def load_run(path):
         raise ValueError("meta.txt has no started_unix")
     run.rx = _columns(_rows(os.path.join(d, "rx.csv")), run.t0)
     run.tx = _columns(_rows(os.path.join(d, "tx.csv")), run.t0)
+    if os.path.exists(os.path.join(d, "rx_full.csv")):
+        run.rxf, run.rxf_off = load_rxfull(os.path.join(d, "rx_full.csv"), run.t0, prev if prev is not None and prev.source == run.source else None)
     for r in _rows(os.path.join(d, "events.csv")):
         run.events.append((run.t0 + _num(r.get("t")), r.get("kind", ""), r.get("value", "")))
     run.events.sort(key=lambda e: e[0])
