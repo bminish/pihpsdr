@@ -178,7 +178,7 @@ before (four known-gap lines); `nm` shows both functions in
 from the removed text only in the lines named above.
 
 **Left to dl1ycf.** Two points about the premise, in
-[../menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md): the radio's own menu
+[../menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md): the radio's own menu
 still pushes settings to a watching client (`div_send_settings()`), and the
 radio drops the settings a client sends.
 

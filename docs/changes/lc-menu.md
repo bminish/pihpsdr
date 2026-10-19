@@ -1,6 +1,6 @@
 # The Diversity menu
 
-Changes in `diversity_menu.c` (dl1ycf's file) or that the menu must act on. Each menu half is kept minimal so his rewrite of the menu can redo it; what each needs from the menu is in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+Changes in `diversity_menu.c` (dl1ycf's file) or that the menu must act on. Each menu half is kept minimal so his rewrite of the menu can redo it; what each needs from the menu is in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 Part of the local-change register: [changes.md](../changes.md).
 
@@ -197,7 +197,7 @@ and `div_auto_width`, which are menu settings (E2 in [ownership.md](ownership.md
 result. The same values land in the same globals, so there is no change
 in behaviour. Needs LC-009, which adds the function. The menu half is
 written up for dl1ycf in
-[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#e2-seeding-the-window-when-follow-rx-filter-is-unticked-lc-032).
+[menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md#e2-seeding-the-window-when-follow-rx-filter-is-unticked-lc-032).
 
 ---
 
@@ -213,7 +213,7 @@ set to (`5db64949`), which is ADC2.
 
 **Change.** The line shows `(arm ^ receiver[0]->adc) + 1`, at the same
 width, finding RX1's ADC as the attenuator sliders above it do. This is in dl1ycf's file, so it is written up for him in
-[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+[menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 <a id="lc-039"></a>
 
@@ -231,7 +231,7 @@ mistaken for an accident at a re-sync.
 The engine is untouched: `diversity_auto_reset()` and
 `DIV_ACTION_RESET` stay, as the client/server path and LC-027 still use
 them, and the grid cell beside Hold is left empty. Written up for him in
-[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+[menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 
 <a id="lc-040"></a>
@@ -265,7 +265,7 @@ the slider is wired with. The labels keep the hardware names (ADC1, ADC2),
 not "Other"; "other" stays internal. The left label is unchanged. The
 menu is built when it opens, so a change of RX1's ADC with the menu open
 shows on the next open, like the sliders' own values. No dependencies.
-Written up for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+Written up for dl1ycf in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 
 <a id="lc-054"></a>
@@ -300,7 +300,7 @@ same left edge. `DIV_STATUS_CHARS` is gone.
 
 **Not checked on screen.** The reserved widths and the spread of the
 columns need looking at in the dialog. On a branch for testing; written up
-for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+for dl1ycf in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 ---
 
@@ -325,7 +325,7 @@ before the early return for "loop not running", which is the state
 **Checked.** Plain and `make DIVCAP=1` builds, DIVCAP by symbol. **Not
 checked on screen:** that needs `DIVT` with the dialog open; the tick means
 the tick follows within a quarter of a second, not at once. Written up for
-dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+dl1ycf in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 ---
 
