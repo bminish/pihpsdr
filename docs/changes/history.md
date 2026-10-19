@@ -4,6 +4,18 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-19: `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (three commits
+  of his: the client discovery "host entry" fix and a `wdsp` header tidy;
+  none touches our files). Rebased on `TEST-rebase-20261019`, 25 commits, no
+  conflict; backup branch `history/backup/TEST-pre-rebase-20261019`. Local
+  only: `origin/TEST` is still `2f6e1f01` until the owner OKs the force-push.
+  Docs reviewed: the outstanding work is now first in `changes.md` and
+  `open-items.md`, and what is done is marked closed.
+
+- 2026-10-15: LC-061, a fresh install seeds AM, SAM and DSB on Carrier and
+  the digital modes on FSK/Digital ([lc-settings.md](lc-settings.md#lc-061)).
+  Local, pushed to `origin/TEST` (`2f6e1f01`).
+
 - 2026-10-09: LT-027, the "Level output" tick put back in `make DIVCAP=1`
   builds only, as a local test aid for comparing with the normaliser off.
   Plain builds are unchanged (objects byte-identical) and always level, as
