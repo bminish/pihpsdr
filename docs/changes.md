@@ -59,7 +59,7 @@ LC-003 and LC-004 are the client half of the settings work and wait on the clien
 | [changes/tooling.md](changes/tooling.md) | The local test and capture tooling (LT-NNN) and its known gaps |
 | [changes/open-items.md](changes/open-items.md) | Outstanding work first, then what is closed; client/server faults, flagged items, Pi CPU, work to port |
 | [changes/history.md](changes/history.md) | Dated log of re-syncs, landings and decisions |
-| [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md) | What our engine changes need from the menu, written for dl1ycf |
+| [menu-notes-dl1ycf.md](menu-notes-dl1ycf.md) | Pending matters for dl1ycf only (settings command layout, objective and reference order, E3 to E5); the earlier notes are in [archive/menu-notes-dl1ycf-to-LC-058.md](archive/menu-notes-dl1ycf-to-LC-058.md) |
 | [test-findings.md](test-findings.md) | Captures taken on `TEST` (T-001 onwards) |
 | [diversity-measurements.md](diversity-measurements.md), [diversity-rade.md](diversity-rade.md) | Findings and the RADE design record from the feature branches |
 

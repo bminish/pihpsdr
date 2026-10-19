@@ -223,7 +223,7 @@ weight at 1 + 0j and don't link `radio.c`. Found by reading the code.
 
 **Checks.** Applies to bare `upstream/TEST` and builds; reverts from the
 tip; the suite passes. For dl1ycf: see
-[menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+[menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 ---
 
