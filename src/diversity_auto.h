@@ -274,6 +274,24 @@ typedef struct _div_settings {
   double cw_centre, cw_width;
 } DIV_SETTINGS;
 
+//
+// Room for this many references in the per-reference tables of the wire
+// form (DIV_SETTINGS_COMMAND): one slot per DIV_REF_*, indexed by it. Five
+// are in use; a new reference takes the next slot with no change to the
+// command.
+//
+#define DIV_REFS 8
+
+//
+// The slot of a settings block that belongs to a reference: its Min
+// coherence and its window pair. Each pointer is NULL where the reference
+// has no such setting (RADE V1 has none; neither has a slot not yet
+// given out). This is the one place that says which field is whose, so
+// the pack and the unpack cannot disagree.
+//
+extern void diversity_settings_slot(DIV_SETTINGS *s, int ref,
+                                    double **cohmin, double **centre, double **width);
+
 typedef struct _div_status {
   int    enabled;           // the whole feature, as the radio has it
   int    att0, att1;        // the two step attenuators, as the radio has them
