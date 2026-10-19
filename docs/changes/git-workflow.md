@@ -71,7 +71,7 @@ git cherry-pick <commit of LC-001>
 
 ## Cutting a PR branch
 
-(Applies to a future pending change; everything to LC-058 is upstream.)
+(Applies to the pending changes LC-059 to LC-061; everything to LC-058 is upstream.)
 
 - **Fold in the fixups.** Cherry-pick the LC commit and every
   `LC-NNN fixup` commit after it, and squash them into one.
@@ -95,7 +95,7 @@ git cherry-pick <commit of LC-001>
 
 (Historical for LC-001 to LC-047, which are upstream in one commit and no
 longer constrain a PR; they record the order in which the changes were
-built. Nothing is pending now; LC-048 to LC-058 are upstream too.)
+built. LC-048 to LC-058 are upstream too; LC-059 to LC-061 are local.)
 
 "(LC-003)" means the change applies and builds without LC-003, but only
 makes full sense with it. "[LC-008]" means a purely textual dependency:
@@ -156,5 +156,5 @@ he took the whole series (`f05546e3`).
 
 **Grouping, now.** The grouping that was planned for LC-001 to LC-047 is
 moot, and so is the grouping that was planned for LC-048 to LC-058 (taken
-in `07ae1f56`). Nothing is pending; the next change, LC-059, is in
-[changes.md](../changes.md#pending-nothing-local).
+in `07ae1f56`). LC-059 to LC-061 are pending and independent
+of each other: [changes.md](../changes.md#pending-local-not-yet-in-upstream).

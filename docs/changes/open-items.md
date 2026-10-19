@@ -2,7 +2,56 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-What is known and not yet done: faults tracked but deliberately left, things flagged for a later patch, work still to port, and where the CPU goes on a Pi.
+Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing here is a local change waiting to be written: LC-059 to LC-061 are committed and pushed; what is left is decisions that are the owner's, work to port or measure, and the client/server faults we are not touching yet.
+
+## Outstanding
+
+**Waiting on the owner (Brendan or dl1ycf)**
+
+- [ ] Force-push of `TEST` rebased onto `upstream/TEST` `b0b1d4e9` (2026-10-19): done locally, `origin/TEST` is still `2f6e1f01`. Only on OK, to `origin`, never upstream.
+- [ ] LC-059/LC-060, his to decide: `CLIENT_SERVER_VERSION` is not bumped, so a radio and a client built either side of them silently swap Null and Sum and move four reference numbers (rebuild both ends together, or bump so a mismatch refuses). Details below, "Objective and reference order".
+- [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
+- [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
+
+**To port from `feature/auto-diversity`** (each gets the next LC, from LC-062)
+
+- [ ] The time-based slew (Finding 48).
+- [ ] The 0.5 s default averaging.
+- [ ] The Carrier tooltip.
+
+**To measure or build**
+
+- [ ] The noise floor (LC-025 on): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; the attenuator calibration ([noise-floor-refactor.md](../noise-floor-refactor.md), [feature-att-calibration.md](../feature-att-calibration.md)).
+- [ ] CW, on marginal captures: whether the LC-012 floor binds (it does on strong ones, by 0.07 dB); re-sweep LC-019's 0.2 s.
+- [ ] LC-013 (notches): a capture with a steady interferer inside a weaker station's passband. None so far; the mechanism is confirmed on air only.
+- [ ] A RADE V2 correlator: no V2 reference on `TEST` yet; starting set T-008 and T-009 in [test-findings.md](../test-findings.md).
+- [ ] Open from the 24 Hz tier (T-019/T-020): Carrier (six AM captures only), fast fades, Null against a real interferer, 96, 384 and 768 kHz, finer bins for narrow-tone digital modes.
+- [ ] Pi: run the functional suite on the CM5 (needs `libopus-dev`, now in the bundle's check).
+- [ ] Pi, only if wanted: vectorise RADE V1's decimator (3.0x faster, 0.7 % of a core at 192 kHz); FFTW wisdom for dl1ycf.
+- [ ] LC-061's two seeds are chosen by what the modes carry, not by a sweep; a capture set per mode would back or change them.
+
+**Client/server: tracked, not fixed (decided 2026-10-01; take upstream there)**
+
+- [ ] The radio ignores a client's auto-diversity settings; the client fills its settings block from the wire only (LC-003, deferred); a client's Min coherence move would be dropped (LC-004, deferred); no menu refresh from a settings block. Detail below.
+
+**Flagged for dl1ycf, not changed here**
+
+- [ ] Upstream text that still says ADC0/ADC1. List below.
+- [ ] A mode change with the Diversity menu open does not refresh it (cured by E5).
+
+## Closed
+
+- [x] LC-059 and LC-060, the objective and reference order (2026-10-15); LC-061, the fresh-install seeds (2026-10-15). Decisions: no props migration, capture format 5, wire not bumped.
+- [x] LC-048 to LC-058 accepted into `upstream/TEST` (`07ae1f56`); the leftovers in `diversity_auto.h` were LC-058.
+- [x] The empty-band stand-down: decided against (2026-10-14, T-026, settled decision 5).
+- [x] The 24/12/6 Hz Resolution menu: ported as LC-051, replaced by Auto (LC-052, LC-053).
+- [x] Pi 5 rerun (2026-10-08): no regression, no dropped blocks, no bottleneck; worst row RADE V1 on one sideband at 1536 kHz, 13 % of one core of four ([findings](../bench/pi5-rerun-20261008.md)). No code change.
+- [x] The noise floor's selection (LC-033).
+- [x] E1 (LC-031) and E2 (LC-032) of the ownership review.
+- [x] Not carried, by decision: the 6 Hz default bins. We keep upstream's 12 Hz; the Averaging slider is the control an operator uses most, and 6 Hz doubles the FFT length and block duration.
+- [x] `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (2026-10-19): three of his commits (client discovery host entry, `wdsp` header tidy), no conflict.
+
+## Detail on the outstanding items
 
 ## Client/server: tracked, not fixed
 
@@ -27,20 +76,15 @@ changes it, we take upstream.
 - `diversity_menu_refresh()` and `div_populate_from_settings()` are gone
   upstream; nothing updates an open menu from a settings block.
 
-## Objective and reference order: done as LC-059 and LC-060 (2026-10-15)
+## Objective and reference order: what is still open after LC-059 and LC-060
 
-Both enums were reordered to the menu order, so no row mapping is left (the
-`div_ref_rows[]` table is gone). Decisions: **no props migration** (a test
-branch takes the one-time break; `reset_diversity_props.py` clears the
-settings), **capture format 5** with a conversion on read so no capture is
-rewritten, and the **wire is not bumped**. Still open, and his:
+Both enums were reordered to the menu order (done 2026-10-15). Still open, and his:
 
 - `CLIENT_SERVER_VERSION` (`client_server.h`) is unchanged, so a radio and a
-  client built on either side of LC-059/LC-060 silently swap Null and Sum and
-  move four reference numbers. Both ends of a TEST setup should be rebuilt
-  together; a bump would make a mismatch refuse instead.
+  client built on either side silently swap Null and Sum and move four
+  reference numbers. A bump would make a mismatch refuse instead.
 - A props file written before the change loads with Null and Sum, and four
-  references, read the other way until reset.
+  references, read the other way until reset (`reset_diversity_props.py`).
 - Not checked on screen: each row against the running objective and
   reference.
 
@@ -67,83 +111,14 @@ rewritten, and the **wire is not bumped**. Still open, and his:
   menu open. Taken from upstream for now (decided 2026-10-01). The
   intended cure is E5 in [ownership.md](ownership.md#review-e1-to-e8): the per-group settings move
   into `profiles.c`.
-- Upstream leftovers from `f5a0ce9c`, removed by LC-058 (in his tree since
-  `07ae1f56`): the declarations of `diversity_auto_ref_store()` / `_recall()`
-  and the mention of `DIV_REF_SCHEME` in `diversity_auto.h`.
+- Done: the `f5a0ce9c` leftovers in `diversity_auto.h` (LC-058, in his tree).
 
-## After the 2026-10-15 reconcile
+## Notes on the work to port and measure
 
-Nothing local is pending, and nothing waits on the owner: the rebuilt `TEST`
-was force-pushed on 2026-10-15 (`2a0dd63c`). The rest is settled:
-[upstream-reconcile.md](upstream-reconcile.md#decisions).
-
-## Not carried
-
-- **6 Hz default bins.** An earlier local commit changed the
-  no-saved-settings default resolution from 12 Hz to 6 Hz. We dropped
-  it and keep upstream's 12 Hz. Speed of response is usually what we
-  want, and the Averaging slider, not Resolution, is the control an
-  operator uses most of the time. 6 Hz doubles the FFT length and the
-  block duration. The operator can still choose 12, 6 or 3 Hz.
-
-## Efficiency on the Pi: closed on 2026-10-02, rerun done 2026-10-08
-
-**Rerun result: no regression, no dropped blocks, no bottleneck** (worst
-row: RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four).
-Write-up: [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md).
-Open from it: the functional suite has still to be run on the Pi (it
-needs `libopus-dev`, now in the bundle's check). RADE V1 on an AM passband
-is an outlier and stays as it is. What follows is the 2026-10-02 text.
-
-
-Measured on a CM5 with the LT-020 bundle. The analysis is in
-[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
-at 192 kHz and below every reference cost under 1 % of one core, except
-RADE V1 (up to about 6 % searching on an SSB passband). That analysis also
-quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is a real
-outlier (the search follows the passband, one bank unless it straddles the
-carrier), so it is withdrawn and not scored. No code change (decided
-2026-10-08). **The engine has changed since** (Auto bin width, always-on
-Level output, the cut code), so the verdict is not current until the rerun
-in [pi5-analysis.md](../bench/pi5-analysis.md#rerun-2026-10-08-pending)
-has been done on the Pi (LT-026). What was left was headroom:
-
-- **Candidate LC:** vectorise RADE V1's decimator. 3.0× faster on the Pi,
-  same output; saves 0.7 % of a core at 192 kHz and 5.5 % at 1536 kHz.
-- **For dl1ycf, if at all:** FFTW_MEASURE plans from wisdom built at
-  first start (about 2.5 minutes on the Pi, as WDSP's), 35-48 % off the
-  FFTs from 8192 points up. Planning MEASURE live takes 17-51 s a size on the Pi, so it can
-  only come from wisdom.
-- **Not now:** decimating before the FFT (a gain only at 1536 kHz), the
-  sorts (negligible), and RADE V1's search (3-5 %; needs `perf` on the
-  Pi to go further).
-- Done earlier: the noise floor's selection (LC-033).
-
-## Pending: to be ported from `feature/auto-diversity`
-
-From the 2026-10-02 evaluation of the findings' open list
-(`diversity-measurements.md`, "Status on `TEST`"), these are described
-as done in the findings but are on `feature/auto-diversity` only:
-- ~~the empty-band stand-down (`div_window_quiet()`, `DIV_QUIET_DWELL`)~~: decided
-  against on 2026-10-14 (T-026, settled decision 5);
-- the time-based slew (Finding 48);
-- the 0.5 s default averaging;
-- ~~the 24 / 12 / 6 Hz Resolution menu (`DIV_MIN_NFFT` 2048)~~: done as
-  LC-051 on branch `test/auto-bins`, with Auto (LC-052);
-- the Carrier tooltip.
-
-Features and documentation will be brought in from
-`feature/auto-diversity` one at a time. Each one gets the next `LC`
-number (LC-059 onwards), a commit (or a short run of commits) that follows the
-[house rules](rules.md), a row in the register and a write-up in the
-matching topic file, all in the same push.
-
-Noted while porting, not yet decided:
+The list is at the top of this file; the evidence behind it:
 
 - The validation scenario for LC-013 (notches): no capture checked so far
   has a steady interferer inside a weaker station's passband. See "What the capture set offers so far" under [LC-013](lc-gate.md#lc-013).
-- ~~Stand-down (`fc0b3d1e`, `94b4cc6f`) against the hold rule~~: decided
-  2026-10-14, not ported (T-026, settled decision 5).
 - A RADE V2 correlator. There is no V2 reference on `TEST` yet. Three V2
   captures (two stations, 40 m, heavy multipath, both decoding at about
   0 to 8 dB) are logged as T-008 in `docs/test-findings.md` as the
@@ -173,3 +148,34 @@ Noted while porting, not yet decided:
     (T-012): the weight is held through it. FSK/Digital, which uses it,
     scores 0.3 dB more on that capture. Only a concern for beacons or
     tuning carriers that are themselves the wanted signal.
+
+## Efficiency on the Pi: closed (rerun done 2026-10-08)
+
+**Rerun result: no regression, no dropped blocks, no bottleneck** (worst
+row: RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four).
+Write-up: [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md).
+Open from it: the functional suite has still to be run on the Pi (it
+needs `libopus-dev`, now in the bundle's check). RADE V1 on an AM passband
+is an outlier and stays as it is. What follows is the 2026-10-02 text.
+
+Measured on a CM5 with the LT-020 bundle. The analysis is in
+[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
+at 192 kHz and below every reference cost under 1 % of one core, except
+RADE V1 (up to about 6 % searching on an SSB passband). That analysis also
+quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is a real
+outlier (the search follows the passband, one bank unless it straddles the
+carrier), so it is withdrawn and not scored. No code change (decided
+2026-10-08). The engine changed afterwards (Auto bin width, always-on
+Level output); the 2026-10-08 rerun covers that and found no regression.
+What is left is headroom, all optional:
+
+- **Candidate LC:** vectorise RADE V1's decimator. 3.0× faster on the Pi,
+  same output; saves 0.7 % of a core at 192 kHz and 5.5 % at 1536 kHz.
+- **For dl1ycf, if at all:** FFTW_MEASURE plans from wisdom built at
+  first start (about 2.5 minutes on the Pi, as WDSP's), 35-48 % off the
+  FFTs from 8192 points up. Planning MEASURE live takes 17-51 s a size on the Pi, so it can
+  only come from wisdom.
+- **Not now:** decimating before the FFT (a gain only at 1536 kHz), the
+  sorts (negligible), and RADE V1's search (3-5 %; needs `perf` on the
+  Pi to go further).
+- Done earlier: the noise floor's selection (LC-033).
