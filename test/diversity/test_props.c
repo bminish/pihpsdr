@@ -248,6 +248,54 @@ static int test_wire_round_trip(void) {
 #endif
 
 /*
+ * LC-063: the wire form indexes the per-reference tables by DIV_REF_*, and
+ * diversity_settings_slot() is the one place that says which field is
+ * whose. Each reference that has a threshold and a window must get three
+ * distinct fields of the block; RADE V1 and every slot not given out get
+ * none; and nothing may point outside the block.
+ */
+static int test_slots(void) {
+  DIV_SETTINGS s;
+  memset(&s, 0, sizeof(s));
+  int bad = 0, given = 0;
+  double *seen[3 * DIV_REFS];
+  int nseen = 0;
+
+  for (int r = 0; r < DIV_REFS; r++) {
+    double *p[3];
+    diversity_settings_slot(&s, r, &p[0], &p[1], &p[2]);
+    const int has = (p[0] != NULL);
+
+    if (has != (r == DIV_REF_BAND || r == DIV_REF_CW || r == DIV_REF_DIGITAL_IQ || r == DIV_REF_CARRIER)) {
+      printf("    FAIL ref %d: slot %s\n", r, has ? "given" : "missing");
+      bad++;
+    }
+
+    for (int k = 0; k < 3; k++) {
+      if ((p[k] != NULL) != has) { printf("    FAIL ref %d: slot is partial\n", r); bad++; }
+
+      if (p[k] == NULL) { continue; }
+
+      if ((char *)p[k] < (char *)&s || (char *)p[k] >= (char *)(&s + 1)) {
+        printf("    FAIL ref %d: slot outside the block\n", r);
+        bad++;
+      }
+
+      for (int i = 0; i < nseen; i++) {
+        if (seen[i] == p[k]) { printf("    FAIL ref %d: field shared with another slot\n", r); bad++; }
+      }
+
+      seen[nseen++] = p[k];
+    }
+
+    given += has;
+  }
+
+  printf("  %d references have a slot, %d fields, %d wrong   %s\n", given, nseen, bad, bad ? "FAIL" : "OK");
+  return bad == 0;
+}
+
+/*
  * Retired settings are gone, not pinned (LC-062): Weighting, Hang, the bin
  * width and RADE V1's threshold have no field in a settings block, no props
  * key and no global. What this checks is that a props file written by an
@@ -433,6 +481,8 @@ int main(void) {
 #else
   ok &= test_wire_round_trip();
 #endif
+  printf("\nthe per-reference slots of the wire form\n");
+  ok &= test_slots();
   printf("\nretired controls are pinned, not ranged\n");
   ok &= test_retired_pinned();
   ok &= test_rade_client_pinned();
