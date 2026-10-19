@@ -25,7 +25,7 @@ the setting to follow a path change (`diversity-rade.md`).
 **Change.** `DIV_TAU_MAX` is 6 s (still geometric, so the short end keeps
 the travel) and `div_settings_validate()` brings a saved or received tau
 above 6 s down to 6 s. Menu half: one constant and its comment, written
-up for dl1ycf in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+up for dl1ycf in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-LC-058.md).
 
 **Not measured.** That 6 s beats 10 s: the data only say nothing gains
 from more. Null and CW were not swept (Findings 18 and 21 find shorter
