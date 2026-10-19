@@ -207,7 +207,6 @@ static void setup(int rate, int mode, int lo, int hi_, int ref) {
   div_auto_follow_filter = 1;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.20;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;

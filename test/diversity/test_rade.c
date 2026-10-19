@@ -347,7 +347,6 @@ static int solo(double hr, double hi, int seed, double *g, double *p) {
   div_auto_ref = DIV_REF_RADE_V1;
   div_auto_mode = DIV_AUTO_SUM;
   div_auto_tau = 2.0;
-  div_auto_hang = 10.0;
   div_auto_coherence_min = 0.1;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -405,7 +404,6 @@ static int fadeback(double *recovered) {
   div_auto_ref = DIV_REF_RADE_V1;
   div_auto_mode = DIV_AUTO_SUM;
   div_auto_tau = 2.0;
-  div_auto_hang = 10.0;
   div_auto_coherence_min = 0.1;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -496,7 +494,7 @@ static int fadeback(double *recovered) {
   return !lost;
 }
 
-static int roundtable(double hang, struct rt_result *r) {
+static int roundtable(struct rt_result *r) {
   rx0.sample_rate = RATE;
   rx0.filter_low = -2800;
   rx0.filter_high = -200;
@@ -507,7 +505,6 @@ static int roundtable(double hang, struct rt_result *r) {
   div_auto_ref = DIV_REF_RADE_V1;
   div_auto_mode = DIV_AUTO_SUM;
   div_auto_tau = 2.0;
-  div_auto_hang = hang;
   div_auto_coherence_min = 0.1;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -636,7 +633,6 @@ done:
   diversity_auto_stop();
   free(bufa);
   free(bufb);
-  div_auto_hang = 10.0;
   return r->relock;
 }
 
@@ -863,58 +859,33 @@ int main(int argc, char **argv) {
     }
   }
   //
-  // Two stations taking turns, and the Hang control that decides how long
-  // the first one's weight outlives it.
+  // Two stations taking turns.
   //
   printf("\n");
   {
-    struct rt_result fast, slow;
-    int r1 = roundtable(2.0,  &fast);
-    int r2 = roundtable(10.0, &slow);
+    struct rt_result slow;
+    int r2 = roundtable(&slow);
 
-    if (r1 < 0 || r2 < 0) {
+    if (r2 < 0) {
       printf("  roundtable: did not re-lock on the second station   FAIL\n");
       ok = 0;
     } else {
       //
-      // The hang used to be what decided this, and no longer is.
+      // What drops the lock on A is a detection, not a timeout: the search
+      // runs while the lock is frozen, B's alignment is half a modem frame
+      // from A's, and finding it drops A at once. See RADE_RESYNC_DA in
+      // rade_correlator.c and Finding 44. (There was a Hang setting once;
+      // this test showed it did not decide the drop, and it is gone, LC-062.)
       //
-      // Before the resync search, the lock on A was held until the hang
-      // ran out - 3.58 s at a 2 s setting and 11.52 s at 10 s, so the
-      // setting was worth almost exactly the eight seconds between them,
-      // and this test asserted that it scaled. It now asserts the
-      // opposite, which is the point of the change: the search runs while
-      // the lock is frozen, B's alignment is half a modem frame from A's,
-      // and finding it drops A at once however much hang is left. See
-      // RADE_RESYNC_DA in rade_correlator.c and Finding 44.
+      // The same station fading and returning is covered below: the search
+      // finds the alignment it already has and the lock is kept.
       //
-      // What is no longer covered here is the case the hang still governs
-      // - the same station fading and returning, where the search finds
-      // the alignment it already has and the lock is kept. The weight
-      // check below is the part of that this scenario can still see.
-      //
-      const double t1 = secs(fast.drop), t2 = secs(slow.drop);
-      //
-      // Both settings drop at about the same time, because what drops the
-      // lock is a detection and not a timeout.
-      //
-      const int independent = fabs(t2 - t1) < 1.5;
-      //
-      // ...and well inside the long setting, which is where the seconds
-      // come from.
-      //
+      const double t2 = secs(slow.drop);
       const int quick = t2 < 6.0;
-      printf("  hang  2 s: dropped after %5.2f s, re-locked %5.2f s later\n",
-             t1, secs(fast.relock - fast.drop));
-      printf("  hang 10 s: dropped after %5.2f s, re-locked %5.2f s later\n",
-             t2, secs(slow.relock - slow.drop));
-      printf("  the changeover costs %0.2f s at 2 s of hang and %0.2f s at 10 s\n",
-             secs(fast.relock), secs(slow.relock));
-      printf("  a detection decides it, not the timeout (%+0.2f s for +8 s "
-             "of hang, drop at %0.2f s)   %s\n",
-             t2 - t1, t2, (independent && quick) ? "OK" : "FAIL");
+      printf("  dropped after %5.2f s, re-locked %5.2f s later; the changeover costs %0.2f s   %s\n",
+             t2, secs(slow.relock - slow.drop), secs(slow.relock), quick ? "OK" : "FAIL");
 
-      if (!independent || !quick) { ok = 0; }
+      if (!quick) { ok = 0; }
 
       //
       // Held, not tracked, once the freeze gate has engaged. This is the
@@ -966,13 +937,13 @@ int main(int argc, char **argv) {
       //
       double rg, rp;
       solo(1.30, 0.35, 23, &rg, &rp);
-      const double to_b = wdist(fast.gb, fast.pb, rg, rp);
-      const double to_a = wdist(fast.gb, fast.pb, fast.ga, fast.pa);
-      const double span = wdist(rg, rp, fast.ga, fast.pa);
+      const double to_b = wdist(slow.gb, slow.pb, rg, rp);
+      const double to_a = wdist(slow.gb, slow.pb, slow.ga, slow.pa);
+      const double span = wdist(rg, rp, slow.ga, slow.pa);
       const int moved = to_b < 0.25 * span && to_b < 0.25 * to_a;
       printf("  weight A %+0.2f dB %+0.1f deg -> %+0.2f dB %+0.1f deg, "
              "B alone gives %+0.2f dB %+0.1f deg\n",
-             fast.ga, fast.pa, fast.gb, fast.pb, rg, rp);
+             slow.ga, slow.pa, slow.gb, slow.pb, rg, rp);
       printf("  %.0f%% of the way from A's answer to B's   %s\n",
              100.0 * (1.0 - to_b / span), moved ? "OK" : "FAIL");
 

@@ -181,7 +181,6 @@ static void run(int ref, int obj, double n0, double n1, double qrm, int fill,
   div_auto_follow_filter = 1;
   div_auto_tau = 3.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
