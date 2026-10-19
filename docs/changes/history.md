@@ -7,8 +7,8 @@ Newest first.
 - 2026-10-19: `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (three commits
   of his: the client discovery "host entry" fix and a `wdsp` header tidy;
   none touches our files). Rebased on `TEST-rebase-20261019`, 25 commits, no
-  conflict; backup branch `history/backup/TEST-pre-rebase-20261019`. Local
-  only: `origin/TEST` is still `2f6e1f01` until the owner OKs the force-push.
+  conflict; backup branch `history/backup/TEST-pre-rebase-20261019`. Force-pushed
+  to `origin/TEST` with the owner's OK (`2f6e1f01` to `c08f2a36`, `--force-with-lease`).
   Docs reviewed: the outstanding work is now first in `changes.md` and
   `open-items.md`, and what is done is marked closed.
 

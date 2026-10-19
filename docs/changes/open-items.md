@@ -8,7 +8,6 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 
 **Waiting on the owner (Brendan or dl1ycf)**
 
-- [ ] Force-push of `TEST` rebased onto `upstream/TEST` `b0b1d4e9` (2026-10-19): done locally, `origin/TEST` is still `2f6e1f01`. Only on OK, to `origin`, never upstream.
 - [ ] LC-059/LC-060, his to decide: `CLIENT_SERVER_VERSION` is not bumped, so a radio and a client built either side of them silently swap Null and Sum and move four reference numbers (rebuild both ends together, or bump so a mismatch refuses). Details below, "Objective and reference order".
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
 - [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
@@ -49,7 +48,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 - [x] The noise floor's selection (LC-033).
 - [x] E1 (LC-031) and E2 (LC-032) of the ownership review.
 - [x] Not carried, by decision: the 6 Hz default bins. We keep upstream's 12 Hz; the Averaging slider is the control an operator uses most, and 6 Hz doubles the FFT length and block duration.
-- [x] `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (2026-10-19): three of his commits (client discovery host entry, `wdsp` header tidy), no conflict.
+- [x] `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (2026-10-19): three of his commits (client discovery host entry, `wdsp` header tidy), no conflict; force-pushed to `origin` with the owner's OK.
 
 ## Detail on the outstanding items
 
