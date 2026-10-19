@@ -2,13 +2,14 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing here is a local change waiting to be written: LC-059 to LC-061 are committed and pushed; what is left is decisions that are the owner's, work to port or measure, and the client/server faults we are not touching yet.
+Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing here is a local change waiting to be written: LC-059 to LC-063 are committed (LC-059 to LC-061 pushed); what is left is decisions that are the owner's, work to port or measure, and the client/server faults we are not touching yet.
 
 ## Outstanding
 
 **Waiting on the owner (Brendan or dl1ycf)**
 
-- [ ] LC-059/LC-060, his to decide: `CLIENT_SERVER_VERSION` is not bumped, so a radio and a client built either side of them silently swap Null and Sum and move four reference numbers (rebuild both ends together, or bump so a mismatch refuses). Details below, "Objective and reference order".
+- [ ] LC-063, his to approve: the settings command's final layout and the one version bump (`0x01310002`, covering LC-059/LC-060 too), with the flagged alternative (drop the live centre/width/coherence_min, E3) and the `spare[4]` bytes (a departure from the file's style). Reply drafted in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md). Not yet pushed.
+- [ ] `div_auto_mode` is sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`): one source of truth, his files.
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
 - [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
 
@@ -31,7 +32,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 
 **Client/server: tracked, not fixed (decided 2026-10-01; take upstream there)**
 
-- [ ] The radio ignores a client's auto-diversity settings; the client fills its settings block from the wire only (LC-003, deferred); a client's Min coherence move would be dropped (LC-004, deferred); no menu refresh from a settings block. Detail below.
+- [ ] The radio ignores a client's auto-diversity settings; LC-003 (client settings block starts from the settings in force) is now done in the receiver by LC-063, but its menu half and LC-004 (a client's Min coherence move) stay deferred; no menu refresh from a settings block. Detail below.
 
 **Flagged for dl1ycf, not changed here**
 
@@ -40,7 +41,9 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 
 ## Closed
 
-- [x] LC-059 and LC-060, the objective and reference order (2026-10-15); LC-061, the fresh-install seeds (2026-10-15). Decisions: no props migration, capture format 5, wire not bumped.
+- [x] LC-059 and LC-060, the objective and reference order (2026-10-15); LC-061, the fresh-install seeds (2026-10-15). Decisions: no props migration, capture format 5; the wire bump is now LC-063.
+- [x] LC-062, Weighting, Hang, the bin-width setting and RADE V1's threshold removed (2026-10-19); LC-063, the settings command's layout and the version bump (2026-10-19, awaiting his approval).
+- [x] Bin width, Auto only: done in LC-062 (the setting, props key and wire field are gone).
 - [x] LC-048 to LC-058 accepted into `upstream/TEST` (`07ae1f56`); the leftovers in `diversity_auto.h` were LC-058.
 - [x] The empty-band stand-down: decided against (2026-10-14, T-026, settled decision 5).
 - [x] The 24/12/6 Hz Resolution menu: ported as LC-051, replaced by Auto (LC-052, LC-053).
@@ -75,13 +78,12 @@ changes it, we take upstream.
 - `diversity_menu_refresh()` and `div_populate_from_settings()` are gone
   upstream; nothing updates an open menu from a settings block.
 
-## Objective and reference order: what is still open after LC-059 and LC-060
+## Objective and reference order: what is still open after LC-059, LC-060 and LC-063
 
 Both enums were reordered to the menu order (done 2026-10-15). Still open, and his:
 
-- `CLIENT_SERVER_VERSION` (`client_server.h`) is unchanged, so a radio and a
-  client built on either side silently swap Null and Sum and move four
-  reference numbers. A bump would make a mismatch refuse instead.
+- `CLIENT_SERVER_VERSION` is bumped by LC-063, so a mismatched pair now
+  refuses instead of silently swapping Null and Sum.
 - A props file written before the change loads with Null and Sum, and four
   references, read the other way until reset (`reset_diversity_props.py`).
 - Not checked on screen: each row against the running objective and
