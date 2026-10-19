@@ -4,6 +4,17 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-19: LC-062 and LC-063. Prompted by dl1ycf's report of uninitialised
+  fields in `diversity_client_set_settings()` and his wish to fix the
+  settings command's layout so `CLIENT_SERVER_VERSION` moves once. LC-062
+  removes Weighting, Hang, the bin-width setting and RADE V1's threshold
+  (all already pinned); LC-063 gives the command its final layout (parallel
+  per-reference tables, 8 slots, 4 spare bytes), makes the client start from
+  the settings in force and validate, and bumps the version to `0x01310002`
+  (one bump for LC-059, LC-060, LC-062 and the layout). Tooling LT-035 and
+  LT-036. Decided: keep the live centre/width/coherence_min on the wire and
+  flag dropping them (E3) as the alternative.
+
 - 2026-10-19: `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (three commits
   of his: the client discovery "host entry" fix and a `wdsp` header tidy;
   none touches our files). Rebased on `TEST-rebase-20261019`, 25 commits, no

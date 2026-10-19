@@ -197,3 +197,38 @@ radio drops the settings a client sends.
 **Not measured.** These two seeds are chosen by what the modes carry. No capture sweep supports them the way CW's 0.2 s does, and neither is a claim about which reference scores best.
 
 **Test.** `test_modal.c` section 6 checks the reference, window and threshold for AM and DIGU on a fresh install.
+
+
+<a id="lc-062"></a>
+
+## LC-062 — Weighting, Hang, the bin-width setting and RADE V1's threshold are removed
+
+**Status.** Local (2026-10-19). Not sent to dl1ycf.
+
+**Why.** Each of the four had no control and was pinned to a constant by `div_settings_validate()` on the way in, yet still travelled in the settings block, in the props file and on the wire, "so neither changes shape". With the wire layout about to be fixed once (LC-063) they would have been fixed into it for good. The owner's decision: none is coming back.
+
+**Change.** `weighting`, `hang`, `resolution` and `rade_cohmin` leave `DIV_SETTINGS`; `div_auto_weighting`, `div_auto_hang` and `div_rade_cohmin` leave the engine, with their props keys (`diversity_auto_*` and the per-group ones) and their pins in `div_settings_validate()`; `weighting` leaves the context comparison. `div_auto_resolution` stays as a test override only (the test tools fix a 12 Hz width), with no setting, props key or wire field. `DIV_WEIGHT_*` and `DIV_HANG_DEFAULT` are gone. An old props file still has the keys; they are no longer read, so they have no effect. Behaviour is unchanged: flat window, Auto bin width, no hang, RADE V1 ungated. The capture record keeps its shape and writes constants (weighting 0, hang 10). The wire still sends constants for the three fields it had (flat, 10 s, Auto) so this commit changes no layout; LC-063 removes them.
+
+**Checked.** `make`, `make DIVCAP=1` and `make -C test/diversity run` (tooling LT-035 follows the removal). `test_rade`'s two-hang roundtable became one run (the test had already shown hang does not decide the drop).
+
+<a id="lc-063"></a>
+
+## LC-063 — The settings command's final layout, and one version bump
+
+**Status.** Local (2026-10-19). Not sent to dl1ycf; the layout is his to approve, and he asked for it.
+
+**Why.** He reported compiler warnings in `diversity_client_set_settings()`: `band/carrier/digital/cw_cohmin` and `cw_centre/cw_width` are not in `DIV_SETTINGS_COMMAND`, so those parts of the `DIV_SETTINGS` built on the client were uninitialised when `diversity_auto_apply_settings()` read them. He wants the layout fixed now so `CLIENT_SERVER_VERSION` moves once and old clients are not stranded again. The client/server model itself stays deferred (LC-003, LC-004 and the other faults in [open-items.md](open-items.md)).
+
+**Change.**
+- `DIV_SETTINGS_COMMAND` in the file's own style (64-bit first, parallel tables): `tau, centre, width, coherence_min`, then `ref_cohmin[8]`, `ref_centre[8]`, `ref_width[8]` indexed by `DIV_REF_*` (`DIV_REFS` = 8; five used), then `mode, ref, follow_filter, hold` and `spare[4]`. 244 bytes, pinned by a `_Static_assert`. The live `centre`, `width` and `coherence_min` are kept beside their slot (see "Alternative" below).
+- `diversity_settings_slot()` says which fields of a `DIV_SETTINGS` belong to a reference; the sender and the receiver both use it, so they cannot disagree. RADE V1 has no slot.
+- The sender zeroes the whole command first. The receiver starts from `diversity_auto_get_settings()` (the settings in force, not stack), unpacks, and runs `div_settings_validate()`, the check a props file gets.
+- `CLIENT_SERVER_VERSION` `0x01310001` to `0x01310002`. This is the one bump: it carries LC-059 and LC-060's renumbering, LC-062's removals and this layout, and an old radio or client now refuses the connection instead of swapping Null and Sum silently.
+
+**Rules for what comes next** (also in the header comment). A new correlator takes the next reference slot and needs no layout change unless it has a threshold or window of its own, which fits a free slot. A flag or enum takes a `spare` byte, defined so that zero means off or default. Anything with a value (the auto attenuator's margin, the ear split's balance) gets a dedicated command, as `client_server.h` already does for each feature; the step attenuator values themselves already travel in the ADC data and, read-only, in `DIV_STATUS_DATA` (`att0`, `att1`). `spare[]` is a small departure from the file's habit (no reserved fields anywhere else); if he prefers strict style it can go.
+
+**Alternative, not taken.** Drop the live `centre`, `width` and `coherence_min` from the wire and derive them from the selected reference's slot on both ends (E3 in [ownership.md](ownership.md)). `div_settings_load()` already takes the live threshold from the slot. It saves 24 bytes and removes a way for the two to disagree, but it changes the menu's store and recall, which are his.
+
+**Not done.** `DIV_STATUS_DATA` is reviewed and unchanged. `div_auto_mode` is still sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`); one source of truth is flagged for him. The radio side of `CMD_DIV_SETTINGS` stays as it is, and no client has run this layout against a radio.
+
+**Checked.** Both builds with no warnings in `diversity_auto.c`; `test_props` gains `test_slots` (LT-036: each reference with a slot gets three distinct fields inside the block, RADE V1 and the unused slots none).
