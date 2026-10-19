@@ -229,7 +229,6 @@ int main(int argc, char **argv) {
   div_auto_ref  = DIV_REF_RADE_V1;
   div_auto_mode = DIV_AUTO_SUM;
   div_auto_tau  = 2.0;
-  div_auto_hang = 10.0;
   div_auto_coherence_min = 0.1;
   rade_tuning_defaults();
   srand(7);

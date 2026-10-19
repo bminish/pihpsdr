@@ -149,7 +149,6 @@ int main(int argc, char **argv) {
   int    follow = -1;
   unsigned seed = 0;
   int usleep_us = 12000;
-  int weighting = -1;
   int mode = -1;
   const char *sets[16];
   int nset = 0;
@@ -242,15 +241,14 @@ int main(int argc, char **argv) {
       }
     }
     else if (!strcmp(argv[i], "--weighting") && i + 1 < argc) {
-      /* flat only: Coherence weighting was cut from the engine (LC-049) */
+      /* flat only: Coherence weighting was cut from the engine (LC-049) and the
+       setting removed (LC-062); the option stays so the sweep scripts run */
       const char *a = argv[++i];
 
       if (strcmp(a, "flat")) {
         fprintf(stderr, "%s: --weighting wants flat (Coherence weighting was removed, LC-049)\n", argv[0]);
         return 2;
       }
-
-      weighting = DIV_WEIGHT_FLAT;
     }
     else if (argv[i][0] == '-') {
       fprintf(stderr, "usage: %s FILE.divc --ref band|carrier|rade|digital|cw --out W.csv\n"
@@ -319,7 +317,6 @@ int main(int argc, char **argv) {
   if (cohmin >= 0.0) { div_auto_coherence_min = cohmin; }
   div_auto_mode = (mode >= 0) ? mode : divcap_mode(&h, m.auto_mode);
   div_auto_follow_filter = (follow >= 0) ? follow : m.follow;
-  div_auto_weighting     = (weighting >= 0) ? weighting : m.weighting;
   div_auto_centre = (width > 0.0) ? centre : m.centre;
   div_auto_width  = (width > 0.0) ? width  : m.width;
   div_auto_tau  = (tau  > 0.0) ? tau  : m.tau;

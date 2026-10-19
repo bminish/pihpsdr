@@ -110,7 +110,6 @@ static int test_keyed(void) {
   div_auto_follow_filter = 1;
   div_auto_tau = 2.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -218,7 +217,6 @@ static int test_placement(void) {
   div_auto_width = 2000.0;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.1;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
   auto_div_gain = 0.0;
@@ -318,7 +316,6 @@ static int cw_zero_case(int mode, const char *name) {
   div_auto_width = 300.0;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -402,7 +399,6 @@ static int cw_follow_case(int mode, const char *name, double tone, int want_trac
   div_auto_follow_filter = 1;          /* the case under test */
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -473,7 +469,6 @@ static int norm_case(int mode, int ref, const char *name, double *level_db, doub
   div_auto_follow_filter = 1;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -608,7 +603,6 @@ static int carrier_follow_case(const char *name, int flo, int fhi, int follow,
   div_auto_width = width;
   div_auto_tau = 1.0;
   div_auto_coherence_min = 0.30;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;
@@ -707,7 +701,6 @@ static int test_standdown(void) {
   div_auto_follow_filter = 1;
   div_auto_tau = 2.0;
   div_auto_coherence_min = 0.20;
-  div_auto_weighting = DIV_WEIGHT_FLAT;
   div_auto_resolution = 12.0;
   auto_div_cos = 1.0;
   auto_div_sin = 0.0;

@@ -293,8 +293,7 @@ static int ctx_changed(const struct divcap_block *a, const struct divcap_block *
          a->ref            != b->ref            ||
          a->follow         != b->follow         ||
          a->centre         != b->centre         ||
-         a->width          != b->width          ||
-         a->weighting      != b->weighting;
+         a->width          != b->width;
 }
 
 int main(int argc, char **argv) {
