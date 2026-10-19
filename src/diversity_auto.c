@@ -4519,9 +4519,44 @@ void diversity_auto_apply_status(const DIV_STATUS *st) {
 // someone moved a control on the radio's own panel. Adopt them. Runs on
 // the GTK thread, put there by the client read loop.
 //
+void diversity_settings_slot(DIV_SETTINGS *s, int ref,
+                             double **cohmin, double **centre, double **width) {
+  *cohmin = *centre = *width = NULL;
+
+  switch (ref) {
+  case DIV_REF_BAND:
+    *cohmin = &s->band_cohmin;    *centre = &s->band_centre;    *width = &s->band_width;
+    break;
+
+  case DIV_REF_CW:
+    *cohmin = &s->cw_cohmin;      *centre = &s->cw_centre;      *width = &s->cw_width;
+    break;
+
+  case DIV_REF_DIGITAL_IQ:
+    *cohmin = &s->digital_cohmin; *centre = &s->digital_centre; *width = &s->digital_width;
+    break;
+
+  case DIV_REF_CARRIER:
+    *cohmin = &s->carrier_cohmin; *centre = &s->carrier_centre; *width = &s->carrier_width;
+    break;
+
+  default:
+    break;
+  }
+}
+
+static void div_settings_validate(DIV_SETTINGS *s);
+
 gboolean diversity_client_set_settings(gpointer data) {
   const DIV_SETTINGS_COMMAND *c = (const DIV_SETTINGS_COMMAND *)data;
+  //
+  // Start from the settings in force, so a field the command does not
+  // carry (or a slot it leaves at zero) keeps a defined value instead of
+  // whatever the stack held, and run the result through the same check a
+  // props file gets.
+  //
   DIV_SETTINGS set;
+  diversity_auto_get_settings(&set);
   set.mode           = c->mode;
   set.ref            = c->ref;
   set.follow_filter  = c->follow_filter;
@@ -4530,12 +4565,19 @@ gboolean diversity_client_set_settings(gpointer data) {
   set.width          = from_double(c->width);
   set.tau            = from_double(c->tau);
   set.coherence_min  = from_double(c->coherence_min);
-  set.band_centre    = from_double(c->band_centre);
-  set.band_width     = from_double(c->band_width);
-  set.carrier_centre = from_double(c->carrier_centre);
-  set.carrier_width  = from_double(c->carrier_width);
-  set.digital_centre = from_double(c->digital_centre);
-  set.digital_width  = from_double(c->digital_width);
+
+  for (int r = 0; r < DIV_REFS; r++) {
+    double *cohmin, *centre, *width;
+    diversity_settings_slot(&set, r, &cohmin, &centre, &width);
+
+    if (cohmin != NULL) { *cohmin = from_double(c->ref_cohmin[r]); }
+
+    if (centre != NULL) { *centre = from_double(c->ref_centre[r]); }
+
+    if (width  != NULL) { *width  = from_double(c->ref_width[r]);  }
+  }
+
+  div_settings_validate(&set);
   diversity_auto_apply_settings(&set, DIV_ACTION_NONE);
   g_free(data);
   return G_SOURCE_REMOVE;
