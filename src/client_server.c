@@ -831,15 +831,15 @@ void send_div_settings(int s, const DIV_SETTINGS *set, int action) {
   command.mode           = set->mode;
   command.ref            = set->ref;
   command.follow_filter  = set->follow_filter;
-  command.weighting      = set->weighting;
+  command.weighting      = 0;                 // retired (LC-062), kept until the layout is renewed
   command.hold           = set->hold;
   memset(command.pad, 0, sizeof(command.pad));
   command.centre         = to_double(set->centre);
   command.width          = to_double(set->width);
   command.tau            = to_double(set->tau);
-  command.hang           = to_double(set->hang);
+  command.hang           = to_double(10.0);   // retired (LC-062)
   command.coherence_min  = to_double(set->coherence_min);
-  command.resolution     = to_double(set->resolution);
+  command.resolution     = to_double(-1.0);   // retired (LC-062): always Auto
   command.band_centre    = to_double(set->band_centre);
   command.band_width     = to_double(set->band_width);
   command.carrier_centre = to_double(set->carrier_centre);

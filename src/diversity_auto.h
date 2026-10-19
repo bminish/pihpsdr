@@ -67,12 +67,9 @@ extern int    div_auto_follow_filter;   // analysis window follows the RX filter
 extern double div_auto_centre;          // window centre (Hz, rel. to tuned freq)
 extern double div_auto_width;           // window width (Hz)
 extern double div_auto_tau;             // adaptation time constant (seconds)
-extern double div_auto_hang;            // unused: kept for the wire and props file
-                                        // (no RADE lock timeout - see DIV_HANG_DEFAULT)
 extern double div_auto_coherence_min;   // hold below this coherence
-extern int    div_auto_weighting;       // always DIV_WEIGHT_FLAT (see .c)
-extern double div_auto_resolution;      // DIV_RES_AUTO; a fixed width in Hz only from the
-                                        // test tools (pinned by div_settings_validate())
+extern double div_auto_resolution;      // DIV_RES_AUTO; a fixed width in Hz is a test
+                                        // override only: no setting, props key or wire field
 
 //
 // The window controls are modal: the Window, Carrier, FSK/Digital and CW
@@ -96,7 +93,6 @@ extern double div_cw_width;
 extern double div_band_cohmin;
 extern double div_carrier_cohmin;
 extern double div_digital_cohmin;
-extern double div_rade_cohmin;
 extern double div_cw_cohmin;
 
 //
@@ -125,15 +121,6 @@ extern void diversity_auto_retarget(void);
 //
 extern int    div_auto_clamped;
 extern double div_auto_binhz;
-
-//
-// Bin weighting for the wideband window. Only FLAT is used; COHERENCE is
-// retired but kept so the field keeps its shape on the wire and on disk.
-//
-enum {
-  DIV_WEIGHT_FLAT = 0,
-  DIV_WEIGHT_COHERENCE
-};
 
 //
 // Read-only status, updated by the analysis thread
@@ -267,10 +254,9 @@ typedef struct _div_settings {
   int    mode;              // DIV_AUTO_*
   int    ref;               // DIV_REF_*
   int    follow_filter;
-  int    weighting;
   int    hold;
   double centre, width;
-  double tau, hang, coherence_min, resolution;
+  double tau, coherence_min;
   //
   // The per-reference window pairs travel too. They are modal state the
   // operator built up, not derived values, so a client that only sent the
@@ -281,7 +267,7 @@ typedef struct _div_settings {
   // beside div_band_cohmin in diversity_auto.c. coherence_min above is
   // the live one, for whichever reference is selected.
   //
-  double band_cohmin, carrier_cohmin, digital_cohmin, rade_cohmin, cw_cohmin;
+  double band_cohmin, carrier_cohmin, digital_cohmin, cw_cohmin;
   double band_centre, band_width;
   double carrier_centre, carrier_width;
   double digital_centre, digital_width;
