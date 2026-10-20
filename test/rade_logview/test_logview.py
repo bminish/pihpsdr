@@ -78,6 +78,27 @@ fr = ld.find_runs(folder)
 check("find_runs: directories, and a .tar.gz only when its directory is not there",
       [os.path.basename(x) for x in fr] == ["20261016-120000", "20261016-130000", "20261015-090000.tar.gz"], str([os.path.basename(x) for x in fr]))
 check("find_runs: a run is itself", ld.find_runs(run_dir) == [run_dir])
+check("find_runs: a file in a run is its run, a .tar.gz is itself, any other file is nothing",
+      ld.find_runs(run_dir + "/rx.csv") == [run_dir] and ld.find_runs(tgz) == [tgz] and ld.find_runs(d + "/nothing.csv") == [])
+
+# runs nested in subfolders (the grabber's captures/v1/<run>, captures/7190kHz_V1/<run>)
+nest = os.path.join(d, "captures")
+for sub, n in (("v1", "2026-10-19_14236kHz_235552"), ("v2", "2026-10-20_14240kHz_000559"), ("7190kHz_V1", "20261018-173500")):
+    shutil.copytree(run_dir, os.path.join(nest, sub, n))
+shutil.copy(tgz, os.path.join(nest, "v2", "2026-10-20_14240kHz_000559.tar.gz"))      # beside its own directory
+shutil.copy(tgz, os.path.join(nest, "v1", "2026-10-18_old.tar.gz"))
+nr = [os.path.relpath(x, nest) for x in ld.find_runs(nest)]
+check("find_runs: nested runs at any depth, a .tar.gz only when its directory is not beside it",
+      nr == ["7190kHz_V1/20261018-173500", "v1/2026-10-19_14236kHz_235552", "v2/2026-10-20_14240kHz_000559", "v1/2026-10-18_old.tar.gz"], str(nr))
+check("find_runs: a run directory is not searched for more runs",
+      ld.find_runs(os.path.join(nest, "v1", "2026-10-19_14236kHz_235552")) == [os.path.join(nest, "v1", "2026-10-19_14236kHz_235552")])
+check("load_run: a run in a v1 / v2 / kHz folder carries the folder in its name",
+      [ld.load_run(x).name for x in ld.find_runs(nest)[:3]] == ["7190kHz_V1/20261018-173500", "v1/2026-10-19_14236kHz_235552", "v2/2026-10-20_14240kHz_000559"])
+nrun = ld.load_run(os.path.join(nest, "v2", "2026-10-20_14240kHz_000559"))
+nrun.events = [e for e in nrun.events if e[1] not in ("call", "wave")] + [(T0 + 3.0, "call", "G4XYZ snr=3.0")]
+nrun.overs = []
+check("heard_calls: with no wave event and no over, the run's waveform says V1; with none, the v2 folder says V2",
+      not ld.heard_calls(nrun)[0]["v2"] and (nrun.meta.pop("waveform") or True) and ld.heard_calls(nrun)[0]["v2"])
 check("a directory run without ended_utc is live, a .tar.gz is not", ld.load_run(run_dir).live and not ld.load_run(tgz).live)
 sig0 = ld.signature(run_dir)
 assert ld.signature(run_dir) == sig0
@@ -103,6 +124,27 @@ if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
     v.replot(); root.update()
     check("window: three panels", len(v.axes) == 3)
     check("window: no legend boxes over the data; the lines are named in the axis label", all(a.get_legend() is None for a in v.axes) and "solid mean" in v.axes[0].get_ylabel(), v.axes[0].get_ylabel())
+    v.evars["End-of-over / calls"].set(True); v.replot(); root.update()
+    run1 = v.runs[0]
+    check("marks: end-of-over at the eoo event; the over with eoo=1 has it, the faded one (eoo=0) has none",
+          [round(t - T0, 1) for t in v.eoo_times(run1)] == [5.2], str(v.eoo_times(run1)))
+    run1.events = [e for e in run1.events if e[1] != "eoo"]
+    check("marks: an over whose row says eoo=1 and has no event is marked at its end",
+          [round(t - T0, 1) for t in v.eoo_times(run1)] == [5.0])
+    run1.overs[1]["eoo"] = math.nan
+    check("marks: an unrecorded eoo (old format) is not a mark", len(v.eoo_times(run1)) == 1)
+    run1.events.append((T0 + 5.2, "eoo", ""))
+    ax = v.axes[0]; v.replot(); root.update(); ax = v.axes[0]
+    cols = [(l.get_color(), l.get_linestyle()) for l in ax.get_lines() if len(l.get_xdata()) == 2]
+    check("marks: end-of-over light red, V1 call solid green", ("#d97777", "-") in cols and ("green", "-") in cols, str(cols))
+    check("marks: V1 call labelled on the top graph only",
+          [t.get_text() for t in ax.texts].count("EI6IZ") == 1 and not any(t.get_text() == "EI6IZ" for a in v.axes[1:] for t in a.texts))
+    run1.events += [(T0 + 40.0, "sync_on", ""), (T0 + 40.0, "wave", "2"), (T0 + 43.0, "call", "G4XYZ snr=3.0"), (T0 + 44.0, "call", "G4XYZ snr=4.0")]
+    v.replot(); root.update(); ax = v.axes[0]
+    cols = [(l.get_color(), l.get_linestyle()) for l in ax.get_lines() if len(l.get_xdata()) == 2]
+    check("marks: V2 first decode of the call dotted green, once", cols.count(("green", ":")) == 1, str(cols))
+    run1.events = [e for e in run1.events if e[0] < T0 + 39]
+    v.replot(); root.update()
     v.tree.selection_set(v.tree.get_children()[1]); root.update()
     x0, x1 = v.axes[0].get_xlim()
     check("window: choosing an over zooms to it", 15 < v.from_x(x0) - T0 + 0 + 5 < 40 and (v.from_x(x1) - v.from_x(x0)) < 10)
