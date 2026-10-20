@@ -99,3 +99,30 @@ While the modem and the diversity correlator are being developed:
 - **`rx_full.csv`** is written with every run: every call of librade, in sync or not (V1 8.3 rows/s, V2 about 50/s): `t, rx_pos, sync, eoo, snr_db, foff_hz, nout, in_fill, out_fill` and, for V2, `delta_hat, est_foff, gain, snr_est` (blank for V1). `rx.csv` is unchanged, so the viewer and `tidy_logs.py` work as before; the viewer does not plot `rx_full.csv` yet.
 - **Cost (estimated from `rade-captures/*_stats.csv`, which has the same columns; not measured in the writer)**: about 62-68 bytes a row, 16 compressed. Receiving all the time: V1 1.9 MB/h raw, 0.5 MB/h compressed; V2 12 MB/h raw, 2.9 MB/h compressed (about 70 MB a day). The writer thread formats about 1 us a row, so 50 rows/s is about 0.005 % of a core; the audio threads still only push into the ring (4096 rows, about 80 s of V2).
 - piHPSDR exiting with RADE on does not stop the run: the directory is left without `ended_utc`, and `tidy_logs.py` finishes it the next time the viewer starts.
+
+## 9. End of over and callsign in the log and the viewer (2026-10-20)
+
+How a call reaches the receiver differs between the waveforms, and so does what the viewer marks. The marks were worked out in `rade-grabber` (the Kiwi receiver that writes the same run directories) and taken from there.
+
+**RADE V1: the call is in the end-of-over (EOO) frame only.** No callsign is sent in the speech frames.
+
+- *Transmit*: when PTT is released the engine sends `rade_tx_eoo()` with the bits from `rade_eoo_text_encode()` (`rade_native.c`, `rade_eoo_text.c`). The frame is 180 floats, 90 QPSK symbols: 56 information bits (up to 8 characters of the 6-bit set 0-9 A-Z /, 48 bits, and a CRC-8) go through LDPC(112,56) to 112 bits, which are 56 symbols with the stride-37 interleave; the other 34 symbols are a known pseudo-random sequence the receiver uses for noise and channel estimation.
+- *Receive*: librade reports `has_eoo` when it detects the frame; the engine then runs the soft symbols through the LDPC decoder, checks the CRC-8 and unpacks the call (`rade_eoo_text_decode()`). Detecting the frame writes the `eoo` event; a decoded call writes the `call` event.
+- *So there are two separate facts*: the frame was seen (`eoo`), and its call block decoded (`call`). A frame can be seen and its call lost to noise. An over that ends by fading or dropout has neither.
+
+**RADE V2: the call is in the speech stream, the EOO frame carries none.**
+
+- *Call channel* (`rade_v2_text.c`): every 40 ms modem frame carries one BPSK data symbol (+1/-1) through `rade_tx_set_data_symbol()`. The callsign (up to 32 characters, in blocks of 8, base 38) is a repeating stream of 112-bit LDPC(112,56) codewords with a CRC-8, one bit per frame: 112 x 40 ms = 4.5 s a block, four blocks (18 s) for a 32-character call, repeated all through the over. The receiver decodes from a sliding buffer, so the `call` event is written the first time a block decodes, anywhere in the over, not at its end.
+- *EOO*: PTT release still sends a short EOO burst, but with no call in it. As reported by `rade-grabber` (`rade_n_eoo_bits()` is 0 for V2; **not re-checked here**; the engine's `neoo > 0` guards in `rade_native.c` are what rely on it), its use is to tell the receiver the over has ended, so the vocoder and the audio can be flushed and muted without waiting for the signal to go. An over that ends by fading has no EOO.
+
+**What the viewer draws** (*End-of-over / calls* ticked):
+
+| Mark | Meaning |
+|---|---|
+| light red line (`#d97777`, 70 %) | an EOO frame was detected, at the `eoo` event; an over whose row says `eoo` = 1 and has no event is marked at its end. Overs that ended by fading, dropout or an unrecorded flag (old logs) are **not** marked |
+| solid green line, call above the top graph | V1: the call block of the EOO frame decoded, at the `call` event |
+| dotted green line, call above the top graph | V2: the first time the call decoded in that over (a repeat of the same call in the over is not marked again) |
+
+The wave of a call is taken from the over, else the last `wave` event before it, else the run's `waveform` in `meta.txt`, else the `v1` / `v2` folder the run is in. The colours replace the earlier purple line (V1), the purple label and end-of-over line (V2) and the orange `eoo` line; `events.csv` and `overs.csv` do not change.
+
+**Folders.** `Folder…` and the command line now find runs at any depth under the folder given (`captures/v1/<run>`, `captures/7190kHz_V1/<run>`, as well as `rade-logs/<run>`); a file named is taken as the run it is in; the choice list shows each run's path below the common folder, with Select all / Clear all and scroll bars; a run in a `v1`, `v2` or `...kHz...` folder carries that folder in its name, so runs of different frequencies that began in the same second are told apart. Test: `test/rade_logview/test_logview.py`.

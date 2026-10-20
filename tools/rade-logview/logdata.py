@@ -123,24 +123,26 @@ def signature(path):
 
 
 def find_runs(path):
-    """The runs in path: the run itself if it is one, else every run directory and .tar.gz directly inside it
-    (a directory is taken in place of the .tar.gz made from it)."""
+    """The runs in or under path: a .tar.gz is itself; a file stands for the run directory it is in; a folder gives
+    every run directory and .tar.gz at any depth (rade-logs/<run>, captures/7190kHz_V1/<run>).  A directory is
+    taken in place of the .tar.gz made from it, and a run directory is not searched further."""
+    if os.path.isfile(path):
+        if path.endswith((".tar.gz", ".tgz")):
+            return [path]
+        d = os.path.dirname(os.path.abspath(path))
+        return [d] if os.path.isfile(os.path.join(d, "meta.txt")) else []
     if os.path.isfile(os.path.join(path, "meta.txt")):
         return [path]
-    out, dirs = [], set()
-    try:
-        names = sorted(os.listdir(path))
-    except OSError:
-        return []
-    for n in names:
-        q = os.path.join(path, n)
-        if os.path.isdir(q) and os.path.isfile(os.path.join(q, "meta.txt")):
-            out.append(q)
-            dirs.add(n)
-    for n in names:
-        if n.endswith(".tar.gz") and n[:-len(".tar.gz")] not in dirs:
-            out.append(os.path.join(path, n))
-    return out
+    dirs, tars = [], []
+    for root, subdirs, files in os.walk(path, followlinks=True):
+        subdirs.sort()
+        if "meta.txt" in files:
+            dirs.append(root)
+            subdirs[:] = []
+            continue
+        tars.extend(os.path.join(root, n) for n in sorted(files) if n.endswith(".tar.gz"))
+    have = set(os.path.abspath(q) for q in dirs)
+    return dirs + [q for q in tars if os.path.abspath(q[:-len(".tar.gz")]) not in have]
 
 
 def load_run(path, prev=None):
@@ -151,6 +153,10 @@ def load_run(path, prev=None):
     run.sig = None if is_tar else signature(d)
     if path.endswith((".tar.gz", ".tgz")):
         run.name = os.path.basename(path)[:-len(".tar.gz")] if path.endswith(".tar.gz") else os.path.basename(path)[:-4]
+    else:
+        parent = os.path.basename(os.path.dirname(d.rstrip("/")))
+        if parent.lower() in ("v1", "v2") or "kHz" in parent or parent.endswith(("_V1", "_V2")):
+            run.name = parent + "/" + run.name                # runs of different frequencies can start in the same second
     mp = os.path.join(d, "meta.txt")
     if not os.path.exists(mp):
         raise ValueError("no meta.txt in " + d)
@@ -208,7 +214,12 @@ def heard_calls(run):
             wave = ""
         if not wave:
             w = [x for tw, x in waves if tw <= t0]
-            wave = "V" + w[-1] if w else ""
+            if w:
+                wave = "V" + w[-1]
+            elif run.meta.get("waveform"):                   # no wave event: the run's own waveform, else the folder it is in
+                wave = "V" + run.meta["waveform"].lstrip("Vv")
+            elif os.path.basename(os.path.dirname(run.path.rstrip("/"))).lower() in ("v1", "v2"):
+                wave = os.path.basename(os.path.dirname(run.path.rstrip("/"))).upper()
         if (call, t0) in seen:
             continue
         seen.add((call, t0))

@@ -154,9 +154,9 @@ class Viewer:
     def open_dialog(self):
         ps = filedialog.askopenfilenames(title="Open runs: choose files in run directories and/or .tar.gz (several at once)",
                                          initialdir=self.initialdir(),
-                                         filetypes=[("RADE logs", "*.csv *.txt *.tar.gz"), ("all", "*")])
+                                         filetypes=[("RADE logs", "*.csv *.txt *.tar.gz *.json *.wav"), ("all", "*")])
         for p in ps:
-            self.add_path(p)
+            self.add_any(p)
         if ps:
             self.replot()
 
@@ -172,35 +172,54 @@ class Viewer:
         top = tk.Toplevel(self.root)
         top.title("Choose runs")
         top.transient(self.root)
-        lb = tk.Listbox(top, selectmode="extended", width=60, height=min(20, len(found)), exportselection=False)
-        for q in found:
-            lb.insert("end", os.path.basename(q))
+        frame = ttk.Frame(top, padding=6)
+        frame.pack(fill="both", expand=True)
+        box = ttk.Frame(frame)
+        box.pack(fill="both", expand=True, pady=(0, 6))
+        lb = tk.Listbox(box, selectmode="extended", width=70, height=min(20, max(5, len(found))), exportselection=False)
+        sb_y = ttk.Scrollbar(box, orient="vertical", command=lb.yview)
+        sb_x = ttk.Scrollbar(box, orient="horizontal", command=lb.xview)
+        lb.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
+        lb.grid(row=0, column=0, sticky="nsew")
+        sb_y.grid(row=0, column=1, sticky="ns")
+        sb_x.grid(row=1, column=0, sticky="ew")
+        box.grid_rowconfigure(0, weight=1)
+        box.grid_columnconfigure(0, weight=1)
+        common = os.path.commonpath([os.path.abspath(q) for q in found]) if len(found) > 1 else ""
+        for q in found:                                       # runs nested in subfolders are told apart by their path
+            rel = os.path.relpath(os.path.abspath(q), common) if common else os.path.basename(q)
+            lb.insert("end", rel if rel != "." else os.path.basename(q))
         lb.selection_set(0, "end")
-        lb.pack(fill="both", expand=True, padx=6, pady=6)
         chosen = []
 
         def ok():
             chosen.extend(found[i] for i in lb.curselection())
             top.destroy()
-        row = ttk.Frame(top); row.pack(fill="x", padx=6, pady=(0, 6))
+        sel = ttk.Frame(frame); sel.pack(fill="x", pady=(0, 6))
+        ttk.Button(sel, text="Select all", command=lambda: lb.selection_set(0, "end")).pack(side="left")
+        ttk.Button(sel, text="Clear all", command=lambda: lb.selection_clear(0, "end")).pack(side="left", padx=4)
+        row = ttk.Frame(frame); row.pack(fill="x")
         ttk.Button(row, text="Open", command=ok).pack(side="right")
         ttk.Button(row, text="Cancel", command=top.destroy).pack(side="right", padx=4)
+        top.bind("<Return>", lambda e: ok())
+        top.bind("<Escape>", lambda e: top.destroy())
         top.grab_set()
         self.root.wait_window(top)
         return chosen
 
     def add_any(self, p, choose=False):
         """A run (directory, file in one, .tar.gz) or a folder of runs: all of them are opened (choose: pick from the list)."""
-        if os.path.isdir(p):
-            found = ld.find_runs(p)
-            if not found:
-                self.error("Cannot open", "%s\n\nno run (a directory with meta.txt) or .tar.gz in it" % p)
-            if choose and len(found) > 1 and not getattr(self, "quiet", False):
-                found = self.pick_runs(found)
-            for q in found:
-                self.add_path(q)
-        else:
-            self.add_path(p)
+        found = ld.find_runs(p)
+        if not found:
+            if os.path.isdir(p):
+                self.error("Cannot open", "%s\n\nno run (a directory with meta.txt) or .tar.gz in it, at any depth" % p)
+            else:
+                self.add_path(p)                              # not a run file: load_run says why
+            return
+        if choose and len(found) > 1 and not getattr(self, "quiet", False):
+            found = self.pick_runs(found)
+        for q in found:
+            self.add_path(q)
 
     def error(self, title, msg):
         if getattr(self, "quiet", False):
@@ -493,34 +512,35 @@ class Viewer:
                     ax.axvspan(self.x(o["t_start"]), self.x(o["t_end"]), color="red", alpha=0.07, lw=0)
             if on["End-of-over / calls"]:
                 self.draw_calls(ax, run, first)
+                for t in self.eoo_times(run):
+                    ax.axvline(self.x(t), color="#d97777", alpha=0.7, lw=0.85)
             for t, kind, val in run.events:
                 if kind in ("key_down", "key_up") and on["Key down/up"]:
                     ax.axvline(self.x(t), color="green" if kind == "key_down" else "firebrick", lw=0.7, ls="--")
-                elif kind == "eoo" and on["End-of-over / calls"]:
-                    ax.axvline(self.x(t), color="darkorange", lw=0.9)
                 elif kind in ld_settings() and on["Dial / mode / settings"]:
                     ax.axvline(self.x(t), color="gray", lw=0.4, ls=":")
                     if first and kind == "dial":
                         ax.annotate("%.1f" % (float(val) / 1e3) if val else "", (self.x(t), 0.0), xycoords=("data", "axes fraction"),
                                     rotation=90, fontsize=6, color="gray", va="bottom", ha="left")
 
+    @staticmethod
+    def eoo_times(run):
+        """Where an end-of-over burst was detected: the eoo events, and the end of an over whose row says it was seen
+        when it has no event.  An over that ended by fading or dropout has neither, so it is not marked."""
+        times = [t for t, kind, _v in run.events if kind == "eoo"]
+        for o in run.overs:
+            if o.get("eoo") == 1 and not any(o["t_start"] <= t <= o["t_end"] + ld.CALL_WAIT_S for t in times):
+                times.append(o["t_end"])
+        return sorted(times)
+
     def draw_calls(self, ax, run, first):
-        """V1: a line where the call arrived, labelled on the top graph.  V2: the call small at the upper left of
-        the over on every graph, from the moment it is decoded, and a line at the end of the over once that is known."""
+        """V1: the call block of the end-of-over frame, decoded: a solid green line where it arrived.  V2: the first
+        time the call is decoded in an over: a dotted green line.  Both are labelled on the top graph."""
         for c in ld.heard_calls(run):
-            if not c["v2"]:
-                ax.axvline(self.x(c["t_call"]), color="purple", lw=0.9)
-                if first:
-                    ax.annotate(c["call"], (self.x(c["t_call"]), 1.0), xycoords=("data", "axes fraction"),
-                                rotation=90, fontsize=7, color="purple", va="top", ha="right")
-                continue
-            ax.annotate(c["call"], (self.x(c["t_start"]), 1.0), xycoords=("data", "axes fraction"), xytext=(2, -2),
-                        textcoords="offset points", fontsize=6, color="purple", va="top", ha="left", clip_on=True)
-            if c["t_end"] is not None:
-                ax.axvline(self.x(c["t_end"]), color="purple", lw=0.9)
-                if first:
-                    ax.annotate(c["call"], (self.x(c["t_end"]), 1.0), xycoords=("data", "axes fraction"),
-                                rotation=90, fontsize=7, color="purple", va="top", ha="right")
+            ax.axvline(self.x(c["t_call"]), color="green", lw=1.2 if c["v2"] else 1.0, ls=":" if c["v2"] else "-")
+            if first:
+                ax.annotate(c["call"], (self.x(c["t_call"]), 1.0), xycoords=("data", "axes fraction"),
+                            rotation=90, fontsize=7, color="green", va="top", ha="right")
 
     # ---------------------------------------------------------------- zoom
     def set_xlim(self, a, b):
