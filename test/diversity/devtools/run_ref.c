@@ -14,6 +14,7 @@
  *
  *   ./run_ref cap.divc --ref rade    --out w_rade.csv
  *   ./run_ref cap.divc --ref digital --out w_digital.csv --noise 8.5e-5
+ *   ./run_ref cap.divc --ref rade2   --out w_rade2.csv     (RADE V2, cyclic prefix)
  *
  * The output has the same columns replay_rade --weights writes, so
  * score_rade will take either.
@@ -271,6 +272,7 @@ int main(int argc, char **argv) {
   if (!strcmp(refname, "band"))         { ref = DIV_REF_BAND; }
   else if (!strcmp(refname, "carrier")) { ref = DIV_REF_CARRIER; }
   else if (!strcmp(refname, "rade"))    { ref = DIV_REF_RADE_V1; }
+  else if (!strcmp(refname, "rade2"))   { ref = DIV_REF_RADE_V2; }
   else if (!strcmp(refname, "digital")) { ref = DIV_REF_DIGITAL_IQ; }
   else if (!strcmp(refname, "cw"))      { ref = DIV_REF_CW; }
   else { fprintf(stderr, "%s: unknown reference \"%s\"\n", argv[0], refname); return 2; }

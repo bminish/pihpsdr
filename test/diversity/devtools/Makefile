@@ -30,7 +30,8 @@ LIBS    = `pkg-config --libs gtk+-3.0 fftw3f` -lm
 # is the one the diversity patch must not leave marks on.
 #
 GEN     = $(BUILD)/rade_correlator_tunable.c
-SRC     = $(GEN) rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c
+SRC     = $(GEN) rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c \
+          $(TOP)/src/rade_v2_correlator.c
 
 all: replay_rade test_capture run_ref
 

@@ -29,6 +29,7 @@
 #include "property.h"
 #include "radio.h"
 #include "rade_correlator.h"
+#include "rade_v2_correlator.h"
 #include "receiver.h"
 #include "vfo.h"
 
@@ -1323,18 +1324,41 @@ static void div_manual_window(const struct div_context *ctx, double *lo, double 
 //
 // The RADE correlators, behind one set of calls. Which one runs follows the
 // reference: the front end is built when a RADE reference is taken up and
-// torn down when it is left (see the restart conditions below).
+// torn down when it is left (see the restart conditions below). Stop and
+// reset do both, which costs nothing for the one that is not running.
 //
 static int div_rade_start(int ddc_rate) {
-  return rade_corr_start(ddc_rate);
+  return (div_auto_ref == DIV_REF_RADE_V2) ? rade_v2c_start(ddc_rate)
+                                           : rade_corr_start(ddc_rate);
 }
 
 static void div_rade_stop(void) {
   rade_corr_stop();
+  rade_v2c_stop();
 }
 
 static void div_rade_reset(void) {
   rade_corr_reset();
+  rade_v2c_reset();
+}
+
+//
+// The rade_corr_* variables are the RADE status everything else reads: the
+// menu, the capture record, the overlay, the client's copy. Whichever RADE
+// correlator is running writes them - V1 does so itself, and this is V2's.
+// V2 has no probation, so "confirming" is always 0.
+//
+static void div_rade_v2_publish(void) {
+  rade_corr_locked     = rade_v2c_locked;
+  rade_corr_confirming = 0;
+  rade_corr_mirrored   = rade_v2c_mirrored;
+  rade_corr_quality    = rade_v2c_quality;
+  rade_corr_freq_off   = rade_v2c_freq_off;
+  rade_corr_snr        = rade_v2c_snr;
+  rade_corr_arm_valid  = rade_v2c_arm_valid;
+  rade_corr_arm_db     = rade_v2c_arm_db;
+  rade_corr_arm_cos    = rade_v2c_arm_cos;
+  rade_corr_arm_sin    = rade_v2c_arm_sin;
 }
 
 //
@@ -3465,12 +3489,13 @@ static void div_process_block(void) {
   divcap_dropped = 0;
 #endif
 
-  if (ctx.ref == DIV_REF_RADE_V1) {
+  if (DIV_REF_IS_RADE(ctx.ref)) {
     //
-    // Pilot-correlating path. This one does not use the FFT at all: it
-    // downconverts to the 8 kHz modem rate and correlates against the
-    // known RADE V1 pilot, which separates the wanted signal from noise
-    // and QRM well enough to estimate the two separately.
+    // Time-domain RADE path. This one does not use the FFT at all: it
+    // downconverts to the 8 kHz modem rate and correlates, for V1 against
+    // the known pilot, which separates the wanted signal from noise and
+    // QRM well enough to estimate the two separately, and for V2, which
+    // has no pilot, against its own cyclic prefix (rade_v2_correlator.h).
     //
     double wr, wi;
     //
@@ -3492,8 +3517,16 @@ static void div_process_block(void) {
     // given the block in the time domain, so div_bin_notched() has nothing
     // to act on here. See the note there.
     //
-    int ok = rade_corr_process(work0, work1, nfft, bank,
-                               div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+    int ok;
+
+    if (ctx.ref == DIV_REF_RADE_V2) {
+      ok = rade_v2c_process(work0, work1, nfft, bank,
+                            div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+      div_rade_v2_publish();
+    } else {
+      ok = rade_corr_process(work0, work1, nfft, bank,
+                             div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+    }
     //
     // The overlay follows the passband, locked or not. It used to switch
     // to the bank the correlator reported once it locked, which is how a
@@ -4375,7 +4408,8 @@ static void div_settings_load(const DIV_SETTINGS *s) {
 
   case DIV_REF_DIGITAL_IQ: div_auto_coherence_min = s->digital_cohmin; break;
 
-  case DIV_REF_RADE_V1:    div_auto_coherence_min = 0.0;               break;   // retired - see div_settings_validate()
+  case DIV_REF_RADE_V1:
+  case DIV_REF_RADE_V2:    div_auto_coherence_min = 0.0;               break;   // retired - see div_settings_validate()
 
   case DIV_REF_CW:         div_auto_coherence_min = s->cw_cohmin;      break;
 

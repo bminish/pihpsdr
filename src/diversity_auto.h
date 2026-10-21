@@ -51,7 +51,8 @@ enum {
   DIV_REF_CW,         // CW / Morse: the keyed tone in the passband
   DIV_REF_DIGITAL_IQ, // occupied bins in the window, split, then MVDR
   DIV_REF_CARRIER,    // the carrier bin only, found by our own tracker ("B")
-  DIV_REF_RADE_V1     // RADE V1 pilot correlation + MVDR; the last one
+  DIV_REF_RADE_V1,    // RADE V1 pilot correlation + MVDR
+  DIV_REF_RADE_V2     // RADE V2 cyclic-prefix correlation; the last one
 };
 
 //
@@ -60,8 +61,8 @@ enum {
 // operator's own, and have their front end built and torn down with the
 // reference. DIV_REF_LAST is the highest value in use, for range checks.
 //
-#define DIV_REF_IS_RADE(ref)  ((ref) == DIV_REF_RADE_V1)
-#define DIV_REF_LAST          DIV_REF_RADE_V1
+#define DIV_REF_IS_RADE(ref)  ((ref) == DIV_REF_RADE_V1 || (ref) == DIV_REF_RADE_V2)
+#define DIV_REF_LAST          DIV_REF_RADE_V2
 
 //
 // The value is what is written to the props file and goes over the wire, so
