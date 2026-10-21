@@ -20,7 +20,7 @@ TOP     = ../..
 CFLAGS  = -O2 -Wall -I$(TOP)/src -I$(TOP)/wdsp \
           `pkg-config --cflags gtk+-3.0 fftw3f`
 LIBS    = `pkg-config --libs gtk+-3.0 fftw3f` -lm
-SRC     = $(TOP)/src/diversity_auto.c $(TOP)/src/rade_correlator.c
+SRC     = $(TOP)/src/diversity_auto.c $(TOP)/src/rade_correlator.c $(TOP)/src/rade_v2_correlator.c
 
 all: test_modes_live test_window test_rade test_digital test_props test_modal test_cw test_rates bench_cpu bench_nf
 
