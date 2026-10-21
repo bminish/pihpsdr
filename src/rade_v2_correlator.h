@@ -83,13 +83,17 @@ extern double rade_v2c_arm_sin;
 // gain capped at 4) that is computed and not issued, each arm's signal-to-noise
 // on the prefix in dB, and the fraction of the power that is coherent at lag
 // 128 away from the prefix: a tone or a comb on the 62.5 Hz grid, i.e. what
-// the pedestal subtraction took out. Zero until a weight has been made.
+// the pedestal subtraction took out, and each arm's power in the band (with the
+// two SNRs that gives the signal and noise of each arm, and so what any
+// combination would have given). Zero until a weight has been made.
 //
 extern double rade_v2c_mrc_re;
 extern double rade_v2c_mrc_im;
 extern double rade_v2c_snr0;
 extern double rade_v2c_snr1;
 extern double rade_v2c_pedestal;
+extern double rade_v2c_p0;           // each arm's power in the band, per sample, in the input's units
+extern double rade_v2c_p1;
 
 //
 // ddc_rate must be a whole multiple of RADE_V2C_FS. Returns 0 if not.
