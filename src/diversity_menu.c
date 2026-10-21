@@ -87,7 +87,7 @@ static void div_level_sensitive(void) {
 
   const int active = !radio_is_remote && diversity_enabled
                      && (div_auto_mode == DIV_AUTO_SUM || div_auto_mode == DIV_AUTO_BEST)
-                     && div_auto_ref != DIV_REF_RADE_V1;
+                     && !DIV_REF_IS_RADE(div_auto_ref);
 
   if (gtk_widget_get_sensitive(level_b) != active) { gtk_widget_set_sensitive(level_b, active); }
 }
@@ -615,10 +615,10 @@ static int status_update_cb(gpointer data) {
   detail[0] = 0;
   //
   // The coherence the gate compares with Min coherence, on every reference
-  // that has that setting. RADE V1 has none (the pilot gates), so its field
-  // stays blank.
+  // that has that setting. RADE has none (the pilot, or for V2 the cyclic
+  // prefix, gates), so its field stays blank.
   //
-  if (div_auto_ref == DIV_REF_RADE_V1) {
+  if (DIV_REF_IS_RADE(div_auto_ref)) {
     coh[0] = 0;
   } else {
     snprintf(coh, sizeof(coh), "coh %3.0f%%", 100.0 * div_auto_coherence);
@@ -638,7 +638,8 @@ static int status_update_cb(gpointer data) {
     break;
 
   case DIV_REF_RADE_V1:
-    snprintf(tag, sizeof(tag), "RADE V1");
+  case DIV_REF_RADE_V2:
+    snprintf(tag, sizeof(tag), "RADE V%d", div_auto_ref == DIV_REF_RADE_V2 ? 2 : 1);
 
     if (rade_corr_locked) {
       //
@@ -722,7 +723,8 @@ static const char *const div_ref_labels[] = {
   [DIV_REF_CW]         = "CW / Morse (keyed tone)",
   [DIV_REF_DIGITAL_IQ] = "FSK/Digital (occupancy MVDR)",
   [DIV_REF_CARRIER]    = "Carrier (AM/SAM)",
-  [DIV_REF_RADE_V1]    = "RADE V1 pilot (MVDR)"
+  [DIV_REF_RADE_V1]    = "RADE V1 pilot (MVDR)",
+  [DIV_REF_RADE_V2]    = "RADE V2 prefix (blind)"
 };
 
 #define DIV_REF_NROWS ((int)(sizeof(div_ref_labels) / sizeof(div_ref_labels[0])))
@@ -851,6 +853,7 @@ static void store_ref_values(int ref) {
     div_cw_cohmin = div_auto_coherence_min;
     break;
   case DIV_REF_RADE_V1:
+  case DIV_REF_RADE_V2:
     //
     // No window of its own - the correlator decides what it looks at -
     // and no threshold to file any more: its slot is pinned at zero in
@@ -918,6 +921,7 @@ static void restore_ref_values(int ref) {
     div_auto_coherence_min = div_cw_cohmin;
     break;
   case DIV_REF_RADE_V1:
+  case DIV_REF_RADE_V2:
     div_auto_coherence_min = 0.0;   // retired - see div_settings_validate()
     break;
   }
@@ -949,7 +953,7 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   // Sum on the way in; the operator can still choose otherwise
   // afterwards.
   //
-  if (div_auto_ref == DIV_REF_RADE_V1) {
+  if (DIV_REF_IS_RADE(div_auto_ref)) {
     gtk_combo_box_set_active(GTK_COMBO_BOX(auto_btn), DIV_AUTO_SUM);
   }
 
@@ -957,9 +961,9 @@ static void ref_changed_cb(GtkWidget *widget, gpointer data) {
   // RADE V1 has no threshold of its own any more - the pilot already
   // gates - so its row goes. See div_settings_validate().
   //
-  if (coh_label) { gtk_widget_set_visible(coh_label, div_auto_ref != DIV_REF_RADE_V1); }
+  if (coh_label) { gtk_widget_set_visible(coh_label, !DIV_REF_IS_RADE(div_auto_ref)); }
 
-  if (coh_scale) { gtk_widget_set_visible(coh_scale, div_auto_ref != DIV_REF_RADE_V1); }
+  if (coh_scale) { gtk_widget_set_visible(coh_scale, !DIV_REF_IS_RADE(div_auto_ref)); }
 
   //
   // Restart if the analysis thread has to come up or go down - which
@@ -1340,9 +1344,9 @@ void diversity_menu(GtkWidget *parent) {
   gtk_widget_show_all(dialog);
 
   //
-  // No Min coherence row on RADE V1: see ref_changed_cb().
+  // No Min coherence row on RADE: see ref_changed_cb().
   //
-  if (div_auto_ref == DIV_REF_RADE_V1) {
+  if (DIV_REF_IS_RADE(div_auto_ref)) {
     gtk_widget_hide(coh_label);
     gtk_widget_hide(coh_scale);
   }
