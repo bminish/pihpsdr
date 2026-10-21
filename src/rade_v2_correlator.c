@@ -124,12 +124,14 @@ typedef double complex cplx;
 #define V2_TICK_SYMS  5                 // 0.1 s between evaluations and weights
 
 //
-// Weight limits. The V2 decoder is hurt by steps in channel phase and
-// follows a ramp up to about 1 Hz (V2-F4 in the V2 notes), so the phase
-// moves at that rate at most. The gain cap is the one the combining notes
-// found harmless.
+// The weight issued is the unit co-phase direction, conj(h1/h0)/|h1/h0|:
+// arm 1 is added in phase with arm 0 and at equal gain, and the phase comes
+// from the prefix correlation, which the interferer is not in. Smoothing is
+// the engine's (div_apply_weight() slews it). The maximal-ratio weight, with
+// the per-arm noise term, is computed alongside and published for logging
+// only, so that a run can be replayed and the two compared; its gain is
+// capped at the value the combining notes found harmless.
 //
-#define V2_SLEW_HZ    1.0
 #define V2_GAIN_MAX   4.0
 #define V2_N_FLOOR    0.02              // noise floor as a fraction of the arm's power
 
@@ -176,6 +178,11 @@ double rade_v2c_arm_db    = 0.0;
 int    rade_v2c_arm_valid = 0;
 double rade_v2c_arm_cos   = 1.0;
 double rade_v2c_arm_sin   = 0.0;
+double rade_v2c_mrc_re    = 0.0;
+double rade_v2c_mrc_im    = 0.0;
+double rade_v2c_snr0      = 0.0;
+double rade_v2c_snr1      = 0.0;
+double rade_v2c_pedestal  = 0.0;
 
 static int     running = 0;
 static int     decim = 0;
@@ -256,6 +263,9 @@ static void publish_idle(void) {
   rade_v2c_arm_valid = 0;
   rade_v2c_arm_cos = 1.0;
   rade_v2c_arm_sin = 0.0;
+  rade_v2c_mrc_re = rade_v2c_mrc_im = 0.0;
+  rade_v2c_snr0 = rade_v2c_snr1 = 0.0;
+  rade_v2c_pedestal = 0.0;
 }
 
 int rade_v2c_start(int ddc_rate) {
@@ -413,10 +423,11 @@ static inline cplx rget(const float *r, int64_t a) {
 //
 // theta is the carrier offset's phase over the lag and comes off arm 0's
 // ry0, so the cross term is X = x10*e^(-j theta) + conj(x01*e^(j theta)),
-// twice h1*conj(h0) S W, and r = X / (2|ry0|) is h1/h0. The noise of each arm
-// is what is left of its power after the prefix-correlated part: |ry_k|/W is
-// that arm's S, b_k/2W its total. The weight is maximal-ratio, with arm 0's
-// phase: conj(r) N0/N1.
+// twice h1*conj(h0) S W, whose phase is that of h1/h0; |h1/h0|^2 is |ry1|/|ry0|.
+// The noise of each arm is what is left of its power after the prefix-correlated part: |ry_k|/W is
+// that arm's S, b_k/2W its total. The weight issued is the unit direction
+// conj(r)/|r|; the maximal-ratio weight, conj(r) N0/N1, is published for the
+// log.
 //
 static void weight(ctx_t *c) {
   const int g = c->g;
@@ -444,7 +455,17 @@ static void weight(ctx_t *c) {
 
   const double th = carg(ry0);
   const cplx X = x10 * cexp(-I * th) + conj(x01 * cexp(I * th));
-  cplx r = X / (2.0 * m0);
+  //
+  // The phase is the cross term's. Its magnitude is not used: averaged over
+  // a window in which the inter-arm phase moves, |X| shrinks, and the gain
+  // ratio read from it follows. The two arms' own prefix correlations are
+  // not affected, and |h1/h0|^2 is their ratio.
+  //
+  const double ax = cabs(X);
+
+  if (ax <= 0.0) { return; }
+
+  cplx r = sqrt(cabs(ry1) / m0) * (X / ax);
 
   if (c->bank == 1) { r = conj(r); }         // bank 1 was conjugated going in
 
@@ -460,32 +481,30 @@ static void weight(ctx_t *c) {
 
   if (N1 < V2_N_FLOOR * P1) { N1 = V2_N_FLOOR * P1; }
 
-  cplx w = conj(r) * (N0 / N1);
-  double mag = cabs(w);
-
-  if (mag > V2_GAIN_MAX) { mag = V2_GAIN_MAX; }
-
-  double ph = carg(w);
-
-  if (c->out_valid) {
-    double dp = remainder(ph - carg(c->out), 2.0 * M_PI);
-    const double lim = 2.0 * M_PI * V2_SLEW_HZ * (double)V2_TICK_SYMS * (double)V2_P / V2_FS;
-
-    if (dp >  lim) { dp =  lim; }
-
-    if (dp < -lim) { dp = -lim; }
-
-    ph = carg(c->out) + dp;
-  }
-
-  c->out = mag * cexp(I * ph);
+  const double rm = cabs(r);
+  c->out = conj(r) / rm;
   c->out_valid = 1;
   c->updated = 1;
-  const double rm = cabs(r);
   rade_v2c_arm_db = 10.0 * log10(rm * rm * N0 / N1);
   rade_v2c_arm_cos =  creal(r) / rm;
   rade_v2c_arm_sin = -cimag(r) / rm;
   rade_v2c_arm_valid = 1;
+
+  //
+  // For the log: the maximal-ratio weight that was not used, each arm's own
+  // signal-to-noise on the prefix, and how much of the power is coherent at
+  // lag 128 away from the prefix, which is what a tone or a comb is.
+  //
+  cplx mrc = conj(r) * (N0 / N1);
+  const double mm = cabs(mrc);
+
+  if (mm > V2_GAIN_MAX) { mrc *= V2_GAIN_MAX / mm; }
+
+  rade_v2c_mrc_re = creal(mrc);
+  rade_v2c_mrc_im = cimag(mrc);
+  rade_v2c_snr0 = 10.0 * log10((m0 / V2_W) / N0 + 1e-12);
+  rade_v2c_snr1 = 10.0 * log10((cabs(ry1) / V2_W) / N1 + 1e-12);
+  rade_v2c_pedestal = (cabs(ped00) + cabs(ped11)) / V2_W / (P0 + P1);
 }
 
 //
