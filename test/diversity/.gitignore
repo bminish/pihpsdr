@@ -13,6 +13,7 @@ devtools/replay_rade
 devtools/run_ref
 devtools/score_rade
 devtools/test_capture
+devtools/cp_replay
 devtools/py/__pycache__/
 bench_nf
 nf_select.inc

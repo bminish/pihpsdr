@@ -110,3 +110,10 @@ clean:
 	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref
 
 .PHONY: all run score clean
+
+#
+# The RADE V2 cyclic-prefix correlator, src/rade_v2_correlator.c, replayed over a capture. It needs
+# nothing of the rest of piHPSDr, so it builds by itself. The reference for it is py/cp_probe.py.
+#
+cp_replay: cp_replay.c $(TOP)/src/rade_v2_correlator.c $(TOP)/src/rade_v2_correlator.h
+	$(CC) -O2 -Wall -I$(TOP)/src -o $@ cp_replay.c $(TOP)/src/rade_v2_correlator.c -lm
