@@ -18,7 +18,7 @@ OFF_FILTER_LOW, OFF_FILTER_HIGH, OFF_REF = 52, 56, 60
 OFF_WEIGHTING, OFF_AUTO_MODE, OFF_TAU = 68, 100, 112
 
 # DIV_REF_* by number as the engine has them now (version 5 and later) ...
-REFS = {0: 'band', 1: 'cw', 2: 'digital', 3: 'carrier', 4: 'rade'}
+REFS = {0: 'band', 1: 'cw', 2: 'digital', 3: 'carrier', 4: 'rade', 5: 'rade2'}   # 5: RADE V2, appended; no version change
 # ... and as they were in a capture of version 4 or below (before LC-060).
 REFS_V4 = {0: 'band', 1: 'carrier', 2: 'rade', 3: 'digital', 4: 'cw'}
 # DIV_AUTO_* as names: now, and in a capture of version 4 or below (LC-059).
