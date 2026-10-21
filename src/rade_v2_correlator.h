@@ -51,6 +51,14 @@
 #define RADE_V2C_SYM     (RADE_V2C_M + RADE_V2C_NCP)
 
 //
+// The edges of the band the modem occupies, in Hz: the outer carrier centres,
+// 1062.5 and 1875 Hz, widened by half the 62.5 Hz spacing. As for V1 these are
+// what the RX panadapter overlay draws.
+//
+#define RADE_V2C_OCC_LO  (1062.5 - 0.5 * 62.5)
+#define RADE_V2C_OCC_HI  (1875.0 + 0.5 * 62.5)
+
+//
 // Status. Written by the analysis, read by whoever is interested.
 //
 extern int    rade_v2c_locked;       // a V2 signal has been confirmed and a weight is held
@@ -71,6 +79,19 @@ extern double rade_v2c_arm_cos;
 extern double rade_v2c_arm_sin;
 
 //
+// For the log, not for control. The maximal-ratio weight (conj(h1/h0) N0/N1,
+// gain capped at 4) that is computed and not issued, each arm's signal-to-noise
+// on the prefix in dB, and the fraction of the power that is coherent at lag
+// 128 away from the prefix: a tone or a comb on the 62.5 Hz grid, i.e. what
+// the pedestal subtraction took out. Zero until a weight has been made.
+//
+extern double rade_v2c_mrc_re;
+extern double rade_v2c_mrc_im;
+extern double rade_v2c_snr0;
+extern double rade_v2c_snr1;
+extern double rade_v2c_pedestal;
+
+//
 // ddc_rate must be a whole multiple of RADE_V2C_FS. Returns 0 if not.
 //
 extern int  rade_v2c_start(int ddc_rate);
@@ -88,9 +109,10 @@ extern void rade_v2c_reset(void);
 // There is no hang: once locked the weight is held, however long the prefix
 // is gone, until it comes back. Returns 1 when a new weight is available in
 // *wr/*wi, in the sense of div_cos/div_sin: ready to be applied as z0 + w*z1.
-// The weight is conj(h1/h0) * N0/N1, i.e. maximal-ratio with arm 0's phase,
-// its magnitude capped at 4 and its phase slew limited to 1 Hz, because the
-// V2 decoder tolerates a phase ramp but not steps.
+// The weight is the unit co-phase direction, conj(h1/h0)/|h1/h0|: its phase is
+// what the objective maximises (the signal added in phase, the interferer not
+// being in the prefix correlation). It is not slew limited here; the V2
+// decoder is hurt by steps in phase, and the engine's slew is what spaces them.
 //
 extern int rade_v2c_process(const float *arm0, const float *arm1, int n,
                             int expect_bank, double frame_off, double tau,
