@@ -1321,6 +1321,23 @@ static void div_manual_window(const struct div_context *ctx, double *lo, double 
 }
 
 //
+// The RADE correlators, behind one set of calls. Which one runs follows the
+// reference: the front end is built when a RADE reference is taken up and
+// torn down when it is left (see the restart conditions below).
+//
+static int div_rade_start(int ddc_rate) {
+  return rade_corr_start(ddc_rate);
+}
+
+static void div_rade_stop(void) {
+  rade_corr_stop();
+}
+
+static void div_rade_reset(void) {
+  rade_corr_reset();
+}
+
+//
 // Which side of the tuned frequency the RADE modem is on, from the
 // operator's own passband: the midpoint of filter_low..filter_high in the
 // shifted frame. Returns 0 when the passband straddles zero (AM, SAM, FM,
@@ -2553,7 +2570,7 @@ static double div_gate_threshold(int nbins) {
 // div_gate_threshold().
 //
 double diversity_auto_coh_floor(int ref) {
-  if (ref == DIV_REF_RADE_V1) { return 0.0; }
+  if (DIV_REF_IS_RADE(ref)) { return 0.0; }
 
   const double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_target_hz();
 
@@ -3358,7 +3375,7 @@ static void div_process_block(void) {
     // different measurement.
     //
     div_reset_stats();
-    rade_corr_reset();
+    div_rade_reset();
     lastctx = ctx;
 #ifdef DIVERSITY_CAPTURE
     divcap_reset = 1;
@@ -3954,7 +3971,7 @@ static gpointer div_worker_thread(gpointer data) {
     if (reset_now != reset_seen) {
       reset_seen = reset_now;
       div_reset_stats();
-      rade_corr_reset();
+      div_rade_reset();
     }
 
 #ifdef DIVERSITY_CAPTURE
@@ -3973,7 +3990,7 @@ static gpointer div_worker_thread(gpointer data) {
       // rather than track something that has moved.
       //
       t_print("%s: dropped %d analysis block(s), re-acquiring\n", __func__, dropped);
-      rade_corr_reset();
+      div_rade_reset();
     }
 
     div_process_block();
@@ -4167,8 +4184,8 @@ void diversity_auto_start(void) {
   // menu's - and the loop simply holds: rade_corr_process() produces no
   // weight while the correlator is not running.
   //
-  if (div_auto_ref == DIV_REF_RADE_V1) {
-    (void)rade_corr_start(receiver[0]->sample_rate);
+  if (DIV_REF_IS_RADE(div_auto_ref)) {
+    (void)div_rade_start(receiver[0]->sample_rate);
   }
 
   worker = g_thread_new("div_auto", div_worker_thread, NULL);
@@ -4244,7 +4261,7 @@ void diversity_auto_stop(void) {
     have_plans = 0;
   }
 
-  rade_corr_stop();
+  div_rade_stop();
   //
   // The sample and FFT buffers are deliberately not freed here; see the
   // note in diversity_auto_start().
@@ -4279,7 +4296,7 @@ void diversity_auto_restart(void) {
 // CW included.
 //
 int diversity_auto_seed_window(double *centre, double *width) {
-  if (div_auto_ref == DIV_REF_RADE_V1) { return 0; }
+  if (DIV_REF_IS_RADE(div_auto_ref)) { return 0; }
 
   if (div_auto_centre != 0.0 || div_auto_width != div_width_default(div_auto_ref)) { return 0; }
 
@@ -4431,7 +4448,7 @@ void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action) {
   //
   if ((old_mode == DIV_MANUAL) != (s->mode == DIV_MANUAL) ||
       old_res != div_target_hz() ||
-      (old_ref != s->ref && (old_ref == DIV_REF_RADE_V1 || s->ref == DIV_REF_RADE_V1))) {
+      (old_ref != s->ref && (DIV_REF_IS_RADE(old_ref) || DIV_REF_IS_RADE(s->ref)))) {
     diversity_auto_restart();
   }
 
@@ -4736,7 +4753,7 @@ void diversity_auto_mode_changed(int mode) {
   if (was_off != (div_auto_mode == DIV_MANUAL) ||
       old_res != div_target_hz() ||
       (old_ref != div_auto_ref &&
-       (old_ref == DIV_REF_RADE_V1 || div_auto_ref == DIV_REF_RADE_V1))) {
+       (DIV_REF_IS_RADE(old_ref) || DIV_REF_IS_RADE(div_auto_ref)))) {
     diversity_auto_restart();
   }
 
@@ -4764,7 +4781,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
     s->mode = DIV_MANUAL;
   }
 
-  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_RADE_V1) {
+  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_LAST) {
     s->ref = DIV_REF_BAND;
   }
 
