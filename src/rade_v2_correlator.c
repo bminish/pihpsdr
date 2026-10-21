@@ -183,6 +183,8 @@ double rade_v2c_mrc_im    = 0.0;
 double rade_v2c_snr0      = 0.0;
 double rade_v2c_snr1      = 0.0;
 double rade_v2c_pedestal  = 0.0;
+double rade_v2c_p0        = 0.0;
+double rade_v2c_p1        = 0.0;
 
 static int     running = 0;
 static int     decim = 0;
@@ -266,6 +268,7 @@ static void publish_idle(void) {
   rade_v2c_mrc_re = rade_v2c_mrc_im = 0.0;
   rade_v2c_snr0 = rade_v2c_snr1 = 0.0;
   rade_v2c_pedestal = 0.0;
+  rade_v2c_p0 = rade_v2c_p1 = 0.0;
 }
 
 int rade_v2c_start(int ddc_rate) {
@@ -505,6 +508,8 @@ static void weight(ctx_t *c) {
   rade_v2c_snr0 = 10.0 * log10((m0 / V2_W) / N0 + 1e-12);
   rade_v2c_snr1 = 10.0 * log10((cabs(ry1) / V2_W) / N1 + 1e-12);
   rade_v2c_pedestal = (cabs(ped00) + cabs(ped11)) / V2_W / (P0 + P1);
+  rade_v2c_p0 = P0;
+  rade_v2c_p1 = P1;
 }
 
 //
