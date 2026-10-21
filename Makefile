@@ -514,6 +514,7 @@ src/property.c \
 src/protocols.c \
 src/ps_menu.c \
 src/rade_correlator.c \
+src/rade_v2_correlator.c \
 src/radio.c \
 src/radio_menu.c \
 src/receiver.c \
@@ -619,6 +620,7 @@ src/property.o \
 src/protocols.o \
 src/ps_menu.o \
 src/rade_correlator.o \
+src/rade_v2_correlator.o \
 src/radio.o \
 src/radio_menu.o \
 src/receiver.o \
@@ -952,7 +954,7 @@ src/display_menu.o: src/new_menu.h src/radio.h src/adc.h src/discovered.h
 src/diversity_auto.o: src/diversity_auto.h src/diversity_menu.h src/message.h
 src/diversity_auto.o: src/mode.h src/property.h src/radio.h src/adc.h
 src/diversity_auto.o: src/discovered.h src/receiver.h src/transmitter.h
-src/diversity_auto.o: src/rade_correlator.h src/vfo.h
+src/diversity_auto.o: src/rade_correlator.h src/rade_v2_correlator.h src/vfo.h
 src/diversity_menu.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/diversity_menu.o: src/receiver.h src/transmitter.h src/message.h
 src/diversity_menu.o: src/new_menu.h src/radio.h src/adc.h src/discovered.h
@@ -1126,6 +1128,7 @@ src/pulseaudio.o: src/vfo.h
 src/rade_correlator.o: src/diversity_auto.h src/message.h src/radio.h
 src/rade_correlator.o: src/adc.h src/discovered.h src/receiver.h
 src/rade_correlator.o: src/transmitter.h src/rade_correlator.h
+src/rade_v2_correlator.o: src/rade_v2_correlator.h
 src/radio.o: src/actions.h src/adc.h src/agc.h src/appearance.h src/css.h
 src/radio.o: src/audio.h src/receiver.h src/transmitter.h src/band.h
 src/radio.o: src/bandstack.h src/channel.h src/client_server.h
@@ -1176,7 +1179,7 @@ src/rx_panadapter.o: src/band.h src/bandstack.h src/client_server.h
 src/rx_panadapter.o: src/diversity_auto.h src/mode.h src/receiver.h
 src/rx_panadapter.o: src/transmitter.h src/discovered.h src/dxcluster_popup.h
 src/rx_panadapter.o: src/dxcluster.h src/gpio.h src/message.h
-src/rx_panadapter.o: src/rade_correlator.h src/radio.h src/adc.h src/ozyio.h
+src/rx_panadapter.o: src/rade_correlator.h src/rade_v2_correlator.h src/radio.h src/adc.h src/ozyio.h
 src/rx_panadapter.o: src/rx_panadapter.h src/theme.h src/vfo.h
 src/saturndrivers.o: src/message.h src/saturndrivers.h src/saturnregisters.h
 src/saturnmain.o: src/discovered.h src/message.h src/new_protocol.h
