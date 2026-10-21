@@ -3,7 +3,8 @@
  * py/cp_probe.py, and prints one line a second: quality (dpk), lock, present, bump position,
  * the weight last issued and the arm figures. Builds on its own: no GTK, no engine.
  *
- *   cp_replay FILE [bank [tau]]       bank 0, 1, or -1 for both (default -1); tau seconds (1.0)
+ *   cp_replay FILE [bank [tau [CSV]]]  bank 0, 1, or -1 for both (default -1); tau seconds (1.0);
+ *                                      CSV: one row per block of everything the module publishes
  *
  * The frame offset is the block's recorded vfo offset. Layout as in py/divc.py.
  */
@@ -19,11 +20,17 @@
 #define BLK 208
 
 int main(int argc, char **argv) {
-  if (argc < 2) { fprintf(stderr, "usage: %s FILE [bank [tau]]\n", argv[0]); return 2; }
+  if (argc < 2) { fprintf(stderr, "usage: %s FILE [bank [tau [CSV]]]\n", argv[0]); return 2; }
 
   const int bank = argc > 2 ? atoi(argv[2]) : -1;
   const double tau = argc > 3 ? atof(argv[3]) : 1.0;
   FILE *f = fopen(argv[1], "rb");
+  FILE *csv = argc > 4 ? fopen(argv[4], "w") : NULL;
+
+  if (csv) {
+    fprintf(csv, "t,locked,present,quality,snr_db,gamma,bank,freq_off_hz,arm_db,snr0_db,snr1_db,pedestal,"
+            "w_re,w_im,mrc_re,mrc_im,updated\n");
+  }
 
   if (!f) { perror(argv[1]); return 1; }
 
@@ -53,8 +60,16 @@ int main(int argc, char **argv) {
     if (magic != 0x214B4C42) { break; }
 
     nblk++;
-    nupd += rade_v2c_process(buf, buf + 2 * nfft, (int)nfft, bank, (double)off, tau, &wr, &wi);
+    const int upd = rade_v2c_process(buf, buf + 2 * nfft, (int)nfft, bank, (double)off, tau, &wr, &wi);
+    nupd += upd;
     const double t = (double)nblk * nfft / rate;
+
+    if (csv) {
+      fprintf(csv, "%.3f,%d,%d,%.4f,%.2f,%d,%d,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%d\n", t,
+              rade_v2c_locked, rade_v2c_present, rade_v2c_quality, rade_v2c_snr, rade_v2c_gamma,
+              rade_v2c_mirrored, rade_v2c_freq_off, rade_v2c_arm_db, rade_v2c_snr0, rade_v2c_snr1,
+              rade_v2c_pedestal, wr, wi, rade_v2c_mrc_re, rade_v2c_mrc_im, upd);
+    }
 
     if (t >= next) {
       next += 1.0;
@@ -67,5 +82,8 @@ int main(int argc, char **argv) {
 
   fprintf(stderr, "%ld blocks, %ld weights\n", nblk, nupd);
   rade_v2c_stop();
+
+  if (csv) { fclose(csv); }
+
   return 0;
 }
