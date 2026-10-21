@@ -38,6 +38,7 @@
 #include "message.h"
 #include "mode.h"
 #include "rade_correlator.h"
+#include "rade_v2_correlator.h"
 #include "radio.h"
 #ifdef USBOZY
   #include "ozyio.h"
@@ -388,6 +389,20 @@ void rx_panadapter_update(RECEIVER *rx) {
       } else {
         wlo = RADE_CORR_OCC_LO;
         whi = RADE_CORR_OCC_HI;
+      }
+
+      break;
+
+    case DIV_REF_RADE_V2:
+      //
+      // As for V1, V2's own band: fourteen carriers, 1062.5 to 1875 Hz.
+      //
+      if (div_rade_side_get() < 0) {
+        wlo = -RADE_V2C_OCC_HI;
+        whi = -RADE_V2C_OCC_LO;
+      } else {
+        wlo = RADE_V2C_OCC_LO;
+        whi = RADE_V2C_OCC_HI;
       }
 
       break;
