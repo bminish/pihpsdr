@@ -1359,6 +1359,38 @@ static void div_rade_v2_publish(void) {
   rade_corr_arm_db     = rade_v2c_arm_db;
   rade_corr_arm_cos    = rade_v2c_arm_cos;
   rade_corr_arm_sin    = rade_v2c_arm_sin;
+  //
+  // The V1 correlator says what it is doing in the log, and so does this: a
+  // run on air has a timeline without a capture. Called from the analysis
+  // thread only, so the state here needs no lock.
+  //
+  static int was_locked = 0, was_present = 0;
+  static gint64 last_report = 0;
+  const gint64 now = g_get_monotonic_time();
+
+  if (rade_v2c_locked && !was_locked) {
+    t_print("%s: RADE V2 prefix LOCK  modem %s carrier  bump at %d  contrast %0.2f  f=%+0.1f Hz\n",
+            __func__, rade_v2c_mirrored ? "above" : "below", rade_v2c_gamma, rade_v2c_quality,
+            rade_v2c_freq_off);
+    last_report = now;
+  } else if (!rade_v2c_locked && was_locked) {
+    t_print("%s: RADE V2 lock cleared, searching\n", __func__);
+  } else if (rade_v2c_locked && was_present && !rade_v2c_present) {
+    t_print("%s: RADE V2 prefix lost, holding last weight until it is back\n", __func__);
+  } else if (rade_v2c_locked && !was_present && rade_v2c_present) {
+    t_print("%s: RADE V2 prefix back, resuming\n", __func__);
+  }
+
+  if (rade_v2c_locked && rade_v2c_present && now - last_report >= 5000000) {
+    last_report = now;
+    t_print("%s: RADE V2 tracking  contrast %0.2f  bump at %d  f=%+0.1f Hz  "
+            "arm SNR %+0.1f / %+0.1f dB  tone %0.0f%%  applied %+0.1f dB %+0.0f deg\n",
+            __func__, rade_v2c_quality, rade_v2c_gamma, rade_v2c_freq_off, rade_v2c_snr0,
+            rade_v2c_snr1, 100.0 * rade_v2c_pedestal, auto_div_gain, auto_div_phase);
+  }
+
+  was_locked = rade_v2c_locked;
+  was_present = rade_v2c_present;
 }
 
 //
