@@ -4,6 +4,15 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-22: RADE V2 reference (LC-064 to LC-067, LT-037), on
+  `feature/rade-native`. V1 reviewed against rade_c first; then a V2 tracker
+  from the cyclic prefix, checked against rade_c's own V2 receiver over all
+  171 captures, then the engine hook. Decided with the owner: V1 and V2 are
+  separate references side by side, auto-detection waits for the on-air
+  evaluation, Sum uses the unit co-phase weight for now (the noise-weighted
+  weight is logged, not used), the engine's slew does the smoothing, Invert
+  and Null are allowed, and decode scoring is deferred in favour of the
+  operator's on-air runs. Details: [../diversity-radeV2-cp.md](../diversity-radeV2-cp.md).
 - 2026-10-19: LC-062 and LC-063. Prompted by dl1ycf's report of uninitialised
   fields in `diversity_client_set_settings()` and his wish to fix the
   settings command's layout so `CLIENT_SERVER_VERSION` moves once. LC-062

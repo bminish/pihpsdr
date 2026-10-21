@@ -1,6 +1,6 @@
 # RADE V2 diversity: a cyclic-prefix tracker
 
-> **Branch `feature/rade-native`**, 2026-10-21. A V2 counterpart of the V1 pilot
+> **Branch `feature/rade-native`**, 2026-10-21 and 22. A V2 counterpart of the V1 pilot
 > correlator, built on the one structure V2 has: the cyclic prefix. This file records
 > what was checked, what was built, what the evidence is and is not, and how the
 > engine hook is to be done so it can go to `TEST` as a patch. Background on V2 and the
@@ -22,10 +22,13 @@
   `y1[n] * conj(y0[n+128])` over the prefix is `h1 * conj(h0) * S`; a common-mode
   interferer is uncorrelated 16 ms later and drops out. The lag-0 cross-spectrum follows
   whichever source is strongest instead.
-- **Built:** `src/rade_v2_correlator.[ch]` (C, standalone, same shape as the V1 API),
-  the Python reference it was ported from, a capture replay tool, and two checks.
-- **Not done:** no engine hook, no decode scoring of the weight, nothing on air. The
-  next step is the hook (section 8), then the operator's on-air evaluation (section 9).
+- **Built:** `src/rade_v2_correlator.[ch]` (C, standalone, same shape as the V1 API), the
+  Python reference it was ported from, a capture replay tool, the engine reference
+  `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-064 to LC-067,
+  LT-037; section 8).
+- **Not done:** no decode scoring of the weight, nothing on air, the menu row and log lines
+  not seen running. The next step is the operator's on-air evaluation (section 9), on
+  purpose before any decode score.
 
 ## 2. V1: what was checked
 
@@ -122,12 +125,21 @@ two cross terms):
   (2|ry0|)` is `h1/h0`;
 - each arm's noise is its power less its prefix-correlated part: `N_k = b_k/(2W) -
   |ry_k|/W`, floored at 2% of the arm's power;
-- weight `w = conj(r) * N0/N1`: maximal-ratio with arm 0's phase, ready to apply as
-  `z0 + w*z1`. Magnitude capped at 4; **phase slew limited to 1 Hz** (V2-F4: the decoder
-  follows a ramp, not steps).
+- **issued weight: the unit direction `conj(r)/|r|`** (decided 2026-10-22), ready to apply as
+  `z0 + w*z1`: arm 1 added in phase with arm 0 at equal gain. The phase is what the objective
+  (maximise the RADE SNR, by putting the phase where the interference is not) rests on. The
+  engine's slew smooths it; the module does not (V2-F4: the decoder follows a ramp, not
+  steps; see section 6);
+- **published for the log, not used:** the maximal-ratio weight `conj(r) N0/N1` (gain capped
+  at 4), each arm's prefix SNR, each arm's band power, and the share of power that is a tone.
+  Unit weights cost something when one arm is mostly noise; the log says how often and how
+  much, so the noise-weighted weight can be a second experiment on evidence.
 
 `arm_db`, `arm_cos`, `arm_sin` are published as for V1 (`|r|^2 N0/N1` in dB, and the unit
-direction `conj(r)/|r|`).
+direction `conj(r)/|r|`). The gain ratio `|r|` is taken from the arms' own prefix
+correlations (`sqrt(|ry1|/|ry0|)`), not from the cross term: averaged over a window in which
+the inter-arm phase moves, `|X|` shrinks, and an `arm_db` read from it disagreed with the two
+arm SNRs by 2.8 dB on T-008 until this was changed.
 
 This is the "blind scalar weight with a per-arm CP noise term" the combining notes
 specified (their section 8), put in a form that runs live. It is not the per-carrier
@@ -227,9 +239,13 @@ finds and the shipped row does not.
 - **The weak-signal end.** Time to lock is 17 to 23 s on the weak captures, and three weak
   ones are missed. The rule was chosen by the sweep above on a small number of independent
   stations.
-- **Phase steps from the engine.** The module limits its own phase to a 1 Hz ramp. Invert
-  and Null/Sum are 180-degree steps applied by the engine and are not covered
-  (V2-F4, open item 1 of the combining notes).
+- **Phase steps.** The module no longer limits its phase; the engine's slew does
+  (`div_apply_weight()` moves the weight 15% of the way to the target per block). Worked out,
+  not measured: a 90 degree change starts at about 10 degrees in the first block, i.e. 0.33
+  Hz of ramp at 85 ms blocks (16384 samples at 192 kHz) and less at 171 ms. A 180 degree
+  step (Invert, Null against Sum) goes straight through zero gain and flips there: not a ramp.
+  V2-F4's tolerance was found on synthetic channels. Invert and Null are allowed, with the
+  cost noted in the menu text; their value on V2 is uncertain.
 - **Sidetone.** The replay tool takes the recorded `vfo.offset` only; CW sidetone folding as
   in `div_frame_off()` is the engine's and is irrelevant to the digital modes.
 
@@ -239,88 +255,160 @@ finds and the shipped row does not.
 |---|---|
 | `src/rade_v2_correlator.[ch]` | the tracker. No GLib, `t_print` or `radio.h`; diagnostics are the extern variables in the header |
 | `test/diversity/devtools/py/cp_probe.py` | the reference (`scan`: detection and lock; `cross`: the interferer-injection test) |
-| `test/diversity/devtools/cp_replay.c` | replays a `.divc` capture through the C module, one line a second; `make cp_replay` |
-| `test/diversity/devtools/py/test_cp_replay.py` | holds the port to the reference (lock, rejections, phase agreement) |
+| `test/diversity/devtools/cp_replay.c` | replays a `.divc` capture through the C module with what the engine was handed (bank, tau, frame offset, resets), one line a second, a per-block CSV, and a self-check against the engine's recorded state; `make cp_replay` |
+| `test/diversity/devtools/py/test_cp_replay.py` | holds the port to the reference (lock, rejections, phase agreement), the engine path through `run_ref`, and the self-check path |
+| `test/diversity/devtools/run_ref.c`, `py/divc.py` | `--ref rade2` drives the whole engine on a recording; `divc.py` names reference 5 |
 | `test/diversity/devtools/py/cp_sweep.py` | the section 5.4 comparison against rade_c; `--cp-replay` takes a build with other `-D` lock parameters |
 
 Public interface (`rade_v2_correlator.h`): `rade_v2c_start(ddc_rate)`, `_stop`, `_reset`,
 `rade_v2c_process(arm0, arm1, n, expect_bank, frame_off, tau, &wr, &wi)`, and
 `rade_v2c_locked`, `_present`, `_quality`, `_snr`, `_mirrored`, `_gamma`, `_freq_off`,
-`_arm_db`, `_arm_valid`, `_arm_cos`, `_arm_sin`. The arguments mean what they mean for
-`rade_corr_process()`.
+`_arm_db`, `_arm_valid`, `_arm_cos`, `_arm_sin`; for the log `_mrc_re/_im`, `_snr0/_snr1`,
+`_pedestal`, `_p0/_p1`. The arguments mean what they mean for `rade_corr_process()`.
 
-## 8. The engine hook, done so that it can become a TEST patch
+## 8. The engine hook
 
-`rade_correlator.c` is the V1 module and already lives in `TEST`. The new module sits beside
-it and touches nothing existing, so the work divides into layers that apply on their own:
+Built on 2026-10-22 as four changes and tooling, in the order they apply (IDs from the
+register, [changes.md](changes.md); write-ups in [changes/lc-rade.md](changes/lc-rade.md#rade-v2)):
 
-1. **Module and tools.** `src/rade_v2_correlator.[ch]`, the devtools files, the
-   `.gitignore` and `Makefile` lines (devtools only). Applies to `TEST` with no engine
-   change. The top-level `Makefile` needs the new object (and `cp_replay` builds without it).
-2. **Engine.** The only file is `src/diversity_auto.[ch]`, which we own. The hook is a
-   second branch beside `if (ctx.ref == DIV_REF_RADE_V1)` in the block loop, the same
-   start/stop/reset points (`diversity_auto_restart()`, the settings-change path that
-   builds or tears down the front end), and the same use of the result:
-   `div_apply_best(rade_v2c_arm_cos, rade_v2c_arm_sin)` in Best, and
-   `div_apply_weight(sign * wr, sign * wi)` in Sum and Null. Nothing else changes.
-3. **Menu.** `diversity_menu.c` is dl1ycf's and the engine does not write what the menu
-   can change. A reference label, the visibility cases that `DIV_REF_RADE_V1` has there
-   (about eight places), and the settings slot go in a **note for dl1ycf**, not a commit.
+| ID | Commit subject (branch hashes will change at the cut) | Applies alone? |
+|---|---|---|
+| LC-064 | `Diversity: DIV_REF_IS_RADE() and one set of RADE correlator calls, no behaviour change` | yes |
+| LC-065 | the module: `Diversity: RADE V2 cyclic-prefix tracker ...` and the two commits that refine it | yes; nothing calls it |
+| LC-066 | `Diversity: DIV_REF_RADE_V2, the RADE V2 cyclic-prefix reference in the engine` and `... says what it is doing in the log` | needs LC-064, LC-065 |
+| LC-067 | `Diversity menu and overlay: RADE V2 prefix (blind)` | needs LC-066; dl1ycf's file |
+| LT-037 | the devtools files | never upstream |
 
-**Open decision, first on the list:** how V2 is selected.
+None of them carries a `Local-Change:` trailer yet; they are added when the series is cut for
+`TEST`, since the IDs are permanent and the hashes are not. LC-065 is several commits that
+become one at the cut (rule 9 of [changes/rules.md](changes/rules.md)).
 
-- *(a) A new reference, `DIV_REF_RADE_V2`, appended last.* Explicit, matches the rule of no
-  silent substitution, and mirrors V1. Costs: it grows the settings command (one slot per
-  reference, `div_settings_validate()`), the menu and the panadapter overlay
-  (`rx_panadapter.c` case), so layers 2 and 3 widen.
-- *(b) One "RADE" reference that runs the right correlator.* The lag separates V1 from V2,
-  so the engine could run both searches until one locks (double the search cost) or be told
-  by the RADE window which waveform is selected. No enum change, so a smaller patch, but the
-  engine decides something the operator did not pick, and `rade_native` (not in `TEST`)
-  would be the only thing that knows.
+**Decided 2026-10-22, with the owner:**
 
-The recommendation is (a), because it keeps the patch layered and the behaviour visible.
-The choice changes layers 2 and 3 only; layer 1 stands either way.
+- V1 and V2 are **separate references side by side**; both waveforms are in use. Auto-detection
+  is deferred until the V2 tracker has been evaluated on air. The lags separate the waveforms
+  cleanly (read at the V2 lag, V1 is at noise: dpk 0.09 median; at the V1 lag, V2 is at noise:
+  0.04 to 0.08, V1 reads 0.6 to 0.7), but its cost against the V1 pilot search is not measured,
+  and the engine would be choosing a waveform the operator did not pick.
+- A helper (`DIV_REF_IS_RADE()`) rather than a second `== DIV_REF_RADE_V2` at each place; its
+  own change, no behaviour change.
+- The engine's slew does the smoothing; the module issues the unit co-phase weight, and the
+  noise-weighted weight is logged and compared offline (section 9).
+- Invert and Null are allowed on V2; the value of a null is uncertain.
+- Decode scoring waits; the operator's on-air evaluation comes first.
 
-Smaller points for the hook:
+**How it is wired.** `DIV_REFS` is 8 and V1 has no slot, so the settings command does not change
+and V2 needs none; an older build that meets reference 5 resets it to Window in
+`div_settings_validate()`. The RADE block in `div_process_block()` serves both correlators. V2
+copies its status into the `rade_corr_*` variables that the menu, the capture record and the
+client's copy already read (`div_rade_v2_publish()`), so none of them changes. Start follows the
+reference; stop and reset do both (the one that is not running costs nothing). The objectives are
+V1's: Best uses the co-phase direction and `arm_db` picks the arm, Sum the weight, Null its
+negative. The panadapter overlay draws 1031 to 1906 Hz (`RADE_V2C_OCC_*`).
 
-- Status shared with the menu: `rade_v2c_locked`, `_quality` and `_mirrored` map onto what
-  the V1 path publishes (`live_locked`, `live_quality`, `live_mirrored`), and `st->rade_*`
-  in the client/server state follows the same pattern. Client/server stays deferred.
+**Smaller points.**
+
+- The client/server state is unchanged and stays deferred.
 - `div_rade_side` (the overlay's side) follows the passband as for V1.
-- The overlay draws `RADE_CORR_FLO/FHI/OCC_*` for V1's 750 to 2200 Hz; V2's band is 1062.5
-  to 1875 Hz (about 1030 to 1910 Hz as filtered here), so it needs its own constants.
 - The devtools `tunable.manifest` generator is for `rade_correlator.c` only; the V2 module is
-  replayed by `cp_replay` and needs nothing from it.
-- Capture format and `divcap_replay` need no change: the module takes the same two blocks.
+  replayed by `cp_replay`.
+- The log lines (lock, loss, return, a tracking line every 5 s) compile and run, but the test
+  harness stubs `t_print`; their text has not been seen.
 
-## 9. On-air evaluation, and why not decode scoring first
+## 9. Logging and on-air evaluation
 
-The next step after the hook is the operator running it. Decode scoring was the earlier
-route (`score_radev2`, `|aux|`), and it stays available, but it is deferred on purpose:
+The next step is the operator running it, and decode scoring is deferred on purpose. The numbers
+a V2 score leans on (CP SNR, frame-sync confidence, `|aux|`) are themselves estimates: coarse (0.01
+of `|aux|` is about 1 dB near 0.95 and stops resolving above about +8 dB), measured on few captures
+and synthetic channels, and CP SNR is known to prefer combinations the decoder does worse on
+(V2-F2). Tuning to them would fit the tool to the tool, and the RADE engine's own reported SNR is
+no better a judge. The decision that matters is the operator's, listening to a real station.
 
-- the numbers a V2 score can lean on (CP SNR, frame-sync confidence, `|aux|`) are
-  themselves estimates, coarse (0.01 of `|aux|` is about 1 dB near 0.95 and stops resolving
-  above about +8 dB) and measured on a few captures and synthetic channels. Tuning to them
-  would fit the tool to the tool;
-- the decision that matters is the operator's, listening to a real station.
+What follows is what to record so that a run can be judged later without a number standing in for
+the listening.
 
-What to take from an evaluation run, so that it can be judged later without a number
-standing in for the listening:
+### 9.1 What is recorded already
 
-- **Captures** (`.divc`) of every run, as now, with the reference and settings recorded in
-  the header block, so a run can be replayed through `cp_replay` and the other references.
-- **The RADE engine's parameter log** (`docs/rade/logging.md`) from the same run: sync,
-  overs, the callsign when it decodes. Sync and a decoded callsign are the receiver's own
-  verdicts, not the tracker's.
-- **A/B in one session:** the same station and band, V2 reference against Window and against
-  FSK/Digital, switched by the operator, noting what was heard.
-- **Things to watch:** time to lock; any lock on something that is not V2; what the weight
-  does through a fade (it holds, by design); phase wander and any audible artefact at
-  Invert or at Sum/Null; whether the 17 to 23 s on weak signals is tolerable.
+- **The capture** (`make DIVCAP=1`, `.divc`). Both arms ahead of any combining, at the DDC rate,
+  one record per analysis block (85 or 171 ms), 184 MB a minute at 192 kHz. Because the tracker is
+  deterministic, this is the primary log: any number below can be regenerated from it, with any
+  later version of the algorithm. Each block carries the reference (5 for V2), the mode, filter,
+  bank, tau and frame offset the engine was handed, the attenuators, the arm swap, flags for a
+  context reset and for dropped blocks, and the engine's state entering the block.
+- **The engine's state for a V2 run**, in the block: locked, mirrored, quality (the prefix
+  contrast), frequency offset, snr (the prefix SNR in dB), holding, the loop's answer before
+  slewing, and the weight actually applied to the samples (`live_cos`, `live_sin`).
+- **A switch of reference mid-capture is recorded** (the `ref` field changes block by block), so
+  one capture can hold an A/B on the same station.
+- **The terminal log**, in any build: `RADE V2 prefix LOCK`, `lock cleared`, `prefix lost, holding
+  last weight`, `prefix back`, and every 5 s while tracking the contrast, bump position, frequency,
+  each arm's prefix SNR, the tone share and the applied weight.
+- **The RADE engine's own log** (`docs/rade/logging.md`): sync, overs, the callsign when it
+  decodes. Those are the receiver's own verdicts. Align it with the capture by wall time
+  (`t_start` in the capture header is unix seconds).
 
-Nothing in the tracker's outputs should be read as a score. `rade_v2c_snr` is rade_c's CP
-estimate, with the bias on multipath that V2-F2 recorded.
+### 9.2 What is regenerated from the capture
+
+`cp_replay FILE [bank [tau [CSV]]]` runs the module over the capture with what the engine was
+handed (bank, tau, frame offset), resets where the engine did and after a dropped block, and
+writes a row per block:
+
+| Column | Meaning |
+|---|---|
+| `t`, `locked`, `present`, `quality`, `snr_db` | lock state, whether the prefix is measurable now, contrast, the CP SNR estimate |
+| `gamma`, `bank`, `freq_off_hz` | where the prefix sits in the 160-sample period, which sideband, carrier offset from the grid |
+| `arm_db` | arm 1's advantage in SNR (`|r|^2 N0/N1`) |
+| `snr0_db`, `snr1_db`, `p0`, `p1` | each arm's prefix SNR and band power |
+| `pedestal` | share of the power that is coherent at lag 128 away from the prefix: a tone or comb |
+| `w_re`, `w_im`, `mrc_re`, `mrc_im`, `updated` | the weight issued (unit), the maximal-ratio weight not used, whether a new one was made this block |
+| `snr_arm0_db`, `snr_arm1_db`, `snr_egc_db`, `snr_mrc_db` | the prefix SNR each way of combining would have given: arm 0, arm 1, equal gain with the issued phase (what ran), maximal ratio |
+
+On a capture taken on the V2 reference, `cp_replay` also compares its state entering each block
+with the engine's and says how many differ. That check passes on a copy of T-008 patched to look
+like such a capture (0 of 351 differ); it has not been run on a real one, because none exists yet.
+The first V2 capture is also the first real test of it.
+
+### 9.3 The objective, and how the log speaks to it
+
+The objective is to maximise the RADE SNR, and by doing so to put the phase where the
+interference is not. Three things in the CSV bear on that:
+
+1. **The prediction.** `snr_egc_db` against the better of `snr_arm0_db` and `snr_arm1_db` is what
+   the issued weight should gain over a single arm; `snr_mrc_db` against `snr_egc_db` is what the
+   noise-weighted weight would add. If the second is rarely more than a fraction of a dB, unit
+   weights lose nothing; if arm 1 is often mostly noise, it says so. These are the tracker's own
+   estimates in about 880 Hz of band, not decode results, and coarse; they explain a
+   difference, they do not score one.
+2. **The interference phase.** The CP-gated phase and the lag-0 cross-spectrum phase disagree when
+   a common-mode interferer dominates (section 5.2). `cp_probe.py cross` computes both from a
+   capture. Nothing logs the lag-0 phase live; it is a replay-time quantity.
+3. **The pedestal.** A tone or comb in the band shows up in `pedestal` and costs detection (it
+   dilutes `rho`); a run where it is high and the lock fails is the case section 5.1 says was not
+   measured.
+
+### 9.4 A run
+
+1. Pick the RADE V2 reference, Sum, the default Averaging; capture 60 s, or longer if the path is
+   slow. Note the station, band, sideband and what was heard, for `docs/test-findings.md`.
+2. Without moving anything else, switch to Window (and FSK/Digital) on the same station; capture
+   again, or switch inside one capture.
+3. Keep the RADE engine's log from the same period.
+4. Afterwards: `cp_replay` the capture with the CSV, and read the log lines.
+
+Watch for: time to lock (5 to 7 s on strong, 17 to 23 s on weak, was measured on captures); a lock
+on something that is not V2; what the weight does through a fade (it holds, by design); any audible
+artefact at Invert, at Null or at Sum; and whether the lock rule's misses (three weak captures)
+matter on a station the operator wants.
+
+### 9.5 What the logging does not cover
+
+- The capture is a development build (`DIVCAP=1`) and is deleted before the work goes upstream; a
+  release build has the terminal log only.
+- The weight is recorded once per block; inside a block the module makes one every 0.1 s.
+- A capture that starts after the tracker locked replays from cold, so its first seconds differ
+  from the live run.
+- The lag-0 inter-arm phase is not logged live (above).
+- Nothing here measures what a listener hears. That is the operator's.
 
 ## 10. Reproducing
 

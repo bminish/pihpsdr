@@ -10,7 +10,7 @@ Everything else in this file is done; this is what is left. Detail and the close
 
 - **Needs the owner's OK or decision:** LC-063, the settings command layout and the version bump (his to approve); the on-screen check of the LC-059/LC-060 rows; E3, E4 and E5 with dl1ycf (no code yet).
 - **To port from `feature/auto-diversity`** (LC-062 on): time-based slew, 0.5 s default averaging, the Carrier tooltip.
-- **To measure or build:** the noise floor's CW items (Best's SNR, `DIV_CW_MIN_BINS`, 48 and 1536 kHz captures, attenuator calibration); CW floor and 0.2 s on marginal captures; a notch validation capture (LC-013); a RADE V2 correlator; the open 24 Hz cases (Carrier, fast fades, other rates); the functional suite on the Pi; LC-061's seeds on captures.
+- **To measure or build:** the noise floor's CW items (Best's SNR, `DIV_CW_MIN_BINS`, 48 and 1536 kHz captures, attenuator calibration); CW floor and 0.2 s on marginal captures; a notch validation capture (LC-013); the RADE V2 reference (LC-064 to LC-067) on air, which is the evaluation; the open 24 Hz cases (Carrier, fast fades, other rates); the functional suite on the Pi; LC-061's seeds on captures.
 - **Client/server (tracked, not fixed):** LC-003, LC-004, the radio dropping a client's settings, no menu refresh from a settings block.
 - **Flagged for dl1ycf:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
 
@@ -27,6 +27,19 @@ Status **Local**: carried here only. LC-059 and LC-060 edit files he owns (`radi
 | [LC-061](changes/lc-settings.md#lc-061) | UI | A fresh install starts AM, SAM and DSB on the Carrier reference and the digital modes on FSK/Digital, each with that reference's own threshold and hand-placed window; Follow RX Filter stays on (CW already had its seed). Chosen by what the modes carry, not by a sweep | diversity_auto.c | — | Local |
 | [LC-062](changes/lc-settings.md#lc-062) | Cleanup | Weighting, Hang, the bin-width setting and RADE V1's threshold are removed from the settings block, the engine globals, the props file and the context comparison. All four were pinned to a constant already; behaviour is unchanged (flat window, Auto bin width, no hang, RADE V1 ungated). The wire still sends them as constants | diversity_auto.c, diversity_auto.h, client_server.c | — | Local |
 | [LC-063](changes/lc-settings.md#lc-063) | Fix | The client/server settings command gets its final layout and `CLIENT_SERVER_VERSION` moves once (to `0x01310002`, covering LC-059 and LC-060 too): the per-reference Min coherence and window pairs travel as three tables indexed by `DIV_REF_*` (8 slots), the missing CW and per-reference fields are carried, the client starts from the settings in force and validates, and a `_Static_assert` pins the size. Answers dl1ycf's uninitialised-data warnings | client_server.h, client_server.c, diversity_auto.c, diversity_auto.h | LC-062 | Local |
+
+### Pending: on `feature/rade-native`, for `TEST` as a patch
+
+RADE V2 as a second RADE reference, side by side with V1 (decided 2026-10-22). Built and pushed on `feature/rade-native`; **not on `TEST`**. Four changes and one tooling item, written up in [lc-rade.md](changes/lc-rade.md#rade-v2) and, with the evidence, in [diversity-radeV2-cp.md](diversity-radeV2-cp.md). The commits do not carry `Local-Change:` trailers yet: they are added when the series is cut for `TEST`, as the IDs are permanent and the hashes are not.
+
+| ID | Kind | Summary | Files | Depends on | Status |
+|---|---|---|---|---|---|
+| [LC-064](changes/lc-rade.md#lc-064) | Cleanup | `DIV_REF_IS_RADE()` and `DIV_REF_LAST` in place of the tests for RADE V1 that meant "a RADE reference"; the correlator start, stop and reset go through `div_rade_start/stop/reset()`. No behaviour change | diversity_auto.c, diversity_auto.h | — | Local (branch) |
+| [LC-065](changes/lc-rade.md#lc-065) | New | The RADE V2 correlator: detects and locks on the cyclic prefix (lag 128, period 160), issues the unit co-phase weight from the prefix-gated cross-correlation, publishes the maximal-ratio weight and per-arm figures for the log. Standalone, nothing calls it | rade_v2_correlator.c, rade_v2_correlator.h, Makefile | — | Local (branch) |
+| [LC-066](changes/lc-rade.md#lc-066) | New | `DIV_REF_RADE_V2` (reference 5) in the engine: the RADE block runs either correlator and copies V2's status into the `rade_corr_*` variables; start follows the reference; log lines for lock, loss and tracking | diversity_auto.c, diversity_auto.h, Makefile | LC-064, LC-065 | Local (branch) |
+| [LC-067](changes/lc-rade.md#lc-067) | UI | The "Measure on" row, the RADE-wide menu cases through `DIV_REF_IS_RADE()`, the status line, and the panadapter overlay for V2's band. In `diversity_menu.c`, which is dl1ycf's | diversity_menu.c, rx_panadapter.c | LC-066 | Local (branch) |
+
+Taken in this order. LC-064 can go alone; LC-065 can go alone; LC-066 without LC-067 is a reference the operator cannot select. The settings command does not change: `DIV_REFS` is 8 and V2 has no slot of its own, as V1. Tooling for them is LT-037.
 
 LC-059 and LC-060 are independent. LC-063 follows LC-062. The capture format is bumped to 5 for both (LT-033) so the existing captures replay as recorded; `reset_diversity_props.py` (LT-034) clears the diversity settings from a props file for the one-time break and for testing as a new user.
 

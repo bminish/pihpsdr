@@ -13,8 +13,9 @@ The agreed rule behind all of it:
 > change, the menu owns.
 
 Register: [changes.md](changes.md); the rules are in
-[changes/ownership.md](changes/ownership.md). Three items below, in the order
-we would like a decision.
+[changes/ownership.md](changes/ownership.md). Four items below, in the order
+we would like a decision (the new one, RADE V2, is last and is on a branch, not
+yet a request).
 
 ---
 
@@ -108,3 +109,31 @@ decision from both sides before anyone writes code:
   `profiles_copy_rxtxprofile()`. DSB moves to the SSB group, and AM, SAM
   and FMN each get settings of their own. Old per-group props keys
   migrate once.
+
+---
+
+## RADE V2 on the reference list (LC-064, LC-066, LC-067): for later
+
+Not a request yet. We are adding a RADE V2 reference (cyclic prefix, no pilot)
+beside RADE V1, and it will reach you as a patch once it has been on air. What
+it does to your files, so that nothing is a surprise:
+
+- **`diversity_auto.h`.** `DIV_REF_RADE_V2` is appended as reference 5, and two
+  macros: `DIV_REF_IS_RADE(ref)` (V1 or V2) and `DIV_REF_LAST` (the range
+  check's end). The settings command does not change: `DIV_REFS` is 8, V2 has no
+  slot of its own (as V1 has none), and an older build that meets 5 resets it
+  to Window in `div_settings_validate()`.
+- **`diversity_menu.c`.** One label (`"RADE V2 prefix (blind)"`) and the places
+  that test `div_auto_ref == DIV_REF_RADE_V1` to mean "a RADE reference" now
+  call `DIV_REF_IS_RADE()`: the level control, the blank coherence field, the
+  Sum default on selection, the hidden Min coherence row (twice), and the
+  per-reference store and recall. The status line says "RADE V1" or "RADE V2".
+  That is the whole menu diff; it is its own commit (LC-067) so you can take it
+  or leave it.
+- **`rx_panadapter.c`.** A case for V2's occupied band (1031 to 1906 Hz),
+  beside V1's.
+
+Question for you, when it comes: the helper macro is the part that touches
+existing V1 lines. If you would rather not have it, V2 can be a second
+`== DIV_REF_RADE_V2` test at each place instead, at the cost of a longer diff.
+

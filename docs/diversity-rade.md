@@ -2,7 +2,7 @@
 
 > **On `TEST` (bminish/pihpsdr).** The correlator design record as it stands on `feature/diversity-binaural` (2026-09-22). `TEST` has the resync search (LC-010) and no Hang at all: a RADE lock has no timeout, and a new lock replaces an old one (LC-011, LC-014; see "Settled decisions" in `docs/changes.md`). RADE V1 has no Min coherence on `TEST` either: it is pinned at 0 and the row is hidden (LC-016). Where this document describes the hang or a RADE coherence threshold, it describes feature-branch behaviour. Other feature-branch changes described here may not be on `TEST`: see `docs/changes.md`. References to `diversity.md` are to the general design document on `feature/diversity-binaural`; it is not on `TEST`.
 
-Detail on the two FreeDV RADE reference modes. For how diversity and the
+Detail on the two FreeDV RADE reference modes. (RADE V2, which has no pilot and uses the cyclic prefix, is in [`diversity-radeV2-cp.md`](diversity-radeV2-cp.md).) For how diversity and the
 automatic loop work in general, see `diversity.md`. For
 what this mode measurably does on recorded on-air signals - which is not
 what the synthetic tests suggested - see

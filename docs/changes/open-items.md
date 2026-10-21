@@ -24,7 +24,13 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 - [ ] The noise floor (LC-025 on): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; the attenuator calibration ([noise-floor-refactor.md](../noise-floor-refactor.md), [feature-att-calibration.md](../feature-att-calibration.md)).
 - [ ] CW, on marginal captures: whether the LC-012 floor binds (it does on strong ones, by 0.07 dB); re-sweep LC-019's 0.2 s.
 - [ ] LC-013 (notches): a capture with a steady interferer inside a weaker station's passband. None so far; the mechanism is confirmed on air only.
-- [ ] A RADE V2 correlator: no V2 reference on `TEST` yet; starting set T-008 and T-009 in [test-findings.md](../test-findings.md).
+- [ ] RADE V2 (LC-064 to LC-067, on `feature/rade-native`, not `TEST`): built; **the operator's on-air evaluation is the next step**, then cutting the series for `TEST`. What it needs and what is open:
+  - A/B on one station and band, V2 reference against Window and FSK/Digital, with a capture (`make DIVCAP=1`) of each run and the RADE engine's log from the same time; what to watch is in [diversity-radeV2-cp.md](../diversity-radeV2-cp.md#9-logging-and-on-air-evaluation). Decode scoring is deferred on purpose.
+  - Sum uses the unit co-phase weight. The noise-weighted (maximal-ratio) weight is logged and compared offline; it becomes a second experiment if the log says it would have won.
+  - Invert and Null are 180 degree steps; the value of a null on V2 is uncertain.
+  - The lock rule misses 3 weak captures and locks on 2 AM-broadcast recordings; time to lock is 17 to 23 s on the weak ones.
+  - Not measured: detection with a strong tone inside a V2 signal, real EMC, the Pi's CPU, the V2 menu row and overlay on screen, the log lines' text.
+  - Auto-detecting V1 against V2 (the lags separate them cleanly): after the evaluation, not before.
 - [ ] Open from the 24 Hz tier (T-019/T-020): Carrier (six AM captures only), fast fades, Null against a real interferer, 96, 384 and 768 kHz, finer bins for narrow-tone digital modes.
 - [ ] Pi: run the functional suite on the CM5 (needs `libopus-dev`, now in the bundle's check).
 - [ ] Pi, only if wanted: vectorise RADE V1's decimator (3.0x faster, 0.7 % of a core at 192 kHz); FFTW wisdom for dl1ycf.
