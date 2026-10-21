@@ -55,6 +55,15 @@ enum {
 };
 
 //
+// The references that correlate against a RADE waveform: they work in the
+// time domain on the raw stream, have no Min coherence and no window of the
+// operator's own, and have their front end built and torn down with the
+// reference. DIV_REF_LAST is the highest value in use, for range checks.
+//
+#define DIV_REF_IS_RADE(ref)  ((ref) == DIV_REF_RADE_V1)
+#define DIV_REF_LAST          DIV_REF_RADE_V1
+
+//
 // The value is what is written to the props file and goes over the wire, so
 // a reference that is added goes on the end, and the menu and the range
 // check in div_settings_validate() follow it. Inserting one in the middle -
