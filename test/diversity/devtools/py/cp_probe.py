@@ -33,8 +33,8 @@ FS = 8000
 V2 = dict(L=128, W=32, P=160, lo=1030.0, hi=1910.0)
 V1 = dict(L=160, W=32, P=192, lo=725.0, hi=2225.0)
 GUARD = 48          # offsets further than this from the bump are "off the prefix"
-T_LOCK = 0.25       # dpk a one-second window needs to count towards a lock
-LOCK_K, LOCK_N, LOCK_TOL = 3, 4, 25     # 3 of the last 4 windows, bump within +/-25 samples
+T_LOCK = 0.30       # dpk a one-second window needs to count towards a lock (as rade_v2_correlator.c)
+LOCK_K, LOCK_N, LOCK_TOL = 4, 5, 20     # 4 of the last 5 windows, bump within +/-20 samples
 
 
 def load(path, max_s=None):
@@ -139,16 +139,18 @@ def windows(y0, y1, wave, win_s=1.0):
                      for i in range(0, A.shape[0] - ws + 1, ws)])
 
 
-def lock(res, t1=T_LOCK):
-    """Locked from the first window of a run of LOCK_K in LOCK_N above t1 with the bump in place."""
+def lock(res, t1=T_LOCK, P=160):
+    """Locked from the first window of a run of LOCK_K in LOCK_N above t1 with the bump in place.
+    P is the fold period (160 for V2, 192 for V1), for the wrap-around of the bump position."""
+    h = P // 2
     out = np.zeros(len(res), bool)
     for i in range(LOCK_N - 1, len(res)):
         w = res[i - LOCK_N + 1:i + 1]
         ok = w[w[:, 1] > t1]
         if len(ok) >= LOCK_K:
             g = ok[:, 0]
-            ref = np.median(((g - g[0] + 80) % 160) - 80) + g[0]
-            if (np.abs(((g - ref + 80) % 160) - 80) <= LOCK_TOL).sum() >= LOCK_K:
+            ref = np.median(((g - g[0] + h) % P) - h) + g[0]
+            if (np.abs(((g - ref + h) % P) - h) <= LOCK_TOL).sum() >= LOCK_K:
                 out[i] = True
     return out
 

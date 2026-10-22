@@ -30,7 +30,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
   - Invert and Null are 180 degree steps; the value of a null on V2 is uncertain.
   - The lock rule misses 3 weak captures and locks on 2 AM-broadcast recordings; time to lock is 17 to 23 s on the weak ones.
   - Not measured: detection with a strong tone inside a V2 signal, real EMC, the Pi's CPU, the V2 menu row and overlay on screen, the log lines' text.
-  - Auto-detecting V1 against V2 (the lags separate them cleanly): after the evaluation, not before.
+  - Auto-detecting V1 against V2: Stage 0 is done (the prefix detectors do not cross-lock; the V1 pilot locks late on 2 of 23 V2 captures; 3 of 102 non-RADE captures lock for the V1 pilot or V2 prefix); switching is untested. Plan and results in [diversity-rade-auto.md](../diversity-rade-auto.md). Stage 1 comes after the on-air V2 evaluation.
 - [ ] Open from the 24 Hz tier (T-019/T-020): Carrier (six AM captures only), fast fades, Null against a real interferer, 96, 384 and 768 kHz, finer bins for narrow-tone digital modes.
 - [ ] Pi: run the functional suite on the CM5 (needs `libopus-dev`, now in the bundle's check).
 - [ ] Pi, only if wanted: vectorise RADE V1's decimator (3.0x faster, 0.7 % of a core at 192 kHz); FFTW wisdom for dl1ycf.
