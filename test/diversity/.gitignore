@@ -22,3 +22,4 @@ pi5-bench.tar.gz
 pi5-bench/
 devtools/radev2_iq
 devtools/score_radev2
+devtools/auto_replay
