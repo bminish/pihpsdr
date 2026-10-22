@@ -35,8 +35,8 @@ window; it is a separate program and keeps running when piHPSDR is closed.
 - Kept between runs: the message (sent on every connection until Clear), Track, band and idle
   filters, grid, servers. Not kept: reporting itself, or the sort: every launch starts with the nearest
   station first (stations with no locator last), and a click on a heading changes it for that run.
-- The Msg column starts 32 characters wide, longer text cut with an ellipsis (the tooltip and the
-  right-click copy still have all of it); drag the heading edge to widen it.
+- The Msg column starts 32 characters wide, longer text cut with an ellipsis (the
+  right-click copy still has all of it); drag the heading edge to widen it.
 - One window: starting it again raises the one that is open.
 
 Files: `sio.py` (Socket.IO client), `core.py` (stations, places, the link, what
