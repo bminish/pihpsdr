@@ -34,7 +34,7 @@ import time
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Gtk, Pango  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core  # noqa: E402
@@ -262,6 +262,10 @@ class App(Gtk.Window):
         for i, name in enumerate(HEAD):
             cell = Gtk.CellRendererText()
             cell.set_property("xalign", 0.0)              # left justified, all columns
+            if i == C_MSG:                                 # 32 characters wide, the rest cut with an ellipsis; drag the heading edge to widen
+                cell.set_property("width-chars", 32)
+                cell.set_property("max-width-chars", 32)
+                cell.set_property("ellipsize", Pango.EllipsizeMode.END)
             col = Gtk.TreeViewColumn(name, cell, text=i, cell_background=C_BG)
             col.set_resizable(True)
             col.set_alignment(0.0)                         # and the headings
@@ -281,11 +285,9 @@ class App(Gtk.Window):
         self.tree.connect("button-press-event", self._on_tree_click)
         self.tree.connect("columns-changed", self._on_cols_changed)
         self.tree.get_selection().connect("changed", self._refresh_qsy)
-        # the sort is remembered; the first time it is newest update first (C_UPDV is minus the update time)
-        sc, so = self.cfg.get("sort", [C_UPDV, 0]) if isinstance(self.cfg.get("sort"), list) and len(self.cfg.get("sort")) == 2 else [C_UPDV, 0]
-        if sc not in set(numeric.values()) | set(range(len(HEAD))) or so not in (0, 1):
-            sc, so = C_UPDV, 0
-        self.sort.set_sort_column_id(sc, Gtk.SortType.DESCENDING if so else Gtk.SortType.ASCENDING)
+        # every launch starts with the nearest station first (no locator: last); the heading clicks change it for the session
+        self.sort.set_sort_func(C_KMV, self._km_order)
+        self.sort.set_sort_column_id(C_KMV, Gtk.SortType.ASCENDING)
         self.sort.connect("sort-column-changed", self._on_sort_changed)
         sw = Gtk.ScrolledWindow()
         sw.add(self.tree)
@@ -353,6 +355,13 @@ class App(Gtk.Window):
         self.cfg["grid"] = self.grid_e.get_text().strip()
         core.save_config(self.cfg)
         self._tick()
+
+    @staticmethod
+    def _km_order(model, a, b, _data):
+        """Distance order with the stations that have none (-1) after those that have."""
+        ka, kb = model[a][C_KMV], model[b][C_KMV]
+        ka, kb = (ka if ka >= 0 else 1e12), (kb if kb >= 0 else 1e12)
+        return (ka > kb) - (ka < kb)
 
     def _on_sort_changed(self, model):
         if self._loading:
