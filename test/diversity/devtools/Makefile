@@ -108,7 +108,7 @@ endif
 	      $(RADE_LIB) `pkg-config --libs opus` $(LIBS)
 
 clean:
-	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref
+	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref auto_replay
 
 .PHONY: all run score clean
 
@@ -118,3 +118,10 @@ clean:
 #
 cp_replay: cp_replay.c $(TOP)/src/rade_v2_correlator.c $(TOP)/src/rade_v2_correlator.h
 	$(CC) -O2 -Wall -I$(TOP)/src -o $@ cp_replay.c $(TOP)/src/rade_v2_correlator.c -lm
+
+#
+# Both RADE correlators side by side over a capture, with the hand-over rule proposed for a combined
+# "RADE auto" reference (docs/diversity-rade-auto.md). Optionally two captures spliced.
+#
+auto_replay: auto_replay.c $(SRC) rade_tuning.h divcap_replay.h
+	$(CC) $(CFLAGS) -o $@ auto_replay.c $(SRC) $(LIBS)
