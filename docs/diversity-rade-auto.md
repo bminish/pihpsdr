@@ -125,7 +125,7 @@ one, then the other, with no reset between (the second file's own start-up reset
 The splices are artificial, and the stations differ, so they test the rule, not an on-air hand-over.
 
 **One capture at a time (171):** the holder is the right module on 44 of 45 V1 captures (the miss is
-`20260930-172640`, which the pilot alone misses too), 19 of 23 V2 captures, 3 of 102 empty ones
+`20260930-172640`, which the pilot alone misses too), 20 of 23 V2 captures (the three misses are the weak ones from section 2), 3 of 102 empty ones
 (unchanged from section 2: the same three, now as holders), and the V2 side of the one capture that
 has both. On `20261005-230621` the V1 pilot locks on V2 at 26.6 s and again at 45.8 s while V2 holds;
 with the rule that a lock which began under a healthy holder is not counted, it is ignored both
