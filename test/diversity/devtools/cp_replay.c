@@ -14,8 +14,8 @@
  * block: the replay is checked against it, and a line says how many blocks differ.
  *
  * CSV: one row per block of everything the module publishes, plus the prefix SNR each way of
- * combining would have given (arm 0 alone, arm 1 alone, equal gain with the issued weight,
- * maximal ratio). These are the tracker's own estimates, band SNR in about 880 Hz, not decode
+ * combining would have given (arm 0 alone, arm 1 alone, equal gain, maximal ratio; the issued
+ * weight is the maximal-ratio one, and unit_re/unit_im is its unit direction). These are the tracker's own estimates, band SNR in about 880 Hz, not decode
  * results.
  */
 #include <math.h>
@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
 
   if (csv) {
     fprintf(csv, "t,locked,present,quality,snr_db,gamma,bank,freq_off_hz,arm_db,snr0_db,snr1_db,pedestal,"
-            "w_re,w_im,mrc_re,mrc_im,updated,p0,p1,snr_arm0_db,snr_arm1_db,snr_egc_db,snr_mrc_db\n");
+            "w_re,w_im,mrc_re,mrc_im,updated,p0,p1,snr_arm0_db,snr_arm1_db,snr_egc_db,snr_mrc_db,unit_re,unit_im\n");
   }
 
   const size_t nfft = h.nfft;
@@ -100,11 +100,11 @@ int main(int argc, char **argv) {
       const double S0 = rade_v2c_p0 * q0 / (1.0 + q0), N0 = rade_v2c_p0 / (1.0 + q0);
       const double S1 = rade_v2c_p1 * q1 / (1.0 + q1), N1 = rade_v2c_p1 / (1.0 + q1);
       const double egc = (sqrt(S0) + sqrt(S1)) * (sqrt(S0) + sqrt(S1)) / (N0 + N1);
-      fprintf(csv, "%.3f,%d,%d,%.4f,%.2f,%d,%d,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%.6g,%.6g,%.2f,%.2f,%.2f,%.2f\n", t,
+      fprintf(csv, "%.3f,%d,%d,%.4f,%.2f,%d,%d,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%.6g,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f\n", t,
               rade_v2c_locked, rade_v2c_present, rade_v2c_quality, rade_v2c_snr, rade_v2c_gamma,
               rade_v2c_mirrored, rade_v2c_freq_off, rade_v2c_arm_db, rade_v2c_snr0, rade_v2c_snr1,
               rade_v2c_pedestal, wr, wi, rade_v2c_mrc_re, rade_v2c_mrc_im, upd, rade_v2c_p0, rade_v2c_p1,
-              rade_v2c_snr0, rade_v2c_snr1, db(egc), db(S0 / N0 + S1 / N1));
+              rade_v2c_snr0, rade_v2c_snr1, db(egc), db(S0 / N0 + S1 / N1), rade_v2c_arm_cos, rade_v2c_arm_sin);
     }
 
     if (t >= next) {
