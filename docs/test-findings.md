@@ -1332,3 +1332,94 @@ at most 4 points across the whole range. Frame-sync confidence says the same (me
   to a degree or so on the captures of T-027.
 - The `cp_replay` self-check against the engine's recorded state is clean on the two 60 m captures (1 of 703 blocks) and
   not on `152724` (667 of 703, the engine never locked there); see the V2 note, section 12.11.
+
+## T-029: 80 m, marginal V2 signals on both arms, and what the engine does between a reset and a lock
+
+**Captures.** Two on 80 m, `captures/divcap-20261029-210251` and `-210414` (3.790 MHz DIGU, 192 kHz, 16384-point blocks, RADE V2
+reference, Sum, 1000-2000 Hz), and one more 60 m capture from earlier that day, `-161102` (5.354 MHz), which nobody had analysed:
+it is included. All with the noise-weighted gain live. RADE log: `rade-logs/20261029-152708` (still running; the captures start at
+2634, 20143 and 20226 s into it). ADC1 inverted L, ADC2 active loop.
+
+| Capture | Averaging | ADC1 attenuator | Context | Log (in the capture's minute) |
+|---|---|---|---|---|
+| `161102` | 0.65 s | 0 dB | locked throughout | DC0ZO then DL2GRF (-2.8 dB); in sync 78 %, mean SNR +0.0 dB |
+| `210251` | 0.93 s, 1.22 s from 44 s | 0, stepped to 12 then 10 dB at 19 to 23 s | **14 engine resets** at the steps | SV8TMV, one long over, in sync 99 %, mean -1.9 dB |
+| `210414` | 1.22 s | 10 dB | locked throughout | short overs of 2 to 13 s at -4.6 to -7.7 dB (one at +1.7), in sync 67 %, mean -4.6 dB |
+
+The operator changed the Averaging time and the ADC1 attenuator during these, which is why the three differ in both.
+
+### Result 1: the full minute, as scored
+
+Decoded |aux| over the bins with a V2 signal on either arm (43, 53 and 18 bins; `ok` = 1). Radio is the live engine; `Unit` and
+`Noise-w.` are cold replays of the module (loose lock rule, the recorded Averaging, the engine's slew):
+
+| Capture | Arm 0 | Arm 1 | Select | **Radio (live)** | Window | FSK/Digital | Unit (replay) | Noise-w. (replay) |
+|---|---|---|---|---|---|---|---|---|
+| `161102` | 0.888 | 0.561 | 0.888 | **0.897** | 0.890 | 0.881 | 0.896 | 0.894 |
+| `210251` | 0.824 | 0.795 | 0.868 | **0.880** | 0.850 | 0.828 | 0.731 | 0.748 |
+| `210414` | 0.786 | 0.291 | 0.810 | **0.825** | 0.712 | 0.771 | 0.620 | 0.636 |
+
+- **The live weight is above the better arm on all three** (+0.009, +0.056, +0.039), and above per-bin selection on the 80 m pair
+  (+0.012, +0.015). On `210251` the two arms are about as good as each other (0.824, 0.795), the case combining is for.
+- **Window is below the better arm on `210414`, by 0.074, and 0.113 below the V2 weight**: the marginal-signal case the prefix gate
+  is meant for, and the largest gap to Window yet (T-027 had +0.045, on one capture). On `210251` it is 0.030 behind the radio,
+  on `161102` level.
+- **The replay columns on the 80 m pair are not a test of the weight and must not be read as one.** They score *below* both arms
+  (0.731, 0.620). See result 2: the replay is unlocked, at weight 1 + 0j, for the first part of each minute, and the live engine was not.
+- Radio against the log: the offline decode agrees on SNR in sync (+0.14, -1.87, -4.78 dB against +0.03, -1.88, -4.59 dB in the log)
+  and on sync time for `161102` and `210251` (74.7 and 97.2 % against 78 and 99 %). **On `210414` it does not: 52 % against 67 %**
+  on a signal at -4.6 dB, where rade_c's standalone receiver and the radio's decoder can differ on whether a weak over is held. The
+  comparisons in this entry are all between streams read the same way, which is the part that holds.
+
+### Result 2: the same minute cut at the lock
+
+The replays (and a cold engine) start with the weight 1 + 0j and no lock; the live engine had a weight and, on `210251`, lost
+its lock at the attenuator steps. Cut by when the module was locked in the replay:
+
+| `210251` | Bins | Arm 0 | Arm 1 | **Radio** | Window | Unit (replay) | Noise-w. (replay) |
+|---|---|---|---|---|---|---|---|
+| 0-12 s, before the first lock | 12 | 0.817 | 0.902 | **0.930** | 0.896 | **0.581** | **0.581** |
+| 12-30 s, attenuator steps, resets | 18 | 0.872 | 0.847 | **0.914** | 0.888 | 0.727 | 0.745 |
+| 30-60 s, locked | 23 | 0.790 | 0.699 | **0.828** | 0.796 | 0.812 | **0.837** |
+
+| `210414` | Bins | Arm 0 | Arm 1 | **Radio** | Window | Unit (replay) | Noise-w. (replay) |
+|---|---|---|---|---|---|---|---|
+| 0-12 s, before the replay's lock | 5 | 0.853 | 0.909 | **0.935** | 0.888 | 0.367 | 0.365 |
+| 12-60 s, locked | 13 | 0.760 | 0.053 | **0.782** | 0.645 | 0.718 | 0.741 |
+
+- **Where all streams are locked, the picture is T-027's**: noise-weighted above unit (+0.025 and +0.023), and above the better arm
+  (+0.047, -0.019 for the replay on `210414` against +0.022 for the live radio on 13 bins), and Window behind on the marginal one.
+  The live radio and the replay differ by 0.04 on `210414` with weights within a few degrees of each other: that is the noise
+  in the score at 13 bins, and it limits what these windows can say.
+- **Before the lock the weight in force is worth a great deal, and 1 + 0j is the worst case here.** The replays at 1 + 0j score
+  0.581 and 0.365, far below either arm, because on this installation the two arms sit about 150 to 160 degrees apart in phase and
+  equal gain nearly cancels the signal. The live engine, holding the weight it had (`210251`: |w| 3.84, -161 degrees for the first 12 s),
+  scored 0.930, above both arms. **When the tracker locked at 11.9 s its first weight was 4.00 at -165 degrees**: the held weight
+  was within 4 degrees of the right one.
+- That is one capture, and the inter-arm phase of an inverted L and a loop need not stay put: it sits near -145 to -175 degrees in
+  `161102`, the start of `210251` and the start of `210414`, and near -42 and +137 degrees later in `210251` and `210414`. It
+  supports holding the weight across a retune or an attenuator step rather than resetting it (settled decision 2), and
+  it says what the plain 1 + 0j start costs when the arms are in antiphase: up to 0.3 in |aux| for as long as the lock takes.
+  (The `80 m` capture of T-028 is the same case without any lock: the weight stayed 1 + 0j.)
+
+### Result 3: attenuator steps and the lock
+
+On `210251` the operator stepped the ADC1 attenuator 0 to 12 dB and back to 10 dB over 4 s (14 context changes). Each one resets the
+engine's statistics (`div_context_changed()`), so the module unlocked at 19.1 s and **locked again at about 30 s**, 7 s after the last
+step; the weight was held meanwhile (hold 83 % of blocks 210 to 280) and its magnitude fell from 3.95 to 1.25, a factor 3.2: the
+10 dB of the net step, so the held weight was rescaled with the attenuation, as it should be. During that stretch the decode held
+up (|aux| 0.914 for 12 to 30 s against the arms' 0.872 and 0.847) because the held weight was right.
+
+### Result 4: gain cap and the loop
+
+`161102` and the start of `210251` run at |w| 3.1 to 4.0, the cap (4) most of the time: the loop hears an absolute level 10 or so dB
+below the inverted L (noise as well as signal), so maximal ratio asks for a large gain on it even where it is the poorer arm
+(`161102`: arm 1 decodes 0.561 against 0.888). Unit and noise-weighted replays are level there (0.896, 0.894), so the cap binds without
+cost on that capture; T-028's sweep had found cap 4 to 10 flat.
+
+### Not covered
+
+- Three captures, one evening, one station for the 80 m long over; the lock-state windows have 5 to 23 bins and a score noise of a few
+  hundredths. No new Averaging sweep: the operator changed it between and inside the captures, and the unlocked starts confound a replay.
+- The live engine's stale weight at the start of `210251` is one example of its being right. Whether it is right in general is not measured.
+- Which stations transmitted what, and how far, is not recorded here.
