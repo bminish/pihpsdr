@@ -8,6 +8,8 @@ DEVELOPMENT TOOL. Holds the C port (src/rade_v2_correlator.c, via ../cp_replay) 
     on T-008 by 6 s and stays locked, and never locks on SSB
   - the capture's self-check: a copy of T-008 made to look as if taken on the V2 reference, with
     the replay's own state written into each block, replays with no block differing from it
+  - the weight issued is the capped maximal-ratio weight: its phase is the unit direction's, its
+    gain never exceeds 4, and the unit direction has unit length
   - once locked, the weight's phase agrees with the reference's inter-arm phase to within 30
     degrees at the median. The reference works on the conjugated arms for bank 1, where the true
     weight conj(h1/h0) is the reference's own h1/h0 phase; on bank 0 it would be the negative
@@ -126,4 +128,17 @@ d = [abs(cp.wrap(np.radians(float(r[7])) - ref[int(r[0]) - 1])) for r in rows
      if r[2] == 'LOCKED' and r[3] == '+' and 0 < int(r[0]) <= len(ref)]
 med = np.degrees(np.median(d))
 check(len(d) > 20 and med < 30, f'weight phase against reference: median {med:.0f} deg over {len(d)} seconds')
+csvw = os.path.join(HERE, '..', 'build', 'test_cp_gain.csv')
+subprocess.run([REPLAY, os.path.join(TOP, 'captures', 'divcap-20260930-184835.divc'), '1', '1.0', csvw],
+               capture_output=True, check=True)
+g = np.genfromtxt(csvw, delimiter=',', names=True)
+u = g['updated'] > 0
+wv = g['w_re'] + 1j * g['w_im']
+uv = g['unit_re'] + 1j * g['unit_im']
+check(u.sum() > 100, f'weights made on T-008: {int(u.sum())}')
+check(np.allclose(abs(uv[u]), 1.0, atol=1e-3), 'unit direction has unit length')
+check(abs(wv[u]).max() <= 4.0 + 1e-3, f'gain capped at 4: max {abs(wv[u]).max():.2f}')
+check(np.max(abs(np.angle(wv[u] * np.conj(uv[u])))) < 1e-3, 'weight phase is the unit direction\'s')
+check(np.allclose(wv[u], g['mrc_re'][u] + 1j * g['mrc_im'][u], atol=1e-3), 'weight issued is the logged maximal-ratio weight')
+check(abs(wv[u]).std() > 0.05, f'gain is not the unit weight: spread {abs(wv[u]).std():.2f}')
 sys.exit(1 if fails else 0)

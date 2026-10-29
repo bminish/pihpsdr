@@ -79,8 +79,8 @@ extern double rade_v2c_arm_cos;
 extern double rade_v2c_arm_sin;
 
 //
-// For the log, not for control. The maximal-ratio weight (conj(h1/h0) N0/N1,
-// gain capped at 4) that is computed and not issued, each arm's signal-to-noise
+// For the log. The maximal-ratio weight (conj(h1/h0) N0/N1, gain capped at 4), which
+// is the weight issued, each arm's signal-to-noise
 // on the prefix in dB, and the fraction of the power that is coherent at lag
 // 128 away from the prefix: a tone or a comb on the 62.5 Hz grid, i.e. what
 // the pedestal subtraction took out, and each arm's power in the band (with the
@@ -113,9 +113,11 @@ extern void rade_v2c_reset(void);
 // There is no hang: once locked the weight is held, however long the prefix
 // is gone, until it comes back. Returns 1 when a new weight is available in
 // *wr/*wi, in the sense of div_cos/div_sin: ready to be applied as z0 + w*z1.
-// The weight is the unit co-phase direction, conj(h1/h0)/|h1/h0|: its phase is
+// The weight is the maximal-ratio weight conj(h1/h0) N0/N1, gain capped at 4: its phase is
 // what the objective maximises (the signal added in phase, the interferer not
-// being in the prefix correlation). It is not slew limited here; the V2
+// being in the prefix correlation) and its gain turns the noisier arm down, the
+// interferer counting as noise. The unit direction is in rade_v2c_arm_cos/sin.
+// It is not slew limited here; the V2
 // decoder is hurt by steps in phase, and the engine's slew is what spaces them.
 //
 extern int rade_v2c_process(const float *arm0, const float *arm1, int n,
