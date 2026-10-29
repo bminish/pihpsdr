@@ -1423,3 +1423,85 @@ cost on that capture; T-028's sweep had found cap 4 to 10 flat.
   hundredths. No new Averaging sweep: the operator changed it between and inside the captures, and the unlocked starts confound a replay.
 - The live engine's stale weight at the start of `210251` is one example of its being right. Whether it is right in general is not measured.
 - Which stations transmitted what, and how far, is not recorded here.
+
+## T-030: the weight before the prefix has locked
+
+**Question** (T-029): what should the combiner apply while the V2 tracker has no weight to give? Today it applies whatever is in force:
+the weight from the last time round (kept across a retune, rescaled for an attenuator step, saved in the props), and `1 + 0j` (equal gain) on
+a fresh start (`radio.c`, LC-037). The tracker issues a weight only when locked and the prefix is present. Two things from the operator
+bound the answer: **RX1 will usually already be the better arm**, but **the SNR measurements, when they arrive, are not to be ignored**.
+This is the offline measurement; nothing is built.
+
+**Method.** The ten usable V2 captures of 2026-10-29 (five 40 m, three 60 m, two 80 m), replayed from cold, scored on decoded |aux| over
+the bins in the **first 15 s** that have a V2 signal on either arm (120 bins in all). After the first weight every scheme is the same
+noise-weighted weight with the engine's slew, so the schemes differ only in what is applied before it. The weights are forward-filled with
+`ok` = 1 (see T-027). Replay lock rule: the loosest of section 5.4 (0.25, 3 of 4, tolerance 25) except where noted.
+
+| Scheme | What is applied until the first weight | Pooled \|aux\|, 15 s | Captures below arm 0 by more than 0.05 |
+|---|---|---|---|
+| arm 0 alone | the operator's RX1 | 0.754 | 0 |
+| arm 1 alone | | 0.843 | 3 |
+| **equal gain, 1 + 0j (today on a fresh start)** | `w = 1` | **0.815** | **2** (`210251` 0.595, `210414` 0.365) |
+| arm 0 only until the lock | `w = 0` | 0.816 | 0 |
+| **Window until the lock** | the Window reference's own weight (`run_ref --ref band`) | **0.875** | **0** |
+| provisional weights from the first sign of the prefix | the tracker's weight from a lock rule of 1 of 1 (first weight 1 to 6 s, against 4 to 12 s) | 0.875 (from 1 + 0j), 0.863 (from 0) | 1, 0 |
+| provisional arm choice from the prefix SNRs | arm 0 until the SNRs say arm 1; then arm 1 dominant in phase | 0.867 | 0 |
+| ceiling: the weight the tracker finds at its lock, applied from the start | | 0.903 | 0 |
+
+Per capture (|aux|, first 15 s):
+
+| Capture | Bins | Arm 0 | Arm 1 | 1 + 0j | w = 0 | Window until lock | Provisional (from 1 + 0j) | Ceiling |
+|---|---|---|---|---|---|---|---|---|
+| `112951` | 14 | 0.907 | 0.900 | 0.929 | 0.904 | 0.926 | 0.935 | 0.917 |
+| `113200` | 15 | 0.865 | 0.777 | 0.922 | 0.879 | 0.934 | 0.923 | 0.931 |
+| `113322` | 13 | 0.579 | 0.901 | 0.891 | 0.832 | 0.893 | 0.905 | 0.910 |
+| `113613` | 11 | 0.276 | 0.727 | 0.592 | 0.510 | 0.564 | 0.597 | 0.737 |
+| `113838` | 9 | 0.315 | 0.821 | 0.757 | 0.389 | 0.757 | 0.799 | 0.837 |
+| `155202` | 9 | 0.890 | 0.832 | 0.921 | 0.907 | 0.926 | 0.921 | 0.928 |
+| `155434` | 14 | 0.892 | 0.850 | 0.914 | 0.909 | 0.918 | 0.919 | 0.930 |
+| `161102` | 15 | 0.944 | 0.816 | 0.947 | 0.941 | 0.947 | 0.952 | 0.937 |
+| `210251` | 15 | 0.836 | 0.906 | 0.595 | 0.843 | 0.904 | 0.902 | 0.938 |
+| `210414` | 5 | 0.853 | 0.909 | 0.365 | 0.894 | 0.899 | 0.719 | 0.921 |
+
+### What it says
+
+- **The start weight is worth up to 0.09 pooled (0.903 against 0.815), and a lot more in single captures** (0.3 to 0.5 where the arms
+  are in antiphase). The two failures of equal gain are exactly the two 80 m captures, where the arms are about 150 degrees apart.
+  Equal gain costs nothing, or helps, wherever the arms happen to be near in phase (the 40 m and 60 m captures).
+- **Starting from arm 0 alone is safe and gains nothing.** Pooled it ties equal gain (0.816 against 0.815) and never goes below arm 0 (by
+  construction), but it loses badly where arm 1 is the better antenna: `113613` 0.510 against 0.727, `113838` 0.389 against 0.821.
+  **RX1 is the better arm in seven of these ten captures and clearly the worse in three** (`113322`, `113613`, `113838`), so a prior that
+  RX1 is better is right most of the time and wrong enough of the time to matter. That is the case for letting the measurements in.
+- **Window until the lock does best of the schemes that need no new detection, and fails nowhere**: 0.875 pooled, two thirds of the way
+  from equal gain to the ceiling, no capture below arm 0 by more than 0.05, and no false-lock exposure, because it needs no V2 lock at all.
+  Its weakness is the one Window has: on `113613` (strong SSB) it follows the SSB (0.564 against arm 1's 0.727 and the ceiling's 0.737),
+  no better than equal gain.
+- **Provisional weights from the first sign of the prefix reach the same 0.875, and cannot be used as they stand.** Made from a lock rule
+  of 1 of 1, the tracker issues weights on **67 of 147 captures that are not V2** (25 of them on more than a tenth of their blocks):
+  LSB 13 of 19, USB 16 of 33, digital-lower 21 of 36, SAM 9 of 15, CW-lower 4 of 23, AM 2 of 11, digital-upper 2 of 10. The shipped rule
+  does it on 2 (the AM broadcast of section 5.4), the loosest one on 9. A rule that lets weights through on CW, SSB and a tune carrier is
+  the one the operator ruled out. Its arm-0-prior variant (0.863) and its prefix-SNR arm choice (0.867) are no better than Window.
+- **The SNR measurements do help once there is a weight to make, and that is the lock's job.** The ceiling's last 0.03 (0.903 against 0.875)
+  is the early noise-weighted weight, which needs the phase and the per-arm noise the prefix gives, and that needs a detection.
+
+### Where that leaves a design (nothing built)
+
+1. **Keep holding.** The held weight was right to within 4 degrees in T-029 and scores 0.93 where equal gain scores 0.58; this is settled
+   decision 2 and the data repeat it.
+2. **Replace `1 + 0j` for the case of nothing held and nothing measured.** The measured candidate is **the Window reference's weight until
+   the prefix locks**. Two routes, neither built: run the band reference's solve alongside V2 until the lock (it needs the FFT path the
+   RADE references skip, so a CPU cost to measure on the Pi), or give the V2 module a lag-0 cross-spectrum estimate over its own 880 Hz
+   band (small, in the module, and the same quantity Window uses). Neither changes the lock rule, so neither adds a false-lock risk.
+3. **Not worth doing alone: arm 0 until the lock.** Safe, but no gain, and wrong on three of ten. Worth it only as the fallback if the
+   rest is judged too much for a start weight.
+4. **Not to be done: weights from a relaxed lock.** The false weights on CW and SSB are too many.
+
+### Not covered
+
+- Ten captures, 120 bins, one day, two antennas; per-capture differences of under 0.03 are noise at 9 to 15 bins. The Window weights are the
+  engine's (`run_ref`, cohmin 0.20, flat) with its slew; they depend on the Window tuning of the moment.
+- The first 15 s is not the whole of any start: the shipped rule locks in 5 to 47 s. The same schemes over the whole minute differ only
+  before the lock.
+- The false-weight count is blocks on which the module makes a new weight, not audio the operator hears: with a V2 reference selected on a
+  non-V2 signal. It does not say how much a weight on SSB would matter.
+- The Window-based scheme was tested by splicing its weight series to the V2 series at the first weight, not in the engine.
