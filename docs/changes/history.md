@@ -13,6 +13,10 @@ Newest first.
   change; the next number is LC-064. The suite passes. Force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`). Full record:
   [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
 
+- 2026-10-29: RADE V2, Sum applies the noise-weighted gain (LC-068), on `feature/rade-native`. From the first on-air captures
+  (T-027, five 40 m captures: the unit weight lost to one antenna alone on the weakest, the tracker's own logged maximal-ratio
+  weight did not), designed (V2 note, section 12), built and checked offline, then confirmed on two 60 m captures
+  with it live (T-028). Slew, hold threshold and Averaging left as they were after sweeps. Decided with the owner.
 - 2026-10-22: RADE V2 reference (LC-064 to LC-067, LT-038), on
   `feature/rade-native`. V1 reviewed against rade_c first; then a V2 tracker
   from the cyclic prefix, checked against rade_c's own V2 receiver over all
