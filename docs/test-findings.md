@@ -1232,3 +1232,103 @@ decode *worse*: 0.750 became 0.654 and 0.665 on `113838`, and the other four mov
   on this reading) 0.29. Caught on 2026-10-29 when the engine
   path (`run_ref --ref rade2`) did not reproduce a replay it matched weight for weight. Every figure in this entry
   is with `ok` = 1 (the recorded `radio` stream does not use a file).
+
+## T-028: the noise-weighted gain on air (60 m), and the Averaging time over seven V2 captures
+
+**Captures.** Three, 2026-10-29, `captures/divcap-20261029-152724` (3.632 MHz, 80 m), `-155202` and `-155434`
+(5.354 MHz, 60 m). DIGU, 192 kHz, 16384-point blocks, 703 blocks each, RX filter 1000-2000 Hz, RADE V2
+reference, Sum, **Averaging 1.07 s**, no attenuation on either ADC, no arm swap, no context change. The binary was
+built with the noise-weighted gain (`5a23387b`), so these are the first captures where the **applied weight is the
+noise-weighted one**: the live weight's magnitude has a median of 0.50 (10th to 90th percentile 0.28 to 0.74), where
+it was 1.0 before. RADE log: `rade-logs/20261029-152708` (started 15:27:08 UTC; the captures start at 16, 1494 and
+1646 s into it). ADC1 is the inverted L and ADC2 the active loop.
+
+Stations (log): on 60 m DK8EQ and DL2GRF in turn, overs of 12 to 36 s, mean SNR -0.9 to +2.4 dB, every over closed
+by an end-of-over frame. On 80 m a signal at about -7 dB in overs of 2 to 8 s (no call decoded).
+
+### Result 1: 60 m, the live noise-weighted weight
+
+Decoded |aux| over the bins with a V2 signal (50 and 49 bins; `ok` = 1 for the replayed weights, see the trap at the end
+of T-027). `Radio` is the live engine's noise-weighted weight; `Unit (replay)` is what the unit weight of the old
+code would have given on the same capture, replayed:
+
+| Capture | Arm 0 | Arm 1 | Select | **Radio (live, noise-weighted)** | Window | FSK/Digital | Unit (replay) | Noise-weighted (replay) |
+|---|---|---|---|---|---|---|---|---|
+| `155202` | 0.875 | 0.541 | 0.881 | **0.889** | 0.889 | 0.887 | 0.872 | 0.885 |
+| `155434` | 0.906 | 0.638 | 0.912 | **0.917** | 0.916 | 0.913 | 0.895 | 0.913 |
+
+Sync time: arm 0 86.7 and 82.2 %, arm 1 52.2 and 63.7 %, radio 85.7 and 82.2 %. The offline decode of the radio's
+own stream agrees with the live log (in-sync time from the log 86.7 and 82.2 %; SNR in sync -0.2 and -0.1 dB against
+log overs of -0.9 to +2.4 dB).
+
+- **The direction is the other way round from T-027, and the same weight handles it.** On 40 m arm 1 (the loop) was
+  the better antenna for the weak stations; here arm 0 (the inverted L) is, by 3.0 and 3.8 dB of prefix SNR
+  (median) with equal band power, and arm 1 decodes only 52 and 64 % of the time. The weight turned arm 1 down
+  (gain 0.5 against 1.0) with nothing switched.
+- **The unit weight would have lost to the better arm here**: 0.872 and 0.895 against arm 0's 0.875 and 0.906
+  (-0.003, -0.011). The live weight is above it (+0.014, +0.011), **+0.017 and +0.022 over the unit weight**. This
+  is the mechanism T-027 found (equal gain adds the poorer arm's noise), seen on the other pair of antennas, and
+  predicted by the tracker's prefix SNRs: maximal ratio 3.2 and 3.1 dB against equal gain 2.6 and 2.5.
+- **Its size is small, and it should be read that way.** Sync time is the better arm's to within a point
+  (85.7 against 86.7 %, 82.2 against 82.2 %), and Window and FSK/Digital are level with it (within 0.004 and
+  0.002). On a clean signal at about 0 dB RADE SNR with one good antenna the combiner's worth is not being worse
+  than that antenna, which the old weight was.
+- **The offline replay of the noise-weighted weight tracks the live one** (0.885 and 0.913 against 0.889 and
+  0.917), so the replays in this entry stand in for the live weight.
+- **The level.** The decoder's AGC gain in sync is 0.77 and 0.79 (median; 10th to 90th percentile 0.69 to 0.93), against
+  0.79 to 0.80 (0.74 to 0.85) in T-027 with the unit weight. The output of the noise-weighted weight is 2 to 3 dB
+  louder (T-027, section 12.4 of the V2 note), and the decoder's gain did not move: the AGC absorbs it, as assumed.
+
+### Result 2: the 80 m capture, which is not a test of the weight
+
+`152724` never locked under the shipped rule (0 of 703 blocks), so the weight stayed at its starting 1 + 0j, equal
+gain. Arm 1 decodes nothing at all there (0 % sync) and arm 0 33 % (-4.2 dB), so equal gain sums a dead arm into the
+good one: radio 26 % sync and |aux| 0.677 against arm 0's 33 % and 0.690, over seven bins. The loose lock rule of
+T-027 locks at 38 s. Two things to keep: the weak, short overs of an 80 m signal at -7 dB are beyond the shipped
+lock rule (candidate 3), and until the tracker locks the weight is plain equal gain.
+
+### Result 3: the Averaging time
+
+The question left open: what Averaging does to the weight. The noise-weighted weight with the engine's slew
+(15 % per block) was replayed from every V2 capture of today (seven, `152724` excluded) at the Averaging values from
+the menu's range, loose lock rule, `ok` = 1. Mean decoded |aux|:
+
+| Averaging | `112951` | `113200` | `113322` | `113613` | `113838` | `155202` | `155434` | Mean |
+|---|---|---|---|---|---|---|---|---|
+| 0.2 s | 0.931 | 0.910 | 0.899 | 0.768 | 0.638 | 0.901 | 0.918 | 0.852 |
+| 0.4 s | 0.928 | 0.916 | 0.902 | 0.780 | 0.636 | 0.891 | 0.913 | 0.852 |
+| 0.8 s | 0.926 | 0.911 | 0.904 | 0.790 | 0.743 | 0.888 | 0.921 | 0.869 |
+| **1.07 s** | 0.927 | 0.912 | 0.902 | 0.783 | 0.750 | 0.885 | 0.913 | 0.867 |
+| 2 s | 0.928 | 0.907 | 0.903 | 0.790 | 0.747 | 0.882 | 0.915 | 0.867 |
+| 4 s | 0.917 | 0.904 | 0.901 | 0.780 | 0.785 | 0.887 | 0.918 | 0.870 |
+| 6 s | 0.918 | 0.904 | 0.904 | 0.782 | 0.813 | 0.880 | 0.912 | 0.873 |
+
+Sync time of the weakest capture, `113838`: 46.8, 46.9, 53.9, 54.2, 54.2, 58.8 and 59.0 %; the other six move by
+at most 4 points across the whole range. Frame-sync confidence says the same (mean 0.813, 0.811, then 0.824 to 0.827).
+
+- **On six of the seven it does not matter**: the spread across 0.2 to 6 s is 0.012 to 0.022 on each (|aux| is near
+  its ceiling there, so differences under 0.02 are not resolved), with no consistent direction. The strongest, `155202`
+  and `112951`, are slightly better short (0.901 at 0.2 s against 0.880 at 6 s; 0.931 against 0.918).
+- **On the weak one it matters a lot, and in one direction**: under 0.8 s the weight falls to 0.64 (a noisy phase and
+  a noisy gain are followed), 0.74 to 0.75 at 0.8 to 2 s, then 0.785 at 4 s and 0.813 at 6 s, the end of the menu.
+  Going from 1.07 s to 6 s gains 0.063 there and costs 0.001 to 0.021 elsewhere.
+- **Where that leaves the default**: 1.07 s is within 0.006 of the best mean, and the whole band from 0.8 s up is flat on
+  the mean (0.867 to 0.873). Nothing here argues against it. What the sweep adds is that *below* 0.8 s a weak signal
+  loses badly, and that a longer time is the safer way to err for weak signals, at a cost of at most 0.02 on strong
+  ones.
+- **What it rests on**: one weak capture drives the whole dependence. Whether the benefit of 4 to 6 s holds for other
+  weak signals, or only for that one's SSB and fading, is not known. A setting that depends on the signal would be a new
+  mechanism for an effect seen on one capture in seven (settled decision 3); not proposed.
+
+### Not covered
+
+- Two 60 m captures, two stations in one session; the clean-signal comparison cannot separate the weights by more than
+  0.02.
+- No live A/B: Window and FSK/Digital are replayed offline, not run in the same minute; the live run was on the V2
+  reference throughout.
+- The sweep varies the Averaging time of the weight only. The detection profile (0.5 s) and the slew (15 % per block)
+  stay fixed; the lock rule is the loose one, so that every capture locks.
+- The Averaging figures are replays of the module on recorded blocks, not the engine; the engine path matched the replay
+  to a degree or so on the captures of T-027.
+- The `cp_replay` self-check against the engine's recorded state is clean on the two 60 m captures (1 of 703 blocks) and
+  not on `152724` (667 of 703, the engine never locked there); see the V2 note, section 12.11.
