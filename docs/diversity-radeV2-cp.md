@@ -507,3 +507,113 @@ result 3). The weight held is better than one made from a prefix that weak.
   count of non-V2 locks does not separate them, so it needs re-reading by class first.
 - **The A/B is repeated as opportunities arise**, with a capture and the RADE log of each run.
 
+
+## 12. Design: the noise-weighted gain (proposed LC-068; not built)
+
+Decided 2026-10-29 (section 11.5). This is the design and the checks it rests on; nothing here is in the code.
+
+### 12.1 What changes for the operator
+
+On RADE V2, **Sum applies the maximal-ratio weight** `w = conj(r) * N0/N1` (arm 1 added to arm 0, in phase, with a gain
+that turns a noisier arm down and a cleaner arm up) in place of the unit co-phase weight. Nothing else is meant to move:
+
+| Objective | Today | After |
+|---|---|---|
+| Sum | unit direction `conj(r)/|r|` | `conj(r) N0/N1`, gain capped at 4 |
+| Best | arm picked by `arm_db`; direction from `arm_cos/sin` | unchanged (already independent of the module's weight) |
+| Null | minus the unit direction | unchanged: minus the unit direction, taken from `arm_cos/sin` |
+| Invert, Hold, Manual | | unchanged |
+
+There is **no new setting**: no menu row, no props key, no change to the settings command or the capture format. The
+unit weight stays reachable only as an offline stream. A switch would be a mechanism for a case the evidence does not
+support: the noise-weighted weight was at or above the unit weight on 5 of 5 captures (T-027).
+
+### 12.2 Where the code changes
+
+- `rade_v2_correlator.c`, the weight step (around the `mrc` lines): `c->out` becomes the capped `mrc`; `arm_cos/arm_sin`
+  keep publishing the unit direction, so Best and Null have what they use today. `rade_v2c_process()` then returns the Sum
+  weight in `wr/wi`.
+- `diversity_auto.c`, the RADE branch of `div_process_block()`: the Null case takes `-arm_cos/-arm_sin` for V2 instead of
+  `-wr/-wi`, so its meaning does not change. Sum already passes `wr/wi` to `div_apply_weight()`. V1 is not touched: its
+  `wr/wi` is the pilot's solve, as now.
+- `cp_replay.c` and `test_cp_replay.py`: `w_re/w_im` become the applied weight; the unit direction is added as a column so
+  the phase check still has a reference.
+- Not changed: `div_apply_weight()` (its 10x clamp is not reached: the cap is 4), `DIV_SLEW_FRAC`, `div_norm`, the menu,
+  the settings, the capture format.
+
+It is two files of ours (`rade_v2_correlator.c`, the V2 block of `diversity_auto.c`) and the replay tools; none of
+dl1ycf's. The series is not cut for `TEST` yet, so it goes in as ordinary commits and is folded at the cut like the
+module's earlier refinements.
+
+### 12.3 The parameters, and how sensitive the answer is
+
+Same five captures, same scoring as T-027, noise-weighted weight with the engine's slew, cold replay (mean decoded |aux|):
+
+| Setting | `112951` | `113200` | `113322` | `113613` | `113838` |
+|---|---|---|---|---|---|
+| gain cap 4 (as logged) | 0.927 | 0.912 | 0.902 | 0.783 | 0.750 |
+| cap 2 | 0.926 | 0.909 | 0.894 | 0.774 | 0.740 |
+| cap 8 | 0.927 | 0.911 | 0.906 | 0.783 | 0.749 |
+| cap 10 | 0.927 | 0.910 | 0.904 | 0.783 | 0.749 |
+| noise floor 0.5 % / 5 % of arm power (2 % as logged) | 0.927 / 0.927 | 0.912 / 0.912 | 0.902 / 0.902 | 0.783 / 0.783 | 0.750 / 0.750 |
+
+- **Cap 4 stays.** Cap 2 costs 0.004 to 0.011 and the unclamped gain exceeds 4 on 0 % (`112951`), 14 % (`113322`)
+  and 5 % (`113838`) of updates (median 1.9 to 2.5), so the cap binds seldom; 8 and 10 gain at most 0.004 on one
+  capture and give up protection against a bad noise estimate. The cap is a limit on how far a noise estimate may
+  be trusted, not a tuned value.
+- **The noise floor does not matter** between 0.5 and 5 %. It stays at 2 %.
+- The two were tried on the captures that chose them. There is no held-out capture; the next A/B (11.4) is it.
+
+### 12.4 Output level
+
+Today's unit weight raises the passband power by a median 1.8 to 3.4 dB over arm 0 alone (`112951`, `113322`,
+`113838`); the noise-weighted weight by a median 4.3 to 5.6 dB (90th percentile 7.6 to 10.7), so about 2 to 3 dB more
+than before. `div_norm` does not act on RADE references (they run no transform), as with V1, so nothing levels
+it. The audio goes from WDSP's output into the RADE receiver, which has its own input AGC. **Not measured on air**
+whether that is enough; the check is the receiver's input level and the AGC on the first run. If it is not, the
+module has the powers (`p0`, `p1`, the cross term) to scale by `sqrt(P0/Pout)` as `div_norm` does for the other
+references; not designed in, because nothing says it is needed.
+
+### 12.5 What stays as it is, and why
+
+- **Slew and hold.** The weight is slewed in Cartesian at 15 % per block, so now the gain slews with the phase. That
+  is exactly what was scored (T-027 result 2). The hold threshold stays 0.20 (result 3).
+- **The noise term's time constant** stays the Averaging time. A shorter one for the noise only, so that SSB bursts
+  turn an arm down while they last (candidate 2, section 11.3), changes `N0`, `N1` and nothing else, and goes in
+  after this one has run on air; changing both at once would leave no way to say which did what.
+- **The lock rule** is not touched here (candidate 3).
+
+### 12.6 Risks
+
+1. **The noise estimate is the new single point of trust.** `N_k` is the arm's power less its prefix-correlated part. On
+   multipath the prefix-correlated part is biased (V2-F2), which would turn the better arm down. T-027 did not
+   characterise the multipath on those paths. The cap and the floor bound the damage; they do not remove it.
+2. **A tone or comb in band.** It is taken out of the prefix correlation (the pedestal) but not out of the arm's power,
+   so it counts as noise on the arm it is stronger on, which is the right way round. Not measured.
+3. **Null.** The unit weight cancels the signal only if the two arms carry it at equal gain; with these antennas
+   (`|r|` about 0.45) the null is shallow. The right null gain is `1/|r|`. Left alone: the value of Null on V2 was
+   already marked uncertain, and this is a separate, small change if wanted.
+4. **Five captures, one session, three stations, an inverted L and a loop.** The ordering was the same on all five; the
+   +0.113 is one capture.
+
+### 12.7 Checks before it is called done
+
+1. **Unit test** (`test_cp_replay.py`): on a synthetic pair with a known gain ratio and noise ratio the applied weight's
+   magnitude is `min(cap, |r| N0/N1)` within a tolerance, its phase is the existing check's, Null's is still unit, and
+   Best's pick does not move.
+2. **Engine path** (`run_ref --ref rade2`) on the five captures, scored with `score_radev2` against `radio`: at or above
+   it on all five (|aux| 0.927, 0.912, 0.902, 0.783 and 0.750 are what the cold replay gave; the engine path, with its
+   own lock, should land near them), and `113838` well above 0.64.
+3. **Self-check** (`cp_replay` against the engine's recorded state): the recorded T-027 captures hold unit weights, so
+   their applied-weight column will differ from the new code from the first block; that is expected and the check
+   should say so, not fail silently. Captures taken after the change pass it.
+4. **On air**: the same A/B as T-027, one station and band, with the capture and the RADE log of each run, and the RADE
+   receiver's input level read at the same time (12.4).
+
+### 12.8 Order of work
+
+1. Module returns the capped `mrc` as the Sum weight; replay tools and the unit test follow it (no engine change; the
+   engine still gets a weight from `wr/wi`, so this alone already changes Sum and Null).
+2. Engine: Null reads `arm_cos/arm_sin` for V2. (Between 1 and 2 Null would be `-mrc`; they go in as one commit.)
+3. Offline acceptance (12.7, 2 and 3).
+4. On air (12.7, 4). The register entry (LC-068) and the write-up follow the on-air result, not the offline one.
