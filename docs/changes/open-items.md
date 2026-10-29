@@ -26,7 +26,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 - [ ] LC-013 (notches): a capture with a steady interferer inside a weaker station's passband. None so far; the mechanism is confirmed on air only.
 - [ ] RADE V2 (LC-064 to LC-067, on `feature/rade-native`, not `TEST`): built; **the operator's on-air evaluation is the next step**, then cutting the series for `TEST`. What it needs and what is open:
   - A/B on one station and band, V2 reference against Window and FSK/Digital, with a capture (`make DIVCAP=1`) of each run and the RADE engine's log from the same time; what to watch is in [diversity-radeV2-cp.md](../diversity-radeV2-cp.md#9-logging-and-on-air-evaluation). Decode scoring is deferred on purpose.
-  - Sum uses the unit co-phase weight. The noise-weighted (maximal-ratio) weight is logged and compared offline; it becomes a second experiment if the log says it would have won.
+  - Sum uses the unit co-phase weight. The noise-weighted (maximal-ratio) weight is logged and compared offline; **the first on-air captures (T-027, 2026-10-29) say it would have won**: at or above the unit weight on 5 of 5, +0.004 to +0.113 decoded |aux|, the unit weight losing to one antenna alone on the weakest ([diversity-radeV2-cp.md](../diversity-radeV2-cp.md#11-first-evaluation-on-air-2026-10-29-t-027)). Not applied; to be discussed.
   - Invert and Null are 180 degree steps; the value of a null on V2 is uncertain.
   - The lock rule misses 3 weak captures and locks on 2 AM-broadcast recordings; time to lock is 17 to 23 s on the weak ones.
   - Not measured: detection with a strong tone inside a V2 signal, real EMC, the Pi's CPU, the V2 menu row and overlay on screen, the log lines' text.

@@ -1078,3 +1078,143 @@ five-second minimum), not that function. No A/B with the feature built in; the
 comparison is the output level against arm 0, which is what the stand-down
 sets. The analysis script was not kept.
 
+
+## T-027: RADE V2 on 40 m, mid-morning, weak stations under SSB interference - the V2 reference on air
+
+**Captures.** Five of 60 s each, 2026-10-29, `captures/divcap-20261029-112951`, `-113200`, `-113322`,
+`-113613`, `-113838`. All at 7.177 MHz DIGU, 192 kHz, 16384-point blocks (85 ms), 703 blocks each, RX filter
+1000-2000 Hz, **RADE V2 reference (5), Sum, Averaging 1.07 s**, no context change, no dropped block, no arm
+swap (arm 0 is ADC1). ADC1 has 10 dB of attenuation and ADC2 none, in every block. They are the first captures
+taken on the V2 reference, and the first V2 captures with the RADE engine's own log beside them
+(`rade-logs/20261029-112930`, started 11:29:30 UTC; the captures start at 20, 149, 231, 402 and 547 s into it).
+
+Operator's description: mid-morning on 40 m, RADE V2 stations that are not strong, at times under severe SSB
+interference. Stations the log decoded: DJ3KJ, DK3UD, DK7XU.
+
+**What the log says the five were.**
+
+| Capture | Log time | In sync (live) | Mean SNR in sync | What was on |
+|---|---|---|---|---|
+| `112951` | 20-80 s | 93.4 % | +2.4 dB | DJ3KJ to 41 s, then an over with no call decoded |
+| `113200` | 149-209 s | 92.6 % | +0.4 dB | DJ3KJ then an over with no call decoded |
+| `113322` | 231-291 s | 91.5 % | +0.1 dB | DK3UD, then short overs |
+| `113613` | 402-462 s | 81.8 % | -2.9 dB | DK3UD to 445 s, then DJ3KJ (capture second 43 on) |
+| `113838` | 547-607 s | 44.1 % | -5.7 dB | five short overs, 2 to 9 s each, DK3UD at 569 s (-9 dB) |
+
+The set runs from comfortable to marginal, and gets worse with time. Out-of-band energy (1.9 to 2.8 kHz above
+the dial, outside the V2 carriers) sits, against each arm's own quiet floor (300 to 1000 Hz), 5 to 12 dB above
+it in `112951` and `113200`, 1 to 7 dB in `113322`, 12 to 22 dB in `113613` and 8 to 21 dB in `113838`, on both
+arms alike. The operator calls it SSB; it was not demodulated here.
+
+### Method
+
+Each capture decoded by rade_c's V2 receiver (`score_radev2`, pin `cc17222`), several streams side by side:
+each arm alone, `radio` (arm 0 + w arm 1 with the weight the radio recorded as applied, i.e. what the operator
+heard), the Window and FSK/Digital references replayed through `run_ref` with the settings `TEST` uses, and
+weight series from `cp_replay` (the V2 tracker run cold over the capture). The score is the paired comparison
+over the 1 s bins where either arm shows a V2 signal (25 to 55 bins): decoded |aux| leads, as in
+`docs/tools/radev2-scoring.md` on `test/radeV2-correlator`.
+
+**The offline `radio` stream is what was heard.** Decoded offline, its sync is 92.7, 87.8, 90.3, 77.0 and
+43.4 % (including the receiver's 1.5 s hangover) against 93.4, 92.6, 91.5, 81.8 and 44.1 % in sync in the
+live log; its SNR in sync is +2.4, +0.3, 0.0, -2.7 and -5.8 dB against +2.4, +0.4, +0.1, -2.9 and -5.7 dB in
+the log. Both decoders agree to 0.1 to 0.2 dB, so the other streams, which only differ in the weight, can be
+read as what the radio would have heard.
+
+### Result 1: the V2 reference against the antennas and the other references
+
+Mean decoded |aux| over the bins (1.0 is a certain decode; arms 0 and 1 alone; `select` is the better arm bin by
+bin, with hindsight):
+
+| Capture | Bins | Arm 0 | Arm 1 | Select | **Radio (V2, unit weight)** | Window | FSK/Digital |
+|---|---|---|---|---|---|---|---|
+| `112951` | 55 | 0.884 | 0.859 | 0.912 | **0.923** | 0.917 | 0.883 |
+| `113200` | 47 | 0.824 | 0.819 | 0.877 | **0.903** | 0.906 | 0.861 |
+| `113322` | 50 | 0.750 | 0.880 | 0.900 | **0.878** | 0.873 | 0.738 |
+| `113613` | 41 | 0.487 | 0.756 | 0.792 | **0.745** | 0.761 | 0.693 |
+| `113838` | 25 | 0.251 | 0.760 | 0.761 | **0.637** | 0.449 | 0.468 |
+
+- **Strong half (`112951`, `113200`): the combiner beats both antennas** (+0.04 and +0.08 over the better arm),
+  and sits on the per-bin selection bound or above it. Window gets the same.
+- **`113322` and `113613`: it matches the better arm (-0.002, -0.011) and is below selection.** Window
+  matches it (+/-0.016).
+- **`113838`, the marginal capture, is where it falls apart: -0.123 against arm 1 alone.** Sync time is
+  43 % against 61 % for arm 1, and 14 % for arm 0. Combining the two arms *at equal gain* was worse than
+  listening to one of them.
+- **Where the references part company is the SSB:** on `113838` the V2 prefix weight beats Window by +0.19
+  |aux| (sync 43 % against 32 %) and FSK/Digital by +0.17. On the other four it ties Window. This is one capture,
+  so it is the direction the design predicted, not a size.
+- FSK/Digital is worse than the V2 reference on every capture and below the better arm on four of five.
+
+### Result 2: the loss on the weak captures is the weight's gain, not its phase
+
+The V2 reference issues a unit co-phase weight on purpose (`diversity-radeV2-cp.md` section 4.3). Arm 0 (ADC1,
+10 dB attenuated) has a floor 6.8 dB *higher* than arm 1's in the quiet part of the band in every block of every
+capture, so the two arms are not at equal noise, and in three of the five (`113322`, `113613`, `113838`) arm 1
+is the better antenna by a wide margin for the stations heard. Adding the poor arm at full gain adds its noise
+and its share of the SSB.
+
+The tracker's logged maximal-ratio weight (`mrc_re`/`mrc_im`: the same phase, gain from each arm's prefix noise,
+capped at 4) was run through the same decoder, with the engine's slew (15 % of the way per block), cold over the
+capture (lock rule 0.25, 3 of 4, tolerance 25, so that every capture locks, 4 to 8 s):
+
+| Capture | Radio (unit, live) | V2 unit weight, replayed | **V2 noise-weighted** | Gain over radio | Against the better arm |
+|---|---|---|---|---|---|
+| `112951` | 0.923 | 0.921 | **0.927** | +0.004 | +0.043 |
+| `113200` | 0.903 | 0.897 | **0.912** | +0.009 | +0.088 |
+| `113322` | 0.878 | 0.874 | **0.902** | +0.024 | +0.022 |
+| `113613` | 0.745 | 0.743 | **0.783** | +0.038 | +0.027 |
+| `113838` | 0.637 | 0.647 | **0.750** | +0.113 | -0.010 |
+
+Sync time on `113838`: 54 % against 43-45 % for the unit weight and 61 % for arm 1. The replayed unit weight
+reproduces the live radio to within 0.01 on all five, so the replay is a fair stand-in.
+The noise-weighted weight is at or above the unit weight on **all five, with the gain growing as the capture
+gets harder**, and it is at or above the better arm except by 0.010 on `113838`, and within 0.011 of the per-bin selection bound
+everywhere.
+The tracker's own prediction from section 9.3 pointed the same way: its prefix-SNR for maximal ratio over equal
+gain was +0.4 to +1.0 dB on the four captures where it was locked for most of the minute.
+
+What the numbers are worth: a few hundredths of |aux| on the first four captures is below what a listener hears
+on this band; the one that matters is `113838`, where the gain is about ten points of sync time, some six
+seconds of a minute of receivable speech.
+
+### Result 3: letting the weight update when the prefix is weaker does not help
+
+In 35 % of the blocks where the decoder was in sync on `113838` (live log; contrast from the cold replay) the prefix contrast was below the 0.20 hold threshold, so
+the weight was frozen while the signal was decodable (the engine was holding in 67 % of blocks). Lowering the
+threshold in a scratch build of the module (0.10, and 0) with the same noise-weighted weight and slew made the
+decode *worse*: 0.750 became 0.654 and 0.665 on `113838`, and the other four moved by 0.012 or less. A weight made from a prefix this weak is worse than the one held. The gate is doing its job here.
+
+### Result 4: what the live engine did
+
+- Locked in all 703 blocks of the last four captures (it carried the lock from the one before; `112951` locked
+  at block 95). Applied weight within 2.5 to 5.2 degrees (median) of the module's own target on the first four,
+  11 degrees on `113838` (90th percentile 37).
+- **Held** (prefix below threshold) 30, 25, 31, 42 and 67 % of blocks; mostly single blocks, but on `113838`
+  runs up to 4.2 s. The slew stops when the hold begins, so the applied weight is left part of the way there:
+  its magnitude was below 0.9 for 3 % of blocks on `112951` and 44 % on `113838`, below 0.7 for 22 % there.
+  Replayed with no slew at all the weight is much worse on `113838` (0.450), so the slew is right; the stopped
+  slew is a smaller matter not sized here.
+- **Cold acquisition under the SSB** (the shipped rule, 0.30, 4 of 5, tolerance 20): the module locks at 8, 6
+  and 5 s on `112951`, `113200` and `113322`, **at 47 s on `113613`**, and at 9 s on `113838`. With the loosest
+  rule from section 5.4 it locks at 4 s on `113613`. In use the lock carried across overs, so the exposure is
+  the first lock after a retune, not each over. The loose rule's cost, locks on AM broadcast, is in section 5.4.
+- **Station against antenna.** On `113613` the changeover from DK3UD to DJ3KJ at second 43 swaps the better
+  arm: arm 1 decodes 100 % of seconds 3-38 against arm 0's 0-76 %, then arm 0 decodes 100 % of seconds 44-59.
+  A fixed antenna choice is wrong for one of the two; the combiner has to follow the change, and the
+  noise-weighted weight does it without a decision.
+
+### Not covered
+
+- Five captures in one session, three stations, one band, one morning. The ordering is the same on all five;
+  the size is from the last one.
+- The weight series are cold replays of the module, not the engine; the live weight agrees with them
+  within degrees, but the live engine's lock carried from the capture before.
+- The noise-weighted weight was chosen for testing *because* the tracker logged it; no other gain rule was tried.
+- The SSB was not separated from the V2 band, only seen next to it. Its effect is inferred from where the
+  decodes fail.
+- |aux| flattens near its ceiling: the strong captures cannot separate streams that differ by under 0.02.
+- Which antennas are on ADC1 and ADC2, and why ADC1 had 10 dB of attenuation, is not recorded here.
+- The analysis scripts were not kept. The `score_radev2` binary predates capture format 5 and reads
+  version 4, so it was run on copies with the version field patched; the engine fields it does not use were
+  not read. The tool's source lives on `test/radeV2-correlator`.
