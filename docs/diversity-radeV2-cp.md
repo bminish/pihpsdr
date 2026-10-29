@@ -26,9 +26,13 @@
   Python reference it was ported from, a capture replay tool, the engine reference
   `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-064 to LC-067,
   LT-038; section 8).
-- **Not done:** no decode scoring of the weight, nothing on air, the menu row and log lines
-  not seen running. The next step is the operator's on-air evaluation (section 9), on
-  purpose before any decode score.
+- **On air (2026-10-29, section 11, T-027):** five 40 m captures with the engine's log beside them.
+  The prefix weight ties or beats the better antenna and Window on the strong ones, beats Window by
+  0.19 |aux| under the worst SSB, and **loses to one antenna alone on the weakest capture because its
+  gain is fixed at 1**; the noise-weighted gain the tracker already logs closes that. No code has been
+  changed on the strength of it; the findings are to be discussed first.
+- **Not done:** the menu row and log lines not seen running; the lock rule on a weak, interfered
+  signal (section 11.3).
 
 ## 2. V1: what was checked
 
@@ -227,8 +231,8 @@ finds and the shipped row does not.
 
 ## 6. What is not known
 
-- **Whether the weight helps on air.** It has not been decode-scored and not been on air.
-  Section 9 says why it goes straight to the operator.
+- **Whether the weight helps on air.** Answered for five captures on 2026-10-29 (section 11): the phase
+  does; the unit gain costs on a weak, unequal pair. Section 9 says why it went to the operator first.
 - **The per-arm noise term.** `N_k` is power less prefix-correlated power. It is the term
   the combining notes found the weight needs and it is untested against the Window
   reference on air. On multipath the prefix-correlated part is biased (V2-F2).
@@ -422,3 +426,84 @@ test/diversity/devtools/cp_replay captures/divcap-20260930-184835.divc 1 0.5
 ```
 
 `score_radev2` needs librade built (`tools/rade/build_rade.sh`).
+
+## 11. First evaluation on air (2026-10-29, T-027)
+
+Five 60 s captures on the V2 reference, 40 m, mid-morning, weak stations with SSB beside the passband, and
+the RADE engine's log for the same minutes. The captures, the method, the tables and the limits of the
+evidence are in [test-findings.md](test-findings.md#t-027-rade-v2-on-40-m-mid-morning-weak-stations-under-ssb-interference---the-v2-reference-on-air);
+this section is what they say about the combiner, and where there is room. Nothing has been changed in the
+code.
+
+### 11.1 How the combiner did
+
+Decoded |aux|, mean over the bins with a signal, radio (the engine as recorded) against the better antenna:
+
+| Capture | Mean SNR in sync | Radio | Better antenna | Window | Radio less better antenna |
+|---|---|---|---|---|---|
+| `112951` | +2.4 dB | 0.923 | 0.884 | 0.917 | +0.039 |
+| `113200` | +0.4 dB | 0.903 | 0.824 | 0.906 | +0.079 |
+| `113322` | +0.1 dB | 0.878 | 0.880 | 0.873 | -0.002 |
+| `113613` | -2.9 dB | 0.745 | 0.756 | 0.761 | -0.011 |
+| `113838` | -5.7 dB | 0.637 | 0.760 | 0.449 | -0.123 |
+
+- **The phase is right.** The applied weight follows the module's own target to a few degrees, and the V2
+  reference never loses to Window by more than 0.016, and beats it by 0.19 on the capture with the worst
+  interference (sync 43 % against 32 %), which is the case the cyclic-prefix gate was built for. Against
+  FSK/Digital it is ahead on all five.
+- **The combiner is worth most when the signal is good and the antennas alike, and costs most when the signal
+  is bad and they are not.** That is the wrong way round for a feature that is for weak signals.
+- **The live engine and an offline decode agree** (sync time to 0.7 to 4.8 points, SNR in sync to 0.2 dB), so
+  the offline streams in T-027 are fair stand-ins for what was heard.
+
+### 11.2 Where the loss is: gain, with the interference in it
+
+Equal gain adds a poor arm's noise at the same level as a good arm's signal. These captures have unequal
+arms: ADC1 (arm 0) carries 10 dB of attenuation and ADC2 none, yet arm 0's floor is 6.8 dB higher in every
+block, and for DK3UD and DK7XU arm 1 decodes much better (`113613`: arm 1 100 % of seconds 3 to 38, arm 0 0
+to 76 %). For DJ3KJ arm 0 is as good or better. Which arm is better changes with the station.
+
+The module already computes the cure: `mrc = conj(r) N0/N1`, gain capped at 4, each arm's noise being its
+power less its prefix-correlated power, which counts SSB as noise. Run through the decoder with the engine's
+slew (T-027, result 2), it is at or above the unit weight on all five captures, +0.004, +0.009, +0.024, +0.038
+and **+0.113** over the radio, in step with how hard the capture was, and it reaches the better antenna except
+by 0.010 on the weakest. The noise term, "untested against the Window reference on air" in section 6, now has
+that test: it works, and it is the larger part of the interference handling, because the interferer lands in
+`N_k` and its arm is turned down.
+
+### 11.3 Scope for improvement, in the order the evidence supports
+
+| # | Candidate | Evidence | Status |
+|---|---|---|---|
+| 1 | **Apply the noise-weighted gain** (`mrc`, cap 4) instead of the unit direction, with the engine's slew | Five of five captures, +0.004 to +0.113 | Offline only. Needs an engine decision: Sum and Level output are written for a unit weight, and the cap, the slew of a gain as well as a phase, and Best's use of `arm_db` are open |
+| 2 | **Noise term at its own, shorter time constant** | SSB is bursty (syllabic) and `N_k` is averaged at the Averaging time (1.07 s); the burst is over before the arm is turned down | Not tested; the tool for it is a variant of `cp_replay` with two time constants |
+| 3 | **Lock rule on weak, interfered signals** | Shipped rule locks `113613` at 47 s, the loosest at 4 s (and 4 to 8 s on all five); cost of the loose rule is 13 locks on non-V2 captures, two of them AM broadcast (section 5.4) | The lock persists across overs, so this is the first lock after a retune or a reset; a trade the operator should weigh, not a free win |
+| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew entirely is much worse (0.450 against 0.647), so only the stop is in question |
+| 5 | **Per-carrier weights** | Not examined here | The combining notes held a scalar to be enough; these captures do not reopen it. A narrow SSB inside the band is the case that would |
+
+**Not a candidate, tested and refused:** lowering the hold threshold (0.20) so the weight updates on a weaker
+prefix. At 0.10 and at 0 the noise-weighted weight on `113838` falls from 0.750 to 0.654 and 0.665 (T-027,
+result 3). The weight held is better than one made from a prefix that weak.
+
+**Settled decisions kept:** no timer and no fade-out in any of the above (settled decisions 1, 2); candidates
+1 and 2 change what the weight is, not when it is dropped.
+
+### 11.4 What would settle it
+
+- The same A/B on a second morning and band, with the same stations and some other: three stations in one
+  session cannot show whether the arm preference is a property of the antennas or of those stations.
+- A run with the noise-weighted gain applied live and heard, as section 9.4 describes, with a capture and the
+  log of each, so that the 0.113 on `113838` is checked on a listener's terms and not on |aux| alone.
+- Antennas (operator, 2026-10-29): ADC1 is an inverted L, ADC2 an active receive loop. The reason for 10 dB
+  on ADC1 is not recorded; with two such different antennas the unequal floors and the station-dependent
+  better arm are expected, not a fault.
+
+### 11.5 Decided 2026-10-29, with the operator
+
+- **Candidate 1 goes ahead:** the noise-weighted gain is to be built into the engine (design and the open
+  points of 11.3 first).
+- **Lock rule (candidate 3):** a false lock on an AM broadcast is not a practical concern; a false lock on CW,
+  SSB or a tune carrier is to be avoided. Any loosening of the rule is to be judged on those, and section 5.4's
+  count of non-V2 locks does not separate them, so it needs re-reading by class first.
+- **The A/B is repeated as opportunities arise**, with a capture and the RADE log of each run.
+
