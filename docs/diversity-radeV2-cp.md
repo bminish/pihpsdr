@@ -691,3 +691,35 @@ Two 60 m captures with the noise-weighted gain live, and the Averaging sweep ove
   it is the unlocked search state, which the locked captures do not exercise. Not resolved here.
 - Still open: the LC-068 register entry, now that the on-air result is in.
 
+### 12.12 The start weight: measured, parked (2026-10-29)
+
+Before the prefix locks the combiner applies whatever weight is in force, and `1 + 0j` on a fresh start. T-030 compared what could be applied
+instead, over the first 15 s of ten captures
+([test-findings.md](test-findings.md#t-030-the-weight-before-the-prefix-has-locked)):
+
+| Applied until the first weight | Pooled \|aux\| |
+|---|---|
+| equal gain, `1 + 0j` (today, fresh start) | 0.815 |
+| arm 0 (RX1) alone | 0.816 |
+| **Window's weight** | **0.875** |
+| provisional weights from a 1-of-1 lock rule | 0.875 |
+| ceiling: the lock's weight, from the start | 0.903 |
+
+- **Decided with the operator: park it, and come back with more captures.** Nothing is built and the code stays as it is. The
+  held weight carried across retunes and attenuator steps is kept (settled decision 2).
+- **The leading candidate** is Window's weight until the prefix locks, by one of two routes: the band reference's solve run alongside
+  (needs the FFT path the RADE references skip; a CPU cost to measure on the Pi) or a lag-0 cross-spectrum estimate in the V2 module.
+  Neither touches the lock rule, so neither adds a false-lock risk.
+- **Ruled out**: weights from a relaxed lock (67 of 147 non-V2 captures make weights, among them CW-lower 4 of 23 and USB 16 of 33; CW,
+  SSB and a tune carrier are to be avoided). **Not worth doing alone**: arm 0 until the lock (no gain; wrong on three captures in ten).
+- **The operator's constraint**: RX1 will usually already be the better arm, but the SNR measurements are not to be ignored. The data
+  agree with both halves: RX1 was the better arm in seven of ten captures (five over the first 15 s), and clearly the worse in three.
+- **What more captures would settle**, in order:
+  1. Cold starts on V2 signals with the arms **in antiphase** and in phase, on bands other than 40, 60 and 80 m, to see how often equal
+     gain fails; today two captures (both 80 m) carry that.
+  2. Captures with **strong SSB beside a V2 signal at the start**, the case Window handles worst (`113613`).
+  3. A start that is **cold in the engine too** (RADE V2 just selected, or fresh props), not only in the replay: the live engine has
+     so far always carried a weight, and T-030's schemes are replays.
+  4. Which arm is RX1 and why, for each, so that "RX1 is the better arm" can be tested against the operator's choice and not only
+     against the decode.
+

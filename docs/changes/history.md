@@ -13,6 +13,9 @@ Newest first.
   change; the next number is LC-064. The suite passes. Force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`). Full record:
   [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
 
+- 2026-10-29: RADE V2, the start weight before the lock measured offline (T-030): Window's weight until the prefix locks is the leading
+  candidate (0.875 against 0.815 for equal gain, ceiling 0.903); weights from a relaxed lock ruled out (false weights on CW and SSB). Parked,
+  with the owner, until more captures; no code. Section 12.12 of the V2 note lists what to capture.
 - 2026-10-29: RADE V2, Sum applies the noise-weighted gain (LC-068), on `feature/rade-native`. From the first on-air captures
   (T-027, five 40 m captures: the unit weight lost to one antenna alone on the weakest, the tracker's own logged maximal-ratio
   weight did not), designed (V2 note, section 12), built and checked offline, then confirmed on two 60 m captures
