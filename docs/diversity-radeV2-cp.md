@@ -27,8 +27,8 @@
   `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-064 to LC-067,
   LT-038; section 8).
 - **On air (2026-10-29, section 11, T-027):** five 40 m captures with the engine's log beside them.
-  The prefix weight ties or beats the better antenna and Window on the strong ones, beats Window by
-  0.19 |aux| under the worst SSB, and **loses to one antenna alone on the weakest capture because its
+  The prefix weight ties or beats the better antenna and Window on the strong ones, is 0.045 |aux| ahead
+  of Window under the worst SSB (one capture), and **loses to one antenna alone on the weakest capture because its
   gain is fixed at 1**; the noise-weighted gain the tracker already logs closes that. No code has been
   changed on the strength of it; the findings are to be discussed first.
 - **Not done:** the menu row and log lines not seen running; the lock rule on a weak, interfered
@@ -441,16 +441,16 @@ Decoded |aux|, mean over the bins with a signal, radio (the engine as recorded) 
 
 | Capture | Mean SNR in sync | Radio | Better antenna | Window | Radio less better antenna |
 |---|---|---|---|---|---|
-| `112951` | +2.4 dB | 0.923 | 0.884 | 0.917 | +0.039 |
+| `112951` | +2.4 dB | 0.923 | 0.884 | 0.923 | +0.039 |
 | `113200` | +0.4 dB | 0.903 | 0.824 | 0.906 | +0.079 |
-| `113322` | +0.1 dB | 0.878 | 0.880 | 0.873 | -0.002 |
+| `113322` | +0.1 dB | 0.878 | 0.880 | 0.872 | -0.002 |
 | `113613` | -2.9 dB | 0.745 | 0.756 | 0.761 | -0.011 |
-| `113838` | -5.7 dB | 0.637 | 0.760 | 0.449 | -0.123 |
+| `113838` | -5.7 dB | 0.637 | 0.760 | 0.592 | -0.123 |
 
 - **The phase is right.** The applied weight follows the module's own target to a few degrees, and the V2
-  reference never loses to Window by more than 0.016, and beats it by 0.19 on the capture with the worst
-  interference (sync 43 % against 32 %), which is the case the cyclic-prefix gate was built for. Against
-  FSK/Digital it is ahead on all five.
+  reference never loses to Window by more than 0.016, and is 0.045 ahead on the capture with the worst
+  interference (sync 43 % against 41 %), the case the cyclic-prefix gate was built for; a margin that size on
+  25 bins of one capture is not a finding. Against FSK/Digital it is ahead on all five.
 - **The combiner is worth most when the signal is good and the antennas alike, and costs most when the signal
   is bad and they are not.** That is the wrong way round for a feature that is for weak signals.
 - **The live engine and an offline decode agree** (sync time to 0.7 to 4.8 points, SNR in sync to 0.2 dB), so
@@ -478,7 +478,7 @@ that test: it works, and it is the larger part of the interference handling, bec
 | 1 | **Apply the noise-weighted gain** (`mrc`, cap 4) instead of the unit direction, with the engine's slew | Five of five captures, +0.004 to +0.113 | Offline only. Needs an engine decision: Sum and Level output are written for a unit weight, and the cap, the slew of a gain as well as a phase, and Best's use of `arm_db` are open |
 | 2 | **Noise term at its own, shorter time constant** | SSB is bursty (syllabic) and `N_k` is averaged at the Averaging time (1.07 s); the burst is over before the arm is turned down | Not tested; the tool for it is a variant of `cp_replay` with two time constants |
 | 3 | **Lock rule on weak, interfered signals** | Shipped rule locks `113613` at 47 s, the loosest at 4 s (and 4 to 8 s on all five); cost of the loose rule is 13 locks on non-V2 captures, two of them AM broadcast (section 5.4) | The lock persists across overs, so this is the first lock after a retune or a reset; a trade the operator should weigh, not a free win |
-| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew entirely is much worse (0.450 against 0.647), so only the stop is in question |
+| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew helps `113613` by 0.03 and costs `113838` 0.09, so the rate may be worth a sweep, which was not done |
 | 5 | **Per-carrier weights** | Not examined here | The combining notes held a scalar to be enough; these captures do not reopen it. A narrow SSB inside the band is the case that would |
 
 **Not a candidate, tested and refused:** lowering the hold threshold (0.20) so the weight updates on a weaker
@@ -617,3 +617,28 @@ references; not designed in, because nothing says it is needed.
 2. Engine: Null reads `arm_cos/arm_sin` for V2. (Between 1 and 2 Null would be `-mrc`; they go in as one commit.)
 3. Offline acceptance (12.7, 2 and 3).
 4. On air (12.7, 4). The register entry (LC-068) and the write-up follow the on-air result, not the offline one.
+
+### 12.9 Offline acceptance (2026-10-29, after the commit `5a23387b`)
+
+The five T-027 captures through the engine (`run_ref --ref rade2 --mode sum --tau 1.0687`), the weight in force on every
+block scored with `score_radev2` (`ok` set to 1, see the trap noted at the end of T-027):
+
+| Capture | Radio (unit, live) | Engine, noise-weighted | Replay, noise-weighted (12.3, loose lock) |
+|---|---|---|---|
+| `112951` | 0.923 | 0.927 | 0.927 |
+| `113200` | 0.903 | 0.910 | 0.912 |
+| `113322` | 0.878 | 0.901 | 0.902 |
+| `113613` | 0.745 | 0.782 | 0.783 |
+| `113838` | 0.637 | 0.754 | 0.750 |
+
+- **Passes:** at or above the radio on all five; `113838` at 0.754 against 0.637; the engine's weight against the replay's,
+  block by block, within a median 0.2 to 0.8 degrees of phase and a gain ratio of 1.0 (largest mean difference 0.15, in the
+  last seconds of `113838`).
+- **`113613` is not a test of the weight.** Under the shipped lock rule the engine path locks at 47 s, so for most of the
+  minute the weight in force is the starting 1 + 0j (equal gain, no co-phasing), which scored the same as the replay with
+  the loose rule here. The replay column is the number that says anything about the noise-weighted weight on that
+  capture, and the engine path will show it once the lock arrives sooner (candidate 3).
+- **The self-check against the recorded state** (`cp_replay`) was not run on a V2 capture taken after the change, none
+  exists yet. On the T-027 captures, recorded under the unit weight, its applied-weight column is expected to differ.
+- Still to do: the on-air A/B, with the RADE receiver's input level read, and then the register entry.
+
