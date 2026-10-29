@@ -508,7 +508,7 @@ result 3). The weight held is better than one made from a prefix that weak.
 - **The A/B is repeated as opportunities arise**, with a capture and the RADE log of each run.
 
 
-## 12. Design: the noise-weighted gain (proposed LC-068; not built)
+## 12. Design: the noise-weighted gain (LC-068 proposed; built in `5a23387b`, on air 2026-10-29)
 
 Decided 2026-10-29 (section 11.5). This is the design and the checks it rests on; nothing here is in the code.
 
@@ -638,8 +638,9 @@ block scored with `score_radev2` (`ok` set to 1, see the trap noted at the end o
   minute the weight in force is the starting 1 + 0j (equal gain, no co-phasing), which scored the same as the replay with
   the loose rule here. The replay column is the number that says anything about the noise-weighted weight on that
   capture, and the engine path will show it once the lock arrives sooner (candidate 3).
-- **The self-check against the recorded state** (`cp_replay`) was not run on a V2 capture taken after the change, none
-  exists yet. On the T-027 captures, recorded under the unit weight, its applied-weight column is expected to differ.
+- **The self-check against the recorded state** (`cp_replay`) compares lock, sideband and prefix contrast entering each
+  block, not the weight, so the unit weights of the T-027 captures do not affect it (it was wrong to say they would). It
+  was not run on a post-change capture then; section 12.11 has it.
 - Still to do: the on-air A/B, with the RADE receiver's input level read, and then the register entry.
 
 ### 12.10 Slew rate sweep (2026-10-29)
@@ -664,4 +665,29 @@ loose lock rule, `ok` = 1; mean decoded |aux| over the bins, the unslewed weight
   (0.808 with none, 0.768 at 5 %). A rate that depends on the signal would follow, and is a new mechanism for a gain of
   about 0.02 on two captures out of five; not pursued (settled decision 3).
 - A block is 85 ms here; the Averaging time (1.07 s here) is a separate smoothing already in the weight.
+
+### 12.11 On air (2026-10-29, T-028)
+
+Two 60 m captures with the noise-weighted gain live, and the Averaging sweep over seven captures
+([test-findings.md](test-findings.md#t-028-the-noise-weighted-gain-on-air-60-m-and-the-averaging-time-over-seven-v2-captures)):
+
+- **The approach holds on a second pair of antennas and the opposite imbalance.** On 60 m arm 0 is the better antenna by
+  3 to 4 dB of prefix SNR; the live weight (magnitude about 0.5) turned arm 1 down and scored above the better arm
+  (+0.014, +0.011 |aux|) and 0.017 and 0.022 above what the unit weight would have given, which would have been just
+  below the better arm. The 40 m result had arm 1 the better one; the one rule covers both.
+- **Its worth on a clean signal is small**: sync time is the better arm's and Window is level with it (within
+  0.004). The value of the weight is that it is not below the best antenna on a pair that differs, the unit weight's fault.
+- **Level**: the decoder's AGC gain did not move (0.77 to 0.79 median, 0.79 to 0.80 under the unit weight), so the 2 to 3 dB
+  louder output (12.4) is absorbed, as assumed.
+- **Averaging**: flat for six of seven captures; the weakest gains 0.063 going from 1.07 s to 6 s and collapses below
+  0.8 s. 1.07 s stays; one capture decides the rest.
+- **Before the lock** the weight is plain 1 + 0j. On an 80 m signal at -7 dB the engine never locked (loose rule: 38 s) and
+  equal gain summed a dead arm 1 into arm 0 (sync 26 % against 33 %): a case for candidate 3, not for a new mechanism.
+- **The self-check** on the post-change captures: 1 of 703 blocks differ on `155202` and on `155434` (the engine and the
+  cold replay locked together, and the first block differs because the replay starts cold). **On `152724`, where the
+  engine never locked, 667 of 703 differ**: the replay's prefix contrast does not follow the engine's from the first
+  blocks (replay 0.00, 0.21, 0.21 against the engine's 0.09, 0.12, 0.14; the same with either bank). The capture
+  began 16 s into the run, so the engine had history the replay lacks, but it persists for the minute. Unexplained;
+  it is the unlocked search state, which the locked captures do not exercise. Not resolved here.
+- Still open: the LC-068 register entry, now that the on-air result is in.
 
