@@ -1470,8 +1470,8 @@ Per capture (|aux|, first 15 s):
   Equal gain costs nothing, or helps, wherever the arms happen to be near in phase (the 40 m and 60 m captures).
 - **Starting from arm 0 alone is safe and gains nothing.** Pooled it ties equal gain (0.816 against 0.815) and never goes below arm 0 (by
   construction), but it loses badly where arm 1 is the better antenna: `113613` 0.510 against 0.727, `113838` 0.389 against 0.821.
-  **RX1 is the better arm in seven of these ten captures and clearly the worse in three** (`113322`, `113613`, `113838`), so a prior that
-  RX1 is better is right most of the time and wrong enough of the time to matter. That is the case for letting the measurements in.
+  **RX1 is the better arm in seven of these ten captures over the minute, in five over the first 15 s, and clearly the worse in three**
+  (`113322`, `113613`, `113838`), so a prior that RX1 is better is right most of the time and wrong enough of the time to matter. That is the case for letting the measurements in.
 - **Window until the lock does best of the schemes that need no new detection, and fails nowhere**: 0.875 pooled, two thirds of the way
   from equal gain to the ceiling, no capture below arm 0 by more than 0.05, and no false-lock exposure, because it needs no V2 lock at all.
   Its weakness is the one Window has: on `113613` (strong SSB) it follows the SSB (0.564 against arm 1's 0.727 and the ceiling's 0.737),
