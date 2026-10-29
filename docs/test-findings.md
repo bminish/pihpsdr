@@ -1128,22 +1128,24 @@ bin, with hindsight):
 
 | Capture | Bins | Arm 0 | Arm 1 | Select | **Radio (V2, unit weight)** | Window | FSK/Digital |
 |---|---|---|---|---|---|---|---|
-| `112951` | 55 | 0.884 | 0.859 | 0.912 | **0.923** | 0.917 | 0.883 |
+| `112951` | 55 | 0.884 | 0.859 | 0.912 | **0.923** | 0.923 | 0.883 |
 | `113200` | 47 | 0.824 | 0.819 | 0.877 | **0.903** | 0.906 | 0.861 |
-| `113322` | 50 | 0.750 | 0.880 | 0.900 | **0.878** | 0.873 | 0.738 |
-| `113613` | 41 | 0.487 | 0.756 | 0.792 | **0.745** | 0.761 | 0.693 |
-| `113838` | 25 | 0.251 | 0.760 | 0.761 | **0.637** | 0.449 | 0.468 |
+| `113322` | 50 | 0.750 | 0.880 | 0.900 | **0.878** | 0.872 | 0.726 |
+| `113613` | 41 | 0.487 | 0.756 | 0.792 | **0.745** | 0.761 | 0.713 |
+| `113838` | 25 | 0.251 | 0.760 | 0.761 | **0.637** | 0.592 | 0.468 |
 
 - **Strong half (`112951`, `113200`): the combiner beats both antennas** (+0.04 and +0.08 over the better arm),
   and sits on the per-bin selection bound or above it. Window gets the same.
 - **`113322` and `113613`: it matches the better arm (-0.002, -0.011) and is below selection.** Window
-  matches it (+/-0.016).
+  matches it (+0.006, -0.016).
 - **`113838`, the marginal capture, is where it falls apart: -0.123 against arm 1 alone.** Sync time is
   43 % against 61 % for arm 1, and 14 % for arm 0. Combining the two arms *at equal gain* was worse than
   listening to one of them.
-- **Where the references part company is the SSB:** on `113838` the V2 prefix weight beats Window by +0.19
-  |aux| (sync 43 % against 32 %) and FSK/Digital by +0.17. On the other four it ties Window. This is one capture,
-  so it is the direction the design predicted, not a size.
+- **Where the references part company is the SSB, a little:** on `113838` the V2 prefix weight is ahead of
+  Window by +0.045 |aux| (sync 43 % against 41 %) and of FSK/Digital by +0.17. On the other four it is within
+  0.016 of Window. With 25 bins on one capture the 0.045 is the direction the design predicted, not a size.
+  (An earlier version of this entry had Window at 0.449 and the lead at +0.19. That was a fault in how the
+  replayed weights were read, see Not covered.)
 - FSK/Digital is worse than the V2 reference on every capture and below the better arm on four of five.
 
 ### Result 2: the loss on the weak captures is the weight's gain, not its phase
@@ -1193,8 +1195,11 @@ decode *worse*: 0.750 became 0.654 and 0.665 on `113838`, and the other four mov
 - **Held** (prefix below threshold) 30, 25, 31, 42 and 67 % of blocks; mostly single blocks, but on `113838`
   runs up to 4.2 s. The slew stops when the hold begins, so the applied weight is left part of the way there:
   its magnitude was below 0.9 for 3 % of blocks on `112951` and 44 % on `113838`, below 0.7 for 22 % there.
-  Replayed with no slew at all the weight is much worse on `113838` (0.450), so the slew is right; the stopped
-  slew is a smaller matter not sized here.
+  Replayed with no slew, holding each new weight as it comes (loose lock, as in result 2), the noise-weighted
+  weight scores 0.921, 0.909, 0.905, 0.808 and 0.657 against 0.927, 0.912, 0.902, 0.783 and 0.750 slewed, and
+  the unit weight 0.922, 0.891, 0.874, 0.771 and 0.569 against 0.921, 0.897, 0.874, 0.743 and 0.647. So the
+  slew helps the weakest capture by about 0.08 to 0.09, costs `113613` about 0.03 and does nothing on the
+  others; a different rate was not tried. The stopped slew at a hold is a smaller matter, not sized.
 - **Cold acquisition under the SSB** (the shipped rule, 0.30, 4 of 5, tolerance 20): the module locks at 8, 6
   and 5 s on `112951`, `113200` and `113322`, **at 47 s on `113613`**, and at 9 s on `113838`. With the loosest
   rule from section 5.4 it locks at 4 s on `113613`. In use the lock carried across overs, so the exposure is
@@ -1218,3 +1223,12 @@ decode *worse*: 0.750 became 0.654 and 0.665 on `113838`, and the other four mov
 - The analysis scripts were not kept. The `score_radev2` binary predates capture format 5 and reads
   version 4, so it was run on copies with the version field patched; the engine fields it does not use were
   not read. The tool's source lives on `test/radeV2-correlator`.
+- **A trap in scoring a `run_ref` weight file with `score_radev2`.** The reader takes the file's `ok` column as
+  "a new weight this block" and, where it is 0, ignores that row's `wr`/`wi` and repeats its own previous value,
+  starting from 0 (arm 0 alone). The `run_ref` file already holds the weight in force on every row, so the
+  `ok` column is to be set to 1 before scoring. Scored with `ok` as written, Window on `113838` read 0.449 and
+  the engine path's noise-weighted weight 0.616, against 0.592 and 0.754 corrected; on the other four, Window moved
+  by 0.01 or less, and the engine path's weight by 0.006, 0.014, 0.031 and (`113613`, unlocked for 47 s, so arm 0 alone
+  on this reading) 0.29. Caught on 2026-10-29 when the engine
+  path (`run_ref --ref rade2`) did not reproduce a replay it matched weight for weight. Every figure in this entry
+  is with `ok` = 1 (the recorded `radio` stream does not use a file).
