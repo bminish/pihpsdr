@@ -1199,7 +1199,7 @@ decode *worse*: 0.750 became 0.654 and 0.665 on `113838`, and the other four mov
   weight scores 0.921, 0.909, 0.905, 0.808 and 0.657 against 0.927, 0.912, 0.902, 0.783 and 0.750 slewed, and
   the unit weight 0.922, 0.891, 0.874, 0.771 and 0.569 against 0.921, 0.897, 0.874, 0.743 and 0.647. So the
   slew helps the weakest capture by about 0.08 to 0.09, costs `113613` about 0.03 and does nothing on the
-  others; a different rate was not tried. The stopped slew at a hold is a smaller matter, not sized.
+  others; the rate was then swept (`diversity-radeV2-cp.md` section 12.10). The stopped slew at a hold is a smaller matter, not sized.
 - **Cold acquisition under the SSB** (the shipped rule, 0.30, 4 of 5, tolerance 20): the module locks at 8, 6
   and 5 s on `112951`, `113200` and `113322`, **at 47 s on `113613`**, and at 9 s on `113838`. With the loosest
   rule from section 5.4 it locks at 4 s on `113613`. In use the lock carried across overs, so the exposure is
