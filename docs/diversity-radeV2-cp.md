@@ -478,7 +478,7 @@ that test: it works, and it is the larger part of the interference handling, bec
 | 1 | **Apply the noise-weighted gain** (`mrc`, cap 4) instead of the unit direction, with the engine's slew | Five of five captures, +0.004 to +0.113 | Offline only. Needs an engine decision: Sum and Level output are written for a unit weight, and the cap, the slew of a gain as well as a phase, and Best's use of `arm_db` are open |
 | 2 | **Noise term at its own, shorter time constant** | SSB is bursty (syllabic) and `N_k` is averaged at the Averaging time (1.07 s); the burst is over before the arm is turned down | Not tested; the tool for it is a variant of `cp_replay` with two time constants |
 | 3 | **Lock rule on weak, interfered signals** | Shipped rule locks `113613` at 47 s, the loosest at 4 s (and 4 to 8 s on all five); cost of the loose rule is 13 locks on non-V2 captures, two of them AM broadcast (section 5.4) | The lock persists across overs, so this is the first lock after a retune or a reset; a trade the operator should weigh, not a free win |
-| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew helps `113613` by 0.03 and costs `113838` 0.09, so the rate may be worth a sweep, which was not done |
+| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew helps `113613` by 0.03 and costs `113838` 0.09, the rate was swept (12.10): flat from 5 to 25 % per block, no change |
 | 5 | **Per-carrier weights** | Not examined here | The combining notes held a scalar to be enough; these captures do not reopen it. A narrow SSB inside the band is the case that would |
 
 **Not a candidate, tested and refused:** lowering the hold threshold (0.20) so the weight updates on a weaker
@@ -641,4 +641,27 @@ block scored with `score_radev2` (`ok` set to 1, see the trap noted at the end o
 - **The self-check against the recorded state** (`cp_replay`) was not run on a V2 capture taken after the change, none
   exists yet. On the T-027 captures, recorded under the unit weight, its applied-weight column is expected to differ.
 - Still to do: the on-air A/B, with the RADE receiver's input level read, and then the register entry.
+
+### 12.10 Slew rate sweep (2026-10-29)
+
+`DIV_SLEW_FRAC` (15 % of the way to the target per block) applied to the noise-weighted weight, in the replay with the
+loose lock rule, `ok` = 1; mean decoded |aux| over the bins, the unslewed weight (each new weight held as it comes) last:
+
+| Fraction per block | `112951` | `113200` | `113322` | `113613` | `113838` | Mean of five |
+|---|---|---|---|---|---|---|
+| 0.05 | 0.927 | 0.908 | 0.902 | 0.768 | **0.768** | 0.855 |
+| 0.10 | 0.932 | 0.907 | 0.902 | 0.777 | 0.753 | 0.854 |
+| **0.15 (shipped)** | 0.927 | 0.912 | 0.902 | 0.783 | 0.750 | 0.855 |
+| 0.25 | 0.929 | 0.910 | 0.909 | 0.785 | 0.749 | 0.856 |
+| 0.40 | 0.921 | 0.910 | 0.906 | 0.782 | 0.735 | 0.851 |
+| 0.60 | 0.913 | 0.915 | 0.903 | 0.788 | 0.714 | 0.847 |
+| none | 0.921 | 0.909 | 0.905 | **0.808** | 0.657 | 0.840 |
+
+- **Flat between 5 and 25 % per block** (means 0.854 to 0.856, every capture within about 0.01 of its best except the
+  two noted). The shipped 15 % sits in the flat part. **No change.**
+- The two ends pull the other way: the weakest capture (`113838`) prefers the slowest (0.768 at 5 %, 0.657 with none,
+  because a noisy target is followed), the lightly interfered one with fast changeovers (`113613`) the fastest
+  (0.808 with none, 0.768 at 5 %). A rate that depends on the signal would follow, and is a new mechanism for a gain of
+  about 0.02 on two captures out of five; not pursued (settled decision 3).
+- A block is 85 ms here; the Averaging time (1.07 s here) is a separate smoothing already in the weight.
 
