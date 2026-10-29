@@ -3617,6 +3617,15 @@ static void div_process_block(void) {
       // which looks like a control that does not work rather than one
       // that is not implemented.
       //
+      // On V2, wr/wi is the maximal-ratio weight (gain set by each arm's noise), which is
+      // right for Sum. A null that cancels the signal wants the unit co-phase direction
+      // turned over, as before, so Null takes that.
+      //
+      if (ctx.ref == DIV_REF_RADE_V2 && div_auto_mode != DIV_AUTO_SUM) {
+        div_apply_weight(-rade_corr_arm_cos, -rade_corr_arm_sin);
+        return;
+      }
+
       const double sign = (div_auto_mode == DIV_AUTO_SUM) ? 1.0 : -1.0;
       div_apply_weight(sign * wr, sign * wi);
     } else {
