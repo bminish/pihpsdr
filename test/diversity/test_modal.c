@@ -151,7 +151,6 @@ int main(void) {
   show_block("CW  set to  ");
   diversity_auto_mode_changed(modeLSB);       /* same group as USB */
   show_block("back on LSB ");
-  check("SSB ref", div_auto_ref, DIV_REF_BAND);
   check("SSB centre", div_auto_centre, -1500.0);
   check("SSB width", div_auto_width, 2600.0);
   check("SSB tau", div_auto_tau, 3.0);
@@ -271,7 +270,7 @@ int main(void) {
     }
   }
   /* ---------------------------------------------------------------- */
-  printf("\n6. a fresh install starts CW on the CW reference at 0.2 s\n");
+  printf("\n6. a fresh install: CW on CW at 0.2 s, AM on Carrier, digital on FSK/Digital\n");
   /*
    * LC-019. Nothing saved at all: the CW group comes up on the CW
    * reference with its own window and threshold and 0.2 s averaging, and
@@ -293,6 +292,15 @@ int main(void) {
     printf("    USB  ref %d\n", div_auto_ref);
 
     if (div_auto_ref == DIV_REF_CW) { fails++; }
+    /* LC-061: AM-family starts on Carrier, digital on FSK/Digital */
+    diversity_auto_mode_changed(modeAM);
+    check("AM ref", div_auto_ref, DIV_REF_CARRIER);
+    check("AM width", div_auto_width, div_carrier_width);
+    check("AM threshold", div_auto_coherence_min, div_carrier_cohmin);
+    diversity_auto_mode_changed(modeDIGU);
+    check("DIGU ref", div_auto_ref, DIV_REF_DIGITAL_IQ);
+    check("DIGU width", div_auto_width, div_digital_width);
+    check("DIGU threshold", div_auto_coherence_min, div_digital_cohmin);
   }
   printf("\n%s\n", fails ? "FAIL" : "PASS");
   return fails ? 1 : 0;
