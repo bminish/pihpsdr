@@ -4,6 +4,17 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-30: **the binaural branch rebased onto `TEST`** (`a6bdcb79`), as
+  `feature/diversity-binaural-3-rebase`, with `git rebase --onto TEST 229e5581`:
+  only the 24 binaural commits after the 5db64949 re-sync were replayed; the
+  earlier LC series is already on `TEST`. LC-046 (code and register) was
+  skipped as already there. Backup `history/backup/binaural-3-rebase-pre-rebase-20261030`.
+  Conflict resolutions: `tci_audio_rx_active` is now per receiver (the split
+  feeds stream 0); `div_arm_swapped()` went with LC-022, so Balance ATT takes
+  the arm's ADC from `receiver[0]->adc`; the `docs/changes.md` register and
+  `history.md` follow `TEST`'s layout. LC-041 to LC-043 are not in `TEST`'s
+  register yet (only their write-ups).
+
 - 2026-10-30: upstream took LC-059 to LC-063 in `30b327e2` ("some updates and
   alignment with BMs auto-div version", 2026-10-27), along with changes of his
   own (client start-up threads, `profiles.c` audio keys, `wdsp` alignment).
