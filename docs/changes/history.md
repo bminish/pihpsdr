@@ -10,7 +10,7 @@ Newest first.
   `TEST` rebuilt on it: backup `history/backup/TEST-pre-rebase-20261030`, 28
   non-LC commits replayed on `TEST-rebase-20261030`, plus LT-037 for the
   `test_modal` checks that rode in LC-061's commit. The register has no pending
-  change; the next number is LC-064. The suite passes. Full record:
+  change; the next number is LC-064. The suite passes. Force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`). Full record:
   [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
 
 - 2026-10-19: LC-062 and LC-063. Prompted by dl1ycf's report of uninitialised

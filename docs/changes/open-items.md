@@ -8,7 +8,6 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 
 **Waiting on the owner (Brendan or dl1ycf)**
 
-- [ ] Force-push the 2026-10-30 resync to `origin/TEST` (needs the owner's OK; old tip `history/backup/TEST-pre-rebase-20261030`).
 - [ ] `div_auto_mode` is sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`): one source of truth, his files. Raised in the LC-063 note; his tree still sends it both ways, so it stays flagged.
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
 - [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
@@ -51,7 +50,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 - [x] The noise floor's selection (LC-033).
 - [x] E1 (LC-031) and E2 (LC-032) of the ownership review.
 - [x] Not carried, by decision: the 6 Hz default bins. We keep upstream's 12 Hz; the Averaging slider is the control an operator uses most, and 6 Hz doubles the FFT length and block duration.
-- [x] `TEST` resynced onto `upstream/TEST` `30b327e2` (2026-10-30): LC-059 to LC-063 accepted, rebuilt from the non-LC commits; awaiting the force-push OK.
+- [x] `TEST` resynced onto `upstream/TEST` `30b327e2` (2026-10-30): LC-059 to LC-063 accepted, rebuilt from the non-LC commits; force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`).
 - [x] `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (2026-10-19): three of his commits (client discovery host entry, `wdsp` header tidy), no conflict; force-pushed to `origin` with the owner's OK.
 
 ## Detail on the outstanding items
