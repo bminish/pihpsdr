@@ -2,7 +2,7 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-Every change here is in `upstream/TEST`. Most arrived with `f05546e3` (2026-10-08), where dl1ycf took the whole series as one squashed commit; LC-048 to LC-058 arrived the same way in `07ae1f56` (2026-10-15); LC-005 and LC-021 he made himself earlier. They are no longer local differences. The write-up of each, with the problem, the change and how it was checked, is in the topic file the ID links to. How the squash was verified, and what it left over: [upstream-reconcile.md](upstream-reconcile.md).
+Every change here is in `upstream/TEST`. Most arrived with `f05546e3` (2026-10-08), where dl1ycf took the whole series as one squashed commit; LC-048 to LC-058 arrived the same way in `07ae1f56` (2026-10-15) and LC-059 to LC-063 in `30b327e2` (2026-10-27); LC-005 and LC-021 he made himself earlier. They are no longer local differences. The write-up of each, with the problem, the change and how it was checked, is in the topic file the ID links to. How the squash was verified, and what it left over: [upstream-reconcile.md](upstream-reconcile.md).
 
 IDs are permanent and numbered in the order they were made, not in the order below. "Depends on" is how the change was built, kept for the record: `(LC-003)` applied without it but made full sense only with it, `[LC-008]` a textual dependency (adjacent lines). Details: [git-workflow.md](git-workflow.md#dependencies-between-changes).
 
@@ -16,6 +16,9 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-001](lc-settings.md#lc-001) | Fix | Restore the saved auto-diversity settings at start-up | — | `f05546e3`, with the call placed after `vfo_restore_state()` |
 | [LC-002](lc-settings.md#lc-002) | Fix | Treat impossible saved values as missing | — | `f05546e3` |
 | [LC-026](lc-settings.md#lc-026) | Fix | Live Min coherence from the selected reference's slot | — | `f05546e3` |
+| [LC-061](lc-settings.md#lc-061) | UI | A fresh install starts AM, SAM and DSB on the Carrier reference and the digital modes on FSK/Digital | — | `30b327e2` |
+| [LC-062](lc-settings.md#lc-062) | Cleanup | Weighting, Hang, the bin-width setting and RADE V1's threshold leave the settings block, engine, props file and wire | — | `30b327e2` |
+| [LC-063](lc-settings.md#lc-063) | Fix | The settings command's final layout (per-reference tables, 244 bytes) and one version bump, `0x01310002` | LC-062 | `30b327e2`, as we wrote it |
 | [LC-056](lc-settings.md#lc-056) | Refactor | The client's settings and status adopters live in `diversity_auto.c`, not the menu (his request) | — | `07ae1f56`, **without** the panadapter repaint in the status adopter (he dropped it) |
 
 ## The Diversity menu
@@ -35,6 +38,8 @@ IDs are permanent and numbered in the order they were made, not in the order bel
 | [LC-039](lc-menu.md#lc-039) | UI | Restart averaging button removed | — | `f05546e3` |
 | [LC-040](lc-menu.md#lc-040) | UI | Hold and Invert move up into the freed cell | LC-039 | `f05546e3` |
 | [LC-047](lc-menu.md#lc-047) | UI | The second attenuator slider is labelled with its own ADC (ADC1 when RX1 is on ADC2) | — | `f05546e3` |
+| [LC-059](lc-menu.md#lc-059) | UI | The objective list reads Manual, Sum, Null, Best; the `DIV_AUTO_*` enum follows | — | `30b327e2` |
+| [LC-060](lc-menu.md#lc-060) | UI | The "Measure on" list is the `DIV_REF_*` order; the row table and its converters go | — | `30b327e2` |
 | [LC-054](lc-menu.md#lc-054) | UI | The status line shows the coherence on every reference with a Min coherence | — | `07ae1f56` |
 | [LC-057](lc-menu.md#lc-057) | UI | The Enable tick follows diversity being switched by `DIVT` or a remote client | — | `07ae1f56` |
 

@@ -2,18 +2,18 @@
 
 Part of the local-change register: [changes.md](../changes.md).
 
-Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing here is a local change waiting to be written: LC-059 to LC-063 are committed (LC-059 to LC-061 pushed); what is left is decisions that are the owner's, work to port or measure, and the client/server faults we are not touching yet.
+Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing here is a local change waiting to be written: LC-059 to LC-063 are in `upstream/TEST` (`30b327e2`); what is left is decisions that are the owner's, work to port or measure, and the client/server faults we are not touching yet.
 
 ## Outstanding
 
 **Waiting on the owner (Brendan or dl1ycf)**
 
-- [ ] LC-063, his to approve: the settings command's final layout and the one version bump (`0x01310002`, covering LC-059/LC-060 too), with the flagged alternative (drop the live centre/width/coherence_min, E3) and the `spare[4]` bytes (a departure from the file's style). Reply drafted in [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md). Not yet pushed.
-- [ ] `div_auto_mode` is sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`): one source of truth, his files.
+- [ ] Force-push the 2026-10-30 resync to `origin/TEST` (needs the owner's OK; old tip `history/backup/TEST-pre-rebase-20261030`).
+- [ ] `div_auto_mode` is sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`): one source of truth, his files. Raised in the LC-063 note; his tree still sends it both ways, so it stays flagged.
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
 - [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
 
-**To port from `feature/auto-diversity`** (each gets the next LC, from LC-062)
+**To port from `feature/auto-diversity`** (each gets the next LC, from LC-064)
 
 - [ ] The time-based slew (Finding 48).
 - [ ] The 0.5 s default averaging.
@@ -42,7 +42,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 ## Closed
 
 - [x] LC-059 and LC-060, the objective and reference order (2026-10-15); LC-061, the fresh-install seeds (2026-10-15). Decisions: no props migration, capture format 5; the wire bump is now LC-063.
-- [x] LC-062, Weighting, Hang, the bin-width setting and RADE V1's threshold removed (2026-10-19); LC-063, the settings command's layout and the version bump (2026-10-19, awaiting his approval).
+- [x] LC-062, Weighting, Hang, the bin-width setting and RADE V1's threshold removed (2026-10-19); LC-063, the settings command's layout and the version bump (2026-10-19). LC-059 to LC-063 accepted into `upstream/TEST` (`30b327e2`, 2026-10-27), the layout and `CLIENT_SERVER_VERSION` `0x01310002` as we wrote them.
 - [x] Bin width, Auto only: done in LC-062 (the setting, props key and wire field are gone).
 - [x] LC-048 to LC-058 accepted into `upstream/TEST` (`07ae1f56`); the leftovers in `diversity_auto.h` were LC-058.
 - [x] The empty-band stand-down: decided against (2026-10-14, T-026, settled decision 5).
@@ -51,6 +51,7 @@ Outstanding work comes first (as of 2026-10-19), then what is closed. Nothing he
 - [x] The noise floor's selection (LC-033).
 - [x] E1 (LC-031) and E2 (LC-032) of the ownership review.
 - [x] Not carried, by decision: the 6 Hz default bins. We keep upstream's 12 Hz; the Averaging slider is the control an operator uses most, and 6 Hz doubles the FFT length and block duration.
+- [x] `TEST` resynced onto `upstream/TEST` `30b327e2` (2026-10-30): LC-059 to LC-063 accepted, rebuilt from the non-LC commits; awaiting the force-push OK.
 - [x] `TEST` resynced onto `upstream/TEST` `b0b1d4e9` (2026-10-19): three of his commits (client discovery host entry, `wdsp` header tidy), no conflict; force-pushed to `origin` with the owner's OK.
 
 ## Detail on the outstanding items

@@ -4,6 +4,15 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-30: upstream took LC-059 to LC-063 in `30b327e2` ("some updates and
+  alignment with BMs auto-div version", 2026-10-27), along with changes of his
+  own (client start-up threads, `profiles.c` audio keys, `wdsp` alignment).
+  `TEST` rebuilt on it: backup `history/backup/TEST-pre-rebase-20261030`, 28
+  non-LC commits replayed on `TEST-rebase-20261030`, plus LT-037 for the
+  `test_modal` checks that rode in LC-061's commit. The register has no pending
+  change; the next number is LC-064. The suite passes. Full record:
+  [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
+
 - 2026-10-19: LC-062 and LC-063. Prompted by dl1ycf's report of uninitialised
   fields in `diversity_client_set_settings()` and his wish to fix the
   settings command's layout so `CLIENT_SERVER_VERSION` moves once. LC-062

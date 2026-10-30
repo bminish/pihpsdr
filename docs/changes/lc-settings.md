@@ -4,7 +4,7 @@ How the auto-diversity settings get from the props file (or a client) into the e
 
 Part of the local-change register: [changes.md](../changes.md).
 
-> **2026-10-15:** every change in this file is in `upstream/TEST`, except any listed as deferred or dropped in the [register](../changes.md#register): LC-001 to LC-047 since `f05546e3` (2026-10-08) and LC-048 to LC-058 since `07ae1f56` (2026-10-15). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
+> **2026-10-30:** every change in this file is in `upstream/TEST`, except any listed as deferred or dropped in the [register](../changes.md#register): LC-001 to LC-047 since `f05546e3` (2026-10-08) and LC-048 to LC-058 since `07ae1f56` (2026-10-15) and LC-059 to LC-063 since `30b327e2` (2026-10-27). The text below is the record of what each is and why; "goes upstream", "for a PR" and "Local" in it describe the state before that. See [upstream-reconcile.md](upstream-reconcile.md).
 
 ---
 
@@ -188,7 +188,7 @@ radio drops the settings a client sends.
 
 ## LC-061 — A fresh install seeds AM on Carrier and the digital modes on FSK/Digital
 
-**Status.** Local (2026-10-15). Not sent to dl1ycf.
+**Status.** Upstream, `30b327e2` (2026-10-27).
 
 **Why.** A props file with no diversity settings gave every mode group the Window reference except CW, which had a seed from a sweep (LC-019). Nothing was recorded as a reason for leaving AM and the digital modes on Window; they were simply not seeded. A new user in AM, SAM or DSB has a carrier to lock to, and a new user in DIGU or DIGL has the occupied-bin reference built for them, so Window was the wrong first choice in both.
 
@@ -203,7 +203,7 @@ radio drops the settings a client sends.
 
 ## LC-062 — Weighting, Hang, the bin-width setting and RADE V1's threshold are removed
 
-**Status.** Local (2026-10-19). Not sent to dl1ycf.
+**Status.** Upstream, `30b327e2` (2026-10-27).
 
 **Why.** Each of the four had no control and was pinned to a constant by `div_settings_validate()` on the way in, yet still travelled in the settings block, in the props file and on the wire, "so neither changes shape". With the wire layout about to be fixed once (LC-063) they would have been fixed into it for good. The owner's decision: none is coming back.
 
@@ -215,7 +215,7 @@ radio drops the settings a client sends.
 
 ## LC-063 — The settings command's final layout, and one version bump
 
-**Status.** Local (2026-10-19). Not sent to dl1ycf; the layout is his to approve, and he asked for it.
+**Status.** Upstream, `30b327e2` (2026-10-27): he approved the layout as written, `spare[4]` and the live centre/width/coherence_min included.
 
 **Why.** He reported compiler warnings in `diversity_client_set_settings()`: `band/carrier/digital/cw_cohmin` and `cw_centre/cw_width` are not in `DIV_SETTINGS_COMMAND`, so those parts of the `DIV_SETTINGS` built on the client were uninitialised when `diversity_auto_apply_settings()` read them. He wants the layout fixed now so `CLIENT_SERVER_VERSION` moves once and old clients are not stranded again. The client/server model itself stays deferred (LC-003, LC-004 and the other faults in [open-items.md](open-items.md)).
 

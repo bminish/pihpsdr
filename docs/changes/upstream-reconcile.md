@@ -205,3 +205,38 @@ with the owner's OK (`302a9149` to `2a0dd63c`).
 **Left on our side.** Only the local layer: `src/diversity_capture.[ch]`, the
 `Makefile` DIVCAP block, `.gitignore` lines, `test/`, `docs/`. Nothing in
 `src/diversity_*.c/.h` differs from his tree.
+
+
+---
+
+# 2026-10-30, the third reconcile
+
+`30b327e2` ("some updates and alignment with BMs auto-div version", 2026-10-27)
+is one commit on top of `5cfea121`, 14 files, +239 -230.
+
+**How "carried" was checked.** By tree, as before. `git diff upstream/TEST
+history/backup/TEST-pre-rebase-20261030 -- src/diversity_auto.c
+src/diversity_auto.h src/diversity_menu.c src/client_server.c
+src/client_server.h src/radio.h` is **empty**: all six files are identical to
+our tip, so LC-059, LC-060, LC-061, LC-062 and LC-063 are accepted exactly as
+written, including the settings command's 244-byte layout, `spare[4]` and
+`CLIENT_SERVER_VERSION` `0x01310002`.
+
+**What else it holds (his, not ours).** `client_thread.c`, `radio.c`
+(the client threads start in `radio_client_start()`, and `audio_open_output()`
+is tested `< 0`), `profiles.c` (local audio keys no longer restored from the
+mode sets), `new_protocol.c`, `newhpsdrsim.c`, `wdsp/linux_port.[ch]`,
+`wdsp/wdsp_align.h`. None touches the diversity engine; the suite is
+unaffected.
+
+**What was done.** Backup `history/backup/TEST-pre-rebase-20261030`; new branch
+from `upstream/TEST`; the 28 commits without a `Local-Change:` trailer replayed
+(docs conflicts resolved by taking the replayed version, then rewritten). Five
+commits skipped as upstream: LC-059, LC-060, LC-061 (a commit with no trailer),
+LC-062, LC-063. One thing rode inside a skipped commit: LC-061's
+`test_modal.c` checks, now LT-037. `make -C test/diversity run` passes.
+
+**Left on our side.** As before: `src/diversity_capture.[ch]`, the `Makefile`
+DIVCAP block, `.gitignore`, `test/`, `docs/`. Nothing in `src/diversity_*.c/.h`
+differs from his tree. The only open points with him are E3 to E5 and the
+doubled `div_auto_mode`.
