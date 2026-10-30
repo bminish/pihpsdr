@@ -4,6 +4,20 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-10-30: **branches tidied.** The binaural branch is now `feature/diversity`
+  (was `feature/diversity-binaural-3-rebase`). Archived under `history/diversity/`:
+  `binaural-2` (was `feature/diversity-binaural-2`), `auto-diversity`
+  (`feature/auto-diversity`), `auto-bins` and `autobins-renum` (`test/auto-bins`),
+  `noise-correlator`, `radeV2-correlator`, `radev1-level`, `binaural-agc-link`
+  and `pr-menu-ref-row` (`pr/diversity-menu-ref-row`; no PR open). Backup
+  branches became tags (`backup/TEST-pre-rebase-20261012`, `-20261019`, `-20261030`,
+  `backup/TEST-rebase-20261019`, `backup/binaural-3-pre-rebase-20261030`). The 15
+  `history/pipewire/*`, `history/upstream/*` and `history/docs/*` branches are in
+  `~/sdr/archive/pihpsdr-history-pipewire-upstream-20261030.bundle` and gone from
+  `origin` (restore with `git fetch <bundle> 'refs/heads/*:refs/heads/*'`). Left in
+  place: `fix/diversity-flat-weighting-TEST` (PR #149), `fix/p2-unused-adc-bpf-bypass-master`
+  (PR #140), `feature/rade-native`.
+
 - 2026-10-30: **the binaural branch rebased onto `TEST`** (`a6bdcb79`), as
   `feature/diversity-binaural-3-rebase`, with `git rebase --onto TEST 229e5581`:
   only the 24 binaural commits after the 5db64949 re-sync were replayed; the
