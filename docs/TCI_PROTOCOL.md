@@ -11,14 +11,14 @@ single accurate reference for what is implemented, where, and how it diverges
 from "standard" TCI as used by clients such as WSJT-X, MLDX, TCI:remote (ON7OFF),
 logbook programs, etc.
 
-Last reviewed against the code: 2026-10-03 (branch `feature/diversity-binaural-2`).
+Last reviewed against the code: 2026-10-30 (branch `feature/diversity-binaural-3-rebase`, on `TEST` `a6bdcb79`).
 Everything below is from reading the source; behaviour marked *(code reading)* has
 not been exercised against a client. Line numbers are deliberately avoided —
 search for the function name.
 
 Source files:
 - [`src/tci.c`](../src/tci.c) — LWS WebSocket server, command parsing and dispatch, state reporting, CW macro handling.
-- [`src/tci.h`](../src/tci.h) — public globals (`tci_enable`, `tci_port`, `tci_audio_rx_active`, `tci_audio_tx_active`) and entry points (`launch_tci`, `shutdown_tci`, `tci_send_chrono_frame`, `tci_audio_wakeup`).
+- [`src/tci.h`](../src/tci.h) — public globals (`tci_enable`, `tci_port`, `tci_audio_rx_active[]` - one flag per receiver, `tci_audio_tx_active`) and entry points (`launch_tci`, `shutdown_tci`, `tci_send_chrono_frame`, `tci_audio_wakeup`).
 - [`src/tci_audio.c`](../src/tci_audio.c) / [`src/tci_audio.h`](../src/tci_audio.h) — binary stream header/struct, RX and TX audio ring buffers, TX pre-buffering, chrono pacing.
 - [`src/receiver.c`](../src/receiver.c) — RX audio tap (`tci_audio_rx_sample`), including the diversity ear-split onto stream 0.
 - [`src/transmitter.c`](../src/transmitter.c) / [`src/client_thread.c`](../src/client_thread.c) — TX mic source override (`tci_get_next_mic_sample`) and the client/server equivalents.
@@ -250,11 +250,11 @@ always replies to the requesting client only.
 | Command | Args | Handler | Notes |
 |---|---|---|---|
 | `rx_anf_enable` | 1,2 | `tci_cmd_rx_anf_enable` | `receiver->anf` + `rx_set_noise()`. Set reply: none. |
-| `rx_apf_enable` | 1,2 | `tci_cmd_rx_apf_enable` | Writes `vfo[].cwAudioPeakFilter`; the handler does not call anything to apply it. Get reports `false` unless the mode is CWL/CWU. Set reply: none. |
-| `rx_nb_enable` | 1,2 | `tci_cmd_rx_nb_enable` | **Set** writes `receiver->nb` (0/1 = off / NB "ANB") + `rx_set_noise()`. **Get** reports `receiver->snb` (the *spectral* noise blanker) — a different control, so a set is not reflected by a subsequent get. Get also reports `false` in DIGL/DIGU. Set reply: none. |
+| `rx_apf_enable` | 1,2 | `tci_cmd_rx_apf_enable` | Writes `vfo[].cwAudioPeakFilter`; the handler does not call anything to apply it. Get reports the stored value in every mode. Set reply: none. |
+| `rx_nb_enable` | 1,2 | `tci_cmd_rx_nb_enable` | **Set** writes `receiver->nb` (0/1 = off / NB "ANB") + `rx_set_noise()`. **Get** reports `receiver->snb` (the *spectral* noise blanker) — a different control, so a set is not reflected by a subsequent get. Get reports `snb` in every mode. Set reply: none. |
 | `rx_nf_enable` | 1,2 | `tci_cmd_rx_nf_enable` | No state behind it. Set echoes the requested value; get always reports `true`. |
 | `rx_bin_enable` | 1,2 | `tci_cmd_rx_bin_enable` | Writes `receiver->binaural` and echoes. The handler does not call `rx_set_af_binaural()`, so *(code reading)* WDSP is not updated until something else applies it. |
-| `rx_nr_enable` | 1,2 | `tci_cmd_rx_nr_enable` | True sets `receiver->nr = 4` (NR4, a non-standard WDSP extension); false sets 0; then `rx_set_noise()`. Get reports `false` unless the mode is USB/LSB/CWU/CWL/AM/SAM (`tci_rx_nr_default_for_mode`). Set reply: none. |
+| `rx_nr_enable` | 1,2 | `tci_cmd_rx_nr_enable` | True restores the NR model this client last turned off (`rx_last_nr[]`, NR4 initially; a no-op if NR is already on); false stores the current model and sets 0; `rx_set_noise()` is called only when the state changes. Get reports `receiver->nr != 0` in every mode. Set reply: none. |
 
 ### AGC / squelch
 
@@ -288,11 +288,11 @@ always replies to the requesting client only.
 | `rx_volume` | 2,3 | `tci_cmd_rx_volume` | `rx_volume:<rx>,<ch>,<dB>;` clamped [-40, 0], `radio_set_af_gain(rx)`. Channel 0/1 accepted and echoed; both map to the same AF gain. Set: echo. |
 | `mon_volume` / `mon_enable` | 0,1 | stubs | Always reply `mon_volume:-60;` / `mon_enable:false;`. |
 | `audio_samplerate` | 1,1 | `tci_cmd_audio_samplerate` | Stores the client's rate and echoes it. Any value other than 48000 makes later `audio_start` silently fail. |
-| `audio_stream_sample_type` | 1,1 | `tci_cmd_audio_stream_sample_type` | Substring match: `float32`→3, `int32`→2, `int24`→1, `int16`→0 (unrecognised keeps the previous value). No reply. Only float32 lets `audio_start` succeed. |
-| `audio_stream_channels` | 1,1 | `tci_cmd_audio_stream_channels` | `1` → mono RX audio (left channel only); anything else → 2. No reply. Affects RX only; TX is always parsed as stereo. |
-| `audio_stream_samples` | 1,1 | `tci_cmd_audio_stream_samples` | Stores the value and replies **`audio_samples:<n>;`** (not `audio_stream_samples`). Any value other than 1024 makes later `audio_start` silently fail. |
-| `audio_start` | 1,1 | `tci_cmd_audio_start` | `audio_start:<rx>;` Enables RX audio for that receiver and replies `audio_start:<rx>;` (WSJT-X and TCI:remote expect it). Silently refused if the client's rate ≠ 48000, samples ≠ 1024 or type ≠ float32. |
-| `audio_stop` | 1,1 | `tci_cmd_audio_stop` | Disables RX audio for that receiver and replies **`audio_off:<rx>;`**. Ignored if not started. |
+| `audio_stream_sample_type` | 1,1 | `tci_cmd_audio_stream_sample_type` | Substring match: `float32`→3, `int32`→2, `int24`→1, `int16`→0 (unrecognised keeps the previous value). Replies `audio_stream_sample_type:float32;` whatever was asked. Only float32 lets `audio_start` succeed. |
+| `audio_stream_channels` | 1,1 | `tci_cmd_audio_stream_channels` | `1` → mono RX audio (left channel only); anything else → 2. Replies with the channel count in force (`audio_stream_channels:1;` or `:2;`). Affects RX only; TX is always parsed as stereo. |
+| `audio_stream_samples` | 1,1 | `tci_cmd_audio_stream_samples` | Stores the value and replies `audio_stream_samples:<n>;`. It is the largest packet the server sends for the receivers this client starts (`audio_start` copies it to `tci_rx_audio_samples[]`, which also sets the wake-up pace); the default is 1024. |
+| `audio_start` | 1,1 | `tci_cmd_audio_start` | `audio_start:<rx>;` Enables RX audio for that receiver and replies `audio_start:<rx>;` (WSJT-X and TCI:remote expect it). Silently refused if the receiver is already owned by a client (`tci_audio_rx_active[rx]`), or the client's rate ≠ 48000 or type ≠ float32. Any `audio_stream_samples` is accepted. |
+| `audio_stop` | 1,1 | `tci_cmd_audio_stop` | Disables RX audio for that receiver and replies `audio_stop:<rx>;`. Ignored, with no reply, if this client had not started it. |
 | `tx_stream_audio_buffering` | — | (send only) | Server sends `tx_stream_audio_buffering:50;` in the init block and on `trx:…,tci`. Not in the dispatch table — a client sending it is ignored. |
 
 ### IQ
@@ -333,7 +333,7 @@ callsign character. The suffix and `callsign_send` are never reached.
 
 | Command | Args | Handler | Notes |
 |---|---|---|---|
-| `stop` | 0,0 | `tci_cmd_stop` | Clears sensor opt-ins, queues `stop;`, sets `running = 0`, releases TX ownership and, if this client last keyed, calls `radio_set_mox(0)`. With `running` cleared, the next writable callback returns -1 and LWS **closes the connection**. *(code reading)* the queued `stop;` is likely never written, and the close then skips the per-slot cleanup (§3). In the reference, `stop` is a server→client "radio in standby" notice. |
+| `stop` | 0,0 | `tci_cmd_stop` | Clears sensor opt-ins and this client's RX and TX audio flags (recomputing the global ones), queues `stop;`, sets `running = 0`, releases TX ownership and, if this client last keyed, calls `radio_set_mox(0)`. With `running` cleared, the next writable callback returns -1 and LWS **closes the connection**. *(code reading)* the queued `stop;` is likely never written, and the close then skips the per-slot cleanup (§3). In the reference, `stop` is a server→client "radio in standby" notice. |
 
 On `shutdown_tci()` every connected client is queued `stop;` and given a close
 timeout; the server waits up to ~500 ms for clients to go before joining the
@@ -364,15 +364,14 @@ work on big-endian CPUs):
 
 Compared with the reference header: offsets 4, 20, 24 and the 64-byte payload
 start match. The reference calls offset 20 `sample_count` "number of sample
-pairs"; this server writes `2 × frames` for RX (and also for mono, where only
-`frames` floats follow), and reads TX `length` as the total float count. Type 3
+pairs"; this server writes `channels × frames` for RX (2 × frames in stereo, `frames` in mono, matching the floats that follow), and reads TX `length` as the total float count. Type 3
 is the reference's "timing" frame. Offsets 8–19 and 28 are
 implementation-specific in the reference.
 
 ### RX audio (server → client)
 
 - **Tap.** `rx_process_buffer` (`receiver.c`) calls `tci_audio_rx_sample()`
-  when any client has RX audio on (`tci_audio_rx_active`). The tap is before
+  when a client has RX audio on for that receiver (`tci_audio_rx_active[rx->id]`; a receiver belongs to one client at a time, see `audio_start`). The tap is before
   mute, mute-while-TX and the stereo/headphone routing, and is scaled by
   `tciscale = 10^(-(volume - tci_volume)/20)`, so the TCI level is independent
   of the AF-gain slider and set by the per-receiver **TCI volume** in the RX
@@ -381,18 +380,18 @@ implementation-specific in the reference.
 - **Diversity ear split.** When `div_split_active()`, RX0's pass stores its
   folded-to-mono ear and RX1's pass emits the pair as **stream 0** (left = RX0
   ear × left balance, right = RX1 ear × right balance), both scaled by RX0's
-  TCI gain law. Stream 1 receives nothing in that mode. Blocks of mismatched
+  TCI gain law. The pair follows stream 0's enable (`tci_audio_rx_active[0]`),
+  whichever receiver's pass it is; stream 1 receives nothing in that mode. Blocks of mismatched
   size (first block after engaging, around sample-rate changes) are skipped.
 - **Ring.** One stereo ring per receiver, `TCI_RX_AUDIO_RING_FRAMES = 32768`
   frames (~0.68 s). When full, new samples are dropped. The producer wakes the
-  LWS thread every 1024 samples.
+  LWS thread every `tci_rx_audio_samples[id]` samples (the owning client's `audio_stream_samples`, 1024 by default).
 - **Framing.** Each `lws_service` pass, `tci_audio_get_frame()` takes **up to**
-  1024 frames (whatever is available) per enabled receiver and per client.
+  `audio_stream_samples` frames, 1024 by default (whatever is available) per enabled receiver and per client.
   Frames can therefore be shorter than 1024. Stereo payload is interleaved
-  L/R; mono sends left only. Max frame: 64 + 1024 × 2 × 4 = 8256 bytes.
-  - *(code reading)* The ring has one read pointer per receiver, not per
-    client. With two clients streaming the same receiver, each takes alternate
-    chunks rather than both getting the full stream.
+  L/R; mono sends left only. Max frame with the default: 64 + 1024 × 2 × 4 = 8256 bytes (`TCI_STREAM.audio` holds 4096 floats).
+  - A second client cannot start a receiver another client has running, so
+    the single read pointer per receiver is no longer shared.
 
 ### TX audio (client → server)
 
@@ -468,8 +467,8 @@ Legend: ✅ matches the reference · ⚠️ implemented but deviates · ❌ not 
 | `ready` | ⚠️ | Sent with a trailing `;`, followed by `start;`. |
 | `start` / `stop` (server→client) | ⚠️ | `start;` after `ready`; `stop;` on shutdown. The server also accepts `stop` from a client and closes that connection. |
 | `iq_start` / `iq_stop` | ❌ | Not in the dispatch table. |
-| `audio_start` / `audio_stop` | ⚠️ | Work per receiver; `audio_start` is echoed, `audio_stop` answers `audio_off:<rx>;`. Silently refused unless 48000 / 1024 / float32. |
-| `audio_stream_sample_type` / `_channels` / `_samples` / `audio_samplerate` | ⚠️ | Stored per client. Only float32, 48000 and 1024 samples are usable; mono is supported for RX. `audio_stream_samples` is answered as `audio_samples:`. Init-block versions are malformed (§3). |
+| `audio_start` / `audio_stop` | ⚠️ | Work per receiver; `audio_start` and `audio_stop` are echoed. `audio_start` is silently refused unless 48000 / float32 and the receiver is free. |
+| `audio_stream_sample_type` / `_channels` / `_samples` / `audio_samplerate` | ⚠️ | Stored per client. Only float32 and 48000 are usable; mono is supported for RX, and any packet size up to 4096 floats. Each is echoed back. Init-block versions are malformed (§3). |
 | `tx_stream_audio_buffering` | ⚠️ | Server sends `50`; ignored if sent by a client. |
 | `rx_sensors_enable` | ⚠️ | Takes the first argument as the bool, so the reference form `rx_sensors_enable:0,true;` disables. |
 | `tx_sensors_enable` | ✅ | |
@@ -515,7 +514,6 @@ Legend: ✅ matches the reference · ⚠️ implemented but deviates · ❌ not 
 | `tx_frequency` | Pushed TX frequency. |
 | `rx_sensors` / `rx_channel_sensors` | S-meter push (see `rx_sensors_enable`). |
 | `tx_enable` | Transmitter present (init block). |
-| `audio_off` / `audio_samples` | Reply names used for `audio_stop` / `audio_stream_samples`. |
 | `cw_macros`, `cw_macros_stop`, `cw_msg`, `callsign_send` | CW text and callsign-aware messages (`cw_msg` incomplete, §4). |
 | `cw_terminal` | Echo only. |
 | `cw_macros_speed`, `cw_keyer_speed`, `cw_macros_speed_up/down` | Keyer speed, one shared value. |
@@ -545,7 +543,7 @@ From `src/tci_audio.h`:
 |---|---|---|
 | `TCI_RX_AUDIO_MAX_RECEIVERS` | 2 | RX audio streams |
 | `TCI_AUDIO_SAMPLE_RATE` | 48000 | Only supported rate |
-| `TCI_AUDIO_SAMPLES` | 1024 | Samples per frame (RX max, chrono period, required `audio_stream_samples`) |
+| `TCI_AUDIO_SAMPLES` | 1024 | Default samples per RX frame, and the chrono period |
 | `TCI_AUDIO_SAMPLE_TYPE` | 3 | float32, header `format` |
 | `TCI_STREAM_RX_AUDIO` / `_TX_AUDIO` / `_TX_CHRONO` | 1 / 2 / 3 | Frame types |
 | `TCI_TX_AUDIO_CHRONO_LENGTH` | 2048 | `length` in chrono frames |
@@ -577,11 +575,14 @@ All from code reading; none of these has been reproduced with a client yet.
    reports the active receiver), `rx_mute` (set has no effect), `rx_nf_enable`
    (always true), `rx_apf_enable`/`rx_bin_enable` (stored but not applied by
    the handler).
-7. **Wire-format slips:** malformed init-block audio lines, `audio_samples:`
-   and `audio_off:` reply names, `tx_sensors` reverse-power field, `length`
+   `rx_nb_enable` and `rx_nr_enable` now report the state in every mode.
+7. **Wire-format slips:** malformed init-block audio lines, `tx_sensors` reverse-power field, `length`
    counting floats rather than pairs, `rx_sensors_enable:0,true` disabling.
-8. **Shared RX ring read pointer** — two clients on the same receiver split
-   the stream between them (§5).
+8. **`tci_lws_write_queued()` loop test.** After a failed write it clears the
+   client's RX audio flags with `i > TCI_RX_AUDIO_MAX_RECEIVERS`, which is
+   never true, so only `tx_audio_enabled` is cleared there and the receiver
+   stays owned until the socket-close path runs. (Upstream's code; reported,
+   not changed here.)
 9. **Not implemented:** IQ streaming, TX profiles, antennas, `vfo_swap_ex`,
    `rx_enable`, `run_cat_ex`, spots, monitor.
 10. **No change notification from the GUI** for anything other than
