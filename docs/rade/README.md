@@ -6,7 +6,7 @@ Details live in the documents listed at the end; this page is the map. Last chec
 ## What it does
 
 piHPSDR receives and transmits FreeDV **RADE V1 and V2** itself, in I/Q, with David Rowe's `librade`
-(`third_party/rade_c`, built by `tools/rade/build_rade.sh`). No freedv-gui, no audio loopback, no second program in the
+(`third_party/rade_c-src` and `third_party/rade_c-build`, fetched and built by `tools/rade/build_rade.sh`). No freedv-gui, no audio loopback, no second program in the
 audio path. The operator chooses **Off / V1 / V2** and **Invert** in the RADE window (also assignable to a toolbar button).
 
 ## How it fits in
