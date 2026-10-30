@@ -20,6 +20,8 @@ Newest first.
   [upstream-reconcile.md](upstream-reconcile.md#2026-11-21-re-sync-onto-a6894cb5-no-lc-taken).
 
 - 2026-10-30: **branches tidied.** The binaural branch is now `feature/diversity`
+
+- 2026-10-30: **branches tidied.** The binaural branch is now `feature/diversity-binaural`
   (was `feature/diversity-binaural-3-rebase`). Archived under `history/diversity/`:
   `binaural-2` (was `feature/diversity-binaural-2`), `auto-diversity`
   (`feature/auto-diversity`), `auto-bins` and `autobins-renum` (`test/auto-bins`),
