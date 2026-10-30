@@ -27,7 +27,7 @@ numbers now mean different things:
 
 | ID | On `TEST` | `feature/diversity-binaural` | `feature/rade-native` |
 |---|---|---|---|
-| T-026 | the empty-band stand-down | the per-ear WAV of 2026-10-05 (T-024 to T-027 are RADE V2 on 7.0879 MHz) | RADE V2, the empty-band entry from `TEST` only |
+| T-026 | the empty-band stand-down | the per-ear WAV of 2026-10-05 (T-024 to T-027 are RADE V2 on 7.0879 MHz) | `TEST`'s, unchanged |
 | T-027 | | per-ear WAV; 160 m captures run T-028 to T-035 | RADE V2 on 40 m (T-027), then T-028 to T-030 |
 | T-028 to T-030 | | 160 m captures | 60 m, 80 m and the start weight |
 | LT-037 | `test_modal` checks of LC-061 | | RADE V2 tooling, renumbered **LT-038** here |
