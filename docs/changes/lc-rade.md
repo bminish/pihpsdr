@@ -433,5 +433,5 @@ right null gain); the listener's side, which |aux| does not measure. The engine'
 summed a dead arm into the good one on the one 80 m capture that never locked (T-028); that is the lock rule's matter.
 
 **Commit.** One commit holds the module, the engine's Null branch and, for now, the replay tool and its test; at the cut for
-`TEST` the replay-tool files (`cp_replay.c`, `test_cp_replay.py`) go under LT-037 (rule 8).
+`TEST` the replay-tool files (`cp_replay.c`, `test_cp_replay.py`) go under LT-038 (rule 8).
 

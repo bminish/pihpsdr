@@ -30,7 +30,7 @@ Rules for Stage 1, set so that discrimination is kept:
 
 ## 2. Stage 0: the measurement
 
-`py/cp_matrix.py` (LT-037), over all 171 captures in `captures/`. Per capture:
+`py/cp_matrix.py` (LT-038), over all 171 captures in `captures/`. Per capture:
 
 - **Truth** from rade_c's own receivers. V1: its V1 receiver syncs on either arm (`score_rade`,
   sync 20% or more). V2: its V2 receiver syncs (`score_radev2`, sync 20% or more and frame-sync 0.6
