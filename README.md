@@ -16,7 +16,10 @@
 >    ```
 >    tools/rade/build_rade.sh
 >    ```
->    This leaves `third_party/rade_c-src` and `third_party/rade_c-build` (both untracked). Run it again to update librade.
+>    This leaves `third_party/rade_c-src` and `third_party/rade_c-build` (both untracked) and prints the librade commit it built
+>    (also in `third_party/rade_c-build/librade.rev`). Run it again to update librade, then rebuild piHPSDR with `make clean`
+>    and `make RADE_NATIVE=ON`. The script exists on this branch only. The V2 comparison in `docs/diversity-radeV2-cp.md` was
+>    measured at rade_c `cc17222`; `RADE_REV=cc17222 tools/rade/build_rade.sh` reproduces that build.
 > 3. Build piHPSDR with RADE switched on, either on the command line or once in `make.config.pihpsdr`:
 >    ```
 >    make RADE_NATIVE=ON
