@@ -1,0 +1,111 @@
+pi_bench - diversity engine hot spots
+
+cpu:       12th Gen Intel(R) Core(TM) i7-12700K
+governor:  powersave
+max kHz:   4900000
+compiler:  16.2.1 20260819 (Red Hat 16.2.1-2), optimised, x86-64, FFTW fftw-3.3.10-sse2-avx-avx2-avx2_128
+
+Identity, selection against qsort on this machine: 21528 cases, 0 differ
+
+Order statistics, per block (both arms where the engine does both).
+                                     n   qsort us select us   ratio   % of a core, qsort -> select
+hot (back to back):
+  noise floor, quiet band         1024      101.5      18.0    5.7x    0.12% ->  0.02%
+  noise floor, quiet band          850       81.7      16.0    5.1x    0.10% ->  0.02%
+  noise floor, busy band (41 %)   1024      100.7      18.1    5.6x    0.12% ->  0.02%
+  Digital median, SSB filter       220        8.4       1.3    6.6x    0.01% ->  0.00%
+  Digital median, wide window     1024       50.5       7.5    6.8x    0.06% ->  0.01%
+  Digital median, maximum         4096      241.7      29.3    8.3x    0.28% ->  0.03%
+  CW off-tone floor, 100 Hz          8        0.1       0.1    1.7x    0.00% ->  0.00%
+  CW off-tone floor, 500 Hz         40        1.7       0.5    3.2x    0.00% ->  0.00%
+paced (one call per 85 ms, as the radio; median of 60):
+  noise floor, quiet band         1024      627.9      97.9    6.4x    0.73% ->  0.11%
+  Digital median, SSB filter       220       61.9      11.2    5.5x    0.07% ->  0.01%
+
+Noise-floor gather, per block (2 arms x 1024 strided bins of |X|^2):
+  nfft   4096:    2.04 us hot
+  nfft  16384:    1.85 us hot
+  nfft  65536:    1.88 us hot
+
+Per-bin cross-spectral accumulation, per block (approximate):
+  SSB filter, 3 kHz             256 bins:     0.26 us hot  ( 0.00% of a core)
+  AM / wide window, 16 kHz     1400 bins:     1.37 us hot  ( 0.00% of a core)
+  whole span at 192 kHz       16384 bins:    18.19 us hot  ( 0.02% of a core)
+
+FFT, one complex single-precision forward transform (the engine does two a block):
+    nfft  sample rate at 12 Hz bins        hot us   paced us  2 per block, % of a core (paced)
+    4096  48 kHz                              4.6       39.9   0.09%
+    8192  96 kHz                             17.6      108.0   0.25%
+   16384  192 kHz                            40.5      253.9   0.59%
+   32768  384 kHz                            86.5      436.5   1.02%
+   65536  768 and 1536 kHz (cap)            192.2      859.2   4.02% (at 1536 kHz, 23.4 blocks/s)
+
+FFT planner, out of place as the engine (two transforms a block; % of a core paced):
+    nfft  flags       plan ms    hot us  paced us  % core  replan from wisdom ms
+    4096  ESTIMATE        0.1       5.2      44.1   0.10%  -
+TSV	fft	4096	ESTIMATE	0.098	5.156	44.109	0.1032	-1.0000
+    4096  MEASURE       110.9       2.5      56.9   0.13%  1.07
+TSV	fft	4096	MEASURE	110.932	2.498	56.859	0.1331	1.0712
+    4096  PATIENT      1280.2       2.7      49.0   0.11%  1.27
+TSV	fft	4096	PATIENT	1280.207	2.679	49.006	0.1147	1.2704
+    8192  ESTIMATE        0.2      17.3     123.0   0.29%  -
+TSV	fft	8192	ESTIMATE	0.242	17.334	123.017	0.2879	-1.0000
+    8192  MEASURE       179.3       8.1      61.8   0.14%  1.41
+TSV	fft	8192	MEASURE	179.331	8.076	61.801	0.1446	1.4122
+    8192  PATIENT      2014.6       6.3      65.0   0.15%  1.33
+TSV	fft	8192	PATIENT	2014.635	6.319	64.994	0.1521	1.3315
+   16384  ESTIMATE        0.3      40.1     251.3   0.59%  -
+TSV	fft	16384	ESTIMATE	0.250	40.112	251.283	0.5880	-1.0000
+   16384  MEASURE       249.5      18.0     160.4   0.38%  1.39
+TSV	fft	16384	MEASURE	249.500	18.029	160.367	0.3753	1.3922
+   16384  PATIENT      3356.3      13.5     133.0   0.31%  1.73
+TSV	fft	16384	PATIENT	3356.309	13.497	133.044	0.3113	1.7266
+   32768  ESTIMATE        0.5      84.7     540.3   1.26%  -
+TSV	fft	32768	ESTIMATE	0.489	84.744	540.318	1.2643	-1.0000
+   32768  MEASURE       384.7      40.0     291.7   0.68%  1.44
+TSV	fft	32768	MEASURE	384.671	39.968	291.685	0.6825	1.4366
+   32768  PATIENT      6117.2      29.5     220.4   0.52%  0.78
+TSV	fft	32768	PATIENT	6117.191	29.535	220.410	0.5158	0.7836
+   65536  ESTIMATE        0.2     186.3    1075.2   5.03%  -
+TSV	fft	65536	ESTIMATE	0.219	186.261	1075.165	5.0318	-1.0000
+   65536  MEASURE       797.7     101.6     659.8   3.09%  1.06
+TSV	fft	65536	MEASURE	797.748	101.572	659.846	3.0881	1.0582
+   65536  PATIENT     13927.8      74.8     537.8   2.52%  1.64
+TSV	fft	65536	PATIENT	13927.818	74.780	537.804	2.5169	1.6419
+
+Decimators, per analysis block (both arms; % of a core paced, over the block period):
+  filter                     rate   nfft  decim   taps     hot us   paced us  % core
+  lean against as-RADE, 192 kHz, 682 outputs: max difference 9.54e-07 of a peak 6.58e+00
+  to 8 kHz, as RADE V1        48k   4096      6     96       81.4      469.6   0.55%
+TSV	dec	to 8 kHz, as RADE V1	48000	4096	6	96	81.403	469.552	0.5503
+  to 8 kHz, lean              48k   4096      6     96       27.3      165.9   0.19%
+TSV	dec	to 8 kHz, lean	48000	4096	6	96	27.285	165.860	0.1944
+  to 8 kHz, as RADE V1        96k   8192     12    192      167.2      900.1   1.05%
+TSV	dec	to 8 kHz, as RADE V1	96000	8192	12	192	167.199	900.083	1.0548
+  to 8 kHz, lean              96k   8192     12    192       50.5      319.5   0.37%
+TSV	dec	to 8 kHz, lean	96000	8192	12	192	50.532	319.545	0.3745
+  to 8 kHz, as RADE V1       192k  16384     24    384      330.3     1913.1   2.24%
+TSV	dec	to 8 kHz, as RADE V1	192000	16384	24	384	330.342	1913.107	2.2419
+  to 8 kHz, lean             192k  16384     24    384      101.3      602.8   0.71%
+TSV	dec	to 8 kHz, lean	192000	16384	24	384	101.266	602.816	0.7064
+  to 8 kHz, as RADE V1       384k  32768     48    768      659.3     3887.3   4.56%
+TSV	dec	to 8 kHz, as RADE V1	384000	32768	48	768	659.336	3887.347	4.5555
+  to 8 kHz, lean             384k  32768     48    768      218.8     1317.0   1.54%
+TSV	dec	to 8 kHz, lean	384000	32768	48	768	218.755	1317.019	1.5434
+  to 192 kHz, lean           384k  32768      2     32      288.7     1595.3   1.87%
+TSV	dec	to 192 kHz, lean	384000	32768	2	32	288.665	1595.309	1.8695
+  to 8 kHz, as RADE V1       768k  65536     96   1536     1324.2     7752.6   9.09%
+TSV	dec	to 8 kHz, as RADE V1	768000	65536	96	1536	1324.197	7752.640	9.0851
+  to 8 kHz, lean             768k  65536     96   1536      440.2     2464.9   2.89%
+TSV	dec	to 8 kHz, lean	768000	65536	96	1536	440.202	2464.869	2.8885
+  to 192 kHz, lean           768k  65536      4     64      467.4     2662.0   3.12%
+TSV	dec	to 192 kHz, lean	768000	65536	4	64	467.394	2661.971	3.1195
+  to 8 kHz, as RADE V1      1536k  65536    192   3072     1369.7     7315.6  17.15%
+TSV	dec	to 8 kHz, as RADE V1	1536000	65536	192	3072	1369.750	7315.604	17.1459
+  to 8 kHz, lean            1536k  65536    192   3072      495.4     2563.4   6.01%
+TSV	dec	to 8 kHz, lean	1536000	65536	192	3072	495.372	2563.447	6.0081
+  to 192 kHz, lean          1536k  65536      8    128      420.5     2612.7   6.12%
+TSV	dec	to 192 kHz, lean	1536000	65536	8	128	420.451	2612.698	6.1235
+
+For the whole engine (every reference, RADE V1 included), on a Pi that
+builds piHPSDR: make -C test/diversity bench_cpu && ./test/diversity/bench_cpu
