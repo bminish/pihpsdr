@@ -1,0 +1,23 @@
+# Built by make in this directory and in devtools/ (LT-002, docs/changes.md).
+test_modes_live
+bench_cpu
+test_window
+test_rade
+test_digital
+test_props
+test_modal
+test_cw
+test_rates
+devtools/build/
+devtools/replay_rade
+devtools/run_ref
+devtools/score_rade
+devtools/test_capture
+devtools/py/__pycache__/
+bench_nf
+nf_select.inc
+pi_bench_standalone.c
+pi5-bench.tar.gz
+pi5-bench/
+devtools/radev2_iq
+devtools/score_radev2

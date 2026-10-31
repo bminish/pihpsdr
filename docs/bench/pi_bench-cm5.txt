@@ -1,0 +1,45 @@
+pi_bench - diversity engine hot spots
+
+model:     Raspberry Pi Compute Module 5 Lite Rev 1.0
+cpu:       0xd0b
+governor:  ondemand
+max kHz:   2400000
+compiler:  14.2.0, optimised, aarch64, FFTW fftw-3.3.10-neon
+
+Identity, selection against qsort on this machine: 21528 cases, 0 differ
+
+Order statistics, per block (both arms where the engine does both).
+                                     n   qsort us select us   ratio   % of a core, qsort -> select
+hot (back to back):
+  noise floor, quiet band         1024      163.7      27.4    6.0x    0.19% ->  0.03%
+  noise floor, quiet band          850      133.4      24.5    5.4x    0.16% ->  0.03%
+  noise floor, busy band (41 %)   1024      163.9      28.1    5.8x    0.19% ->  0.03%
+  Digital median, SSB filter       220       13.8       2.5    5.5x    0.02% ->  0.00%
+  Digital median, wide window     1024       81.9      11.2    7.3x    0.10% ->  0.01%
+  Digital median, maximum         4096      394.5      45.2    8.7x    0.46% ->  0.05%
+  CW off-tone floor, 100 Hz          8        0.4       0.3    1.4x    0.00% ->  0.00%
+  CW off-tone floor, 500 Hz         40        3.4       1.8    1.9x    0.00% ->  0.00%
+paced (one call per 85 ms, as the radio; median of 60):
+  noise floor, quiet band         1024      171.6      52.3    3.3x    0.20% ->  0.06%
+  Digital median, SSB filter       220       24.7       4.7    5.3x    0.03% ->  0.01%
+
+Noise-floor gather, per block (2 arms x 1024 strided bins of |X|^2):
+  nfft   4096:    3.97 us hot
+  nfft  16384:    3.97 us hot
+  nfft  65536:    4.12 us hot
+
+Per-bin cross-spectral accumulation, per block (approximate):
+  SSB filter, 3 kHz             256 bins:     0.59 us hot  ( 0.00% of a core)
+  AM / wide window, 16 kHz     1400 bins:     3.25 us hot  ( 0.00% of a core)
+  whole span at 192 kHz       16384 bins:    41.77 us hot  ( 0.05% of a core)
+
+FFT, one complex single-precision forward transform (the engine does two a block):
+    nfft  sample rate at 12 Hz bins        hot us   paced us  2 per block, % of a core (paced)
+    4096  48 kHz                             20.5       22.8   0.05%
+    8192  96 kHz                             56.5       58.3   0.14%
+   16384  192 kHz                           133.7      135.5   0.32%
+   32768  384 kHz                           287.2      478.1   1.12%
+   65536  768 and 1536 kHz (cap)            733.3      778.1   3.64% (at 1536 kHz, 23.4 blocks/s)
+
+For the whole engine (every reference, RADE V1 included), on a Pi that
+builds piHPSDR: make -C test/diversity bench_cpu && ./test/diversity/bench_cpu
