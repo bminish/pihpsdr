@@ -1,0 +1,209 @@
+bench_cpu: share of one core (worker + feeder), baseline -> new
+
+pacing reference                rate   nfft    base %     new %    delta  verdict
+hot    CW                        48k   4096      0.16      0.16    -0.00  ok
+hot    CW                        96k   8192      0.30      0.28    -0.02  ok
+hot    CW                       192k  16384      0.62      0.59    -0.03  ok
+hot    CW                       384k  32768      1.42      1.81    +0.39  REGRESSION
+hot    CW                       768k  65536      4.70      3.63    -1.07  ok
+hot    CW                      1536k  65536      7.29      7.30    +0.01  ok
+hot    CW Best                   48k   4096         -      0.15        -  NEW
+hot    CW Best                   96k   8192         -      0.29        -  NEW
+hot    CW Best                  192k  16384         -      0.59        -  NEW
+hot    CW Best                  384k  32768         -      1.40        -  NEW
+hot    CW Best                  768k  65536         -      4.69        -  NEW
+hot    CW Best                 1536k  65536         -      7.43        -  NEW
+hot    Carrier                   48k   4096      0.15      0.15    -0.00  ok
+hot    Carrier                   96k   8192      0.30      0.30    -0.01  ok
+hot    Carrier                  192k  16384      0.77      0.61    -0.16  ok
+hot    Carrier                  384k  32768      1.44      1.44    +0.00  ok
+hot    Carrier                  768k  65536      3.62      4.46    +0.84  ok
+hot    Carrier                 1536k  65536      7.74      7.58    -0.17  ok
+hot    Carrier 24Hz tier         48k   2048         -      0.19        -  NEW
+hot    Carrier 24Hz tier         96k   4096         -      0.29        -  NEW
+hot    Carrier 24Hz tier        192k   8192         -      0.75        -  NEW
+hot    Carrier 24Hz tier        384k  16384         -      1.19        -  NEW
+hot    Carrier 24Hz tier        768k  32768         -      2.77        -  NEW
+hot    Carrier 24Hz tier       1536k  65536         -      7.69        -  NEW
+hot    Digital I/Q               48k   4096      0.14      0.14    -0.00  ok
+hot    Digital I/Q               96k   8192      0.29      0.28    -0.01  ok
+hot    Digital I/Q              192k  16384      0.63      0.87    +0.24  ok
+hot    Digital I/Q              384k  32768      1.79      1.39    -0.40  ok
+hot    Digital I/Q              768k  65536      3.68      3.79    +0.11  ok
+hot    Digital I/Q             1536k  65536      7.58      7.13    -0.45  ok
+hot    RADE V1 (locked)          48k   4096      0.37      0.37    +0.00  ok
+hot    RADE V1 (locked)          96k   8192      0.66      0.66    +0.00  ok
+hot    RADE V1 (locked)         192k  16384      1.90      1.26    -0.64  ok
+hot    RADE V1 (locked)         384k  32768      2.50      2.49    -0.01  ok
+hot    RADE V1 (locked)         768k  65536      5.61      5.43    -0.18  ok
+hot    RADE V1 (locked)        1536k  65536     10.08      9.87    -0.21  ok
+hot    RADE V1 (search)          48k   4096      3.12      3.01    -0.11  ok
+hot    RADE V1 (search)          96k   8192      3.42      3.41    -0.01  ok
+hot    RADE V1 (search)         192k  16384      5.51      3.93    -1.57  ok
+hot    RADE V1 (search)         384k  32768      5.19      5.14    -0.05  ok
+hot    RADE V1 (search)         768k  65536      7.63      8.27    +0.63  ok
+hot    RADE V1 (search)        1536k  65536     13.23     13.21    -0.01  ok
+hot    Window                    48k   4096      0.19      0.17    -0.02  ok
+hot    Window                    96k   8192      0.36      0.32    -0.04  ok
+hot    Window                   192k  16384      0.67      0.63    -0.04  ok
+hot    Window                   384k  32768      1.50      1.53    +0.04  ok
+hot    Window                   768k  65536      3.71      3.75    +0.04  ok
+hot    Window                  1536k  65536      7.08      7.35    +0.28  ok
+hot    Window 24Hz tier          48k   2048         -      0.21        -  NEW
+hot    Window 24Hz tier          96k   4096         -      0.47        -  NEW
+hot    Window 24Hz tier         192k   8192         -      0.60        -  NEW
+hot    Window 24Hz tier         384k  16384         -      1.22        -  NEW
+hot    Window 24Hz tier         768k  32768         -      2.96        -  NEW
+hot    Window 24Hz tier        1536k  65536         -      7.53        -  NEW
+hot    Window 3 notches          48k   4096         -      0.21        -  NEW
+hot    Window 3 notches          96k   8192         -      0.34        -  NEW
+hot    Window 3 notches         192k  16384         -      0.65        -  NEW
+hot    Window 3 notches         384k  32768         -      1.70        -  NEW
+hot    Window 3 notches         768k  65536         -      3.96        -  NEW
+hot    Window 3 notches        1536k  65536         -      7.83        -  NEW
+hot    Window Best               48k   4096         -      0.26        -  NEW
+hot    Window Best               96k   8192         -      0.32        -  NEW
+hot    Window Best              192k  16384         -      0.63        -  NEW
+hot    Window Best              384k  32768         -      1.43        -  NEW
+hot    Window Best              768k  65536         -      4.80        -  NEW
+hot    Window Best             1536k  65536         -      7.76        -  NEW
+hot    Window Null               48k   4096         -      0.18        -  NEW
+hot    Window Null               96k   8192         -      0.32        -  NEW
+hot    Window Null              192k  16384         -      0.92        -  NEW
+hot    Window Null              384k  32768         -      1.41        -  NEW
+hot    Window Null              768k  65536         -      4.04        -  NEW
+hot    Window Null             1536k  65536         -      7.99        -  NEW
+paced  CW                        48k   4096      0.22      0.20    -0.02  ok
+paced  CW                        96k   8192      0.31      0.30    -0.01  ok
+paced  CW                       192k  16384      0.93      0.90    -0.03  ok
+paced  CW                       384k  32768      1.62      1.48    -0.14  ok
+paced  CW                       768k  65536      3.87      4.96    +1.09  REGRESSION
+paced  CW                      1536k  65536      7.69      7.39    -0.31  ok
+paced  CW Best                   48k   4096         -      0.21        -  NEW
+paced  CW Best                   96k   8192         -      0.29        -  NEW
+paced  CW Best                  192k  16384         -      0.91        -  NEW
+paced  CW Best                  384k  32768         -      1.43        -  NEW
+paced  CW Best                  768k  65536         -      3.90        -  NEW
+paced  CW Best                 1536k  65536         -      7.96        -  NEW
+paced  Carrier                   48k   4096      0.22      0.20    -0.02  ok
+paced  Carrier                   96k   8192      0.34      0.31    -0.03  ok
+paced  Carrier                  192k  16384      0.95      0.90    -0.04  ok
+paced  Carrier                  384k  32768      1.60      1.48    -0.12  ok
+paced  Carrier                  768k  65536      5.05      4.65    -0.39  ok
+paced  Carrier                 1536k  65536      7.56      7.45    -0.11  ok
+paced  Carrier 24Hz tier         48k   2048         -      0.19        -  NEW
+paced  Carrier 24Hz tier         96k   4096         -      0.29        -  NEW
+paced  Carrier 24Hz tier        192k   8192         -      0.59        -  NEW
+paced  Carrier 24Hz tier        384k  16384         -      1.24        -  NEW
+paced  Carrier 24Hz tier        768k  32768         -      2.82        -  NEW
+paced  Carrier 24Hz tier       1536k  65536         -      8.65        -  NEW
+paced  Digital I/Q               48k   4096      0.21      0.21    -0.01  ok
+paced  Digital I/Q               96k   8192      0.31      0.29    -0.02  ok
+paced  Digital I/Q              192k  16384      0.93      0.89    -0.05  ok
+paced  Digital I/Q              384k  32768      1.52      1.50    -0.03  ok
+paced  Digital I/Q              768k  65536      3.80      3.96    +0.15  ok
+paced  Digital I/Q             1536k  65536      7.52      7.73    +0.21  ok
+paced  RADE V1 (locked)          48k   4096      0.57      0.56    -0.01  ok
+paced  RADE V1 (locked)          96k   8192      1.02      1.00    -0.01  ok
+paced  RADE V1 (locked)         192k  16384      1.92      1.92    +0.00  ok
+paced  RADE V1 (locked)         384k  32768      3.77      3.72    -0.05  ok
+paced  RADE V1 (locked)         768k  65536      7.49      7.39    -0.10  ok
+paced  RADE V1 (locked)        1536k  65536     12.52     12.97    +0.44  ok
+paced  RADE V1 (search)          48k   4096      3.70      4.06    +0.36  ok
+paced  RADE V1 (search)          96k   8192      3.32      3.31    -0.01  ok
+paced  RADE V1 (search)         192k  16384      5.91      5.88    -0.03  ok
+paced  RADE V1 (search)         384k  32768      5.15      5.17    +0.01  ok
+paced  RADE V1 (search)         768k  65536     11.29      7.70    -3.59  ok
+paced  RADE V1 (search)        1536k  65536     13.44     13.22    -0.23  ok
+paced  Window                    48k   4096      0.28      0.21    -0.08  ok
+paced  Window                    96k   8192      0.35      0.34    -0.02  ok
+paced  Window                   192k  16384      1.02      0.95    -0.07  ok
+paced  Window                   384k  32768      1.57      1.52    -0.04  ok
+paced  Window                   768k  65536      5.15      5.04    -0.11  ok
+paced  Window                  1536k  65536      7.55      7.39    -0.16  ok
+paced  Window 24Hz tier          48k   2048         -      0.22        -  NEW
+paced  Window 24Hz tier          96k   4096         -      0.32        -  NEW
+paced  Window 24Hz tier         192k   8192         -      0.62        -  NEW
+paced  Window 24Hz tier         384k  16384         -      1.27        -  NEW
+paced  Window 24Hz tier         768k  32768         -      2.99        -  NEW
+paced  Window 24Hz tier        1536k  65536         -      8.23        -  NEW
+paced  Window 3 notches          48k   4096         -      0.28        -  NEW
+paced  Window 3 notches          96k   8192         -      0.37        -  NEW
+paced  Window 3 notches         192k  16384         -      0.99        -  NEW
+paced  Window 3 notches         384k  32768         -      1.56        -  NEW
+paced  Window 3 notches         768k  65536         -      4.87        -  NEW
+paced  Window 3 notches        1536k  65536         -      7.81        -  NEW
+paced  Window Best               48k   4096         -      0.18        -  NEW
+paced  Window Best               96k   8192         -      0.47        -  NEW
+paced  Window Best              192k  16384         -      0.69        -  NEW
+paced  Window Best              384k  32768         -      2.05        -  NEW
+paced  Window Best              768k  65536         -      3.82        -  NEW
+paced  Window Best             1536k  65536         -      7.77        -  NEW
+paced  Window Null               48k   4096         -      0.23        -  NEW
+paced  Window Null               96k   8192         -      0.33        -  NEW
+paced  Window Null              192k  16384         -      0.95        -  NEW
+paced  Window Null              384k  32768         -      1.53        -  NEW
+paced  Window Null              768k  65536         -      5.06        -  NEW
+paced  Window Null             1536k  65536         -      7.59        -  NEW
+
+pi_bench kernels, transforms, decimators and the combine; start / stop / restart
+
+item                                       base          new  verdict
+combine 1536000                               -       0.6521  NEW
+combine 192000                                -       0.0815  NEW
+combine 384000                                -       0.1630  NEW
+combine 48000                                 -       0.0204  NEW
+combine 768000                                -       0.3261  NEW
+combine 96000                                 -       0.0408  NEW
+dec to 192 kHz, lean 1536000             2.8241       2.8212  ok
+dec to 192 kHz, lean 384000              1.3031       0.8806  ok
+dec to 192 kHz, lean 768000              1.4560       2.1496  REGRESSION
+dec to 8 kHz, as RADE V1 1536000         8.4300       8.6971  ok
+dec to 8 kHz, as RADE V1 192000          1.0506       1.0984  ok
+dec to 8 kHz, as RADE V1 384000          2.1984       3.1092  REGRESSION
+dec to 8 kHz, as RADE V1 48000           0.2668       0.2609  ok
+dec to 8 kHz, as RADE V1 768000          4.1552       4.1554  ok
+dec to 8 kHz, as RADE V1 96000           0.5237       0.5424  ok
+dec to 8 kHz, lean 1536000               2.8801       2.8614  ok
+dec to 8 kHz, lean 192000                0.3220       0.3189  ok
+dec to 8 kHz, lean 384000                0.6517       0.6779  ok
+dec to 8 kHz, lean 48000                 0.0892       0.0865  ok
+dec to 8 kHz, lean 768000                1.3531       1.3456  ok
+dec to 8 kHz, lean 96000                 0.1662       0.1651  ok
+fft 16384 ESTIMATE                       0.4815       0.4646  ok
+fft 16384 MEASURE                        0.2654       0.2395  ok
+fft 16384 PATIENT                        0.2652       0.2334  ok
+fft 32768 ESTIMATE                       1.0638       1.0466  ok
+fft 32768 MEASURE                        0.6512       0.5905  ok
+fft 32768 PATIENT                        0.6317       0.6025  ok
+fft 4096 ESTIMATE                        0.0620       0.0764  ok
+fft 4096 MEASURE                         0.0611       0.0413  ok
+fft 4096 PATIENT                         0.0514       0.0428  ok
+fft 65536 ESTIMATE                       4.5358       3.8336  ok
+fft 65536 MEASURE                        2.9343       2.7440  ok
+fft 65536 PATIENT                        2.7980       2.7508  ok
+fft 8192 ESTIMATE                        0.2178       0.1408  ok
+fft 8192 MEASURE                         0.1140       0.0981  ok
+fft 8192 PATIENT                         0.1066       0.0929  ok
+first 1536k tau 2.0 nfft 65536                -  3.9/0.0/4.0  NEW
+steady 1536k tau 0.5 nfft 65536               -  6.2/0.0/6.2  NEW
+steady 192k tau 0.5 nfft 8192                 -  0.8/0.0/0.8  NEW
+steady 192k tau 2.0 nfft 16384                -  1.2/0.0/1.7  NEW
+steady 384k tau 0.5 nfft 16384                -  1.7/0.0/1.7  NEW
+steady 384k tau 2.0 nfft 32768                -  3.0/0.0/3.4  NEW
+steady 48k tau 0.5 nfft 2048                  -  0.4/0.0/0.4  NEW
+steady 48k tau 2.0 nfft 4096                  -  0.5/0.0/0.5  NEW
+steady 768k tau 0.5 nfft 32768                -  3.0/0.0/3.1  NEW
+steady 768k tau 2.0 nfft 65536                -  5.8/0.0/5.8  NEW
+steady 96k tau 0.5 nfft 4096                  -  0.5/0.0/0.5  NEW
+steady 96k tau 2.0 nfft 8192                  -  0.7/0.0/0.8  NEW
+
+--- findings ---
+REGRESSION hot CW 384k: 1.42 % -> 1.81 % (+0.39 points, x1.27)
+REGRESSION paced CW 768k: 3.87 % -> 4.96 % (+1.09 points, x1.28)
+gone       hot RADE V1 (AM pb) (every rate; in the baseline only)
+gone       paced RADE V1 (AM pb) (every rate; in the baseline only)
+REGRESSION dec to 192 kHz, lean 768000: 1.456 % -> 2.150 % of a core
+REGRESSION dec to 8 kHz, as RADE V1 384000: 2.198 % -> 3.109 % of a core
+
+NOT CLEAN: 4 finding(s)
