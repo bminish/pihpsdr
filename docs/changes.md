@@ -9,7 +9,7 @@
 Everything else in this file is done; this is what is left. Detail and the closed list: [changes/open-items.md](changes/open-items.md).
 
 - **Needs the owner's OK or decision:** the on-screen check of the LC-059/LC-060 rows; E3, E4 and E5 with dl1ycf (no code yet).
-- **To port from `feature/auto-diversity`** (LC-064 on): time-based slew, 0.5 s default averaging, the Carrier tooltip.
+- **To port from `feature/auto-diversity`** (LC-064 on): 0.5 s default averaging, the Carrier tooltip. The time-based slew is written as LC-069, to be listened to first.
 - **To measure or build:** the noise floor's CW items (Best's SNR, `DIV_CW_MIN_BINS`, 48 and 1536 kHz captures, attenuator calibration); CW floor and 0.2 s on marginal captures; a notch validation capture (LC-013); a RADE V2 correlator; the open 24 Hz cases (Carrier, fast fades, other rates); the functional suite on the Pi; LC-061's seeds on captures.
 - **Client/server (tracked, not fixed):** LC-003, LC-004, the radio dropping a client's settings, no menu refresh from a settings block.
 - **Flagged for dl1ycf:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
@@ -36,6 +36,14 @@ Taken in this order. LC-064 can go alone; LC-065 can go alone; LC-066 without LC
 
 LC-059 and LC-060 are independent. LC-063 follows LC-062. The capture format is bumped to 5 for both (LT-033) so the existing captures replay as recorded; `reset_diversity_props.py` (LT-034) clears the diversity settings from a props file for the one-time break and for testing as a new user.
 
+
+### Pending: time-based slew, written on `feature/rade-native`, for `TEST`
+
+| ID | Kind | Summary | Files | Depends on | Status |
+|---|---|---|---|---|---|
+| [LC-069](changes/lc-slew.md#lc-069) | Behaviour | The Window, CW, FSK/Digital and Carrier references slew the applied weight with a 0.15 s time constant in place of 0.15 of the distance per block (Finding 48); the RADE references keep the per-block fraction. At or above the shipped slew in 14 of 14 cells on seven captures: 0 to 0.2 dB on five, +0.4 to +0.9 dB on one, +1.4 dB on one that opens in dead air. Not listened to | diversity_auto.c | — | Local (working tree, not committed) |
+
+Numbered after LC-068 because LC-064 to LC-068 are taken on this branch; it does not depend on them and goes to `TEST` first if the series is cut that way.
 
 ### Deferred and dropped
 

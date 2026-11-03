@@ -14,7 +14,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 
 **To port from `feature/auto-diversity`** (each gets the next LC, from LC-064)
 
-- [ ] The time-based slew (Finding 48).
+- [ ] The time-based slew (Finding 48): written as LC-069 (2026-11-03), measured on seven captures, **not listened to**; commit once it has been.
 - [ ] The 0.5 s default averaging.
 - [ ] The Carrier tooltip.
 
