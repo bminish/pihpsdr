@@ -253,14 +253,22 @@
 #define DIV_ARM_MIN_DB      6.0
 
 //
-// Fraction of the remaining distance to the target that w moves in one
-// block. With ~85 ms blocks this settles in a little over a second from
-// any starting point, which is fast enough to be useful and slow enough
-// that the change in the mix is not heard as a step. A fixed absolute
-// step was tried first and is wrong: the time to converge then depends on
-// how far away the answer is, and a large |w| took the best part of a
-// minute to reach.
+// How fast the applied weight w follows the one the loop has worked out.
 //
+// The wideband references (Window, CW, FSK/Digital, Carrier) slew with a
+// time constant, DIV_SLEW_TAU: each block w covers 1 - exp(-blocktime/tau)
+// of the distance left. It used to be a fixed fraction per block, and a
+// block lasts as long as the reciprocal of the bin width, so the lag the
+// operator got moved with the bin width (0.26 s at 24 Hz, 1 s at 6 Hz)
+// and, at short Averaging, was longer than the Averaging time itself.
+//
+// The RADE references keep a fixed fraction per block, DIV_SLEW_FRAC
+// (about 0.5 s with 12 Hz bins). Their weight comes from a correlator that
+// has its own averaging, and a quick change of phase is what the decoder
+// dislikes most; the V2 weight was swept from 5 to 25 % per block and is
+// flat there.
+//
+#define DIV_SLEW_TAU        0.15
 #define DIV_SLEW_FRAC       0.15
 
 //
@@ -2478,8 +2486,14 @@ static void div_apply_weight(double wr, double wi) {
     auto_div_cos = wr;
     auto_div_sin = wi;
   } else {
-    auto_div_cos += DIV_SLEW_FRAC * (wr - auto_div_cos);
-    auto_div_sin += DIV_SLEW_FRAC * (wi - auto_div_sin);
+    //
+    // blocktime is set when the analysis starts; until then (and for the
+    // RADE references) the per-block fraction applies.
+    //
+    const double sf = (!DIV_REF_IS_RADE(div_auto_ref) && blocktime > 0.0)
+                      ? 1.0 - exp(-blocktime / DIV_SLEW_TAU) : DIV_SLEW_FRAC;
+    auto_div_cos += sf * (wr - auto_div_cos);
+    auto_div_sin += sf * (wi - auto_div_sin);
   }
   //
   // Back-compute the values the menu, the props file and remote clients
