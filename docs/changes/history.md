@@ -4,6 +4,11 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-11-03: LC-069, the time-based slew (Finding 48), written on `feature/rade-native` and measured on seven captures
+  (at or above the shipped slew in 14 of 14 cells); in the working tree, not committed, not listened to. Two other ideas from
+  Linrad's diversity page were tried the same day and dropped: its noise-only residual channel is 1 - coherence to 1e-7, and its
+  excess-over-floor bin weighting did not beat plain weighting (a Linrad comparison, no LC).
+
 - 2026-10-30: upstream took LC-059 to LC-063 in `30b327e2` ("some updates and
   alignment with BMs auto-div version", 2026-10-27), along with changes of his
   own (client start-up threads, `profiles.c` audio keys, `wdsp` alignment).
