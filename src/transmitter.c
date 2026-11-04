@@ -56,6 +56,9 @@
 #include "transmitter.h"
 #include "tx_panadapter.h"
 #include "vfo.h"
+#ifdef RADE_NATIVE
+#include "rade_native.h"
+#endif
 #include "waterfall.h"
 
 #define min(x,y) (x<y?x:y)
@@ -1573,11 +1576,26 @@ static void tx_full_buffer(TRANSMITTER *tx) {
     // own VOX-triggering code (see explanation at the beginning of
     // the tx_add_mic_sample function).
     //
+#ifdef RADE_NATIVE
+    if (rade_native_tx_enabled()) {
+      //
+      // Native RADE: the mic samples are replaced by the modem signal
+      // (complex, so the panel is in "I and Q" mode, see rade_native_menu.c)
+      //
+      rade_native_tx_block(tx->mic_input_buffer, tx->buffer_size, rade_native_get_invert(),
+                           radio_is_transmitting() && !tx->tune && !tx->twotone && !tx->txnoise);
+    }
+#endif
     xdexp(0);
     fexchange0(tx->id, tx->mic_input_buffer, tx->iq_output_buffer, &error);
     if (error != 0) {
       t_print("%s: id=%d fexchange0: error=%d\n", __func__, tx->id, error);
     }
+#ifdef RADE_NATIVE
+    if (rade_native_tx_enabled() && radio_is_transmitting()) {
+      rade_native_capture_tx(tx->iq_output_buffer, tx->output_samples, tx->iq_output_rate);
+    }
+#endif
   }
   if (tx->displaying && !(tx->puresignal && tx->feedback)) {
     g_mutex_lock(&tx->display_mutex);
@@ -2137,6 +2155,18 @@ void tx_set_filter(TRANSMITTER *tx) {
     tx->filter_high = 17000;
     break;
   }
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {
+    //
+    // Native RADE: the passband follows the waveform and the (effective)
+    // invert, not the mode's filter.
+    //
+    double lo, hi;
+    rade_native_wdsp_edges(rade_native_waveform(), rade_native_get_invert(), 0.0, &lo, &hi);
+    tx->filter_low = (int)lround(lo);
+    tx->filter_high = (int)lround(hi);
+  }
+#endif
   tx_set_bandpass(tx);
   tx_set_deviation(tx);
 }
@@ -2501,6 +2531,21 @@ void tx_set_compressor(TRANSMITTER *tx) {
     RXTXprofile[txmode].tx.cfc_post[i] = tx->cfc_post[i];
   }
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {
+    //
+    // Native RADE transmit: the modem signal must reach the PA unprocessed. The profile values are kept
+    // (above) for when RADE transmit ends, but the speech processors stay off: this function is called
+    // whenever a mode profile is loaded and when TUNE ends, which used to switch the CFC (with its
+    // post-equaliser) and the leveler back on and tilted the RADE spectrum by 8 dB.
+    //
+    SetTXALevelerSt(tx->id, 0);
+    SetTXACFCOMPRun(tx->id, 0);
+    SetTXAosctrlRun(tx->id, 0);
+    SetTXACompressorRun(tx->id, 0);
+    return;
+  }
+#endif
   //
   // - Although I see not much juice therein, the
   //   usage of CFC alongside with the speech processor
@@ -2571,6 +2616,12 @@ void tx_set_phrot(const TRANSMITTER *tx) {
   RXTXprofile[txmode].tx.phrot_stages = tx->phrot_stages;
   RXTXprofile[txmode].tx.phrot_corner = tx->phrot_corner;
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetTXAPHROTRun(tx->id, 0);
+    return;
+  }
+#endif
   SetTXAPHROTCorner(tx->id, tx->phrot_corner);
   SetTXAPHROTNstages(tx->id, tx->phrot_stages);
   SetTXAPHROTReverse(tx->id, tx->phrot_reverse);
@@ -2600,6 +2651,12 @@ void tx_set_dexp(const TRANSMITTER *tx) {
   RXTXprofile[txmode].tx.dexp_filter_high = tx->dexp_filter_high;
   RXTXprofile[txmode].tx.dexp_exp         = tx->dexp_exp;
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetDEXPRun(0, 0);
+    return;
+  }
+#endif
   //
   // Set all the parameters of the Downward Expander
   // Note the DEXP number must be between 0 and 3, so
@@ -2663,6 +2720,12 @@ void tx_set_equalizer(TRANSMITTER *tx) {
   }
   profiles_copy_rxtxprofile(txmode);
   g_idle_add(ext_vfo_update, NULL);
+#ifdef RADE_NATIVE
+  if (rade_native_tx_enabled()) {                // native RADE transmit: no speech processing, see tx_set_compressor()
+    SetTXAEQRun(tx->id, 0);
+    return;
+  }
+#endif
   SetTXAEQProfile(tx->id, 10, tx->eq_freq, tx->eq_gain);
   SetTXAEQRun(tx->id, tx->eq_enable);
 }
@@ -2688,6 +2751,11 @@ void tx_set_mic_gain(const TRANSMITTER *tx) {
   int txmode = vfo_get_tx_mode();
   RXTXprofile[txmode].tx.mic_gain = tx->mic_gain;
   profiles_copy_rxtxprofile(txmode);
+#ifdef RADE_NATIVE
+  // native RADE: the modem level is set by the engine, the mic gain slider
+  // must not scale it (the stored value is restored when RADE transmit ends)
+  if (rade_native_tx_enabled()) { return; }
+#endif
   SetTXAPanelGain1(tx->id, pow(10.0, tx->mic_gain * 0.05));
 }
 

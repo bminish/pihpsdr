@@ -9,7 +9,7 @@
 Everything else in this file is done; this is what is left. Detail and the closed list: [changes/open-items.md](changes/open-items.md).
 
 - **Needs the owner's OK or decision:** the on-screen check of the LC-059/LC-060 rows; E3, E4 and E5 with dl1ycf (no code yet).
-- **To port from `feature/auto-diversity`** (LC-064 on): time-based slew, 0.5 s default averaging, the Carrier tooltip.
+- **To port from `feature/auto-diversity`** (LC-064 on): 0.5 s default averaging, the Carrier tooltip. The time-based slew is written as LC-069, to be listened to first.
 - **To measure or build:** the noise floor's CW items (Best's SNR, `DIV_CW_MIN_BINS`, 48 and 1536 kHz captures, attenuator calibration); CW floor and 0.2 s on marginal captures; a notch validation capture (LC-013); a RADE V2 correlator; the open 24 Hz cases (Carrier, fast fades, other rates); the functional suite on the Pi; LC-061's seeds on captures.
 - **Client/server (tracked, not fixed):** LC-003, LC-004, the radio dropping a client's settings, no menu refresh from a settings block.
 - **Flagged for dl1ycf:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
@@ -19,6 +19,31 @@ Everything else in this file is done; this is what is left. Detail and the close
 ### Pending: local, not yet in upstream
 
 None. LC-059 to LC-063 arrived in `30b327e2` (2026-10-27) and moved to [accepted.md](changes/accepted.md); how that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-30-the-third-reconcile). The next change takes **LC-064**.
+
+### Pending: on `feature/rade-native`, for `TEST` as a patch
+
+RADE V2 as a second RADE reference, side by side with V1 (decided 2026-10-22). Built and pushed on `feature/rade-native`; **not on `TEST`**. Five changes and one tooling item, written up in [lc-rade.md](changes/lc-rade.md#rade-v2) and, with the evidence, in [diversity-radeV2-cp.md](diversity-radeV2-cp.md). The commits do not carry `Local-Change:` trailers yet: they are added when the series is cut for `TEST`, as the IDs are permanent and the hashes are not.
+
+| ID | Kind | Summary | Files | Depends on | Status |
+|---|---|---|---|---|---|
+| [LC-064](changes/lc-rade.md#lc-064) | Cleanup | `DIV_REF_IS_RADE()` and `DIV_REF_LAST` in place of the tests for RADE V1 that meant "a RADE reference"; the correlator start, stop and reset go through `div_rade_start/stop/reset()`. No behaviour change | diversity_auto.c, diversity_auto.h | — | Local (branch) |
+| [LC-065](changes/lc-rade.md#lc-065) | New | The RADE V2 correlator: detects and locks on the cyclic prefix (lag 128, period 160), issues a weight from the prefix-gated cross-correlation (the unit co-phase direction as built; the noise-weighted weight since LC-068) and publishes per-arm figures for the log. Standalone, nothing calls it | rade_v2_correlator.c, rade_v2_correlator.h, Makefile | — | Local (branch) |
+| [LC-066](changes/lc-rade.md#lc-066) | New | `DIV_REF_RADE_V2` (reference 5) in the engine: the RADE block runs either correlator and copies V2's status into the `rade_corr_*` variables; start follows the reference; log lines for lock, loss and tracking | diversity_auto.c, diversity_auto.h, Makefile | LC-064, LC-065 | Local (branch) |
+| [LC-067](changes/lc-rade.md#lc-067) | UI | The "Measure on" row, the RADE-wide menu cases through `DIV_REF_IS_RADE()`, the status line, and the panadapter overlay for V2's band. In `diversity_menu.c`, which is dl1ycf's | diversity_menu.c, rx_panadapter.c | LC-066 | Local (branch) |
+| [LC-068](changes/lc-rade.md#lc-068) | Behaviour | RADE V2 Sum applies the noise-weighted (maximal-ratio) weight, `conj(h1/h0) N0/N1`, gain capped at 4, in place of the unit co-phase direction; Null keeps the unit direction. No new setting. Decoded aux above the live unit weight on 5 of 5 captures on 40 m (+0.004 to +0.113) and above the unit weight replayed on both 60 m captures (+0.017, +0.022) | rade_v2_correlator.c, rade_v2_correlator.h, diversity_auto.c | LC-065, LC-066 | Local (branch) |
+
+Taken in this order. LC-064 can go alone; LC-065 can go alone; LC-066 without LC-067 is a reference the operator cannot select; LC-068 needs LC-065 and LC-066. The settings command does not change: `DIV_REFS` is 8 and V2 has no slot of its own, as V1. Tooling for them is LT-038.
+
+LC-059 and LC-060 are independent. LC-063 follows LC-062. The capture format is bumped to 5 for both (LT-033) so the existing captures replay as recorded; `reset_diversity_props.py` (LT-034) clears the diversity settings from a props file for the one-time break and for testing as a new user.
+
+
+### Pending: time-based slew, written on `feature/rade-native`, for `TEST`
+
+| ID | Kind | Summary | Files | Depends on | Status |
+|---|---|---|---|---|---|
+| [LC-069](changes/lc-slew.md#lc-069) | Behaviour | The Window, CW, FSK/Digital and Carrier references slew the applied weight with a 0.15 s time constant in place of 0.15 of the distance per block (Finding 48); the RADE references keep the per-block fraction. At or above the shipped slew in 14 of 14 cells on seven captures: 0 to 0.2 dB on five, +0.4 to +0.9 dB on one, +1.4 dB on one that opens in dead air. Not listened to | diversity_auto.c | — | Local (working tree, not committed) |
+
+Numbered after LC-068 because LC-064 to LC-068 are taken on this branch; it does not depend on them and goes to `TEST` first if the series is cut that way.
 
 ### Deferred and dropped
 

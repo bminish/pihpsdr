@@ -13,6 +13,7 @@ devtools/replay_rade
 devtools/run_ref
 devtools/score_rade
 devtools/test_capture
+devtools/cp_replay
 devtools/py/__pycache__/
 bench_nf
 nf_select.inc
@@ -21,3 +22,4 @@ pi5-bench.tar.gz
 pi5-bench/
 devtools/radev2_iq
 devtools/score_radev2
+devtools/auto_replay

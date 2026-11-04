@@ -281,3 +281,157 @@ stock 2.0k preset is left as shipped. A reshaped 2.0k was tried and
 dropped because its button would still read "2.0k": the title is
 compiled in and is also the props key. The 1.5k preset (750 to 2250 Hz)
 cuts the lowest carrier at its centre.
+
+---
+
+<a id="rade-v2"></a>
+
+# RADE V2 (LC-064 to LC-068)
+
+A second RADE reference beside V1, from the cyclic prefix. Built on
+`feature/rade-native` (2026-10-21 and 22), not on `TEST`. The method, the
+evidence and what is not known: [../diversity-radeV2-cp.md](../diversity-radeV2-cp.md).
+Tooling: LT-038.
+
+<a id="lc-064"></a>
+
+## LC-064 — One name for "a RADE reference"
+
+**Problem.** The engine and the menu test `== DIV_REF_RADE_V1` in about a
+dozen places to mean "the time-domain RADE reference, with no Min coherence
+and no window of its own". A second such reference would need every one of
+them found and changed, and the range check (`> DIV_REF_RADE_V1`) with them.
+
+**Change.** `DIV_REF_IS_RADE(ref)` and `DIV_REF_LAST` in `diversity_auto.h`,
+used where the engine meant that; the range check ends at `DIV_REF_LAST`. The
+correlator start, stop and reset go through `div_rade_start/stop/reset()`,
+which call the V1 correlator and nothing else.
+
+**No behaviour change.** The unit tests under `test/diversity/` pass as before
+(`test_rade`, `test_props`, `test_modal`, `test_window`, `test_digital`,
+`test_cw`, `test_rates`, `test_modes_live`).
+
+<a id="lc-065"></a>
+
+## LC-065 — A RADE V2 correlator from the cyclic prefix
+
+**Problem.** V2 has no pilot, so the V1 correlator has nothing to correlate
+against. What V2 does have is its prefix: each 160-sample symbol repeats its
+last 32 samples.
+
+**Change.** `src/rade_v2_correlator.[ch]`, in the shape of
+`rade_correlator.h`. Both arms are shifted, decimated to 8 kHz and band-limited
+to the modem band; at every symbol the lag-128 products over a 32-sample window
+are summed at all 160 offsets into two running profiles (0.5 s for detection,
+the Averaging time for the weight). A tone's pedestal is the complex mean away
+from the bump and is subtracted; the contrast of the matched peak over that
+floor ("dpk") is the statistic. Lock is 4 of the last 5 one-second samples
+above 0.30 with the bump within 20 samples; there is no timeout, and the
+weight is held while the contrast is below 0.20. The weight issued is the unit
+direction `conj(h1/h0)/|h1/h0|` (LC-068 replaced this with the noise-weighted weight), its phase from the prefix-gated cross-term
+(which a common-mode interferer is not in), its gain ratio from the arms' own
+prefix correlations. The maximal-ratio weight, each arm's prefix SNR, the tone
+share and each arm's power are published for the log only. Self-contained: no
+GLib, no `t_print`, so the devtools build it alone.
+
+**Checks.** Against rade_c's own V2 receiver over the 171 captures: 24 are V2
+by its sync and frame-sync; 21 are found (5 to 7 s to lock on strong signals,
+17 to 23 s on weak), 3 weak ones are missed, and 2 recordings of an AM
+broadcast are locked on falsely (rade_c's own sync accepts them too). V1, SSB,
+STANAG, wideband and CW captures do not lock. Weight phase agrees with the
+reference to a median of 7 degrees on T-008. The parameter sweep is in the
+source comment and in the V2 document.
+
+**Not known.** Whether the weight helps on air; the noise-weighted
+(maximal-ratio) weight at all; detection with a strong tone inside a V2
+signal; the Pi's CPU (counted, not measured).
+
+<a id="lc-066"></a>
+
+## LC-066 — `DIV_REF_RADE_V2` in the engine
+
+**Change.** Reference 5, appended (`DIV_REFS` is 8 and V1 has no slot, so the
+settings command does not change; an older build that meets 5 resets it to
+Window in `div_settings_validate()`). The RADE block in `div_process_block()`
+serves both: V2 runs `rade_v2c_process()` and `div_rade_v2_publish()` copies
+its status into the `rade_corr_*` variables that the menu, the capture record
+and the client's copy already read, so none of them changes. Start follows the
+reference; stop and reset do both. Objectives as V1: Best uses the unit
+co-phase direction (and the arm figure `arm_db` picks the arm), Sum the weight,
+Null its negative. Min coherence is pinned at 0. The engine's slew smooths the
+weight; the module does not. Log lines for lock, lock cleared, prefix lost,
+prefix back, and a tracking line every 5 s while it holds.
+
+**Checks.** `run_ref --ref rade2` drives the shipping `diversity_auto.c` over
+T-008: locks at 4.9 s, stays locked, never locks on the SSB capture
+(`test_cp_replay.py`). All earlier unit tests pass. The log lines compile and
+run, but the test harness stubs `t_print`, so their text has not been seen.
+
+**Open.** Invert and Null are 180 degree steps through the engine's slew; the
+V2 decoder does not like phase steps, and the value of a null on V2 is
+uncertain. Allowed, with the cost noted in the menu text once LC-067 is in.
+
+<a id="lc-067"></a>
+
+## LC-067 — The menu row and the overlay for RADE V2
+
+**Change.** "RADE V2 prefix (blind)" in the "Measure on" list. Every place in
+`diversity_menu.c` that tested for RADE V1 to hide Min coherence, switch to Sum
+on selection, grey the level control or blank the coherence field uses
+`DIV_REF_IS_RADE()`; the status line reads "RADE V1" or "RADE V2". The
+panadapter draws V2's occupied band, 1031 to 1906 Hz (`RADE_V2C_OCC_*`).
+
+**Ownership.** `diversity_menu.c` is dl1ycf's. This commit is separate from
+LC-066 so it can be taken or left; the matter is in
+[../menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
+
+**Not checked on screen.** Built and linked; the combo row, the hidden slider
+and the overlay have not been seen running.
+
+<a id="lc-068"></a>
+
+## LC-068 — RADE V2: Sum applies the noise-weighted gain
+
+**Problem.** LC-065 issues the unit co-phase direction, so Sum adds arm 1 to arm 0 at equal gain. With two antennas that
+differ, equal gain adds the poorer arm's noise (and the SSB it hears) at the strength of the better arm's signal. On
+five 40 m captures (T-027) the radio's own combine scored 0.12 below one antenna alone in decoded |aux| on the weakest
+(sync 43 % against 61 %) and level with it on two others; on two 60 m captures with the other arm the better (T-028), the
+unit weight replayed at 0.003 and 0.011 below the better arm.
+
+**Change.** The module issues the maximal-ratio weight it already computed for the log, `conj(h1/h0) * N0/N1`, each arm's
+noise `N_k` being its power less its prefix-correlated part, the gain capped at 4 (`V2_GAIN_MAX`) and the noise floored at 2 %
+of the arm's power. The unit direction stays in `rade_v2c_arm_cos/sin`. In the engine's RADE block, Sum applies the module's
+weight; Null on V2 takes the unit direction turned over (`-rade_corr_arm_cos/-rade_corr_arm_sin`), as it did, since a null
+that cancels the signal wants the direction, not the noise-weighted gain; Best and Invert are unchanged (Best already read
+the unit direction). **No new setting**: no menu row, no props key, no change to the settings command or the capture
+format. The slew (`DIV_SLEW_FRAC` 0.15), the hold threshold (0.20) and the Averaging time are as they were. `div_norm` does
+not act on RADE references; the output is 2 to 3 dB louder than with the unit weight and the decoder's AGC absorbs it.
+
+**Checks.**
+- Replayed on the five 40 m captures, decoded |aux| rose over the radio's by +0.004, +0.009, +0.024, +0.038 and +0.113
+  (0.927, 0.912, 0.902, 0.783, 0.750; the engine path through `run_ref --ref rade2` gives 0.927, 0.910, 0.901, 0.782, 0.754,
+  with `113613` locking late under the shipped rule and so not a test there). It is at or above the unit weight on all five,
+  and reaches the better antenna except by 0.010 on the weakest.
+- On air, two 60 m captures with the weight live: +0.014 and +0.011 above the better arm and 0.017 and 0.022 above the unit
+  weight replayed; the decoder's AGC gain did not move (0.77 to 0.79 median against 0.79 to 0.80).
+- The parameters were swept on the same captures and are flat: gain cap 4 to 10 (cap 2 loses up to 0.011), noise floor
+  0.5 to 5 %, slew 5 to 25 % per block, Averaging 0.8 to 6 s on the mean (V2 note, sections 12.3, 12.10; T-028). The prefix
+  hold threshold was tried lower and was worse (0.750 down to 0.654).
+- `test_cp_replay.py` checks that the weight's phase is the unit direction's, the gain never exceeds 4, the unit direction
+  has unit length, and that the weight issued is the logged maximal-ratio one; `make -C test/diversity run` exits 0 with the
+  same FAIL and KNOWN GAP lines as without the change. The engine's recorded state matches the replay to 1 block in 703 on
+  the 60 m captures.
+
+**Size, honestly.** The gain is large only where the antennas differ and the signal is weak (+0.113 on one capture, about ten
+points of sync time, six seconds of a minute); on a clean signal with one good antenna it is +0.01 to +0.02 above the better
+arm and keeps the old weight from going below it. Window and FSK/Digital are level with it on the strong captures. All
+numbers come from seven captures of one day, on 40 m and 60 m, with an inverted L and a loop.
+
+**Not known.** Whether the noise estimate holds on multipath (it is biased there, V2-F2) and with a tone in band; the value
+of a null on V2 (the unit weight cancels the signal only when the arms carry it at equal gain, and `1/|h1/h0|` would be the
+right null gain); the listener's side, which |aux| does not measure. The engine's state before the lock is plain 1 + 0j, which
+summed a dead arm into the good one on the one 80 m capture that never locked (T-028); that is the lock rule's matter.
+
+**Commit.** One commit holds the module, the engine's Null branch and, for now, the replay tool and its test; at the cut for
+`TEST` the replay-tool files (`cp_replay.c`, `test_cp_replay.py`) go under LT-038 (rule 8).
+

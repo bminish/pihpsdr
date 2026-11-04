@@ -1,0 +1,725 @@
+# RADE V2 diversity: a cyclic-prefix tracker
+
+> **Branch `feature/rade-native`**, 2026-10-21 and 22. A V2 counterpart of the V1 pilot
+> correlator, built on the one structure V2 has: the cyclic prefix. This file records
+> what was checked, what was built, what the evidence is and is not, and how the
+> engine hook is to be done so it can go to `TEST` as a patch. Background on V2 and the
+> decode-based scoring that came before: `docs/diversity-radeV2.md` (on
+> `test/radeV2-correlator`; last version at commit `2b628fe7`) and
+> `docs/diversity-radeV2-combining.md` (`8e0098b4`).
+
+## 1. Summary
+
+- **V1 is tracked correctly.** `src/rade_correlator.c` reproduces rade_c's pilot, carrier
+  grid, frame timing and acquisition range, and the sideband rule in its header agrees
+  with an independent check from the cyclic prefix (section 2).
+- **V2 can be tracked from its cyclic prefix.** V2 has no pilots, but every 160-sample
+  symbol begins with a copy of its own last 32 samples. The lag-128 autocorrelation over
+  a 32-sample window, folded over the 160-sample symbol period, is a triangle where the
+  window sits on the prefix and flat elsewhere. A tone or a 62.5 Hz comb gives a flat
+  pedestal (removed); speech, SSB, noise, STANAG data and V1 give no triangle.
+- **The same prefix gives the inter-arm phase with the interference left out.**
+  `y1[n] * conj(y0[n+128])` over the prefix is `h1 * conj(h0) * S`; a common-mode
+  interferer is uncorrelated 16 ms later and drops out. The lag-0 cross-spectrum follows
+  whichever source is strongest instead.
+- **Built:** `src/rade_v2_correlator.[ch]` (C, standalone, same shape as the V1 API), the
+  Python reference it was ported from, a capture replay tool, the engine reference
+  `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-064 to LC-067,
+  LT-038; section 8).
+- **On air (2026-10-29, section 11, T-027):** five 40 m captures with the engine's log beside them.
+  The prefix weight ties or beats the better antenna and Window on the strong ones, is 0.045 |aux| ahead
+  of Window under the worst SSB (one capture), and **loses to one antenna alone on the weakest capture because its
+  gain is fixed at 1**; the noise-weighted gain the tracker already logs closes that. No code has been
+  changed on the strength of it; the findings are to be discussed first.
+- **Not done:** the menu row and log lines not seen running; the lock rule on a weak, interfered
+  signal (section 11.3).
+
+## 2. V1: what was checked
+
+Compared `src/rade_correlator.c` with `third_party/rade_c-src/src` (pin `cc17222`):
+
+| Item | rade_c | `rade_correlator.c` |
+|---|---|---|
+| Pilot | Barker-13 on every carrier, scaled by sqrt(2), IDFT | same (`rade_corr_make_pilot`) |
+| Carriers | 30, index 15 to 44, 750 to 2200 Hz at 50 Hz | `RADE_CARRIER_K0/K1` 15 and 44 |
+| Frame | pilot first, then 4 data symbols; 960 samples, 120 ms | `RADE_FRAME_SECS` |
+| Acquisition range | +/-50 Hz | `RADE_ACQ_FRANGE` 100 Hz total |
+| Frame-rate frequency alias | n/a (our own loop) | resolved by the half-pilot lag, `RADE_ALIAS_LAG` |
+
+Independent check of the **sideband rule**: the same cyclic-prefix machinery with V1
+parameters (lag 160, period 192) finds V1 on the as-tapped bank on the 7.177 MHz LSB
+captures (prefix contrast 0.68) and on the mirrored bank on the 5.3685 MHz USB captures
+(0.67); the wrong bank is at noise (0.06 to 0.12). That is the rule in the header of
+`rade_correlator.c` (bank 0 is the LSB bank, the tapped buffer being inverted with respect
+to RF).
+
+**Limits of this review:** parameters, geometry and the sideband rule were compared. The
+1800 lines were not audited for bugs and the correlator was not run for this.
+
+Not a fault, but noted: V1 correlates one symbol in six (the pilot). The prefix of every
+symbol is available as well, and its lag (160, against 128 for V2) separates the two
+waveforms, so a future "RADE" reference could tell V1 from V2 by itself.
+
+## 3. V2 as rade_c has it
+
+From `rade_v2_ofdm.h` and `rade_rx_v2.c`:
+
+```
+Fs   8000 Hz    modem sample rate
+Nc   14         carriers, 62.5 Hz apart, 1062.5 .. 1875 Hz
+M    128        samples per symbol (useful part)
+Ncp  32         cyclic prefix
+Ns   2          symbols per modem frame: 320 samples, 40 ms
+```
+
+No pilots. rade_c's own receiver finds timing, frequency and its SNR estimate from the
+same prefix: `compute_autocorr` over the 160 offsets, IIR-smoothed (0.95), peak above
+0.38 and not flat (`TSIG`, `TSIN`). The only known waveform is the end-of-over frame.
+Because the 62.5 Hz carrier spacing is exactly Fs/M, every carrier is periodic over 128
+samples, which is why the prefix repeats cleanly at lag 128.
+
+## 4. The method
+
+Everything is done on the raw DDC tap, as for V1: shift by `frame_off`, decimate to
+8 kHz, then per bank (0 = as tapped, the LSB bank; 1 = its mirror, the USB bank):
+
+1. conjugate for bank 1, mix the 1470 Hz band centre to zero, 129-tap low-pass, 880 Hz
+   wide;
+2. every symbol (160 samples), at **all 160 offsets**, the sums over a sliding 32-sample
+   window of `y[n]*conj(y[n+128])` for each arm and each arm pair, and of the energy,
+   into exponentially weighted folded profiles: one at 0.5 s for detection, one at the
+   operator's averaging time for the weight.
+
+### 4.1 Detection statistic ("dpk")
+
+On the two arms' power-summed profile `A(g)`, energy `B(g)`:
+
+1. `rho0 = 2|A|/B`; the bump position `g0` is the peak of `rho0` smoothed with a triangle
+   of half-width 32 (the shape the prefix makes).
+2. The tone pedestal is the complex mean of `A` over the offsets more than 48 from `g0`.
+   `rho = 2|A - pedestal|/B`.
+3. `dpk = rho[g] - mean(rho off the bump)` at the matched peak `g`.
+
+It is an absolute contrast, not a z-score. A z-score was tried (peak over the spread of
+the offsets away from the bump) and was worse: a strong tone, or a strongly modulated
+carrier, shrinks the spread and inflates it.
+
+On the 14-capture panel (SSB, STANAG data, wideband, V1, CW retuned into the band; about
+1960 one-second windows): non-V2 median 0.09, 5% above 0.23. A decodable V2 signal reads
+0.5 to 0.6 (T-008).
+
+### 4.2 Lock and hold
+
+A single window is not a lock. A lock needs `V2_LOCK_K` of the last `V2_LOCK_N`
+one-second samples above `V2_T_LOCK`, with the bump position within `V2_LOCK_TOL` samples.
+The tolerance is wide because on multipath the bump wanders by 10 to 20 samples.
+
+Once locked there is **no timeout** (same decision as V1): the weight is held, however
+long the prefix is gone. New weights are issued only while the prefix measures present
+(`dpk > V2_T_HOLD`, 0.20).
+
+### 4.3 The weight
+
+At the bump, with the pedestal taken out of each of the four sums (arm 0, arm 1, and the
+two cross terms):
+
+- `theta = arg(ry0)` is the carrier offset's phase over the lag, from arm 0's own
+  correlation (channel-independent);
+- `X = x10*e^(-j theta) + conj(x01*e^(+j theta))` is twice `h1*conj(h0)*S*W`; `r = X /
+  (2|ry0|)` is `h1/h0`;
+- each arm's noise is its power less its prefix-correlated part: `N_k = b_k/(2W) -
+  |ry_k|/W`, floored at 2% of the arm's power;
+- **issued weight: the unit direction `conj(r)/|r|`** (decided 2026-10-22), ready to apply as
+  `z0 + w*z1`: arm 1 added in phase with arm 0 at equal gain. The phase is what the objective
+  (maximise the RADE SNR, by putting the phase where the interference is not) rests on. The
+  engine's slew smooths it; the module does not (V2-F4: the decoder follows a ramp, not
+  steps; see section 6);
+- **published for the log, not used:** the maximal-ratio weight `conj(r) N0/N1` (gain capped
+  at 4), each arm's prefix SNR, each arm's band power, and the share of power that is a tone.
+  Unit weights cost something when one arm is mostly noise; the log says how often and how
+  much, so the noise-weighted weight can be a second experiment on evidence.
+
+`arm_db`, `arm_cos`, `arm_sin` are published as for V1 (`|r|^2 N0/N1` in dB, and the unit
+direction `conj(r)/|r|`). The gain ratio `|r|` is taken from the arms' own prefix
+correlations (`sqrt(|ry1|/|ry0|)`), not from the cross term: averaged over a window in which
+the inter-arm phase moves, `|X|` shrinks, and an `arm_db` read from it disagreed with the two
+arm SNRs by 2.8 dB on T-008 until this was changed.
+
+This is the "blind scalar weight with a per-arm CP noise term" the combining notes
+specified (their section 8), put in a form that runs live. It is not the per-carrier
+version.
+
+## 5. Evidence
+
+### 5.1 Detection against everything but V2 (Python reference, 14 captures)
+
+| Capture type | Result |
+|---|---|
+| V2, T-008 (7.166 MHz, USB) | dpk median 0.61, locked 92% of windows (first rule: 3 of 4, tol 25) |
+| V1 (LSB 7.177, USB 5.3685), read at the V2 lag | noise level (0.09 median) |
+| SSB (three captures), STANAG (two), wideband (two) | noise level |
+| CW retuned into the band (two) | needed the pedestal subtraction; without it 5 to 20% of single windows false-alarmed |
+
+Weak spots seen: one wide USB capture (`20260902-154822`) with a strong in-band carrier
+raised single windows to ~0.3 (the persistence rule stops these); a strong in-band tone
+dilutes `rho`, so detection would be lost rather than falsely made. **Detection with a tone
+injected into a V2 signal was not measured.**
+
+### 5.2 Inter-arm phase with a common-mode interferer (T-008 `184835`, bank 1)
+
+Interferer present on both arms with the same waveform and a deliberately different
+inter-arm phase (110 degrees), level relative to signal plus noise. Error against the
+clean CP estimate of the same windows (the clean estimate is itself a CP estimate, not
+on-air truth), median / 90th percentile, degrees:
+
+| Interferer | -3 dB | +3 dB | +10 dB | Lag-0 cross-spectrum (all levels) |
+|---|---|---|---|---|
+| noise | 12 / 35 | 24 / 49 | 62 / 124 | 95 / 153 at -3 dB, 122 / 160 at +3 dB, 128 / 162 at +10 dB |
+| tone | 5 / 27 | 9 / 35 | 19 / 96 | same, ~95 to 128 |
+| 62.5 Hz comb | 13 / 51 | 30 / 84 | 69 / 157 | same |
+| impulses | 9 / 24 | 28 / 69 | 55 / 132 | same |
+
+Reading: the lag-0 estimate goes to the interferer's phase at every level, as expected
+(it measures the strongest source). The CP-gated estimate holds to about +3 dB and fails
+at +10 dB for noise-like interferers; for a tone it is better because the pedestal is
+exactly removable. The comb on the modem's own grid is the worst case. **The injection is
+synthetic, fully coherent between the arms, on one capture.** Real EMC is not that
+tidy; this shows the mechanism, it does not size the effect on air.
+
+### 5.3 The C port against the Python reference (one capture)
+
+`py/test_cp_replay.py`: T-008 locks at 5 s on bank 1; the SSB and V1 captures never lock;
+once locked, the weight's phase agrees with the reference's inter-arm phase to a median of
+7 degrees over 35 seconds. The carrier-offset readout is within +/-2 Hz of the carrier
+grid on T-008. (The readout was off by 30 Hz at first, because the 1470 Hz mix is not on the
+62.5 Hz grid; fixed.)
+
+### 5.4 Against rade_c's own V2 receiver, all 171 captures
+
+The reference for "this capture holds V2" is `score_radev2` (rade_c's receiver): sync 20%
+or more and frame-sync 0.6 or more, on either arm. 24 captures meet it. The threshold
+is mine; the receiver is rade_c's. Many of the 24 are consecutive captures of the same
+band session (the 1.984 MHz series of 11 September, 160 m), so there are far fewer
+independent stations than captures.
+
+Lock parameters were swept (`py/cp_sweep.py`, `cp_replay` built with `-D...`):
+
+| T_LOCK | K of N | tol | found | time to lock | locked on non-V2 |
+|---|---|---|---|---|---|
+| 0.25 | 3 of 4 | 25 | 24/24 | 4 to 5 s; weak 12 to 31 s | 13 |
+| 0.30 | 3 of 4 | 20 | 22/24 | | 4 |
+| **0.30** | **4 of 5** | **20** | **21/24** | **5 to 7 s; weak 17 to 23 s** | **2** |
+| 0.35 | 4 of 5 | 15 | 20/24 | | 2 |
+| 0.30 | 5 of 6 | 15 | 20/24 | 6 to 8 s; weak 34 to 42 s | 0 |
+
+Shipped: the bold row. The three it misses are the weak ones from 5 October
+(`20261005-162647`, `-162757`, `-163038`). The two false locks are recordings of an AM
+broadcast on 698.6 kHz (`20261008-142805`, `-142917`), which rade_c's own prefix sync also
+accepts (95% sync; its frame-sync net sits at 0.49 and the aux bit at 0.47, so nothing
+decodes). The strictest row clears them and loses the weakest real signals, which are the
+ones diversity is for. On those two recordings a false lock does issue weights, since the
+prefix measures present.
+
+One note on the first run of this comparison: `score_radev2` picks the sideband sense from
+the recorded mode, so a signal recorded in the wrong mode scores 0%. Of the 13 non-V2 locks
+of the loosest row, 11 were re-scored with `--flip` (not the two AM recordings, nor
+`20260902-154822`); all stayed at 0% sync. Three of the 13 (`20260830-110923`, `-111051`,
+`-111734`) are not clear-cut in the default sense: rade_c syncs 6 to 13% with frame-sync
+0.57 to 0.82, so they may be weak V2 rather than false locks. They are counted as non-V2
+here because they fall under the threshold, and they are the captures the 3-of-4 row
+finds and the shipped row does not.
+
+## 6. What is not known
+
+- **Whether the weight helps on air.** Answered for five captures on 2026-10-29 (section 11): the phase
+  does; the unit gain costs on a weak, unequal pair. Section 9 says why it went to the operator first.
+- **The per-arm noise term.** `N_k` is power less prefix-correlated power. It is the term
+  the combining notes found the weight needs and it is untested against the Window
+  reference on air. On multipath the prefix-correlated part is biased (V2-F2).
+- **Detection with a strong tone in band** (section 5.1), and with real EMC (5.2).
+- **CPU on the Pi.** Counted, not measured: about 2 x 129 real-tap multiply-adds per
+  8 kHz sample per arm per bank for the band filter (some 4M multiply-adds per second per
+  bank for both arms), plus 160 offsets x 6 sums per symbol; searching both banks doubles it.
+- **The weak-signal end.** Time to lock is 17 to 23 s on the weak captures, and three weak
+  ones are missed. The rule was chosen by the sweep above on a small number of independent
+  stations.
+- **Phase steps.** The module no longer limits its phase; the engine's slew does
+  (`div_apply_weight()` moves the weight 15% of the way to the target per block). Worked out,
+  not measured: a 90 degree change starts at about 10 degrees in the first block, i.e. 0.33
+  Hz of ramp at 85 ms blocks (16384 samples at 192 kHz) and less at 171 ms. A 180 degree
+  step (Invert, Null against Sum) goes straight through zero gain and flips there: not a ramp.
+  V2-F4's tolerance was found on synthetic channels. Invert and Null are allowed, with the
+  cost noted in the menu text; their value on V2 is uncertain.
+- **Sidetone.** The replay tool takes the recorded `vfo.offset` only; CW sidetone folding as
+  in `div_frame_off()` is the engine's and is irrelevant to the digital modes.
+
+## 7. Files
+
+| File | Purpose |
+|---|---|
+| `src/rade_v2_correlator.[ch]` | the tracker. No GLib, `t_print` or `radio.h`; diagnostics are the extern variables in the header |
+| `test/diversity/devtools/py/cp_probe.py` | the reference (`scan`: detection and lock; `cross`: the interferer-injection test) |
+| `test/diversity/devtools/cp_replay.c` | replays a `.divc` capture through the C module with what the engine was handed (bank, tau, frame offset, resets), one line a second, a per-block CSV, and a self-check against the engine's recorded state; `make cp_replay` |
+| `test/diversity/devtools/py/test_cp_replay.py` | holds the port to the reference (lock, rejections, phase agreement), the engine path through `run_ref`, and the self-check path |
+| `test/diversity/devtools/run_ref.c`, `py/divc.py` | `--ref rade2` drives the whole engine on a recording; `divc.py` names reference 5 |
+| `test/diversity/devtools/py/cp_sweep.py` | the section 5.4 comparison against rade_c; `--cp-replay` takes a build with other `-D` lock parameters |
+
+Public interface (`rade_v2_correlator.h`): `rade_v2c_start(ddc_rate)`, `_stop`, `_reset`,
+`rade_v2c_process(arm0, arm1, n, expect_bank, frame_off, tau, &wr, &wi)`, and
+`rade_v2c_locked`, `_present`, `_quality`, `_snr`, `_mirrored`, `_gamma`, `_freq_off`,
+`_arm_db`, `_arm_valid`, `_arm_cos`, `_arm_sin`; for the log `_mrc_re/_im`, `_snr0/_snr1`,
+`_pedestal`, `_p0/_p1`. The arguments mean what they mean for `rade_corr_process()`.
+
+## 8. The engine hook
+
+Built on 2026-10-22 as four changes and tooling, in the order they apply (IDs from the
+register, [changes.md](changes.md); write-ups in [changes/lc-rade.md](changes/lc-rade.md#rade-v2)):
+
+| ID | Commit subject (branch hashes will change at the cut) | Applies alone? |
+|---|---|---|
+| LC-064 | `Diversity: DIV_REF_IS_RADE() and one set of RADE correlator calls, no behaviour change` | yes |
+| LC-065 | the module: `Diversity: RADE V2 cyclic-prefix tracker ...` and the two commits that refine it | yes; nothing calls it |
+| LC-066 | `Diversity: DIV_REF_RADE_V2, the RADE V2 cyclic-prefix reference in the engine` and `... says what it is doing in the log` | needs LC-064, LC-065 |
+| LC-067 | `Diversity menu and overlay: RADE V2 prefix (blind)` | needs LC-066; dl1ycf's file |
+| LT-038 | the devtools files | never upstream |
+
+None of them carries a `Local-Change:` trailer yet; they are added when the series is cut for
+`TEST`, since the IDs are permanent and the hashes are not. LC-065 is several commits that
+become one at the cut (rule 9 of [changes/rules.md](changes/rules.md)).
+
+**Decided 2026-10-22, with the owner:**
+
+- V1 and V2 are **separate references side by side**; both waveforms are in use. Auto-detection
+  is deferred until the V2 tracker has been evaluated on air. The lags separate the waveforms
+  cleanly (read at the V2 lag, V1 is at noise: dpk 0.09 median; at the V1 lag, V2 is at noise:
+  0.04 to 0.08, V1 reads 0.6 to 0.7), but its cost against the V1 pilot search is not measured,
+  and the engine would be choosing a waveform the operator did not pick.
+- A helper (`DIV_REF_IS_RADE()`) rather than a second `== DIV_REF_RADE_V2` at each place; its
+  own change, no behaviour change.
+- The engine's slew does the smoothing; the module issues the unit co-phase weight, and the
+  noise-weighted weight is logged and compared offline (section 9).
+- Invert and Null are allowed on V2; the value of a null is uncertain.
+- Decode scoring waits; the operator's on-air evaluation comes first.
+
+**How it is wired.** `DIV_REFS` is 8 and V1 has no slot, so the settings command does not change
+and V2 needs none; an older build that meets reference 5 resets it to Window in
+`div_settings_validate()`. The RADE block in `div_process_block()` serves both correlators. V2
+copies its status into the `rade_corr_*` variables that the menu, the capture record and the
+client's copy already read (`div_rade_v2_publish()`), so none of them changes. Start follows the
+reference; stop and reset do both (the one that is not running costs nothing). The objectives are
+V1's: Best uses the co-phase direction and `arm_db` picks the arm, Sum the weight, Null its
+negative. The panadapter overlay draws 1031 to 1906 Hz (`RADE_V2C_OCC_*`).
+
+**Smaller points.**
+
+- The client/server state is unchanged and stays deferred.
+- `div_rade_side` (the overlay's side) follows the passband as for V1.
+- The devtools `tunable.manifest` generator is for `rade_correlator.c` only; the V2 module is
+  replayed by `cp_replay`.
+- The log lines (lock, loss, return, a tracking line every 5 s) compile and run, but the test
+  harness stubs `t_print`; their text has not been seen.
+
+## 9. Logging and on-air evaluation
+
+The next step is the operator running it, and decode scoring is deferred on purpose. The numbers
+a V2 score leans on (CP SNR, frame-sync confidence, `|aux|`) are themselves estimates: coarse (0.01
+of `|aux|` is about 1 dB near 0.95 and stops resolving above about +8 dB), measured on few captures
+and synthetic channels, and CP SNR is known to prefer combinations the decoder does worse on
+(V2-F2). Tuning to them would fit the tool to the tool, and the RADE engine's own reported SNR is
+no better a judge. The decision that matters is the operator's, listening to a real station.
+
+What follows is what to record so that a run can be judged later without a number standing in for
+the listening.
+
+### 9.1 What is recorded already
+
+- **The capture** (`make DIVCAP=1`, `.divc`). Both arms ahead of any combining, at the DDC rate,
+  one record per analysis block (85 or 171 ms), 184 MB a minute at 192 kHz. Because the tracker is
+  deterministic, this is the primary log: any number below can be regenerated from it, with any
+  later version of the algorithm. Each block carries the reference (5 for V2), the mode, filter,
+  bank, tau and frame offset the engine was handed, the attenuators, the arm swap, flags for a
+  context reset and for dropped blocks, and the engine's state entering the block.
+- **The engine's state for a V2 run**, in the block: locked, mirrored, quality (the prefix
+  contrast), frequency offset, snr (the prefix SNR in dB), holding, the loop's answer before
+  slewing, and the weight actually applied to the samples (`live_cos`, `live_sin`).
+- **A switch of reference mid-capture is recorded** (the `ref` field changes block by block), so
+  one capture can hold an A/B on the same station.
+- **The terminal log**, in any build: `RADE V2 prefix LOCK`, `lock cleared`, `prefix lost, holding
+  last weight`, `prefix back`, and every 5 s while tracking the contrast, bump position, frequency,
+  each arm's prefix SNR, the tone share and the applied weight.
+- **The RADE engine's own log** (`docs/rade/logging.md`): sync, overs, the callsign when it
+  decodes. Those are the receiver's own verdicts. Align it with the capture by wall time
+  (`t_start` in the capture header is unix seconds).
+
+### 9.2 What is regenerated from the capture
+
+`cp_replay FILE [bank [tau [CSV]]]` runs the module over the capture with what the engine was
+handed (bank, tau, frame offset), resets where the engine did and after a dropped block, and
+writes a row per block:
+
+| Column | Meaning |
+|---|---|
+| `t`, `locked`, `present`, `quality`, `snr_db` | lock state, whether the prefix is measurable now, contrast, the CP SNR estimate |
+| `gamma`, `bank`, `freq_off_hz` | where the prefix sits in the 160-sample period, which sideband, carrier offset from the grid |
+| `arm_db` | arm 1's advantage in SNR (`|r|^2 N0/N1`) |
+| `snr0_db`, `snr1_db`, `p0`, `p1` | each arm's prefix SNR and band power |
+| `pedestal` | share of the power that is coherent at lag 128 away from the prefix: a tone or comb |
+| `w_re`, `w_im`, `mrc_re`, `mrc_im`, `updated` | the weight issued (unit), the maximal-ratio weight not used, whether a new one was made this block |
+| `snr_arm0_db`, `snr_arm1_db`, `snr_egc_db`, `snr_mrc_db` | the prefix SNR each way of combining would have given: arm 0, arm 1, equal gain with the issued phase (what ran), maximal ratio |
+
+On a capture taken on the V2 reference, `cp_replay` also compares its state entering each block
+with the engine's and says how many differ. That check passes on a copy of T-008 patched to look
+like such a capture (0 of 351 differ); it has not been run on a real one, because none exists yet.
+The first V2 capture is also the first real test of it.
+
+### 9.3 The objective, and how the log speaks to it
+
+The objective is to maximise the RADE SNR, and by doing so to put the phase where the
+interference is not. Three things in the CSV bear on that:
+
+1. **The prediction.** `snr_egc_db` against the better of `snr_arm0_db` and `snr_arm1_db` is what
+   the issued weight should gain over a single arm; `snr_mrc_db` against `snr_egc_db` is what the
+   noise-weighted weight would add. If the second is rarely more than a fraction of a dB, unit
+   weights lose nothing; if arm 1 is often mostly noise, it says so. These are the tracker's own
+   estimates in about 880 Hz of band, not decode results, and coarse; they explain a
+   difference, they do not score one.
+2. **The interference phase.** The CP-gated phase and the lag-0 cross-spectrum phase disagree when
+   a common-mode interferer dominates (section 5.2). `cp_probe.py cross` computes both from a
+   capture. Nothing logs the lag-0 phase live; it is a replay-time quantity.
+3. **The pedestal.** A tone or comb in the band shows up in `pedestal` and costs detection (it
+   dilutes `rho`); a run where it is high and the lock fails is the case section 5.1 says was not
+   measured.
+
+### 9.4 A run
+
+1. Pick the RADE V2 reference, Sum, the default Averaging; capture 60 s, or longer if the path is
+   slow. Note the station, band, sideband and what was heard, for `docs/test-findings.md`.
+2. Without moving anything else, switch to Window (and FSK/Digital) on the same station; capture
+   again, or switch inside one capture.
+3. Keep the RADE engine's log from the same period.
+4. Afterwards: `cp_replay` the capture with the CSV, and read the log lines.
+
+Watch for: time to lock (5 to 7 s on strong, 17 to 23 s on weak, was measured on captures); a lock
+on something that is not V2; what the weight does through a fade (it holds, by design); any audible
+artefact at Invert, at Null or at Sum; and whether the lock rule's misses (three weak captures)
+matter on a station the operator wants.
+
+### 9.5 What the logging does not cover
+
+- The capture is a development build (`DIVCAP=1`) and is deleted before the work goes upstream; a
+  release build has the terminal log only.
+- The weight is recorded once per block; inside a block the module makes one every 0.1 s.
+- A capture that starts after the tracker locked replays from cold, so its first seconds differ
+  from the live run.
+- The lag-0 inter-arm phase is not logged live (above).
+- Nothing here measures what a listener hears. That is the operator's.
+
+## 10. Reproducing
+
+```
+make -C test/diversity/devtools cp_replay
+python3 -I test/diversity/devtools/py/test_cp_replay.py        # needs captures/
+python3 -I test/diversity/devtools/py/cp_sweep.py              # minutes the first time (score_radev2), then cached
+python3 -I test/diversity/devtools/py/cp_probe.py scan captures/divcap-20260930-184835.divc
+python3 -I test/diversity/devtools/py/cp_probe.py cross captures/divcap-20260930-184835.divc
+test/diversity/devtools/cp_replay captures/divcap-20260930-184835.divc 1 0.5
+```
+
+`score_radev2` needs librade built (`tools/rade/build_rade.sh`).
+
+## 11. First evaluation on air (2026-10-29, T-027)
+
+Five 60 s captures on the V2 reference, 40 m, mid-morning, weak stations with SSB beside the passband, and
+the RADE engine's log for the same minutes. The captures, the method, the tables and the limits of the
+evidence are in [test-findings.md](test-findings.md#t-027-rade-v2-on-40-m-mid-morning-weak-stations-under-ssb-interference---the-v2-reference-on-air);
+this section is what they say about the combiner, and where there is room. Nothing has been changed in the
+code.
+
+### 11.1 How the combiner did
+
+Decoded |aux|, mean over the bins with a signal, radio (the engine as recorded) against the better antenna:
+
+| Capture | Mean SNR in sync | Radio | Better antenna | Window | Radio less better antenna |
+|---|---|---|---|---|---|
+| `112951` | +2.4 dB | 0.923 | 0.884 | 0.923 | +0.039 |
+| `113200` | +0.4 dB | 0.903 | 0.824 | 0.906 | +0.079 |
+| `113322` | +0.1 dB | 0.878 | 0.880 | 0.872 | -0.002 |
+| `113613` | -2.9 dB | 0.745 | 0.756 | 0.761 | -0.011 |
+| `113838` | -5.7 dB | 0.637 | 0.760 | 0.592 | -0.123 |
+
+- **The phase is right.** The applied weight follows the module's own target to a few degrees, and the V2
+  reference never loses to Window by more than 0.016, and is 0.045 ahead on the capture with the worst
+  interference (sync 43 % against 41 %), the case the cyclic-prefix gate was built for; a margin that size on
+  25 bins of one capture is not a finding. Against FSK/Digital it is ahead on all five.
+- **The combiner is worth most when the signal is good and the antennas alike, and costs most when the signal
+  is bad and they are not.** That is the wrong way round for a feature that is for weak signals.
+- **The live engine and an offline decode agree** (sync time to 0.7 to 4.8 points, SNR in sync to 0.2 dB), so
+  the offline streams in T-027 are fair stand-ins for what was heard.
+
+### 11.2 Where the loss is: gain, with the interference in it
+
+Equal gain adds a poor arm's noise at the same level as a good arm's signal. These captures have unequal
+arms: ADC1 (arm 0) carries 10 dB of attenuation and ADC2 none, yet arm 0's floor is 6.8 dB higher in every
+block, and for DK3UD and DK7XU arm 1 decodes much better (`113613`: arm 1 100 % of seconds 3 to 38, arm 0 0
+to 76 %). For DJ3KJ arm 0 is as good or better. Which arm is better changes with the station.
+
+The module already computes the cure: `mrc = conj(r) N0/N1`, gain capped at 4, each arm's noise being its
+power less its prefix-correlated power, which counts SSB as noise. Run through the decoder with the engine's
+slew (T-027, result 2), it is at or above the unit weight on all five captures, +0.004, +0.009, +0.024, +0.038
+and **+0.113** over the radio, in step with how hard the capture was, and it reaches the better antenna except
+by 0.010 on the weakest. The noise term, "untested against the Window reference on air" in section 6, now has
+that test: it works, and it is the larger part of the interference handling, because the interferer lands in
+`N_k` and its arm is turned down.
+
+### 11.3 Scope for improvement, in the order the evidence supports
+
+| # | Candidate | Evidence | Status |
+|---|---|---|---|
+| 1 | **Apply the noise-weighted gain** (`mrc`, cap 4) instead of the unit direction, with the engine's slew | Five of five captures, +0.004 to +0.113 | Offline only. Needs an engine decision: Sum and Level output are written for a unit weight, and the cap, the slew of a gain as well as a phase, and Best's use of `arm_db` are open |
+| 2 | **Noise term at its own, shorter time constant** | SSB is bursty (syllabic) and `N_k` is averaged at the Averaging time (1.07 s); the burst is over before the arm is turned down | Not tested; the tool for it is a variant of `cp_replay` with two time constants |
+| 3 | **Lock rule on weak, interfered signals** | Shipped rule locks `113613` at 47 s, the loosest at 4 s (and 4 to 8 s on all five); cost of the loose rule is 13 locks on non-V2 captures, two of them AM broadcast (section 5.4) | The lock persists across overs, so this is the first lock after a retune or a reset; a trade the operator should weigh, not a free win |
+| 4 | **Finish the slew when the prefix drops** | The slew stops at hold; `113838` spends 22 % of blocks with the weight's magnitude under 0.7 | Not sized. Removing the slew helps `113613` by 0.03 and costs `113838` 0.09, the rate was swept (12.10): flat from 5 to 25 % per block, no change |
+| 5 | **Per-carrier weights** | Not examined here | The combining notes held a scalar to be enough; these captures do not reopen it. A narrow SSB inside the band is the case that would |
+
+**Not a candidate, tested and refused:** lowering the hold threshold (0.20) so the weight updates on a weaker
+prefix. At 0.10 and at 0 the noise-weighted weight on `113838` falls from 0.750 to 0.654 and 0.665 (T-027,
+result 3). The weight held is better than one made from a prefix that weak.
+
+**Settled decisions kept:** no timer and no fade-out in any of the above (settled decisions 1, 2); candidates
+1 and 2 change what the weight is, not when it is dropped.
+
+### 11.4 What would settle it
+
+- The same A/B on a second morning and band, with the same stations and some other: three stations in one
+  session cannot show whether the arm preference is a property of the antennas or of those stations.
+- A run with the noise-weighted gain applied live and heard, as section 9.4 describes, with a capture and the
+  log of each, so that the 0.113 on `113838` is checked on a listener's terms and not on |aux| alone.
+- Antennas (operator, 2026-10-29): ADC1 is an inverted L, ADC2 an active receive loop. The reason for 10 dB
+  on ADC1 is not recorded; with two such different antennas the unequal floors and the station-dependent
+  better arm are expected, not a fault.
+
+### 11.5 Decided 2026-10-29, with the operator
+
+- **Candidate 1 goes ahead:** the noise-weighted gain is to be built into the engine (design and the open
+  points of 11.3 first).
+- **Lock rule (candidate 3):** a false lock on an AM broadcast is not a practical concern; a false lock on CW,
+  SSB or a tune carrier is to be avoided. Any loosening of the rule is to be judged on those, and section 5.4's
+  count of non-V2 locks does not separate them, so it needs re-reading by class first.
+- **The A/B is repeated as opportunities arise**, with a capture and the RADE log of each run.
+
+
+## 12. Design: the noise-weighted gain (LC-068 proposed; built in `5a23387b`, on air 2026-10-29)
+
+Decided 2026-10-29 (section 11.5). This is the design and the checks it rests on; nothing here is in the code.
+
+### 12.1 What changes for the operator
+
+On RADE V2, **Sum applies the maximal-ratio weight** `w = conj(r) * N0/N1` (arm 1 added to arm 0, in phase, with a gain
+that turns a noisier arm down and a cleaner arm up) in place of the unit co-phase weight. Nothing else is meant to move:
+
+| Objective | Today | After |
+|---|---|---|
+| Sum | unit direction `conj(r)/|r|` | `conj(r) N0/N1`, gain capped at 4 |
+| Best | arm picked by `arm_db`; direction from `arm_cos/sin` | unchanged (already independent of the module's weight) |
+| Null | minus the unit direction | unchanged: minus the unit direction, taken from `arm_cos/sin` |
+| Invert, Hold, Manual | | unchanged |
+
+There is **no new setting**: no menu row, no props key, no change to the settings command or the capture format. The
+unit weight stays reachable only as an offline stream. A switch would be a mechanism for a case the evidence does not
+support: the noise-weighted weight was at or above the unit weight on 5 of 5 captures (T-027).
+
+### 12.2 Where the code changes
+
+- `rade_v2_correlator.c`, the weight step (around the `mrc` lines): `c->out` becomes the capped `mrc`; `arm_cos/arm_sin`
+  keep publishing the unit direction, so Best and Null have what they use today. `rade_v2c_process()` then returns the Sum
+  weight in `wr/wi`.
+- `diversity_auto.c`, the RADE branch of `div_process_block()`: the Null case takes `-arm_cos/-arm_sin` for V2 instead of
+  `-wr/-wi`, so its meaning does not change. Sum already passes `wr/wi` to `div_apply_weight()`. V1 is not touched: its
+  `wr/wi` is the pilot's solve, as now.
+- `cp_replay.c` and `test_cp_replay.py`: `w_re/w_im` become the applied weight; the unit direction is added as a column so
+  the phase check still has a reference.
+- Not changed: `div_apply_weight()` (its 10x clamp is not reached: the cap is 4), `DIV_SLEW_FRAC`, `div_norm`, the menu,
+  the settings, the capture format.
+
+It is two files of ours (`rade_v2_correlator.c`, the V2 block of `diversity_auto.c`) and the replay tools; none of
+dl1ycf's. The series is not cut for `TEST` yet, so it goes in as ordinary commits and is folded at the cut like the
+module's earlier refinements.
+
+### 12.3 The parameters, and how sensitive the answer is
+
+Same five captures, same scoring as T-027, noise-weighted weight with the engine's slew, cold replay (mean decoded |aux|):
+
+| Setting | `112951` | `113200` | `113322` | `113613` | `113838` |
+|---|---|---|---|---|---|
+| gain cap 4 (as logged) | 0.927 | 0.912 | 0.902 | 0.783 | 0.750 |
+| cap 2 | 0.926 | 0.909 | 0.894 | 0.774 | 0.740 |
+| cap 8 | 0.927 | 0.911 | 0.906 | 0.783 | 0.749 |
+| cap 10 | 0.927 | 0.910 | 0.904 | 0.783 | 0.749 |
+| noise floor 0.5 % / 5 % of arm power (2 % as logged) | 0.927 / 0.927 | 0.912 / 0.912 | 0.902 / 0.902 | 0.783 / 0.783 | 0.750 / 0.750 |
+
+- **Cap 4 stays.** Cap 2 costs 0.004 to 0.011 and the unclamped gain exceeds 4 on 0 % (`112951`), 14 % (`113322`)
+  and 5 % (`113838`) of updates (median 1.9 to 2.5), so the cap binds seldom; 8 and 10 gain at most 0.004 on one
+  capture and give up protection against a bad noise estimate. The cap is a limit on how far a noise estimate may
+  be trusted, not a tuned value.
+- **The noise floor does not matter** between 0.5 and 5 %. It stays at 2 %.
+- The two were tried on the captures that chose them. There is no held-out capture; the next A/B (11.4) is it.
+
+### 12.4 Output level
+
+Today's unit weight raises the passband power by a median 1.8 to 3.4 dB over arm 0 alone (`112951`, `113322`,
+`113838`); the noise-weighted weight by a median 4.3 to 5.6 dB (90th percentile 7.6 to 10.7), so about 2 to 3 dB more
+than before. `div_norm` does not act on RADE references (they run no transform), as with V1, so nothing levels
+it. The audio goes from WDSP's output into the RADE receiver, which has its own input AGC. **Not measured on air**
+whether that is enough; the check is the receiver's input level and the AGC on the first run. If it is not, the
+module has the powers (`p0`, `p1`, the cross term) to scale by `sqrt(P0/Pout)` as `div_norm` does for the other
+references; not designed in, because nothing says it is needed.
+
+### 12.5 What stays as it is, and why
+
+- **Slew and hold.** The weight is slewed in Cartesian at 15 % per block, so now the gain slews with the phase. That
+  is exactly what was scored (T-027 result 2). The hold threshold stays 0.20 (result 3).
+- **The noise term's time constant** stays the Averaging time. A shorter one for the noise only, so that SSB bursts
+  turn an arm down while they last (candidate 2, section 11.3), changes `N0`, `N1` and nothing else, and goes in
+  after this one has run on air; changing both at once would leave no way to say which did what.
+- **The lock rule** is not touched here (candidate 3).
+
+### 12.6 Risks
+
+1. **The noise estimate is the new single point of trust.** `N_k` is the arm's power less its prefix-correlated part. On
+   multipath the prefix-correlated part is biased (V2-F2), which would turn the better arm down. T-027 did not
+   characterise the multipath on those paths. The cap and the floor bound the damage; they do not remove it.
+2. **A tone or comb in band.** It is taken out of the prefix correlation (the pedestal) but not out of the arm's power,
+   so it counts as noise on the arm it is stronger on, which is the right way round. Not measured.
+3. **Null.** The unit weight cancels the signal only if the two arms carry it at equal gain; with these antennas
+   (`|r|` about 0.45) the null is shallow. The right null gain is `1/|r|`. Left alone: the value of Null on V2 was
+   already marked uncertain, and this is a separate, small change if wanted.
+4. **Five captures, one session, three stations, an inverted L and a loop.** The ordering was the same on all five; the
+   +0.113 is one capture.
+
+### 12.7 Checks before it is called done
+
+1. **Unit test** (`test_cp_replay.py`): on a synthetic pair with a known gain ratio and noise ratio the applied weight's
+   magnitude is `min(cap, |r| N0/N1)` within a tolerance, its phase is the existing check's, Null's is still unit, and
+   Best's pick does not move.
+2. **Engine path** (`run_ref --ref rade2`) on the five captures, scored with `score_radev2` against `radio`: at or above
+   it on all five (|aux| 0.927, 0.912, 0.902, 0.783 and 0.750 are what the cold replay gave; the engine path, with its
+   own lock, should land near them), and `113838` well above 0.64.
+3. **Self-check** (`cp_replay` against the engine's recorded state): the recorded T-027 captures hold unit weights, so
+   their applied-weight column will differ from the new code from the first block; that is expected and the check
+   should say so, not fail silently. Captures taken after the change pass it.
+4. **On air**: the same A/B as T-027, one station and band, with the capture and the RADE log of each run, and the RADE
+   receiver's input level read at the same time (12.4).
+
+### 12.8 Order of work
+
+1. Module returns the capped `mrc` as the Sum weight; replay tools and the unit test follow it (no engine change; the
+   engine still gets a weight from `wr/wi`, so this alone already changes Sum and Null).
+2. Engine: Null reads `arm_cos/arm_sin` for V2. (Between 1 and 2 Null would be `-mrc`; they go in as one commit.)
+3. Offline acceptance (12.7, 2 and 3).
+4. On air (12.7, 4). The register entry (LC-068) and the write-up follow the on-air result, not the offline one.
+
+### 12.9 Offline acceptance (2026-10-29, after the commit `5a23387b`)
+
+The five T-027 captures through the engine (`run_ref --ref rade2 --mode sum --tau 1.0687`), the weight in force on every
+block scored with `score_radev2` (`ok` set to 1, see the trap noted at the end of T-027):
+
+| Capture | Radio (unit, live) | Engine, noise-weighted | Replay, noise-weighted (12.3, loose lock) |
+|---|---|---|---|
+| `112951` | 0.923 | 0.927 | 0.927 |
+| `113200` | 0.903 | 0.910 | 0.912 |
+| `113322` | 0.878 | 0.901 | 0.902 |
+| `113613` | 0.745 | 0.782 | 0.783 |
+| `113838` | 0.637 | 0.754 | 0.750 |
+
+- **Passes:** at or above the radio on all five; `113838` at 0.754 against 0.637; the engine's weight against the replay's,
+  block by block, within a median 0.2 to 0.8 degrees of phase and a gain ratio of 1.0 (largest mean difference 0.15, in the
+  last seconds of `113838`).
+- **`113613` is not a test of the weight.** Under the shipped lock rule the engine path locks at 47 s, so for most of the
+  minute the weight in force is the starting 1 + 0j (equal gain, no co-phasing), which scored the same as the replay with
+  the loose rule here. The replay column is the number that says anything about the noise-weighted weight on that
+  capture, and the engine path will show it once the lock arrives sooner (candidate 3).
+- **The self-check against the recorded state** (`cp_replay`) compares lock, sideband and prefix contrast entering each
+  block, not the weight, so the unit weights of the T-027 captures do not affect it (it was wrong to say they would). It
+  was not run on a post-change capture then; section 12.11 has it.
+- Still to do: the on-air A/B, with the RADE receiver's input level read, and then the register entry.
+
+### 12.10 Slew rate sweep (2026-10-29)
+
+`DIV_SLEW_FRAC` (15 % of the way to the target per block) applied to the noise-weighted weight, in the replay with the
+loose lock rule, `ok` = 1; mean decoded |aux| over the bins, the unslewed weight (each new weight held as it comes) last:
+
+| Fraction per block | `112951` | `113200` | `113322` | `113613` | `113838` | Mean of five |
+|---|---|---|---|---|---|---|
+| 0.05 | 0.927 | 0.908 | 0.902 | 0.768 | **0.768** | 0.855 |
+| 0.10 | 0.932 | 0.907 | 0.902 | 0.777 | 0.753 | 0.854 |
+| **0.15 (shipped)** | 0.927 | 0.912 | 0.902 | 0.783 | 0.750 | 0.855 |
+| 0.25 | 0.929 | 0.910 | 0.909 | 0.785 | 0.749 | 0.856 |
+| 0.40 | 0.921 | 0.910 | 0.906 | 0.782 | 0.735 | 0.851 |
+| 0.60 | 0.913 | 0.915 | 0.903 | 0.788 | 0.714 | 0.847 |
+| none | 0.921 | 0.909 | 0.905 | **0.808** | 0.657 | 0.840 |
+
+- **Flat between 5 and 25 % per block** (means 0.854 to 0.856, every capture within about 0.01 of its best except the
+  two noted). The shipped 15 % sits in the flat part. **No change.**
+- The two ends pull the other way: the weakest capture (`113838`) prefers the slowest (0.768 at 5 %, 0.657 with none,
+  because a noisy target is followed), the lightly interfered one with fast changeovers (`113613`) the fastest
+  (0.808 with none, 0.768 at 5 %). A rate that depends on the signal would follow, and is a new mechanism for a gain of
+  about 0.02 on two captures out of five; not pursued (settled decision 3).
+- A block is 85 ms here; the Averaging time (1.07 s here) is a separate smoothing already in the weight.
+
+### 12.11 On air (2026-10-29, T-028)
+
+Two 60 m captures with the noise-weighted gain live, and the Averaging sweep over seven captures
+([test-findings.md](test-findings.md#t-028-the-noise-weighted-gain-on-air-60-m-and-the-averaging-time-over-seven-v2-captures)):
+
+- **The approach holds on a second pair of antennas and the opposite imbalance.** On 60 m arm 0 is the better antenna by
+  3 to 4 dB of prefix SNR; the live weight (magnitude about 0.5) turned arm 1 down and scored above the better arm
+  (+0.014, +0.011 |aux|) and 0.017 and 0.022 above what the unit weight would have given, which would have been just
+  below the better arm. The 40 m result had arm 1 the better one; the one rule covers both.
+- **Its worth on a clean signal is small**: sync time is the better arm's and Window is level with it (within
+  0.004). The value of the weight is that it is not below the best antenna on a pair that differs, the unit weight's fault.
+- **Level**: the decoder's AGC gain did not move (0.77 to 0.79 median, 0.79 to 0.80 under the unit weight), so the 2 to 3 dB
+  louder output (12.4) is absorbed, as assumed.
+- **Averaging**: flat for six of seven captures; the weakest gains 0.063 going from 1.07 s to 6 s and collapses below
+  0.8 s. 1.07 s stays; one capture decides the rest.
+- **Before the lock** the weight is plain 1 + 0j. On an 80 m signal at -7 dB the engine never locked (loose rule: 38 s) and
+  equal gain summed a dead arm 1 into arm 0 (sync 26 % against 33 %): a case for candidate 3, not for a new mechanism.
+- **The self-check** on the post-change captures: 1 of 703 blocks differ on `155202` and on `155434` (the engine and the
+  cold replay locked together, and the first block differs because the replay starts cold). **On `152724`, where the
+  engine never locked, 667 of 703 differ**: the replay's prefix contrast does not follow the engine's from the first
+  blocks (replay 0.00, 0.21, 0.21 against the engine's 0.09, 0.12, 0.14; the same with either bank). The capture
+  began 16 s into the run, so the engine had history the replay lacks, but it persists for the minute. Unexplained;
+  it is the unlocked search state, which the locked captures do not exercise. Not resolved here.
+- Still open: the LC-068 register entry, now that the on-air result is in.
+
+### 12.12 The start weight: measured, parked (2026-10-29)
+
+Before the prefix locks the combiner applies whatever weight is in force, and `1 + 0j` on a fresh start. T-030 compared what could be applied
+instead, over the first 15 s of ten captures
+([test-findings.md](test-findings.md#t-030-the-weight-before-the-prefix-has-locked)):
+
+| Applied until the first weight | Pooled \|aux\| |
+|---|---|
+| equal gain, `1 + 0j` (today, fresh start) | 0.815 |
+| arm 0 (RX1) alone | 0.816 |
+| **Window's weight** | **0.875** |
+| provisional weights from a 1-of-1 lock rule | 0.875 |
+| ceiling: the lock's weight, from the start | 0.903 |
+
+- **Decided with the operator: park it, and come back with more captures.** Nothing is built and the code stays as it is. The
+  held weight carried across retunes and attenuator steps is kept (settled decision 2).
+- **The leading candidate** is Window's weight until the prefix locks, by one of two routes: the band reference's solve run alongside
+  (needs the FFT path the RADE references skip; a CPU cost to measure on the Pi) or a lag-0 cross-spectrum estimate in the V2 module.
+  Neither touches the lock rule, so neither adds a false-lock risk.
+- **Ruled out**: weights from a relaxed lock (67 of 147 non-V2 captures make weights, among them CW-lower 4 of 23 and USB 16 of 33; CW,
+  SSB and a tune carrier are to be avoided). **Not worth doing alone**: arm 0 until the lock (no gain; wrong on three captures in ten).
+- **The operator's constraint**: RX1 will usually already be the better arm, but the SNR measurements are not to be ignored. The data
+  agree with both halves: RX1 was the better arm in seven of ten captures (five over the first 15 s), and clearly the worse in three.
+- **What more captures would settle**, in order:
+  1. Cold starts on V2 signals with the arms **in antiphase** and in phase, on bands other than 40, 60 and 80 m, to see how often equal
+     gain fails; today two captures (both 80 m) carry that.
+  2. Captures with **strong SSB beside a V2 signal at the start**, the case Window handles worst (`113613`).
+  3. A start that is **cold in the engine too** (RADE V2 just selected, or fresh props), not only in the replay: the live engine has
+     so far always carried a weight, and T-030's schemes are replays.
+  4. Which arm is RX1 and why, for each, so that "RX1 is the better arm" can be tested against the operator's choice and not only
+     against the decode.
+

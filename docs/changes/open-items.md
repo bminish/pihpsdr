@@ -14,7 +14,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 
 **To port from `feature/auto-diversity`** (each gets the next LC, from LC-064)
 
-- [ ] The time-based slew (Finding 48).
+- [ ] The time-based slew (Finding 48): written as LC-069 (2026-11-03), measured on seven captures, **not listened to**; commit once it has been.
 - [ ] The 0.5 s default averaging.
 - [ ] The Carrier tooltip.
 
@@ -23,7 +23,17 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 - [ ] The noise floor (LC-025 on): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; the attenuator calibration ([noise-floor-refactor.md](../noise-floor-refactor.md), [feature-att-calibration.md](../feature-att-calibration.md)).
 - [ ] CW, on marginal captures: whether the LC-012 floor binds (it does on strong ones, by 0.07 dB); re-sweep LC-019's 0.2 s.
 - [ ] LC-013 (notches): a capture with a steady interferer inside a weaker station's passband. None so far; the mechanism is confirmed on air only.
-- [ ] A RADE V2 correlator: no V2 reference on `TEST` yet; starting set T-008 and T-009 in [test-findings.md](../test-findings.md).
+- [ ] RADE V2 (LC-064 to LC-067, on `feature/rade-native`, not `TEST`): built; **the operator's on-air evaluation is the next step**, then cutting the series for `TEST`. What it needs and what is open:
+  - A/B on one station and band, V2 reference against Window and FSK/Digital, with a capture (`make DIVCAP=1`) of each run and the RADE engine's log from the same time; what to watch is in [diversity-radeV2-cp.md](../diversity-radeV2-cp.md#9-logging-and-on-air-evaluation). Decode scoring is deferred on purpose.
+  - Sum applies the noise-weighted (maximal-ratio) weight since LC-068 (2026-10-29): it was at or above the unit weight on 5 of 5 captures on 40 m (T-027) and on both 60 m captures with it live (T-028). Open under it: the noise estimate on multipath and with a tone in band, the value of a null on V2 (right gain `1/|h1/h0|`), and a second A/B on another day.
+  - 80 m, marginal (T-029): the live weight was above the better arm on all three captures of that evening, and Window 0.074 below it on the weakest. The starting weight 1 + 0j is the worst case when the arms are in antiphase (about 150 to 160 degrees on this installation): replayed from cold it scored 0.37 to 0.58 against arms at 0.8 to 0.9, while the weight the engine was holding was within 4 degrees of the one the tracker found at its lock. Supports holding across retunes and attenuator steps; a cold start is not fixed by it.
+  - Start weight, measured (T-030, 2026-10-29): over the first 15 s of ten V2 captures, equal gain 0.815, arm 0 alone 0.816, **Window until the lock 0.875**, ceiling 0.903; weights from a relaxed lock reach 0.875 too but fire on 67 of 147 non-V2 captures (CW-lower 4 of 23, USB 16 of 33). Candidate: Window's weight until the prefix locks (run the band solve alongside, or a lag-0 estimate in the V2 module). Not built; **parked until more captures** (what to capture: diversity-radeV2-cp.md, 12.12); no false-lock exposure. RX1-is-better is true of seven captures in ten over the minute (five over the first 15 s), clearly false in three.
+  - The weight before the lock is plain 1 + 0j: on an 80 m signal at -7 dB the engine never locked in a minute and summed a dead arm into arm 0 (T-028). A matter for the lock rule: the loosest rule locked at 38 s there. False locks on CW, SSB and a tune carrier are to be avoided, on AM broadcast they are not a concern (owner, 2026-10-29), so the 13 non-V2 locks of the loosest rule (diversity-radeV2-cp.md, 5.4) need re-reading by class first.
+  - `cp_replay`'s self-check against the engine's recorded state is clean on locked captures (1 block in 703) and not on `152724` (667 in 703), where the engine never locked: the unlocked search state differs. Unexplained.
+  - Invert and Null are 180 degree steps; the value of a null on V2 is uncertain.
+  - The lock rule misses 3 weak captures and locks on 2 AM-broadcast recordings; time to lock is 17 to 23 s on the weak ones.
+  - Not measured: detection with a strong tone inside a V2 signal, real EMC, the Pi's CPU, the V2 menu row and overlay on screen, the log lines' text.
+  - Auto-detecting V1 against V2: Stage 0 is done (the prefix detectors do not cross-lock; the V1 pilot locks late on 2 of 23 V2 captures; 3 of 102 non-RADE captures lock for the V1 pilot or V2 prefix); switching is untested. Plan and results in [diversity-rade-auto.md](../diversity-rade-auto.md). Stage 1 comes after the on-air V2 evaluation.
 - [ ] Open from the 24 Hz tier (T-019/T-020): Carrier (six AM captures only), fast fades, Null against a real interferer, 96, 384 and 768 kHz, finer bins for narrow-tone digital modes.
 - [ ] Pi: run the functional suite on the CM5 (needs `libopus-dev`, now in the bundle's check).
 - [ ] Pi, only if wanted: vectorise RADE V1's decimator (3.0x faster, 0.7 % of a core at 192 kHz); FFTW wisdom for dl1ycf.

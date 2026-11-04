@@ -28,6 +28,10 @@ Newest first.
   the arm's ADC from `receiver[0]->adc`; the `docs/changes.md` register and
   `history.md` follow `TEST`'s layout. LC-041 to LC-043 are not in `TEST`'s
   register yet (only their write-ups).
+- 2026-11-03: LC-069, the time-based slew (Finding 48), written on `feature/rade-native` and measured on seven captures
+  (at or above the shipped slew in 14 of 14 cells); in the working tree, not committed, not listened to. Two other ideas from
+  Linrad's diversity page were tried the same day and dropped: its noise-only residual channel is 1 - coherence to 1e-7, and its
+  excess-over-floor bin weighting did not beat plain weighting (a Linrad comparison, no LC).
 
 - 2026-10-30: upstream took LC-059 to LC-063 in `30b327e2` ("some updates and
   alignment with BMs auto-div version", 2026-10-27), along with changes of his
@@ -38,6 +42,22 @@ Newest first.
   change; the next number is LC-064. The suite passes. Force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`). Full record:
   [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
 
+- 2026-10-29: RADE V2, the start weight before the lock measured offline (T-030): Window's weight until the prefix locks is the leading
+  candidate (0.875 against 0.815 for equal gain, ceiling 0.903); weights from a relaxed lock ruled out (false weights on CW and SSB). Parked,
+  with the owner, until more captures; no code. Section 12.12 of the V2 note lists what to capture.
+- 2026-10-29: RADE V2, Sum applies the noise-weighted gain (LC-068), on `feature/rade-native`. From the first on-air captures
+  (T-027, five 40 m captures: the unit weight lost to one antenna alone on the weakest, the tracker's own logged maximal-ratio
+  weight did not), designed (V2 note, section 12), built and checked offline, then confirmed on two 60 m captures
+  with it live (T-028). Slew, hold threshold and Averaging left as they were after sweeps. Decided with the owner.
+- 2026-10-22: RADE V2 reference (LC-064 to LC-067, LT-038), on
+  `feature/rade-native`. V1 reviewed against rade_c first; then a V2 tracker
+  from the cyclic prefix, checked against rade_c's own V2 receiver over all
+  171 captures, then the engine hook. Decided with the owner: V1 and V2 are
+  separate references side by side, auto-detection waits for the on-air
+  evaluation, Sum uses the unit co-phase weight for now (the noise-weighted
+  weight is logged, not used), the engine's slew does the smoothing, Invert
+  and Null are allowed, and decode scoring is deferred in favour of the
+  operator's on-air runs. Details: [../diversity-radeV2-cp.md](../diversity-radeV2-cp.md).
 - 2026-10-19: LC-062 and LC-063. Prompted by dl1ycf's report of uninitialised
   fields in `diversity_client_set_settings()` and his wish to fix the
   settings command's layout so `CLIENT_SERVER_VERSION` moves once. LC-062

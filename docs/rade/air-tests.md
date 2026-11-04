@@ -1,0 +1,135 @@
+# RADE native: automated over-the-air tests
+
+Purpose: validate and tune the transmit pipeline (timing, levels, the ALC) with repeatable overs, recorded on
+both sides - piHPSDR's own captures and a KiwiSDR - without anyone clicking through the GUI.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  A[air_test.py\nthe plan] -->|rade_ctl.py\nUnix socket| H[piHPSDR test harness\nrade_native_test.c]
+  H -->|speech file as the mic| E[RADE TX engine\n-> WDSP -> radio ANT2]
+  E -.->|RF| K[KiwiSDR]
+  A -->|kiwi_rx.py\niq, iq-fixed, usb| K
+  H --> C[capture + parameter log\nrade-captures/, rade-logs/]
+  A --> R[results.csv / .json\nrade-captures/air/session/]
+```
+
+The harness replaces the mic with a WAV file *inside* the RADE transmit engine (`rade_native_tx_inject`), so the
+whole of the transmit chain from the leveller to the radio is exercised, and what is sent is exactly the file -
+no sound card, no TCI audio stream, no timing slop from either. (TCI audio would exercise piHPSDR's TCI input,
+which is not what is being tested.) The radio is keyed with the normal MOX path, so the end-of-over hold,
+WDSP's TX slew and the P2 output are the real ones.
+
+## Safety
+
+- **The operator arms it**: RADE window, **Test harness** tick. Off whenever piHPSDR starts, off when the window
+  closes, off if unticked (which also stops any over at once). Unarmed, the socket answers `status` and refuses
+  everything else.
+- **Hard limits** (constants at the end of `src/rade_native_menu.c`; a change is a rebuild, not a command):
+  the transmitter's drive setting at most `TEST_MAX_DRIVE_PCT` (20 %; was 1 % for the first run); the dial inside 28.000-29.700 MHz; an over
+  at most 90 s; not with PureSignal, tune or two-tone on.
+- **A script cannot change the drive setting or the antenna**; the operator sets those (ANT2, 28 MHz band,
+  drive 20 %) and `air_test.py` shows them at the start. What a script can set is the digital level into the
+  transmit chain (`drive_db`, -60..+6 dB around the defined level), the mic trim and the leveller.
+- A client that goes away during an over releases the transmitter; so does `abort`, and the harness only ever
+  releases a key that it pressed.
+- The operator should be watching: `air_test.py` waits for Enter (`--yes` to skip it).
+
+## Running
+
+1. piHPSDR running with `RADE_NATIVE=ON`, ANT2, drive 20 %, RADE window open, **Test harness** ticked.
+2. `python3 test/rade_native/air_test.py --freq 28645 --wave v1,v2 --levels -30,-24,-18,-12,-6,-3,0,3,6`
+   (20 s clip of `rade_c`'s `david_vk5dgr.wav` by default; `--clip` for another, `--seconds`, `--repeat`,
+   `--agc` to leave the leveller on, `--trim`). About 70 s a run.
+3. `results.csv` in `rade-captures/air/<session>/`: one row per run.
+
+Single commands: `rade_ctl.py status | set wave=1 dial=28645000 drive_db=-6 | capture on | log on | play f.wav | abort`.
+`--dry-run` does the Kiwi side only (no harness, no transmission).
+
+## Weak signals from strong recordings (`air_weak.py`)
+
+The received power cannot be lowered on the air without changing the ALC state (the digital level is the only
+knob), so *does the ALC cost anything when the signal is weak?* is answered afterwards: `air_weak.py SESSION`
+takes the Kiwi's fixed-gain recording of each run and emulates a path loss of A dB - the signal scaled down by A,
+white noise added so that the noise in the modem band is what the Kiwi measured when nothing was sent - then decodes
+it as the real recordings are, with several noise realisations. Every transmit level is thereby judged against the
+same noise floor with its own received power, and the table (`weak.md`) shows, per path loss, sync, callsign,
+end-of-over and feature loss against the level. A few real runs at low level are in the plan to check the method
+(a real run at SNR s should read like an emulated one from a higher unclipped level at the same s). Limits: additive
+white noise only (no fading), the noise is assumed flat across the 1.6 kHz band, and one clip.
+
+`band_snr_db` (in `results.csv`) is the SNR from the band power on and off in the fixed-gain recording: independent of
+librade's estimate, which tops out near 32 dB (V1) and 18 dB (V2).
+
+## GPS-stamped Kiwi and timing
+
+With a GPS solution on the Kiwi (`--gps auto`) the IQ recordings carry GNSS time and `air_test.py` adds the timing columns (RF onset and end on the UTC
+axis, WDSP output times, the delays between them and the engine's events, clipping of the start and the end of the speech, the transmit frequency error).
+Method, validation, and the meaning of every column: `gps-timing.md`.
+
+## V2 callsign check
+
+**Status (2026-10-17): sending a V2 callsign is validated on air.** piHPSDR transmitted V2 on 28645 kHz with the Call box set to `EI6IZ`, a Kiwi SDR recorded it, and freedv-gui built for V2 decoded the call from the recording (its text receiver, and its GUI). **Receiving a V2 callsign on air has also been seen**, from the parameter logs (`rade-logs/`): DF6VI decoded in 6 V2 overs on 5354 kHz, 2026-10-17 18:06-18:18 UTC (runs `20261017-190002` and `20261017-191431`; over lengths 57-94 s, mean SNR -2.9 to +3.7 dB, `call_snr` -7.1 to +8.9 dB). DF6VI was running freedv-gui. The other V2 overs in those runs, which show no call, were from stations running an experimental Thetis build (per the operator); whether that build sends a V2 callsign is not known, so they say nothing about our receiver's threshold. Too few overs and one freedv-gui station for a threshold. Graded in simulation as well (next section).
+
+`kiwi_rx.py` decodes the V2 callsign of a recording with freedv-gui's own text receiver (`v2_text_interop/interop --iq`, build it with
+`make v2_text_interop/interop`) and compares it with `--call`; `call_ok` is set for V2 as it is for V1, a wrong call fails the run.
+First on-air result, 2026-10-17, 28645 kHz, V2, levels -12 and -6 dB, 11 s clip: `EI6IZ` decoded on the `iq`, `iq-fixed` and `usb` profiles of both
+overs (sync 100 %, one EOO frame each). The USB recording converted to 48 kHz and played into the freedv-gui GUI (`ms-rade-v2` build,
+`-ut rx -utmode RADEV2 -rxfile`) logged `received EI6IZ`. Two things about that GUI run: the callsign is only decoded when reporting is
+enabled in its configuration, and the GUI's V2 reporter host is hard-coded to the live reporter, so it was run under `bwrap --unshare-net`.
+
+## V2 callsign, freedv-gui transmitting (`rx_grade.py`, `rx_grade_gui.py`)
+
+freedv-gui3 (`ms-rade-v2`, callsign `EI6IZ`) transmitted into a null sink (`-ut tx -utmode RADEV2`, recorded: an 11 s over from `brian_g8sez.wav`
+and a 51 s one from `all.wav`; the GUI sends the whole file, `-txtime` has no effect here). Both decode clean in both receivers. `rx_grade.py`
+cuts the signal to N callsign cycles (1 cycle = 112 frames = 4.48 s; window = 0.5 s lead + 0.7 s sync + N cycles + 0.5 s tail), adds flat
+complex noise (SNR in 3 kHz) and gives the same noisy signal to freedv-gui's unmodified text receiver (`v2_text_interop/interop --iq`) and to piHPSDR's
+receive engine (`test_rx_engine --v2`); success is the callsign delivered. `rx_grade_gui.py` does the same trial in the real freedv-gui GUI
+(under `bwrap --unshare-net`; its callsign decoding needs reporting on and its reporter host is the live one). Offline simulation, one clip, white
+noise only, no fading, 2026-10-17.
+
+| window | SNR for 50 % | SNR for 90 % | trials per SNR |
+|---|---|---|---|
+| 1 cycle (6.2 s), freedv-gui / piHPSDR | 2 / 2 dB | 4 / 3 dB | 60 |
+| 5 cycles (24 s), freedv-gui / piHPSDR | below -6 / below -6 dB (100 / 98 % at -6, 10 / 18 % at -7, 0 at -8) | -6 / -6 dB | 40 |
+
+- **No difference between the receivers.** The rates agree within sampling error at every SNR (at 1 cycle the differences are -6 to +13 points with 60
+  trials, a standard error of about 6 points). That is expected: our text receiver is a port of freedv-gui's, tested symbol for symbol, and both sit behind the
+  same librade. The sync gate and gap bridging only matter when lock is lost, which these windows do not do. **No SNR gain was found**, and none is claimed.
+- **Combining the repeats is worth about 8 dB**: 50 % decode at about +2 dB from one cycle, at about -6.5 dB from five. Below that the limit is librade's sync (nothing is delivered
+  at -8 dB), not the text code.
+- **The GUI agrees with the offline freedv-gui receiver trial by trial**: 1 cycle at 1 dB, 20 seeds: GUI 6, offline 6, the same seeds; 5 cycles at -6 dB: 8 / 8, at -7 dB: 2 / 2;
+  2 cycles at 3 dB: 8 / 8. piHPSDR on those seeds: 8, 8 and 1 (it decoded 4 seeds the GUI did not and missed 2 that it did at 1 dB, within chance).
+- A test mistake worth remembering: audio for the GUI made as the real part of the noisy complex signal carries 3 dB more noise than intended (noise from both
+  sides folds in). It must be the positive-frequency side only, as an SSB receiver gives; the GUI then matched the offline receiver (GUI 1 of 12 before, 8 of 8 after, at 3 dB).
+
+## What a row holds
+
+| Column(s) | Meaning |
+|---|---|
+| `wave`, `level_db`, `freq_khz` | what was run |
+| `t_call`, `t_keyed`, `t_inject_start`, `t_inject_end`, `t_unkey`, `t_released` | unix times on this machine: key to first speech sample to release; the end-of-over hold is `t_released - t_inject_end` |
+| `capture_stem`, `log_file`, `kiwi_session` | where each side's data is |
+| `tx_peak_dbfs`, `tx_rms`, `tx_crest_db`, `tx_at_ceiling_pct` | the WDSP TX output block (192 kHz on P2): how close to, and how much of the over was against, the ALC ceiling |
+| `tx_shape`, `tx_shape_pass` | `tx_shape.py`: energy centre and tilt |
+| `band_snr_db`, `band_sig_dbfs`, `band_noise_dbfs` | from the fixed-gain recording (see above) |
+| `iq_*`, `iq_fixed_*` | the Kiwi (AGC on / fixed gain): `sync_pct`, `snr_mean`, `snr_min`, `snr_max`, `foff`, `eoo_ok`, `call_ok`, `feature_loss` and `speech_env_corr_vs_ideal` against the speech sent |
+| `kiwi_over_start_s` | where the over starts in the Kiwi recording (not tied to the key: the recordings have no time stamps, so the air delay is not measured) |
+| `mic_lufs`, `mic_peak_dbfs`, `mic_limiting_pct`, `tx_underruns`, `agc_db_max` | from the parameter log, while keyed: the mic as the engine measured it (gated LUFS, peak before the limiter, share of 100 ms blocks in which the mic limiter had acted in the last second), transmit underruns |
+
+## Reading a level sweep
+
+- Below the ALC (negative `level_db`): `iq_snr_mean` should rise with the level dB for dB. Where `sync_pct`
+  falls under 100, or `call_ok` fails, is the recovery threshold at the noise floor *for that path on that
+  day*; the Kiwi's own noise and the band's change, so repeat runs (`--repeat`) and interleave levels.
+- Around 0 and above: `tx_at_ceiling_pct` rising and `tx_peak_dbfs` stuck at the ceiling mean the ALC is acting;
+  the question is whether `iq_snr_mean` and `feature_loss` still improve or turn over (offline, 0 to +9 dB gave
+  nothing more out of the ALC - `alc_sweep.py`; this is the same question on air).
+
+## Status
+
+Built 2026-10-16. Tested: the socket server, WAV loader and the play sequence against a stand-in
+(`test_ctl.py`, in `make check`); `air_test.py` end to end against that stand-in with the real Kiwi (no
+transmission). **Not yet run on a radio**: the GTK side of the harness (arming, `set`, keying) and everything
+that needs RF.

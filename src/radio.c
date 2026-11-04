@@ -58,6 +58,10 @@
 #include "profiles.h"
 #include "property.h"
 #include "radio.h"
+#ifdef RADE_NATIVE
+#include "rade_native.h"
+#include "rade_native_menu.h"
+#endif
 #include "receiver.h"
 #include "rigctl.h"
 #include "rx_panadapter.h"
@@ -2195,6 +2199,22 @@ void radio_set_pan(int id, int value) {
   }
 }
 
+#ifdef RADE_NATIVE
+//
+// Native RADE: the end of an over (last speech, EOO frame with the callsign,
+// WDSP's filter delay) goes out before the transmitter is released.
+//
+static guint rade_hold_timer = 0;
+
+static int rade_hold_cb(gpointer data) {
+  int st = rade_native_tx_end_state();
+  if (st == 1) { return G_SOURCE_CONTINUE; }
+  rade_hold_timer = 0;
+  if (st == 2) { radio_set_mox(0); }
+  return G_SOURCE_REMOVE;
+}
+#endif
+
 void radio_set_mox(int state) {
   if (radio_is_remote) {
     send_mox(cl_sock_tcp, state);
@@ -2212,6 +2232,14 @@ void radio_set_mox(int state) {
     tx_set_out_of_band(transmitter);
   }
   if (state && TxInhibit) { return; }
+#ifdef RADE_NATIVE
+  if (state) {
+    rade_native_tx_end_cancel();
+  } else if (mox && rade_native_tx_end_request()) {
+    if (rade_hold_timer == 0) { rade_hold_timer = g_timeout_add(20, rade_hold_cb, NULL); }
+    return;
+  }
+#endif
   //
   // - setting MOX (no matter in which direction) ends a pending VOX
   // - activating MOX while VOX is pending continues transmission
@@ -3427,6 +3455,9 @@ static void radio_restore_state(void) {
   t_print("%s: path=%s\n", __func__, property_path);
   g_mutex_lock(&property_mutex);
   loadProperties(property_path);
+#ifdef RADE_NATIVE
+  rade_native_restore_state();
+#endif
   //
   // For consistency, all variables should get default values HERE,
   // but this is too much for the moment.
@@ -3680,6 +3711,9 @@ void radio_save_state(void) {
   if (transmitter != NULL) {
     tx_save_state(transmitter);
   }
+#ifdef RADE_NATIVE
+  rade_native_save_state();
+#endif
   //
   // Obtain window position and save in props file
   //

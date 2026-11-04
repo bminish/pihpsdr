@@ -30,7 +30,8 @@ LIBS    = `pkg-config --libs gtk+-3.0 fftw3f` -lm
 # is the one the diversity patch must not leave marks on.
 #
 GEN     = $(BUILD)/rade_correlator_tunable.c
-SRC     = $(GEN) rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c
+SRC     = $(GEN) rade_tuning.c divcap_replay.c $(TOP)/src/diversity_auto.c \
+          $(TOP)/src/rade_v2_correlator.c
 
 all: replay_rade test_capture run_ref
 
@@ -107,6 +108,20 @@ endif
 	      $(RADE_LIB) `pkg-config --libs opus` $(LIBS)
 
 clean:
-	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref
+	rm -rf $(BUILD) replay_rade test_capture score_rade run_ref auto_replay
 
 .PHONY: all run score clean
+
+#
+# The RADE V2 cyclic-prefix correlator, src/rade_v2_correlator.c, replayed over a capture. It needs
+# nothing of the rest of piHPSDr, so it builds by itself. The reference for it is py/cp_probe.py.
+#
+cp_replay: cp_replay.c $(TOP)/src/rade_v2_correlator.c $(TOP)/src/rade_v2_correlator.h
+	$(CC) -O2 -Wall -I$(TOP)/src -o $@ cp_replay.c $(TOP)/src/rade_v2_correlator.c -lm
+
+#
+# Both RADE correlators side by side over a capture, with the hand-over rule proposed for a combined
+# "RADE auto" reference (docs/diversity-rade-auto.md). Optionally two captures spliced.
+#
+auto_replay: auto_replay.c $(SRC) rade_tuning.h divcap_replay.h
+	$(CC) $(CFLAGS) -o $@ auto_replay.c $(SRC) $(LIBS)

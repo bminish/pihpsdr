@@ -29,6 +29,7 @@
 #include "property.h"
 #include "radio.h"
 #include "rade_correlator.h"
+#include "rade_v2_correlator.h"
 #include "receiver.h"
 #include "vfo.h"
 
@@ -252,14 +253,22 @@
 #define DIV_ARM_MIN_DB      6.0
 
 //
-// Fraction of the remaining distance to the target that w moves in one
-// block. With ~85 ms blocks this settles in a little over a second from
-// any starting point, which is fast enough to be useful and slow enough
-// that the change in the mix is not heard as a step. A fixed absolute
-// step was tried first and is wrong: the time to converge then depends on
-// how far away the answer is, and a large |w| took the best part of a
-// minute to reach.
+// How fast the applied weight w follows the one the loop has worked out.
 //
+// The wideband references (Window, CW, FSK/Digital, Carrier) slew with a
+// time constant, DIV_SLEW_TAU: each block w covers 1 - exp(-blocktime/tau)
+// of the distance left. It used to be a fixed fraction per block, and a
+// block lasts as long as the reciprocal of the bin width, so the lag the
+// operator got moved with the bin width (0.26 s at 24 Hz, 1 s at 6 Hz)
+// and, at short Averaging, was longer than the Averaging time itself.
+//
+// The RADE references keep a fixed fraction per block, DIV_SLEW_FRAC
+// (about 0.5 s with 12 Hz bins). Their weight comes from a correlator that
+// has its own averaging, and a quick change of phase is what the decoder
+// dislikes most; the V2 weight was swept from 5 to 25 % per block and is
+// flat there.
+//
+#define DIV_SLEW_TAU        0.15
 #define DIV_SLEW_FRAC       0.15
 
 //
@@ -1318,6 +1327,78 @@ static void div_manual_window(const struct div_context *ctx, double *lo, double 
   const double z = div_window_zero(ctx->mode, ctx->sidetone);
   *lo = z + ctx->centre - 0.5 * ctx->width;
   *hi = z + ctx->centre + 0.5 * ctx->width;
+}
+
+//
+// The RADE correlators, behind one set of calls. Which one runs follows the
+// reference: the front end is built when a RADE reference is taken up and
+// torn down when it is left (see the restart conditions below). Stop and
+// reset do both, which costs nothing for the one that is not running.
+//
+static int div_rade_start(int ddc_rate) {
+  return (div_auto_ref == DIV_REF_RADE_V2) ? rade_v2c_start(ddc_rate)
+                                           : rade_corr_start(ddc_rate);
+}
+
+static void div_rade_stop(void) {
+  rade_corr_stop();
+  rade_v2c_stop();
+}
+
+static void div_rade_reset(void) {
+  rade_corr_reset();
+  rade_v2c_reset();
+}
+
+//
+// The rade_corr_* variables are the RADE status everything else reads: the
+// menu, the capture record, the overlay, the client's copy. Whichever RADE
+// correlator is running writes them - V1 does so itself, and this is V2's.
+// V2 has no probation, so "confirming" is always 0.
+//
+static void div_rade_v2_publish(void) {
+  rade_corr_locked     = rade_v2c_locked;
+  rade_corr_confirming = 0;
+  rade_corr_mirrored   = rade_v2c_mirrored;
+  rade_corr_quality    = rade_v2c_quality;
+  rade_corr_freq_off   = rade_v2c_freq_off;
+  rade_corr_snr        = rade_v2c_snr;
+  rade_corr_arm_valid  = rade_v2c_arm_valid;
+  rade_corr_arm_db     = rade_v2c_arm_db;
+  rade_corr_arm_cos    = rade_v2c_arm_cos;
+  rade_corr_arm_sin    = rade_v2c_arm_sin;
+  //
+  // The V1 correlator says what it is doing in the log, and so does this: a
+  // run on air has a timeline without a capture. Called from the analysis
+  // thread only, so the state here needs no lock.
+  //
+  static int was_locked = 0, was_present = 0;
+  static gint64 last_report = 0;
+  const gint64 now = g_get_monotonic_time();
+
+  if (rade_v2c_locked && !was_locked) {
+    t_print("%s: RADE V2 prefix LOCK  modem %s carrier  bump at %d  contrast %0.2f  f=%+0.1f Hz\n",
+            __func__, rade_v2c_mirrored ? "above" : "below", rade_v2c_gamma, rade_v2c_quality,
+            rade_v2c_freq_off);
+    last_report = now;
+  } else if (!rade_v2c_locked && was_locked) {
+    t_print("%s: RADE V2 lock cleared, searching\n", __func__);
+  } else if (rade_v2c_locked && was_present && !rade_v2c_present) {
+    t_print("%s: RADE V2 prefix lost, holding last weight until it is back\n", __func__);
+  } else if (rade_v2c_locked && !was_present && rade_v2c_present) {
+    t_print("%s: RADE V2 prefix back, resuming\n", __func__);
+  }
+
+  if (rade_v2c_locked && rade_v2c_present && now - last_report >= 5000000) {
+    last_report = now;
+    t_print("%s: RADE V2 tracking  contrast %0.2f  bump at %d  f=%+0.1f Hz  "
+            "arm SNR %+0.1f / %+0.1f dB  tone %0.0f%%  applied %+0.1f dB %+0.0f deg\n",
+            __func__, rade_v2c_quality, rade_v2c_gamma, rade_v2c_freq_off, rade_v2c_snr0,
+            rade_v2c_snr1, 100.0 * rade_v2c_pedestal, auto_div_gain, auto_div_phase);
+  }
+
+  was_locked = rade_v2c_locked;
+  was_present = rade_v2c_present;
 }
 
 //
@@ -2453,8 +2534,14 @@ static void div_apply_weight(double wr, double wi) {
     auto_div_cos = wr;
     auto_div_sin = wi;
   } else {
-    auto_div_cos += DIV_SLEW_FRAC * (wr - auto_div_cos);
-    auto_div_sin += DIV_SLEW_FRAC * (wi - auto_div_sin);
+    //
+    // blocktime is set when the analysis starts; until then (and for the
+    // RADE references) the per-block fraction applies.
+    //
+    const double sf = (!DIV_REF_IS_RADE(div_auto_ref) && blocktime > 0.0)
+                      ? 1.0 - exp(-blocktime / DIV_SLEW_TAU) : DIV_SLEW_FRAC;
+    auto_div_cos += sf * (wr - auto_div_cos);
+    auto_div_sin += sf * (wi - auto_div_sin);
   }
   //
   // Back-compute the values the menu, the props file and remote clients
@@ -2601,7 +2688,7 @@ static double div_gate_threshold(int nbins) {
 // div_gate_threshold().
 //
 double diversity_auto_coh_floor(int ref) {
-  if (ref == DIV_REF_RADE_V1) { return 0.0; }
+  if (DIV_REF_IS_RADE(ref)) { return 0.0; }
 
   const double bhz = (div_auto_binhz > 0.0) ? div_auto_binhz : div_target_hz();
 
@@ -3406,7 +3493,7 @@ static void div_process_block(void) {
     // different measurement.
     //
     div_reset_stats();
-    rade_corr_reset();
+    div_rade_reset();
     lastctx = ctx;
 #ifdef DIVERSITY_CAPTURE
     divcap_reset = 1;
@@ -3499,12 +3586,13 @@ static void div_process_block(void) {
   divcap_dropped = 0;
 #endif
 
-  if (ctx.ref == DIV_REF_RADE_V1) {
+  if (DIV_REF_IS_RADE(ctx.ref)) {
     //
-    // Pilot-correlating path. This one does not use the FFT at all: it
-    // downconverts to the 8 kHz modem rate and correlates against the
-    // known RADE V1 pilot, which separates the wanted signal from noise
-    // and QRM well enough to estimate the two separately.
+    // Time-domain RADE path. This one does not use the FFT at all: it
+    // downconverts to the 8 kHz modem rate and correlates, for V1 against
+    // the known pilot, which separates the wanted signal from noise and
+    // QRM well enough to estimate the two separately, and for V2, which
+    // has no pilot, against its own cyclic prefix (rade_v2_correlator.h).
     //
     double wr, wi;
     //
@@ -3526,9 +3614,17 @@ static void div_process_block(void) {
     // given the block in the time domain, so div_bin_notched() has nothing
     // to act on here. See the note there.
     //
+    int ok;
+
     div_floor_on_demand(&ctx, work0, work1);
-    int ok = rade_corr_process(work0, work1, nfft, bank,
-                               div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+    if (ctx.ref == DIV_REF_RADE_V2) {
+      ok = rade_v2c_process(work0, work1, nfft, bank,
+                            div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+      div_rade_v2_publish();
+    } else {
+      ok = rade_corr_process(work0, work1, nfft, bank,
+                             div_frame_off(&ctx), div_auto_tau, &wr, &wi);
+    }
     //
     // The overlay follows the passband, locked or not. It used to switch
     // to the bank the correlator reported once it locked, which is how a
@@ -3587,6 +3683,15 @@ static void div_process_block(void) {
       // which looks like a control that does not work rather than one
       // that is not implemented.
       //
+      // On V2, wr/wi is the maximal-ratio weight (gain set by each arm's noise), which is
+      // right for Sum. A null that cancels the signal wants the unit co-phase direction
+      // turned over, as before, so Null takes that.
+      //
+      if (ctx.ref == DIV_REF_RADE_V2 && div_auto_mode != DIV_AUTO_SUM) {
+        div_apply_weight(-rade_corr_arm_cos, -rade_corr_arm_sin);
+        return;
+      }
+
       const double sign = (div_auto_mode == DIV_AUTO_SUM) ? 1.0 : -1.0;
       div_apply_weight(sign * wr, sign * wi);
     } else {
@@ -4011,7 +4116,7 @@ static gpointer div_worker_thread(gpointer data) {
     if (reset_now != reset_seen) {
       reset_seen = reset_now;
       div_reset_stats();
-      rade_corr_reset();
+      div_rade_reset();
     }
 
 #ifdef DIVERSITY_CAPTURE
@@ -4030,7 +4135,7 @@ static gpointer div_worker_thread(gpointer data) {
       // rather than track something that has moved.
       //
       t_print("%s: dropped %d analysis block(s), re-acquiring\n", __func__, dropped);
-      rade_corr_reset();
+      div_rade_reset();
     }
 
     div_process_block();
@@ -4241,8 +4346,8 @@ void diversity_auto_start(void) {
   // menu's - and the loop simply holds: rade_corr_process() produces no
   // weight while the correlator is not running.
   //
-  if (div_auto_ref == DIV_REF_RADE_V1) {
-    (void)rade_corr_start(receiver[0]->sample_rate);
+  if (DIV_REF_IS_RADE(div_auto_ref)) {
+    (void)div_rade_start(receiver[0]->sample_rate);
   }
 
   worker = g_thread_new("div_auto", div_worker_thread, NULL);
@@ -4347,7 +4452,7 @@ void diversity_auto_stop(void) {
     have_plans = 0;
   }
 
-  rade_corr_stop();
+  div_rade_stop();
   //
   // The sample and FFT buffers are deliberately not freed here; see the
   // note in diversity_auto_start().
@@ -4382,7 +4487,7 @@ void diversity_auto_restart(void) {
 // CW included.
 //
 int diversity_auto_seed_window(double *centre, double *width) {
-  if (div_auto_ref == DIV_REF_RADE_V1) { return 0; }
+  if (DIV_REF_IS_RADE(div_auto_ref)) { return 0; }
 
   if (div_auto_centre != 0.0 || div_auto_width != div_width_default(div_auto_ref)) { return 0; }
 
@@ -4461,7 +4566,8 @@ static void div_settings_load(const DIV_SETTINGS *s) {
 
   case DIV_REF_DIGITAL_IQ: div_auto_coherence_min = s->digital_cohmin; break;
 
-  case DIV_REF_RADE_V1:    div_auto_coherence_min = 0.0;               break;   // retired - see div_settings_validate()
+  case DIV_REF_RADE_V1:
+  case DIV_REF_RADE_V2:    div_auto_coherence_min = 0.0;               break;   // retired - see div_settings_validate()
 
   case DIV_REF_CW:         div_auto_coherence_min = s->cw_cohmin;      break;
 
@@ -4534,7 +4640,7 @@ void diversity_auto_apply_settings(const DIV_SETTINGS *s, int action) {
   //
   if ((old_mode == DIV_MANUAL) != (s->mode == DIV_MANUAL) ||
       old_res != div_target_hz() ||
-      (old_ref != s->ref && (old_ref == DIV_REF_RADE_V1 || s->ref == DIV_REF_RADE_V1))) {
+      (old_ref != s->ref && (DIV_REF_IS_RADE(old_ref) || DIV_REF_IS_RADE(s->ref)))) {
     diversity_auto_restart();
   }
 
@@ -4839,7 +4945,7 @@ void diversity_auto_mode_changed(int mode) {
   if (was_off != (div_auto_mode == DIV_MANUAL) ||
       old_res != div_target_hz() ||
       (old_ref != div_auto_ref &&
-       (old_ref == DIV_REF_RADE_V1 || div_auto_ref == DIV_REF_RADE_V1))) {
+       (DIV_REF_IS_RADE(old_ref) || DIV_REF_IS_RADE(div_auto_ref)))) {
     diversity_auto_restart();
   }
 
@@ -4867,7 +4973,7 @@ static void div_settings_validate(DIV_SETTINGS *s) {
     s->mode = DIV_MANUAL;
   }
 
-  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_RADE_V1) {
+  if (s->ref < DIV_REF_BAND || s->ref > DIV_REF_LAST) {
     s->ref = DIV_REF_BAND;
   }
 
