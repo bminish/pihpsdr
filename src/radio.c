@@ -2476,6 +2476,20 @@ void div_split_set(int mode) {
   //
   if (radio_is_remote) { return; }
 
+#ifdef RADE_NATIVE
+  //
+  // RADE takes precedence over the ear split. RADE decodes receiver[0]'s
+  // output as one signal, and under the split that output is a single
+  // antenna: the decode would get no diversity gain, and the second ear
+  // would be a different signal from the one being decoded. So with RADE
+  // on the split is switched OFF, not merely held down - div_split itself
+  // goes to OFF, and it stays there when RADE is left. Every way in comes
+  // through here (the Diversity menu, the props file, a rate change), so
+  // none of them can bring the split back up under RADE.
+  //
+  if (rade_native_waveform() != 0) { mode = DIV_SPLIT_OFF; }
+#endif
+
   div_split = mode;
 
   //

@@ -1021,6 +1021,11 @@ static void retune(int new_wave) {
                                           new_wave, rade_native_user_invert());
   rade_native_set_invert(p.invert);
   rade_native_configure(new_wave, rade_native_user_invert());
+  //
+  // RADE takes precedence over the binaural ear split: entering RADE switches the split off (div_split_set() does it
+  // while RADE is on), so the split is not merely blocked but gone, and stays off after leaving RADE.
+  //
+  if (new_wave != 0 && div_split != DIV_SPLIT_OFF) { div_split_set(DIV_SPLIT_OFF); }
   int mode = new_wave ? (p.invert ? modeDIGL : modeDIGU) : (p.invert ? modeLSB : modeUSB);
   if (p.dial != rade_dial()) { vfo_id_set_frequency(0, p.dial); }
   if (vfo[0].mode != mode) { vfo_id_mode_changed(0, mode); }

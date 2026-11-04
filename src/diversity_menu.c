@@ -27,6 +27,9 @@
 #include "mode.h"
 #include "new_menu.h"
 #include "radio.h"
+#ifdef RADE_NATIVE
+#include "rade_native.h"
+#endif
 #include "rade_correlator.h"
 #include "receiver.h"
 #include "vfo.h"
@@ -327,7 +330,11 @@ static void sanitize_man_values() {
 //
 static void div_split_sensitive(void) {
   if (split_combo != NULL) {
-    gtk_widget_set_sensitive(split_combo, !radio_is_remote && diversity_enabled && receivers < 2);
+    int ok = !radio_is_remote && diversity_enabled && receivers < 2;
+#ifdef RADE_NATIVE
+    if (rade_native_waveform() != 0) { ok = 0; }          // RADE takes precedence: the split is off while it is on
+#endif
+    gtk_widget_set_sensitive(split_combo, ok);
   }
 
   if (balance_scale != NULL) {
@@ -342,6 +349,9 @@ static void div_split_sensitive(void) {
 static void split_cb(GtkWidget *widget, gpointer data) {
   div_split_set(gtk_combo_box_get_active(GTK_COMBO_BOX(widget)));
   div_split_sensitive();
+  if (gtk_combo_box_get_active(GTK_COMBO_BOX(widget)) != div_split) {    // div_split_set() refused it (RADE is on)
+    gtk_combo_box_set_active(GTK_COMBO_BOX(widget), div_split);
+  }
 }
 
 static void agc_link_cb(GtkWidget *widget, gpointer data) {
