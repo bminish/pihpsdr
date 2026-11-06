@@ -68,6 +68,31 @@ Taps held up to 100 ms give one dit (one 98 %, rest 100 %); 110 ms gives a secon
   holds mostly, plus 70 and 86 ms. These are taps released while the radio is still switching to TX: lost at RF as well as in the sidetone.
 * Every tap missing at the sink is also missing at RF, except the cases below.
 
+## Are the (shortened) elements cleanly shaped? Key clicks and wideband artefacts
+Checked from the KiwiSDR IQ (passband +-6 kHz) with `tools/cwlat/analysis/cwlat_spectrum.py`.
+
+**Established**
+* The RF keying edges are the designed DL1YCF 9 ms ramp: the mean measured onset follows the ideal ramp (through the same 400 Hz filter)
+  to **0.46 % rms of the plateau, 1.3 % worst**; 10-90 % rise 4.92 ms measured against 4.92 ms ideal (2 745 onsets).
+  The class that is clipped (straight key, first element after a pause in break-in, 93 onsets) fits equally well: 0.48 % rms, 5.00 ms rise.
+* So a shortened element is a normally ramped element that **starts late**; it is not cut off hard. The 12 isolated elements shorter than 30 ms
+  (5-22 ms) reach 0.97-1.01 of full amplitude, i.e. smooth, with the same ramps.
+* Plateau of long elements (1 129 elements >= 80 ms): ripple 0.33 ± 0.09 % (worst 1.54 %), deepest dip -0.74 dB, none deeper than 1 dB.
+* Carrier frequency in the first 2-12 ms after onset: mean -0.01 Hz (sd 0.08), median excursion 0.97 Hz, largest 8.1 Hz (400 Hz measurement bandwidth): no chirp.
+* Spurs inside long elements: nothing more than 4 dB above the local median beyond ±60 Hz except one weak line at -1437 Hz, which is in the region of the
+  external keyed station seen at -1.1 to -1.55 kHz.
+
+**Not established: the level of wideband splatter**
+* Compared with what a 1 ms linear edge would give (-37 dBc in the 1-2 kHz band, found by injecting synthetic edges into real key-up windows)
+  the measured edges are certainly not that abrupt, but a quantitative key-click level cannot be given: the energy in the 300-5000 Hz bands is
+  11-13 dB **lower** under the carrier than in key-up windows, so subtracting a noise floor gives meaningless negative numbers. Likely causes: the Kiwi's AGC
+  (default in IQ mode unless `-g` is given), an external keyed station, or the transmitter's own noise. Not resolved.
+* The ARRL clean-signal figures the DL1YCF ramp is designed for (-60 dBc beyond 338 Hz, -80 beyond 600 Hz, -120 beyond 1.2 kHz) are below what these captures can show.
+* Everything was taken at 1 % drive into a dummy load. Splatter from the PA and ALC at real drive levels is not covered at all.
+
+**To close this properly:** re-capture a subset with the Kiwi AGC off and a fixed gain (`kiwirecorder -g`), on a clear frequency or with the interferer
+avoided, and ideally at a realistic drive through an attenuator.
+
 ## Open items
 1. **First tap after PTT always lost; PTT left stuck after PTT-mode runs.** Both only appear when the test sender holds PTT. The operator
    uses MIDI PTT with CW daily without either. Treated as a fault in the test sender (MIDI stream / timing assumptions) to be fixed before

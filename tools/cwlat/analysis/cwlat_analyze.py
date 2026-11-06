@@ -239,7 +239,7 @@ def load_trials(path):
     return out
 
 
-def analyse_run(d, plot=False, cold_ms=400.0, verbose=False):
+def analyse_run(d, plot=False, cold_ms=400.0, verbose=False, keep=False):
     name = os.path.basename(d.rstrip("/"))
     meta = json.load(open(os.path.join(d, name + ".meta.json")))
     ev = load_events(os.path.join(d, name + ".events.csv"))
@@ -342,6 +342,8 @@ def analyse_run(d, plot=False, cold_ms=400.0, verbose=False):
     info = dict(name=name, path=path_, key=key, mode=mode, q=q, test=test, wpm=wpm, dot_ms=dot)
     if plot:
         make_plot(d, name, env, kt, fs, segs, tp, tr_rel, out)
+    if keep:
+        return info, out, quality, segs, dict(z=z, f0=f0, kt=kt, env=env, fs=fs)
     return info, out, quality, segs
 
 
