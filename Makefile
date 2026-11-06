@@ -1103,7 +1103,7 @@ src/pipewire.o: src/audio.h src/receiver.h src/transmitter.h
 src/pipewire.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/pipewire.o: src/message.h src/radio.h src/adc.h src/discovered.h
 src/pipewire.o: src/vfo.h src/atomic.h src/sidetone.h
-src/sidetone.o: src/sidetone.h src/message.h
+src/sidetone.o: src/sidetone.h
 src/portaudio.o: src/atomic.h src/audio.h src/receiver.h src/transmitter.h
 src/portaudio.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/portaudio.o: src/message.h src/radio.h src/adc.h src/discovered.h

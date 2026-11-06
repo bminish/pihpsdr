@@ -1,6 +1,23 @@
-# CW keying latency, jitter and clipping - measurements of 2026-11-06
+# CW keying latency, jitter and clipping - findings of 2026-11-06
 
-Branch `test/sidetone`. Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis).
+## Summary
+* **Where the delay was.** On the test machine the PipeWire graph ran at 1024 frames although pihpsdr asked for 256 (the USB sink was the
+  driver); the sidetone then waited 21 ms for a cycle plus the sink's own 512-sample headroom, plus the 6.7-8 ms side tone FIFO in `pipewire.c`.
+  Forcing the quantum (`clock.force-quantum`) made the sidetone "much tighter".
+* **What the patch does.** The local side tone is generated inside the PipeWire output callback instead of being queued through the FIFO
+  (`docs/synth-sidetone/README.md`). Key-to-sink delay falls by about **8 ms at every quantum** (warm taps, measured at the sink monitor):
+  13.2 -> 5.0 ms at 64, 15.0 -> 7.0 at 128, 19.0 -> 10.9 at 256. Element lengths are unchanged (counted in output samples).
+* **RF is not affected by the audio path or quantum:** MIDI press to RF carrier is 22.5 ms (sd 0.6-0.9) in every combination.
+  The sidetone therefore leads the RF by 12-18 ms with the patch, but lags it by 4.5 ms on the old path at quantum 256 (estimated at the ear).
+* **Break-in costs more than the audio path.** The first element after a pause starts about 21 ms late (RX->TX), and a straight key then loses
+  that time from the front of the element (**20 ± 8 ms shorter, worst 45 ms**). Taps shorter than the switch-over are lost altogether.
+* **Keying shape is clean:** the RF edge is the designed DL1YCF 9 ms ramp to within 0.5 % rms; shortened elements are normal elements that
+  start late, not hard-cut; no chirp, ripple 0.3 %. The wideband (key-click) level could not be quantified with these captures (see below).
+* **Recommendation.** Use the synth side tone at quantum 128 (about 6 ms earlier than the old path at 256 and 4 ms earlier than the old path at 128
+  at the sink; no drop-outs on the test machine). Fix the break-in start (clipped first element, lost short taps) in the keyer; that is a
+  larger effect than anything in the audio path.
+
+Branch `test/sidetone`, patch branch `feature/synth-sidetone`. Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis).
 Setup: pihpsdr (this branch) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
 MIDI notes through a VirMIDI port (CWL 21 / CWR 20 / PTT 22); the RF is recorded by a GPS-disciplined KiwiSDR
 (IQ, GNSS time-stamps) and the sidetone at the PipeWire sink monitor. 22 wpm, Iambic B and straight key,

@@ -57,4 +57,4 @@ tool sends.
 `cwlat_analyze.py` puts the Kiwi IQ on UTC from the GNSS stamps, finds the keyed carrier by correlating power with the times keyed,
 and matches RF elements to the MIDI events: latency, jitter, element length against commanded or nominal (truncation / clipping),
 rise / fall time, missing and extra elements, and the RF-versus-sidetone offset. Quarantined runs (`_invalid*`) are skipped.
-Results are summarised in `docs/cwlat-findings.md`.
+Results are summarised in `docs/synth-sidetone/findings.md`.

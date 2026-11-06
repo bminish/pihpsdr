@@ -198,7 +198,7 @@ void audio_get_cards() {
 
 //
 // Local CW side tone synthesised in the output callback (see sidetone.c and
-// docs/design-callback-sidetone.md). Used only for the active receiver.
+// docs/synth-sidetone/design.md). Used only for the active receiver.
 //
 #define SYNTH_MAX 4096
 static double synth_buf[SYNTH_MAX];

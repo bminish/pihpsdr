@@ -1,6 +1,6 @@
 # Design: synthesise the local CW sidetone in the PipeWire callback
 
-Status: **proposal for review - no code written.**
+Status: implemented as a prototype - see README.md in this directory. This is the original design; 4.1 and 4.5 were revised after testing.
 Scope: local sidetone on the PipeWire audio module only (first step).
 
 ## 1. Problem
