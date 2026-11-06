@@ -94,8 +94,9 @@ typedef struct {
 } EVENT;
 
 typedef struct {
-  int    kind;        // 0 straight, 1 dit, 2 dah, 3 squeeze
+  int    kind;        // 0 straight, 1 dit, 2 dah, 3 squeeze, 4 hang (pairs of dit taps)
   double hold;        // ms
+  double gap;         // hang test: time between the keyer finishing the previous tap and this tap, ms (0 otherwise)
   int    ev_press;    // index of the first press event
   int    ev_release;  // index of the release event of the primary key
 } TRIAL;
@@ -128,7 +129,8 @@ static int cmp_ev(const void *a, const void *b) {
 static double build_schedule(void) {
   static const double tap_holds[] = {20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140};
   static const double sq_holds[] = {40, 60, 80, 100, 140, 200};
-  int kind = !strcmp(opt_test, "straight") ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : 3;
+  int kind = !strcmp(opt_test, "straight") ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : !strcmp(opt_test, "hang") ? 4 : 3;
+  double press_prev = 0.0, pending_gap = 0.0;
   double t = 0.0;
   tr = calloc(opt_trials, sizeof(TRIAL));
   if (opt_ptt) {
@@ -151,6 +153,9 @@ static double build_schedule(void) {
     case 2:
       hold = tap_holds[(i * 7) % 12];
       break;
+    case 4:
+      hold = 40.0;
+      break;
     default:
       hold = sq_holds[(i * 5) % 6];
       break;
@@ -162,7 +167,7 @@ static double build_schedule(void) {
       last = t + hold / 1000.0;
       T->ev_press = e1;
       T->ev_release = e2;
-    } else if (kind == 1) {
+    } else if (kind == 1 || kind == 4) {
       e1 = add_event(t, NOTE_CWL, 1);
       e2 = add_event(t + hold / 1000.0, NOTE_CWL, 0);
       last = t + hold / 1000.0;
@@ -182,10 +187,26 @@ static double build_schedule(void) {
     // gap to the next trial: usually short (keyer still hanging in TX), sometimes a long
     // pause after which break-in has to go to TX again
     //
-    double settle = kind == 0 ? 0.05 : kind == 1 ? 0.25 : kind == 2 ? 0.35 : 0.80;
-    double gap = settle + uni(0.0, 0.15);
-    if (!opt_ptt && urand() < opt_pause_frac) { gap = uni(0.9, 1.6); }
-    t = last + gap;
+    if (kind == 4) {
+      //
+      // hang test: even trials follow a long pause (TX has dropped); odd trials come D ms after the keyer
+      // has finished the preceding dit (press + dot + gap) - the keyer's hang time counts from there
+      //
+      double two_dots = 2.0 * 1.2 / opt_wpm;          // seconds: dot + inter-element gap
+      if (i % 2 == 0) {
+        press_prev = t;
+        pending_gap = 100.0 + 50.0 * ((i / 2) % 27);  // 100 .. 1400 ms
+        t = press_prev + two_dots + pending_gap / 1000.0;
+      } else {
+        T->gap = pending_gap;
+        t = last + 2.5;
+      }
+    } else {
+      double settle = kind == 0 ? 0.05 : kind == 1 ? 0.25 : kind == 2 ? 0.35 : 0.80;
+      double gap = settle + uni(0.0, 0.15);
+      if (!opt_ptt && urand() < opt_pause_frac) { gap = uni(0.9, 1.6); }
+      t = last + gap;
+    }
   }
   cur_trial = -1;
   if (opt_ptt) { add_event(t + 0.8, NOTE_PTT, 0); }
@@ -535,7 +556,7 @@ static void analyse(void) {
       stats_line("release -> tone off, 50% point (ms)", v, n);
     }
   }
-  if (tr[0].kind != 0) {
+  if (tr[0].kind != 0 && tr[0].kind != 4) {
     printf("-- elements produced per tap, by hold time (keyer repeat point)\n");
     printf("  hold ms | trials | 1 elem | 2 elem | 3+ elem | dropped | mean onset lat (ms)\n");
     double hs[16];
@@ -561,14 +582,49 @@ static void analyse(void) {
       printf("  %7.0f | %6d | %6d | %6d | %7d | %7d | %8.2f\n", hs[j], t, e1, e2, e3, dr, nl ? sl / nl : 0.0);
     }
   }
+  if (tr[0].kind == 4) {
+    //
+    // latency of the 2nd tap of each pair against D. The 1st tap of each pair follows a long pause and shows the
+    // delay of a cold start. The effective hang time is the D at which the 2nd tap starts to show it too.
+    //
+    double dd[64]; int nd = 0;
+    for (int i = 1; i < ntr; i += 2) {
+      int f = 0;
+      for (int j = 0; j < nd; j++) if (dd[j] == tr[i].gap) { f = 1; }
+      if (!f && nd < 64) { dd[nd++] = tr[i].gap; }
+    }
+    qsort(dd, nd, sizeof(double), cmp_d);
+    double cold_sum = 0; int cold_n = 0;
+    for (int i = 0; i < ntr; i += 2) { if (!R[i].dropped) { cold_sum += R[i].lat50; cold_n++; } }
+    double warm_sum = 0; int warm_n = 0;
+    for (int i = 1; i < ntr; i += 2) { if (!R[i].dropped && tr[i].gap <= 200.0) { warm_sum += R[i].lat50; warm_n++; } }
+    double cold_ref = cold_n ? cold_sum / cold_n : 0.0, warm_ref = warm_n ? warm_sum / warm_n : 0.0;
+    printf("-- hang time: 2nd tap against D (D counts from the end of the previous element and its gap, in ms)\n");
+    printf("  reference: first tap after a long pause (cold) %.1f ms (n=%d), 2nd tap with D<=200 ms (warm) %.1f ms (n=%d)\n", cold_ref, cold_n, warm_ref, warm_n);
+    printf("  D ms | n | mean lat50 (ms) | min .. max | cold-like (lat > warm+10) | dropped\n");
+    double est = -1.0;
+    for (int j = 0; j < nd; j++) {
+      int n_ = 0, cl = 0, dr = 0; double sm = 0, mn = 1e9, mx = -1e9;
+      for (int i = 1; i < ntr; i += 2) {
+        if (tr[i].gap != dd[j]) { continue; }
+        if (R[i].dropped) { dr++; continue; }
+        n_++; sm += R[i].lat50; if (R[i].lat50 < mn) { mn = R[i].lat50; } if (R[i].lat50 > mx) { mx = R[i].lat50; }
+        if (R[i].lat50 > warm_ref + 10.0) { cl++; }
+      }
+      printf("  %5.0f | %d | %8.1f | %6.1f .. %6.1f | %d of %d | %d\n", dd[j], n_, n_ ? sm / n_ : 0.0, n_ ? mn : 0.0, n_ ? mx : 0.0, cl, n_, dr);
+      if (est < 0 && n_ && 2 * cl >= n_) { est = dd[j]; }
+    }
+    if (est >= 0) { printf("  => the radio has dropped out of TX when the next tap comes %.0f ms after the keyer finished (effective hang)\n", est); }
+    else { printf("  => no cold-like second taps up to the largest D: effective hang is longer than the range tested\n"); }
+  }
   if (opt_csv) {
     FILE *f = fopen(opt_csv, "w");
     if (f) {
-      fprintf(f, "label,test,ptt,trial,kind,hold_ms,lat10_ms,lat50_ms,nel,len0_ms,len1_ms,len2_ms,len3_ms,off_lat_ms,idle_ms,cold,dropped\n");
+      fprintf(f, "label,test,ptt,trial,kind,hold_ms,lat10_ms,lat50_ms,nel,len0_ms,len1_ms,len2_ms,len3_ms,off_lat_ms,idle_ms,cold,dropped,gap_ms\n");
       for (int i = 0; i < ntr; i++) {
-        fprintf(f, "%s,%s,%d,%d,%d,%.2f,%.3f,%.3f,%d,%.2f,%.2f,%.2f,%.2f,%.3f,%.1f,%d,%d\n", opt_label, opt_test, opt_ptt, i, R[i].kind,
+        fprintf(f, "%s,%s,%d,%d,%d,%.2f,%.3f,%.3f,%d,%.2f,%.2f,%.2f,%.2f,%.3f,%.1f,%d,%d,%.0f\n", opt_label, opt_test, opt_ptt, i, R[i].kind,
                 R[i].hold, R[i].lat10, R[i].lat50, R[i].nel, R[i].len[0], R[i].len[1], R[i].len[2], R[i].len[3], R[i].offlat,
-                R[i].idle > 1e8 ? -1.0 : R[i].idle, R[i].cold, R[i].dropped);
+                R[i].idle > 1e8 ? -1.0 : R[i].idle, R[i].cold, R[i].dropped, tr[i].gap);
       }
       fclose(f);
       printf("per-trial results written to %s\n", opt_csv);
@@ -662,10 +718,11 @@ static void write_events(void) {
 /* ------------------------------------------------------------------------ main */
 
 static void usage(void) {
-  printf("usage: cwlat --confirm-safe --sink NODE --test straight|dit|dah|squeeze [options]\n"
+  printf("usage: cwlat --confirm-safe --sink NODE --test straight|dit|dah|squeeze|hang [options]\n"
          "  --sink NAME       PipeWire sink piHPSDR plays to (its monitor is captured)\n"
          "  --dest C:P        ALSA seq destination, default 32:0 (VirMIDI 4-0)\n"
-         "  --test T          straight: CWR held; dit: CWL tap; dah: CWR tap; squeeze: both\n"
+         "  --test T          straight: CWR held; dit: CWL tap; dah: CWR tap; squeeze: both;\n"
+         "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time)\n"
          "  --trials N        default 120\n"
          "  --wpm N           keyer speed set in piHPSDR (for nominal lengths), default 22\n"
          "  --freq HZ         sidetone frequency, default 550\n"
@@ -711,7 +768,7 @@ int main(int argc, char **argv) {
     }
   }
   rng_state ^= opt_seed * 0x9E3779B97F4A7C15ULL;
-  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze"))) {
+  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze") && strcmp(opt_test, "hang"))) {
     usage();
     return 1;
   }
