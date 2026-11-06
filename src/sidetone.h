@@ -19,39 +19,30 @@
 #define _SIDETONE_H
 
 //
-// Local CW side tone synthesised in the audio output callback.
-// See docs/design-callback-sidetone.md.
+// Local CW side tone synthesised in the audio output callback (see docs/synth-sidetone/README.md).
 //
-// This module deliberately knows nothing about the radio: frequency and
-// amplitude are passed in by the caller, so it can be tested stand-alone.
+// The module knows nothing about the radio: frequency and amplitude are passed in by the caller, so it can
+// be tested stand-alone (test/sidetone/test_sidetone.c).
 //
 
 //
-// Producer side. Same arguments as tx_queue_cw_event(): "wait" is in 1/48000 sec
-// and is counted from the previous event being executed. "now" (sidetone_queue_at)
-// is only used for statistics.
+// Producer side. Same arguments as tx_queue_cw_event(): "wait" is in 1/48000 sec and is counted from the
+// previous event being executed. Callable from the threads that call tx_queue_cw_event().
 //
 extern void sidetone_queue(int down, int wait);
-extern void sidetone_queue_at(int down, int wait, double now);
 
 //
 // Consumer side (audio callback thread only).
 //
-// sidetone_render() writes n samples. Waits are counted in output samples, so the
-// timing of the callbacks has no influence on element lengths. "t0" (CLOCK_MONOTONIC
-// seconds at the start of the callback) is only used for statistics.
-// "amp" is the full amplitude (the product of volume and device factors).
+// sidetone_render() writes n samples. The waits are counted in output samples, so the timing of the callbacks
+// has no influence on the lengths of the elements. "amp" is the full amplitude (the product of volume and
+// device factors).
 //
-extern void sidetone_render(double *out, int n, double t0, int freq, double amp);
+extern void sidetone_render(double *out, int n, int freq, double amp);
 
 //
 // Drop all queued events and release the key. Called when not transmitting CW.
 //
 extern void sidetone_reset(void);
-
-//
-// CLOCK_MONOTONIC in seconds.
-//
-extern double sidetone_now(void);
 
 #endif

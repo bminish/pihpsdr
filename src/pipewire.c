@@ -25,7 +25,6 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <time.h>
 #include <stdatomic.h>
 
 #include <pipewire/pipewire.h>
@@ -93,49 +92,6 @@ struct audio_data_ {
 
 typedef struct audio_data_ audio_data;
 
-#ifdef CWDEBUG
-//
-// Sidetone buffer measurement (CWDEBUG builds only).
-// Nothing is printed from the audio threads: one record per tone is put into a
-// small ring and drained by a GLib timer in the main thread.
-//   onset_fill  : samples queued in st_buffer when the first tone sample is written,
-//                 that is, the delay (in samples) this tone sits behind
-//   min_fill    : lowest fill seen right after a PipeWire callback during the tone
-//                 (the safety margin against an underrun)
-//   underruns   : callback found st_buffer empty while a tone was playing
-//
-typedef struct {
-  int onset_fill;
-  int min_fill;
-  int underruns;
-  int cbs;
-  int nframes;
-  int tone_samples;
-} CWDBG_REC;
-#define CWDBG_N 128
-static CWDBG_REC cwdbg_rec[CWDBG_N];
-static volatile int cwdbg_in = 0;
-static volatile int cwdbg_out = 0;
-static volatile int dbg_in_tone = 0;
-static volatile int dbg_onset_fill = 0;
-static volatile int dbg_min_fill = 0;
-static volatile int dbg_under = 0;
-static volatile int dbg_cbs = 0;
-static volatile int dbg_nframes = 0;
-static volatile int dbg_tone_samples = 0;
-static guint dbg_timer = 0;
-
-static int cwdbg_drain(gpointer data) {
-  while (cwdbg_out != cwdbg_in) {
-    CWDBG_REC *r = &cwdbg_rec[cwdbg_out];
-    t_print("CWDBG tone: onset_fill=%d (%.1f ms) min_fill=%d (%.1f ms) underruns=%d callbacks=%d nframes=%d len=%.1f ms\n",
-            r->onset_fill, r->onset_fill / 48.0, r->min_fill, r->min_fill / 48.0, r->underruns, r->cbs, r->nframes,
-            r->tone_samples / 48.0);
-    cwdbg_out = (cwdbg_out + 1) % CWDBG_N;
-  }
-  return TRUE;
-}
-#endif
 
 static void on_discovery_timeout(void *data, uint64_t expirations) {
   struct pw_main_loop *loop = data;
@@ -291,9 +247,7 @@ static void pw_out_cb(void *data) {
       if (vol == 0 && CAT_cw_is_active) { vol = 12; }
       // Same amplitude rules as the TX engine: Saturn full scale, others 0.25
       double amp = (device == NEW_DEVICE_SATURN ? 0.00786 : 0.00196) * vol;
-      struct timespec ts;
-      clock_gettime(CLOCK_MONOTONIC, &ts);
-      sidetone_render(synth_buf, (int) n_frames, ts.tv_sec + 1.0E-9 * ts.tv_nsec, cw_keyer_sidetone_frequency, amp);
+      sidetone_render(synth_buf, (int) n_frames, cw_keyer_sidetone_frequency, amp);
       synth = 1;
     } else {
       sidetone_reset();
@@ -322,23 +276,10 @@ static void pw_out_cb(void *data) {
       MEMORY_BARRIER;
       ad->st_buffer_outpt = (oldpt + 1) & ST_BUFFER_MASK;
     }
-#ifdef CWDEBUG
-    else if (dbg_in_tone) {
-      dbg_under++;
-    }
-#endif
     if (synth) { st_sample += synth_buf[i]; }
     samples[i * 2] = (float)(rx_left + st_sample);
     samples[i * 2 + 1] = (float)(rx_right + st_sample);
   }
-#ifdef CWDEBUG
-  if (dbg_in_tone) {
-    int fill = (ad->st_buffer_inpt - ad->st_buffer_outpt) & ST_BUFFER_MASK;
-    if (fill < dbg_min_fill) { dbg_min_fill = fill; }
-    dbg_cbs++;
-    dbg_nframes = (int) n_frames;
-  }
-#endif
   buf->datas[0].chunk->offset = 0;
   buf->datas[0].chunk->size = n_frames * 2 * sizeof(float);
   buf->datas[0].chunk->stride = 2 * sizeof(float);
@@ -438,9 +379,6 @@ int audio_open_output(RECEIVER *rx) {
     usleep(50000);
   }
   audio_data *ad = g_new(audio_data, 1);
-#ifdef CWDEBUG
-  if (!dbg_timer) { dbg_timer = g_timeout_add(500, cwdbg_drain, NULL); }
-#endif
   if (ad == NULL) { return -1; }
   ad->audio_buffer = g_new(double, 2 * RING_BUFFER_SIZE);
   ad->st_buffer = g_new(double, ST_BUFFER_SIZE);
@@ -827,33 +765,8 @@ void tx_audio_write(RECEIVER *rx, double sample) {
     avail = CW_LAT_TARGET;
   }
   if (sample != 0.0) { ad->cwcount = 0; }
-#ifdef CWDEBUG
-  if (sample != 0.0 && !dbg_in_tone) {
-    dbg_onset_fill = avail;
-    dbg_min_fill = avail;
-    dbg_under = 0;
-    dbg_cbs = 0;
-    dbg_tone_samples = 0;
-    dbg_in_tone = 1;
-  }
-  if (dbg_in_tone) { dbg_tone_samples++; }
-#endif
   if (++ad->cwcount > 16) {
     ad->cwcount = 0;
-#ifdef CWDEBUG
-    if (dbg_in_tone) {
-      int n = cwdbg_in;
-      cwdbg_rec[n].onset_fill = dbg_onset_fill;
-      cwdbg_rec[n].min_fill = dbg_min_fill;
-      cwdbg_rec[n].underruns = dbg_under;
-      cwdbg_rec[n].cbs = dbg_cbs;
-      cwdbg_rec[n].nframes = dbg_nframes;
-      cwdbg_rec[n].tone_samples = dbg_tone_samples - 16;
-      MEMORY_BARRIER;
-      cwdbg_in = (n + 1) % CWDBG_N;
-      dbg_in_tone = 0;
-    }
-#endif
     //
     // We arrive here if we have seen 16 zero samples in a row.
     //

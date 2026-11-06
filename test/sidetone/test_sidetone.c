@@ -58,12 +58,12 @@ static void run(const char *name, double jit, double spike_ms, int spike_every) 
     double t0 = (double) n * NQ / FS + j;
     while (next < nelem && start[next] <= t0) {
       // the keyer queues down, up(dot), up(dot) all at once
-      sidetone_queue_at(1, 0, start[next]);
-      sidetone_queue_at(0, dot, start[next]);
-      sidetone_queue_at(0, dot, start[next]);
+      sidetone_queue(1, 0);
+      sidetone_queue(0, dot);
+      sidetone_queue(0, dot);
       next++;
     }
-    sidetone_render(buf, NQ, t0, 12000, 1.0);   // 12 kHz = quarter of fs: 0,1,0,-1
+    sidetone_render(buf, NQ, 12000, 1.0);   // 12 kHz = quarter of fs: 0,1,0,-1
     for (int k = 0; k < NQ; k++) { out[n * NQ + k] = buf[k]; }
   }
   // find 50 % crossings of the envelope, 4-sample window
