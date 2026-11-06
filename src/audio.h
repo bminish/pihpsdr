@@ -56,6 +56,13 @@ extern int audio_open_output(RECEIVER *rx);
 extern void audio_close_output(RECEIVER *rx);
 extern void audio_write(RECEIVER *rx, double left, double right);
 extern void tx_audio_write(RECEIVER *rx, double sample);
+#ifdef PIPEWIRE
+//
+// Non-zero if the local CW side tone is synthesised in the PipeWire output callback
+// (see sidetone.c). Then the TX engine does not feed the side tone through tx_audio_write.
+//
+extern int audio_synth_sidetone(void);
+#endif
 extern void audio_get_cards(void);
 extern double audio_get_next_mic_sample(TRANSMITTER *tx);
 #endif
