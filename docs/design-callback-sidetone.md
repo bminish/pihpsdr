@@ -48,18 +48,19 @@ Expected result: FIFO delay 6.7-8 ms -> at most one callback, 1.3 ms at quantum 
 
 ## 4. Proposed design
 
-### 4.1 Absolute-time event queue
-In `tx_queue_cw_event` also push to a second ring of `{double due, uint8 state}`, with
+### 4.1 Event queue (revised after the stand-alone test)
+`tx_queue_cw_event` also pushes `{state, wait}` to a second ring, read by the renderer. The renderer counts
+`wait` in **output samples from the previous event actually being executed**, exactly as the TX engine does.
 
-    due_i = max(t_queued_i, due_{i-1} + wait_i / 48000)
-
-(`CLOCK_MONOTONIC`). This reproduces the engine's schedule: an event runs when it is queued and its wait has
-elapsed. The existing ring and the RF path are untouched.
+The first draft of this design stamped events with absolute `CLOCK_MONOTONIC` due times. The unit test
+(`test/sidetone/test_sidetone.c`) showed that this makes every element 0-1.3 ms short (mean -34 samples,
+sd 19), because the key-down is held until the next callback while the key-up lands on its exact time.
+Counting waits in output samples removes that: element length error is constant (-2 samples, the edge
+detector) with a spread of <= 19 us even with +-3 ms callback jitter or 5 ms spikes.
 
 ### 4.2 Renderer
 A small module (`sidetone.c/.h`, name open) holding: frequency, volume, the ramp table, phase accumulator, ramp
-position, and the absolute-time ring. `sidetone_render(float *out, int n, double t0)` evaluates the key state for
-frame k at `t0 + k/48000`, steps the ramp, multiplies by the sine, and returns n samples.
+position, and the event ring. `sidetone_render(double *out, int n, ...)` executes due events per sample, steps the ramp, multiplies by the sine, and returns n samples.
 The amplitude rules move here unchanged: 0.00196 * vol (0.00786 on Saturn), minimum vol 12 for CAT CW.
 
 ### 4.3 PipeWire callback
@@ -72,12 +73,12 @@ Render only while transmitting in a CW mode, as the engine does. Reset the absol
 TX (mirrors the `keydown = 0; ring reset` branch). Keep the 20 s key-down protection.
 
 ### 4.5 Time base
-Simplest: `t0` = `CLOCK_MONOTONIC` at callback entry. Edge position then jitters by the callback's scheduling
-jitter (probably well under 1 ms against 54 ms elements, not measured). Better: derive `t0` from
-`pw_stream_get_time_n()` so edges follow the stream clock. To be checked against PipeWire 1.6.
+Not needed for timing: element lengths and gaps are counted in output samples. The callback entry time is only
+passed in for CWDEBUG statistics. Event onset is quantised to the callback: 0-1 callback (mean 0.7 ms at 64
+frames).
 
 ### 4.6 Switch
-A property selects old path or new, so the operator can A/B by ear. Default old until verified.
+Property `cw_sidetone_synth` (CW menu checkbox "Synth sidetone", PipeWire builds only) selects old or new path, so the operator can A/B by ear. Default off.
 
 ## 5. What does not change
 

@@ -209,6 +209,7 @@ int cw_keyer_internal = 1;             // 0=external 1=internal
 int cw_keyer_sidetone_volume = 50;     // 0-127
 int cw_keyer_ptt_delay = 30;           // 0-255ms
 int cw_keyer_hang_time = 500;          // ms
+int cw_sidetone_synth = 0;             // 1: synthesise local side tone in the audio callback (PipeWire)
 int cw_keyer_sidetone_frequency = 800; // Hz
 int cw_breakin = 1;                    // 0=disabled 1=enabled
 int cw_ramp_width = 9;                 // default value (in ms)
@@ -3523,6 +3524,7 @@ static void radio_restore_state(void) {
   GetPropI0("cw_keyer_sidetone_volume",                      cw_keyer_sidetone_volume);
   GetPropI0("cw_keyer_ptt_delay",                            cw_keyer_ptt_delay);
   GetPropI0("cw_keyer_hang_time",                            cw_keyer_hang_time);
+  GetPropI0("cw_sidetone_synth",                             cw_sidetone_synth);
   GetPropI0("cw_breakin",                                    cw_breakin);
   //
   // Client/Server: these are handled on the client or not handled at all.
@@ -3774,6 +3776,7 @@ void radio_save_state(void) {
   SetPropI0("cw_keyer_sidetone_volume",                      cw_keyer_sidetone_volume);
   SetPropI0("cw_keyer_ptt_delay",                            cw_keyer_ptt_delay);
   SetPropI0("cw_keyer_hang_time",                            cw_keyer_hang_time);
+  SetPropI0("cw_sidetone_synth",                             cw_sidetone_synth);
   SetPropI0("cw_breakin",                                    cw_breakin);
   //
   // Client/Server: these are handled on the client or not handled at all.

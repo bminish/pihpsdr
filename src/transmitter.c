@@ -45,6 +45,9 @@
 #include "receiver.h"
 #include "sintab.h"
 #include "sliders.h"
+#ifdef PIPEWIRE
+#include "sidetone.h"
+#endif
 #ifdef SOAPYSDR
   #include "soapy_protocol.h"
 #endif
@@ -1744,6 +1747,12 @@ void tx_queue_cw_event(int down, int wait) {
   // If buffer is nearly full, only queue key-up events
   // Do this also in the client (side tone generation)
   //
+#ifdef PIPEWIRE
+  //
+  // Local side tone synthesised in the audio callback gets its own copy of the event
+  //
+  if (audio_synth_sidetone()) { sidetone_queue(down, wait); }
+#endif
   int num, newpt;
   num = (cw_ring_inpt - cw_ring_outpt) & CW_RING_MASK;
   //
@@ -1890,6 +1899,7 @@ void tx_add_mic_sample(TRANSMITTER *tx, double mic_sample) {
   int xmit = radio_is_transmitting();
   int can_tx_audio = xmit && !duplex;
   int did_tx_audio = 0;
+  int synth_sidetone = 0;
   double tx_audio_sample = 0.0;
   if (can_tx_audio && transmitter->audiomonitor ) {
     //
@@ -1952,6 +1962,14 @@ void tx_add_mic_sample(TRANSMITTER *tx, double mic_sample) {
     //
     tx_audio_sample = next_cw_sidetone_sample(tx, rfpos);
     if (!duplex) { did_tx_audio = 1; }
+#ifdef PIPEWIRE
+    //
+    // The local side tone is rendered by the audio callback. Still call tx_audio_write()
+    // with silence so the RX/TX transition handling in the audio module is unchanged.
+    // The side tone sample is still used for the radio (P1/P2 side tone).
+    //
+    if (audio_synth_sidetone()) { synth_sidetone = 1; }
+#endif
   } else {
     //
     //  If no longer tuning or transmitting in CW: reset pulse shaper
@@ -1963,7 +1981,7 @@ void tx_add_mic_sample(TRANSMITTER *tx, double mic_sample) {
   }
   if (did_tx_audio) {
     if (active_receiver->local_audio) {
-      tx_audio_write(active_receiver, tx_audio_sample);
+      tx_audio_write(active_receiver, synth_sidetone ? 0.0 : tx_audio_sample);
     }
     switch (protocol) {
     case NEW_PROTOCOL:
