@@ -405,12 +405,12 @@ static void find_segments(int *ok) {
   double *sub = malloc((N / step + 1) * sizeof(double));
   for (size_t i = 0; i < N; i += step) { sub[m++] = env[i]; }
   qsort(sub, m, sizeof(double), cmp_d);
-  double P = sub[(size_t)(0.995 * (m - 1))], med = sub[m / 2];
+  double P = sub[(size_t)(0.995 * (m - 1))], med = sub[m / 10];   // noise floor: 10th percentile (the median is tone when the duty cycle exceeds 50 %)
   free(sub);
   *ok = (P > 1e-5 && P > 8.0 * med);
   if (!*ok) {
     free(I); free(Q); free(env);
-    fprintf(stderr, "cwlat: no sidetone found at %d Hz (peak %.3g, median %.3g)\n", opt_freq, P, med);
+    fprintf(stderr, "cwlat: no sidetone found at %d Hz (peak %.3g, noise floor %.3g)\n", opt_freq, P, med);
     return;
   }
   double T50 = 0.5 * P, T10 = 0.1 * P;
