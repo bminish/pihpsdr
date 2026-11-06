@@ -40,3 +40,12 @@ quantum is set by the script with `clock.force-quantum` and restored at the end.
   USB-MIDI hop of the real controller.
 * "warm" = first tone came within `--cold-ms` of the previous tone; "cold" = first element after a pause.
 * Run the selftest after any change to the analysis: it must show lat10 about 6.9 ms and lat50 about 8.5 ms.
+
+## Known issue: PTT-mode runs leave pihpsdr's PTT stuck
+Runs with `--ptt` (PTT held by MIDI note 22 while paddle notes are sent) leave pihpsdr's PTT asserted
+afterwards (seen 2026-11-06). A PTT-only press/release does not, and break-in runs never do. Operators use
+MIDI PTT with CW daily without it sticking, so the fault is in this tool's MIDI output (assumptions about
+the message stream, event spacing, release order, or a race), not in pihpsdr. **Fix this before further
+PTT-mode testing.** Until then clear PTT by hand after each PTT-mode run. Suggested first step: record the
+real controller's bytes (`amidi -p hw:3,0,0 -d`) for a PTT + paddle sequence and compare with what this
+tool sends.
