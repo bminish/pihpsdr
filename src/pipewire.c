@@ -58,14 +58,17 @@
 #define CW_LAT_HIGH        448   // sidetone high water mark
 
 //
-// The Pipewire "Quantum" (number of samples to be transferred in one callback)
-// is now set to 256 both for capture and playback.
-// There have been reports that a value of 128 (previously used for playback)
-// leads to frequent audio drop-outs with HDMI audio on some LINUX boxes.
+// The Pipewire "Quantum" (number of samples to be transferred in one callback).
+// Upstream uses 256 both for capture and playback; there have been reports that 128 for
+// playback (used earlier) leads to frequent audio drop-outs with HDMI audio on some LINUX boxes.
+// LOCAL SETTING: playback 128 (measured on a USB sound card: no drop-outs, side tone 6 ms
+// earlier than at 256 with the synthesised side tone, see docs/synth-sidetone/README.md).
+// Note that PipeWire treats this as a request: the graph quantum is whatever the driver
+// node ends up with, and may have to be forced (docs/synth-sidetone/README.md).
 //
 
 #define PIPEWIRE_QUANTUM_CAPTURE  "256/48000"
-#define PIPEWIRE_QUANTUM_PLAYBACK "64/48000"
+#define PIPEWIRE_QUANTUM_PLAYBACK "128/48000"
 
 int n_input_devices;
 int n_output_devices;
