@@ -49,3 +49,12 @@ the message stream, event spacing, release order, or a race), not in pihpsdr. **
 PTT-mode testing.** Until then clear PTT by hand after each PTT-mode run. Suggested first step: record the
 real controller's bytes (`amidi -p hw:3,0,0 -d`) for a PTT + paddle sequence and compare with what this
 tool sends.
+
+## Analysis of the KiwiSDR captures
+    python3 -I analysis/cwlat_analyze.py run results/<group>/captures/<name> --plot     # one capture
+    python3 -I analysis/cwlat_analyze.py all results/iambicB-subset results/ptt-and-straight --out results/analysis
+    python3 -I analysis/cwlat_report.py results/analysis                                  # repeat curve, cold start, clipping, plots
+`cwlat_analyze.py` puts the Kiwi IQ on UTC from the GNSS stamps, finds the keyed carrier by correlating power with the times keyed,
+and matches RF elements to the MIDI events: latency, jitter, element length against commanded or nominal (truncation / clipping),
+rise / fall time, missing and extra elements, and the RF-versus-sidetone offset. Quarantined runs (`_invalid*`) are skipped.
+Results are summarised in `docs/cwlat-findings.md`.
