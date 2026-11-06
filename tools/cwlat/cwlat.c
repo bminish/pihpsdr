@@ -71,6 +71,7 @@ static const char *opt_dest = "32:0";
 static const char *opt_test = NULL;
 static const char *opt_label = "";
 static const char *opt_csv = NULL;
+static const char *opt_events = NULL;
 static int opt_trials = 120;
 static int opt_wpm = 22;
 static int opt_freq = 550;
@@ -89,6 +90,7 @@ typedef struct {
   double t_send;      // actual CLOCK_MONOTONIC when written (0 = not sent)
   int    note;
   int    on;
+  int    trial;     // trial index, -1 for PTT
 } EVENT;
 
 typedef struct {
@@ -103,6 +105,8 @@ static int nev = 0, evcap = 0;
 static TRIAL *tr = NULL;
 static int ntr = 0;
 
+static int cur_trial = -1;
+
 static int add_event(double t, int note, int on) {
   if (nev >= evcap) {
     evcap = evcap ? 2 * evcap : 1024;
@@ -112,6 +116,7 @@ static int add_event(double t, int note, int on) {
   ev[nev].t_send = 0.0;
   ev[nev].note = note;
   ev[nev].on = on;
+  ev[nev].trial = cur_trial;
   return nev++;
 }
 
@@ -135,6 +140,7 @@ static double build_schedule(void) {
   for (int i = 0; i < opt_trials; i++) {
     double hold, last;
     int e1, e2 = -1, e3 = -1;
+    cur_trial = i;
     TRIAL *T = &tr[ntr++];
     T->kind = kind;
     switch (kind) {
@@ -181,6 +187,7 @@ static double build_schedule(void) {
     if (!opt_ptt && urand() < opt_pause_frac) { gap = uni(0.9, 1.6); }
     t = last + gap;
   }
+  cur_trial = -1;
   if (opt_ptt) { add_event(t + 0.8, NOTE_PTT, 0); }
   // events were added in time order per trial, except squeeze (d offsets): sort them
   // but trial indices must follow, so remember note/time and re-find afterwards
@@ -608,6 +615,50 @@ static void selftest(void) {
   analyse();
 }
 
+
+/* ------------------------------------------------------- wall-clock bookkeeping */
+
+//
+// UTC epoch seconds minus CLOCK_MONOTONIC seconds, taken from the closest of several
+// back-to-back readings. Needed to compare the MIDI send times with external,
+// GPS-time-stamped recordings (KiwiSDR). The system clock should be NTP-synchronised.
+//
+static double real_minus_mono(void) {
+  double best = 1e9, off = 0.0;
+  for (int i = 0; i < 9; i++) {
+    struct timespec a, r, b;
+    clock_gettime(CLOCK_MONOTONIC, &a);
+    clock_gettime(CLOCK_REALTIME, &r);
+    clock_gettime(CLOCK_MONOTONIC, &b);
+    double d = (b.tv_sec - a.tv_sec) + 1e-9 * (b.tv_nsec - a.tv_nsec);
+    if (d < best) {
+      best = d;
+      off = (r.tv_sec + 1e-9 * r.tv_nsec) - ((a.tv_sec + 1e-9 * a.tv_nsec) + 0.5 * d);
+    }
+  }
+  return off;
+}
+
+static double off_start = 0.0, off_end = 0.0;
+
+static void write_events(void) {
+  if (!opt_events) { return; }
+  FILE *f = fopen(opt_events, "w");
+  if (!f) { return; }
+  fprintf(f, "# cwlat events: label=%s test=%s ptt=%d wpm=%d trials=%d\n", opt_label, opt_test, opt_ptt, opt_wpm, ntr);
+  fprintf(f, "# utc_minus_mono_start=%.6f utc_minus_mono_end=%.6f (seconds; utc = mono + offset)\n", off_start, off_end);
+  fprintf(f, "idx,trial,note,on,hold_ms,t_plan_s,t_send_mono_s,t_send_utc_s\n");
+  for (int i = 0; i < nev; i++) {
+    double hold = ev[i].trial >= 0 ? tr[ev[i].trial].hold : 0.0;
+    // interpolate the clock offset over the run
+    double a = ev[nev - 1].t_send > ev[0].t_send ? (ev[i].t_send - ev[0].t_send) / (ev[nev - 1].t_send - ev[0].t_send) : 0.0;
+    double off = off_start + a * (off_end - off_start);
+    fprintf(f, "%d,%d,%d,%d,%.1f,%.6f,%.6f,%.6f\n", i, ev[i].trial, ev[i].note, ev[i].on, hold, ev[i].t_plan,
+            ev[i].t_send, ev[i].t_send > 0 ? ev[i].t_send + off : 0.0);
+  }
+  fclose(f);
+}
+
 /* ------------------------------------------------------------------------ main */
 
 static void usage(void) {
@@ -624,6 +675,7 @@ static void usage(void) {
          "  --cold-ms MS      idle time above which a first element counts as 'cold', default 400\n"
          "  --label TEXT      free text copied to the output\n"
          "  --csv FILE        per-trial results\n"
+         "  --events FILE     every MIDI event with monotonic and UTC send times (for external captures)\n"
          "  --seed N          random seed\n"
          "  --selftest        analysis check on synthetic data (no radio, no MIDI, no PipeWire)\n"
          "  --confirm-safe    required for real runs: PA off, drive zero, operator present\n");
@@ -633,7 +685,7 @@ int main(int argc, char **argv) {
   static struct option lo[] = {
     {"sink", 1, 0, 's'}, {"dest", 1, 0, 'd'}, {"test", 1, 0, 't'}, {"trials", 1, 0, 'n'}, {"wpm", 1, 0, 'w'},
     {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'},
-    {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
+    {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"events", 1, 0, 'E'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
     {"help", 0, 0, 'h'}, {0, 0, 0, 0}
   };
   int c;
@@ -651,6 +703,7 @@ int main(int argc, char **argv) {
     case 'C': opt_cold_ms = atof(optarg); break;
     case 'l': opt_label = optarg; break;
     case 'o': opt_csv = optarg; break;
+    case 'E': opt_events = optarg; break;
     case 'S': opt_seed = strtoull(optarg, NULL, 10); break;
     case 'T': opt_selftest = 1; break;
     case 'y': opt_confirm = 1; break;
@@ -694,6 +747,7 @@ int main(int argc, char **argv) {
   }
   usleep(500000);
   fprintf(stderr, "cwlat: running %d trials (%.0f s)...\n", ntr, span);
+  off_start = real_minus_mono();
   double start = now() + 0.2;
   for (int i = 0; i < nev && !stop_flag; i++) {
     double target = start + ev[i].t_plan;
@@ -706,6 +760,8 @@ int main(int argc, char **argv) {
     ev[i].t_send = midi_send(ev[i].note, ev[i].on);
   }
   release_all();
+  off_end = real_minus_mono();
+  write_events();
   usleep(2000000);
   capture_stop();
   if (atomic_load(&cap_overflow)) { fprintf(stderr, "cwlat: warning: capture buffer overflow, run truncated\n"); }

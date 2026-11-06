@@ -9,10 +9,12 @@
 #                      [--paths synth,old] [--keys straight,iambicA,iambicB]
 #                      [--modes breakin,ptt] [--quanta 64,128,256]
 #                      [--trials 60] [--squeeze-trials 36]
+#                      [--kiwi HOST:PORT --kfreq KHZ]   also record each test on a KiwiSDR (capture_run.sh)
 #
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SINK=""; DEST="32:0"; WPM=22; OUT=""
+KIWI=""; KFREQ=28187
 PATHS="synth,old"; KEYS="straight,iambicA,iambicB"; MODES="breakin,ptt"; QUANTA="64,128,256"
 TRIALS=60; SQTRIALS=36
 while [ $# -gt 0 ]; do
@@ -25,6 +27,8 @@ while [ $# -gt 0 ]; do
     --keys) KEYS="$2"; shift 2;;
     --modes) MODES="$2"; shift 2;;
     --quanta) QUANTA="$2"; shift 2;;
+    --kiwi) KIWI="$2"; shift 2;;
+    --kfreq) KFREQ="$2"; shift 2;;
     --trials) TRIALS="$2"; shift 2;;
     --squeeze-trials) SQTRIALS="$2"; shift 2;;
     *) echo "unknown option $1"; exit 1;;
@@ -44,7 +48,7 @@ trap restore EXIT
 cat <<MSG
 This keys the radio's CW through the virtual MIDI port (and PTT in the 'ptt' groups).
 Before you continue:
-  - PA OFF and TX drive ZERO, radio in a safe state for transmit tests
+  - radio in a safe state for transmit tests (dummy load; drive and PA as you have set them)
   - pihpsdr in CW mode, MIDI device (VirMIDI) enabled in its MIDI menu, keyer speed ${WPM} wpm
   - an operator present for the whole run (Ctrl-C releases every key and PTT)
 Results go to: $OUT
@@ -57,9 +61,16 @@ IFS=, read -ra PA <<< "$PATHS"; IFS=, read -ra KA <<< "$KEYS"; IFS=, read -ra MA
 run() {  # run LABEL FILE test trials [extra]
   local label="$1" file="$2" test="$3" trials="$4"; shift 4
   echo "  -> $test ($trials trials)"
-  "$HERE/cwlat" --confirm-safe --sink "$SINK" --dest "$DEST" --wpm "$WPM" --test "$test" --trials "$trials" \
-      --label "$label" --csv "$OUT/$file.csv" "$@" > "$OUT/$file.txt" 2>"$OUT/$file.err"
-  rc=$?
+  if [ -n "$KIWI" ]; then
+    "$HERE/capture_run.sh" --kiwi "$KIWI" --freq "$KFREQ" --dir "$OUT/captures" --name "$file" --label "$label" -- \
+        --confirm-safe --sink "$SINK" --dest "$DEST" --wpm "$WPM" --test "$test" --trials "$trials" --label "$label" "$@"
+    rc=$?
+    cp "$OUT/captures/$file/$file.cwlat.txt" "$OUT/$file.txt" 2>/dev/null
+  else
+    "$HERE/cwlat" --confirm-safe --sink "$SINK" --dest "$DEST" --wpm "$WPM" --test "$test" --trials "$trials" \
+        --label "$label" --csv "$OUT/$file.csv" "$@" > "$OUT/$file.txt" 2>"$OUT/$file.err"
+    rc=$?
+  fi
   [ $rc -eq 0 ] || echo "     cwlat exit code $rc (see $OUT/$file.err)"
 }
 
