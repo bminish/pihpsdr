@@ -61,8 +61,8 @@
 // The Pipewire "Quantum" (number of samples to be transferred in one callback).
 // Upstream uses 256 both for capture and playback; there have been reports that 128 for
 // playback (used earlier) leads to frequent audio drop-outs with HDMI audio on some LINUX boxes.
-// LOCAL SETTING: playback 128 (measured on a USB sound card: no drop-outs, side tone 6 ms
-// earlier than at 256 with the synthesised side tone, see docs/synth-sidetone/README.md).
+// LOCAL SETTING: playback 128 (measured on a USB sound card: no audible drop-outs, side tone about
+// 4 ms earlier than at 256, see docs/synth-sidetone/README.md).
 // Note that PipeWire treats this as a request: the graph quantum is whatever the driver
 // node ends up with, and may have to be forced (docs/synth-sidetone/README.md).
 //

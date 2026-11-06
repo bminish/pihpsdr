@@ -13,9 +13,7 @@
   that time from the front of the element (**20 ± 8 ms shorter, worst 45 ms**). Taps shorter than the switch-over are lost altogether.
 * **Keying shape is clean:** the RF edge is the designed DL1YCF 9 ms ramp to within 0.5 % rms; shortened elements are normal elements that
   start late, not hard-cut; no chirp, ripple 0.3 %. The wideband (key-click) level could not be quantified with these captures (see below).
-* **Recommendation.** Use the synth side tone at quantum 128 (about 6 ms earlier than the old path at 256 and 4 ms earlier than the old path at 128
-  at the sink; no drop-outs on the test machine). Fix the break-in start (clipped first element, lost short taps) in the keyer; that is a
-  larger effect than anything in the audio path.
+* **Recommendation.** Use the synth side tone at quantum 128: at the sink it is 12 ms earlier than the old path at upstream's 256 (7.0 against 19.0 ms) and 8 ms earlier than the old path at 128 (15.0 ms); 128 itself is about 4 ms earlier than 256 on either path, with no audible drop-outs on the test machine (XRUN counts still to be logged in a steady run). Fix the break-in start (clipped first element, lost short taps) in the keyer; that is a larger effect than anything in the audio path.
 
 Branch `test/sidetone`, patch branch `feature/synth-sidetone`. Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis).
 Setup: pihpsdr (this branch) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
