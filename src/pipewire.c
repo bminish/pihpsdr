@@ -38,6 +38,7 @@
 #include "mode.h"
 #include "radio.h"
 #include "receiver.h"
+#include "sidetone.h"
 #include "transmitter.h"
 #include "vfo.h"
 #include "atomic.h"
@@ -191,6 +192,18 @@ void audio_get_cards() {
   }
 }
 
+//
+// Local CW side tone synthesised in the output callback (see sidetone.c).
+// Used only for the active receiver.
+//
+#define SYNTH_MAX 4096
+static double synth_buf[SYNTH_MAX];
+
+int audio_synth_sidetone(void) {
+  return cw_sidetone_synth && !radio_is_remote && active_receiver != NULL &&
+         active_receiver->local_audio && active_receiver->audio_handle != NULL;
+}
+
 static void pw_out_cb(void *data) {
   RECEIVER *rx = (RECEIVER *) data;
   if (rx == NULL) { return; }
@@ -223,6 +236,22 @@ static void pw_out_cb(void *data) {
   //
   // The existence of buffers is now guaranteed for 50 msec
   //
+  int synth = 0;
+  if (rx == active_receiver) {
+    int txmode = vfo_get_tx_mode();
+    if (cw_sidetone_synth && radio_is_transmitting() && !duplex && (txmode == modeCWL || txmode == modeCWU) &&
+        n_frames <= SYNTH_MAX) {
+      int vol = cw_keyer_sidetone_volume;
+      // Apply a minimum side tone volume for CAT CW messages (as the TX engine does)
+      if (vol == 0 && CAT_cw_is_active) { vol = 12; }
+      // Same amplitude rules as the TX engine: Saturn full scale, others 0.25
+      double amp = (device == NEW_DEVICE_SATURN ? 0.00786 : 0.00196) * vol;
+      sidetone_render(synth_buf, (int) n_frames, cw_keyer_sidetone_frequency, amp);
+      synth = 1;
+    } else {
+      sidetone_idle();
+    }
+  }
   for (unsigned i = 0; i < n_frames; i++) {
     double rx_left = 0.0;
     double rx_right = 0.0;
@@ -246,6 +275,7 @@ static void pw_out_cb(void *data) {
       MEMORY_BARRIER;
       ad->st_buffer_outpt = (oldpt + 1) & ST_BUFFER_MASK;
     }
+    if (synth) { st_sample += synth_buf[i]; }
     samples[i * 2] = (float)(rx_left + st_sample);
     samples[i * 2 + 1] = (float)(rx_right + st_sample);
   }
