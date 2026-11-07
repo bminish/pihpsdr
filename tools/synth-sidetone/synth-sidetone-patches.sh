@@ -54,6 +54,11 @@ check)
     else
       ok=0; echo "  test:    unit test FAILS"; head -5 "$tmp/test.log"
     fi
+    if gcc -O2 -I src -o "$tmp/test_sidetone_idle" test/sidetone/test_sidetone_idle.c src/sidetone.c -lm 2> "$tmp/test2.log" && "$tmp/test_sidetone_idle" > "$tmp/test2.out"; then
+      echo "  test:    idle/start-of-TX test: $(tail -1 "$tmp/test2.out")"
+    else
+      ok=0; echo "  test:    idle/start-of-TX test FAILS"; head -5 "$tmp/test2.log"; grep FAIL "$tmp/test2.out" | head -5
+    fi
   fi
   cd - > /dev/null
   git worktree remove --force "$tmp/tree"
