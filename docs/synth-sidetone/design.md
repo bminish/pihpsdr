@@ -69,8 +69,20 @@ TX monitor and SWR tones. When the renderer is active the engine writes 0.0 inst
 sample to `tx_audio_write()`, so the tone is not played twice. P1/P2 radio sidetone is unchanged.
 
 ### 4.4 Gating
-Render only while transmitting in a CW mode, as the engine does. Reset the absolute-time ring when leaving
-TX (mirrors the `keydown = 0; ring reset` branch). Keep the 20 s key-down protection.
+Render only while transmitting in a CW mode, as the engine does. While not transmitting the callback calls
+`sidetone_idle()`, which releases the key and sets `delay_samples` to its maximum ("long pause", the state in which
+the engine's `cw_delay_time` always is, because the engine counts it also while receiving). Consequences:
+
+* the first event after TX starts is executed at once whatever its `wait` is. `CW_KEYER_KEYDOWN` (MIDI/GPIO
+  external keyer, straight key) sends the gap to the previous event as `wait` (up to 0.5 s); counted again from
+  the start of TX that gap delayed the side tone by up to 0.5 s while the RF keyed on time;
+* events queued shortly before the transmit flag is set are kept. In break-in the key event comes some 20 ms before
+  RX -> TX is complete; an unconditional reset on every receive callback discarded that first key-down, so the
+  local side tone of the first element was missing. The engine keeps its events in its own ring and plays them;
+* events older than 200 ms are dropped (TX never came, wrong mode, duplex), so they cannot start a tone later.
+
+Keep the 20 s key-down protection. Tested by `test/sidetone/test_sidetone_idle.c` (assertions; the first two cases
+fail with the previous behaviour, build with `-DUSE_RESET` to see it).
 
 ### 4.5 Time base
 Not needed for timing: element lengths and gaps are counted in output samples. The callback entry time is only

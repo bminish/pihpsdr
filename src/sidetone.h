@@ -41,8 +41,17 @@ extern void sidetone_queue(int down, int wait);
 extern void sidetone_render(double *out, int n, int freq, double amp);
 
 //
-// Drop all queued events and release the key. Called when not transmitting CW.
+// Drop all queued events and release the key.
 //
 extern void sidetone_reset(void);
+
+//
+// To be called from the audio callback instead of sidetone_render() while not transmitting CW.
+// Releases the key and puts the renderer into the state of a long pause, so the first event after TX starts is
+// executed at once whatever its "wait" is (as in the TX engine). Events that were queued shortly before are
+// kept (break-in: the key event comes ~20 msec before the transmit flag); events older than 200 msec are
+// dropped.
+//
+extern void sidetone_idle(void);
 
 #endif
