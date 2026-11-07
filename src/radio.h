@@ -188,6 +188,7 @@ extern int cw_keyer_internal;
 extern int cw_keyer_sidetone_volume;
 extern int cw_keyer_ptt_delay;
 extern int cw_keyer_hang_time;
+extern int cw_sidetone_synth;
 extern int cw_keyer_sidetone_frequency;
 extern int cw_breakin;
 extern int cw_ramp_width;

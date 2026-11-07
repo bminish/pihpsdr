@@ -306,10 +306,10 @@ ifeq ($(AUDIO), PIPEWIRE)
 AUDIO_OPTIONS=-DPIPEWIRE
 AUDIO_INCLUDE=`$(PKG_CONFIG) --cflags libpipewire-0.3`
 AUDIO_LIBS=`$(PKG_CONFIG) --libs libpipewire-0.3`
-AUDIO_OBJS=src/pipewire.o
+AUDIO_OBJS=src/pipewire.o src/sidetone.o
 endif
 CPP_DEFINES += -DPIPEWIRE
-CPP_SOURCES += src/pipewire.c
+CPP_SOURCES += src/pipewire.c src/sidetone.c
 ifeq ($(LINUX), YES)
 # There are no PipeWire headers on MacOS.
 CPP_INCLUDE += `$(PKG_CONFIG) --cflags libpipewire-0.3`
@@ -1099,7 +1099,8 @@ src/piHPSDR_logo.o: src/message.h
 src/pipewire.o: src/audio.h src/receiver.h src/transmitter.h
 src/pipewire.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/pipewire.o: src/message.h src/radio.h src/adc.h src/discovered.h
-src/pipewire.o: src/vfo.h src/atomic.h
+src/pipewire.o: src/vfo.h src/atomic.h src/sidetone.h
+src/sidetone.o: src/sidetone.h
 src/portaudio.o: src/atomic.h src/audio.h src/receiver.h src/transmitter.h
 src/portaudio.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/portaudio.o: src/message.h src/radio.h src/adc.h src/discovered.h
@@ -1253,7 +1254,7 @@ src/toolbar.o: src/transmitter.h src/toolbar.h
 src/toolbar_menu.o: src/action_dialog.h src/actions.h src/gpio.h
 src/toolbar_menu.o: src/new_menu.h src/radio.h src/adc.h src/discovered.h
 src/toolbar_menu.o: src/receiver.h src/transmitter.h src/toolbar.h
-src/transmitter.o: src/atomic.h src/audio.h src/receiver.h src/transmitter.h
+src/transmitter.o: src/sidetone.h src/atomic.h src/audio.h src/receiver.h src/transmitter.h
 src/transmitter.o: src/band.h src/bandstack.h src/channel.h src/ext.h
 src/transmitter.o: src/client_server.h src/diversity_auto.h src/mode.h
 src/transmitter.o: src/filter.h src/main.h src/meter.h src/message.h
