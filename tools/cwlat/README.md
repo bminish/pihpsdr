@@ -41,6 +41,20 @@ quantum is set by the script with `clock.force-quantum` and restored at the end.
 * "warm" = first tone came within `--cold-ms` of the previous tone; "cold" = first element after a pause.
 * Run the selftest after any change to the analysis: it must show lat10 about 6.9 ms and lat50 about 8.5 ms.
 
+## Hang test (`--test hang`)
+Pairs of dit taps: the first follows a long pause (cold), the second comes D ms after the keyer has finished the first
+(press + dot + gap), D = 100 ... 1400 ms in steps of 50. The report lists, per D, the second tap's sink latency, whether
+it is cold-like (the radio had dropped out of TX) and whether it produced no element at all. It needs Iambic, break-in on,
+radio in RX, no PTT mode, and the hang time set in pihpsdr. Taps are lost in two places (see `docs/keyer/lost-first-tap.md`):
+cold starts, and a window of about 100 ms after the hang time has expired.
+
+    ./capture_run.sh --kiwi kiwi.minish.org:8074 --freq 28187 --dir results/<group> --name <path>_<key>_<mode>_Q<q>_hang \
+        --label "<text>" -- --confirm-safe --sink <node> --dest 32:0 --wpm 22 --test hang --trials 120 --label "<text>"
+
+`cwlat_analyze.py` takes path, key, mode, quantum and test from the capture name (`synth_iambicB_breakin_Q128_hang`);
+other names make it stop with an IndexError. RF and sink are both missing for a lost tap, so "RF only" / "sink only"
+in the analysis separate keyer losses from sidetone losses.
+
 ## Known issue: PTT-mode runs leave pihpsdr's PTT stuck
 Runs with `--ptt` (PTT held by MIDI note 22 while paddle notes are sent) leave pihpsdr's PTT asserted
 afterwards (seen 2026-11-06). A PTT-only press/release does not, and break-in runs never do. Operators use

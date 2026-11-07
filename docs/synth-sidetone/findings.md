@@ -22,6 +22,17 @@ MIDI notes through a VirMIDI port (CWL 21 / CWR 20 / PTT 22); the RF is recorded
 break-in and PTT-held, PipeWire quantum 64 / 128 / 256, old sidetone path and callback-synthesised ("synth") path.
 42 valid runs, about 2 500 keyed elements, 60 KiwiSDR recordings in total (18 earlier + 42; 6 more quarantined).
 
+## Update 2026-11-07
+* **First event after TX start (`sidetone_idle()`).** The callback used to call `sidetone_reset()` on every receive callback; that cleared
+  the delay counter (a key-down from an external keyer, which carries the gap to the previous event as its wait, was delayed by that gap)
+  and dropped a key-down queued before the transmit flag was set (break-in). `sidetone_idle()` keeps the queue for 200 ms and puts the
+  counter in the "long pause" state. `test/sidetone/test_sidetone_idle.c` covers it (assertions; fails with the old behaviour).
+* **Sink versus RF after the fix** (iambic B, break-in, quantum 128, 120 dit/dah trials): sink-only losses 0 (before: 1 of 120).
+  Warm: sink onset 7.1 ms (50 % point), RF 22.6 ms; cold: 27.8 / 43.3 ms; the sidetone leads the RF by a constant 15.5 ms (sd 1.0..1.3).
+* **Taps that give no element at all are a keyer problem**, not a side tone problem: in every such trial RF and sink are both missing.
+  Cause, measurement and fix: `docs/keyer/lost-first-tap.md`. That replaces the sentence above "Taps shorter than the switch-over are
+  lost altogether" (they are lost in two specific places, and the fix recovers them).
+
 ## How the numbers are obtained
 * Kiwi samples are placed on UTC from the GNSS stamps (each stamp = time of the first sample of the following data chunk;
   GPS-UTC taken as 18 s). The carrier is found by correlating each frequency bin's power with the times we keyed
