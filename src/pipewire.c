@@ -252,7 +252,7 @@ static void pw_out_cb(void *data) {
       sidetone_render(synth_buf, (int) n_frames, cw_keyer_sidetone_frequency, amp);
       synth = 1;
     } else {
-      sidetone_reset();
+      sidetone_idle();
     }
   }
   for (unsigned i = 0; i < n_frames; i++) {
