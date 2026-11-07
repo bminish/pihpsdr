@@ -117,6 +117,12 @@ static void cw_keys_reversed_cb(GtkWidget *widget, gpointer data) {
   cw_changed();
 }
 
+#ifdef PIPEWIRE
+static void cw_sidetone_synth_cb(GtkWidget *widget, gpointer data) {
+  cw_sidetone_synth = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+}
+#endif
+
 static void cw_keyer_mode_cb(GtkToggleButton *widget, gpointer data) {
   int val = gtk_combo_box_get_active (GTK_COMBO_BOX(widget));
   cw_keyer_mode = val;
@@ -246,6 +252,12 @@ void cw_menu(GtkWidget *parent) {
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(btn), (double)cw_keyer_weight);
   gtk_grid_attach(GTK_GRID(op_grid), btn, 1, row, 1, 1);
   g_signal_connect(btn, "value_changed", G_CALLBACK(cw_keyer_weight_value_changed_cb), NULL);
+#ifdef PIPEWIRE
+  btn = gtk_check_button_new_with_label("Synth sidetone");
+  gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (btn), cw_sidetone_synth);
+  gtk_grid_attach(GTK_GRID(op_grid), btn, 2, row, 1, 1);
+  g_signal_connect(btn, "toggled", G_CALLBACK(cw_sidetone_synth_cb), NULL);
+#endif
   row++;
   lbl = gtk_label_new("Paddle Mode");
   gtk_widget_set_name(lbl, "boldlabel");
