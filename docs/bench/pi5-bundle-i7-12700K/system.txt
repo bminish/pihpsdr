@@ -1,0 +1,177 @@
+bundle: v3.0-271-gd6161624-dirty
+model: model name	: 12th Gen Intel(R) Core(TM) i7-12700K
+kernel: Linux redbox 7.2.7-200.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Mon Sep 21 18:25:57 UTC 2026 x86_64 GNU/Linux
+PRETTY_NAME="Fedora Linux 44 (Workstation Edition)"
+compiler: cc (GCC) 16.2.1 20260819 (Red Hat 16.2.1-2)
+fftw3f: 3.3.10   gtk+-3.0: 3.24.52
+
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  20
+On-line CPU(s) list:                     0-19
+Vendor ID:                               GenuineIntel
+Model name:                              12th Gen Intel(R) Core(TM) i7-12700K
+CPU family:                              6
+Model:                                   151
+Thread(s) per core:                      2
+Core(s) per socket:                      12
+Socket(s):                               1
+Stepping:                                2
+CPU(s) scaling MHz:                      31%
+CPU max MHz:                             5000.0000
+CPU min MHz:                             800.0000
+BogoMIPS:                                7219.20
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb intel_pt sha_ni xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk avx_vnni dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req hfi vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq rdpid movdiri movdir64b fsrm md_clear serialize pconfig arch_lbr ibt flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               512 KiB (12 instances)
+L1i cache:                               512 KiB (12 instances)
+L2 cache:                                12 MiB (9 instances)
+L3 cache:                                25 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-19
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Mitigation; Clear Register File
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+
+               total        used        free      shared  buff/cache   available
+Mem:           64148       16706         737         467       47811       47442
+Swap:           8191        4488        3703
+
+== before, 2026-10-02 22:13:21
+loadavg: 6.08 4.96 3.82 1/3369 723504
+cpu0: governor powersave cur 2025661 kHz min 800000 max 4900000
+cpu10: governor powersave cur 836112 kHz min 800000 max 5000000
+cpu11: governor powersave cur 800054 kHz min 800000 max 5000000
+cpu12: governor powersave cur 1501193 kHz min 800000 max 4900000
+cpu13: governor powersave cur 1456869 kHz min 800000 max 4900000
+cpu14: governor powersave cur 1238994 kHz min 800000 max 4900000
+cpu15: governor powersave cur 2239133 kHz min 800000 max 4900000
+cpu16: governor powersave cur 2838512 kHz min 800000 max 3800000
+cpu17: governor powersave cur 801271 kHz min 800000 max 3800000
+cpu18: governor powersave cur 2027182 kHz min 800000 max 3800000
+cpu19: governor powersave cur 1899929 kHz min 800000 max 3800000
+cpu1: governor powersave cur 1700030 kHz min 800000 max 4900000
+cpu2: governor powersave cur 1655675 kHz min 800000 max 4900000
+cpu3: governor powersave cur 1900000 kHz min 800000 max 4900000
+cpu4: governor powersave cur 2296095 kHz min 800000 max 4900000
+cpu5: governor powersave cur 800000 kHz min 800000 max 4900000
+cpu6: governor powersave cur 2111336 kHz min 800000 max 4900000
+cpu7: governor powersave cur 2161330 kHz min 800000 max 4900000
+cpu8: governor powersave cur 2100000 kHz min 800000 max 5000000
+cpu9: governor powersave cur 1399355 kHz min 800000 max 5000000
+temp: 27 C
+
+== after pi_bench, 2026-10-02 22:16:24
+loadavg: 3.21 4.29 3.77 3/3359 724670
+cpu0: governor powersave cur 1600000 kHz min 800000 max 4900000
+cpu10: governor powersave cur 2500623 kHz min 800000 max 5000000
+cpu11: governor powersave cur 799991 kHz min 800000 max 5000000
+cpu12: governor powersave cur 1184573 kHz min 800000 max 4900000
+cpu13: governor powersave cur 1441536 kHz min 800000 max 4900000
+cpu14: governor powersave cur 2400000 kHz min 800000 max 4900000
+cpu15: governor powersave cur 2538439 kHz min 800000 max 4900000
+cpu16: governor powersave cur 2300194 kHz min 800000 max 3800000
+cpu17: governor powersave cur 1999736 kHz min 800000 max 3800000
+cpu18: governor powersave cur 1881283 kHz min 800000 max 3800000
+cpu19: governor powersave cur 800163 kHz min 800000 max 3800000
+cpu1: governor powersave cur 2005187 kHz min 800000 max 4900000
+cpu2: governor powersave cur 1485438 kHz min 800000 max 4900000
+cpu3: governor powersave cur 2155683 kHz min 800000 max 4900000
+cpu4: governor powersave cur 1497418 kHz min 800000 max 4900000
+cpu5: governor powersave cur 915822 kHz min 800000 max 4900000
+cpu6: governor powersave cur 2266221 kHz min 800000 max 4900000
+cpu7: governor powersave cur 1928429 kHz min 800000 max 4900000
+cpu8: governor powersave cur 2313329 kHz min 800000 max 5000000
+cpu9: governor powersave cur 2291427 kHz min 800000 max 5000000
+temp: 27 C
+
+== after bench_cpu paced, 2026-10-02 22:19:57
+loadavg: 5.45 5.28 4.28 14/3382 726075
+cpu0: governor powersave cur 2297087 kHz min 800000 max 4900000
+cpu10: governor powersave cur 1201214 kHz min 800000 max 5000000
+cpu11: governor powersave cur 800000 kHz min 800000 max 5000000
+cpu12: governor powersave cur 1129313 kHz min 800000 max 4900000
+cpu13: governor powersave cur 1601443 kHz min 800000 max 4900000
+cpu14: governor powersave cur 1676792 kHz min 800000 max 4900000
+cpu15: governor powersave cur 1250686 kHz min 800000 max 4900000
+cpu16: governor powersave cur 3206596 kHz min 800000 max 3800000
+cpu17: governor powersave cur 3604811 kHz min 800000 max 3800000
+cpu18: governor powersave cur 3600570 kHz min 800000 max 3800000
+cpu19: governor powersave cur 3188890 kHz min 800000 max 3800000
+cpu1: governor powersave cur 3135539 kHz min 800000 max 4900000
+cpu2: governor powersave cur 2400000 kHz min 800000 max 4900000
+cpu3: governor powersave cur 800000 kHz min 800000 max 4900000
+cpu4: governor powersave cur 2176143 kHz min 800000 max 4900000
+cpu5: governor powersave cur 2106289 kHz min 800000 max 4900000
+cpu6: governor powersave cur 2376251 kHz min 800000 max 4900000
+cpu7: governor powersave cur 1318151 kHz min 800000 max 4900000
+cpu8: governor powersave cur 2660290 kHz min 800000 max 5000000
+cpu9: governor powersave cur 800106 kHz min 800000 max 5000000
+temp: 27 C
+
+== after bench_cpu hot, 2026-10-02 22:21:05
+loadavg: 5.08 5.15 4.30 2/3412 727511
+cpu0: governor powersave cur 779723 kHz min 800000 max 4900000
+cpu10: governor powersave cur 2115226 kHz min 800000 max 5000000
+cpu11: governor powersave cur 2400000 kHz min 800000 max 5000000
+cpu12: governor powersave cur 2475298 kHz min 800000 max 4900000
+cpu13: governor powersave cur 800000 kHz min 800000 max 4900000
+cpu14: governor powersave cur 799991 kHz min 800000 max 4900000
+cpu15: governor powersave cur 800029 kHz min 800000 max 4900000
+cpu16: governor powersave cur 1821319 kHz min 800000 max 3800000
+cpu17: governor powersave cur 800100 kHz min 800000 max 3800000
+cpu18: governor powersave cur 1977262 kHz min 800000 max 3800000
+cpu19: governor powersave cur 2020204 kHz min 800000 max 3800000
+cpu1: governor powersave cur 785960 kHz min 800000 max 4900000
+cpu2: governor powersave cur 1922240 kHz min 800000 max 4900000
+cpu3: governor powersave cur 2366455 kHz min 800000 max 4900000
+cpu4: governor powersave cur 778187 kHz min 800000 max 4900000
+cpu5: governor powersave cur 965444 kHz min 800000 max 4900000
+cpu6: governor powersave cur 1784443 kHz min 800000 max 4900000
+cpu7: governor powersave cur 1900000 kHz min 800000 max 4900000
+cpu8: governor powersave cur 1900000 kHz min 800000 max 5000000
+cpu9: governor powersave cur 1392472 kHz min 800000 max 5000000
+temp: 27 C
+
+== after, 2026-10-02 22:21:40
+loadavg: 4.02 4.91 4.25 1/3371 727914
+cpu0: governor powersave cur 3792229 kHz min 800000 max 4900000
+cpu10: governor powersave cur 900070 kHz min 800000 max 5000000
+cpu11: governor powersave cur 1531645 kHz min 800000 max 5000000
+cpu12: governor powersave cur 1783910 kHz min 800000 max 4900000
+cpu13: governor powersave cur 1641366 kHz min 800000 max 4900000
+cpu14: governor powersave cur 2339255 kHz min 800000 max 4900000
+cpu15: governor powersave cur 799951 kHz min 800000 max 4900000
+cpu16: governor powersave cur 2100299 kHz min 800000 max 3800000
+cpu17: governor powersave cur 803761 kHz min 800000 max 3800000
+cpu18: governor powersave cur 2427314 kHz min 800000 max 3800000
+cpu19: governor powersave cur 800040 kHz min 800000 max 3800000
+cpu1: governor powersave cur 2000000 kHz min 800000 max 4900000
+cpu2: governor powersave cur 2711146 kHz min 800000 max 4900000
+cpu3: governor powersave cur 2808888 kHz min 800000 max 4900000
+cpu4: governor powersave cur 2460055 kHz min 800000 max 4900000
+cpu5: governor powersave cur 1831718 kHz min 800000 max 4900000
+cpu6: governor powersave cur 1900000 kHz min 800000 max 4900000
+cpu7: governor powersave cur 1700000 kHz min 800000 max 4900000
+cpu8: governor powersave cur 2456410 kHz min 800000 max 5000000
+cpu9: governor powersave cur 800000 kHz min 800000 max 5000000
+temp: 27 C
+
