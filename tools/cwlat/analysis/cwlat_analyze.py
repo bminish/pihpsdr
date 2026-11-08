@@ -136,6 +136,10 @@ def find_carrier(z, fs, kt, wins):
     L = 20 * np.log10(S + 1e-3)
     L = (L - L.mean(axis=1, keepdims=True)) / (L.std(axis=1, keepdims=True) + 1e-9)
     c = (L * ((ind - ind.mean()) / ind.std())[None, :]).mean(axis=1)
+    # Our carrier is within a few Hz of the Kiwi's centre frequency (every run so far: within 10 Hz). Search only
+    # +-200 Hz: with very short key-down commands (cwlat --test short) the radio's tone starts after the commanded
+    # window has ended, the correlation is weak, and another station could win.
+    c = np.where(np.abs(f) <= 200.0, c, -np.inf)
     k = int(np.argmax(c))
     f_coarse = float(f[k])
     # refine on the samples that were inside key-down windows
@@ -392,7 +396,35 @@ def fmt(s, nd=2):
     return f"{s['mean']:.{nd}f}±{s['sd']:.{nd}f} (n={s['n']})"
 
 
+def blip_summary(rows):
+    """--test blip: pairs (first tap, probe 150 ms after its press). The first tap is a real 60 ms tap (reference) or a
+    blip of 1-3 ms. A probe that is warm (about 20 ms earlier than the cold reference) means the keyer started TX."""
+    first = [r for r in rows if r["kind"] == 5 and r["trial"] % 2 == 0]
+    probe = {r["trial"]: r for r in rows if r["kind"] == 5 and r["trial"] % 2 == 1}
+    def lat(r):
+        return r.get("rf_lat50_ms", np.nan) if r.get("rf_nel", 0) > 0 else np.nan
+    warm = [lat(probe[r["trial"] + 1]) for r in first if r["hold_ms"] >= 5 and r["trial"] + 1 in probe]
+    warm = [x for x in warm if x == x]
+    cold = [lat(r) for r in first if r["hold_ms"] >= 5]
+    cold = [x for x in cold if x == x]
+    wref = float(np.mean(warm)) if warm else float("nan")
+    cref = float(np.mean(cold)) if cold else float("nan")
+    out = dict(warm_ref_ms=wref, cold_ref_ms=cref, by_hold={})
+    for h in sorted({r["hold_ms"] for r in first}):
+        sel = [r for r in first if r["hold_ms"] == h]
+        pl = [lat(probe[r["trial"] + 1]) for r in sel if r["trial"] + 1 in probe]
+        pl = [x for x in pl if x == x]
+        out["by_hold"][h] = dict(pairs=len(sel), rf_first_elements=sum(1 for r in sel if r.get("rf_nel", 0) > 0),
+                                 probe_rf_lat50_mean=float(np.mean(pl)) if pl else float("nan"),
+                                 probe_cold_like=sum(1 for x in pl if x > wref + 10.0), probe_n=len(pl),
+                                 probe_missing=sum(1 for r in sel if r["trial"] + 1 in probe and probe[r["trial"] + 1].get("rf_nel", 0) == 0))
+    return out
+
+
 def summarise(info, rows, quality):
+    blips = blip_summary(rows) if any(r["kind"] == 5 for r in rows) else None
+    # a blip is not expected to produce an element: it does not count as a missing tap
+    rows = [r for r in rows if not (r["kind"] == 5 and r["hold_ms"] < 5)]
     ok = [r for r in rows if r.get("rf_nel", 0) > 0]
     n = len(rows)
     warm = [r for r in ok if r["cold"] == 0]
@@ -413,6 +445,8 @@ def summarise(info, rows, quality):
     sm["rf_period01_ms"] = stat(k(ok, "rf_period01_ms"))
     sm["extra_elements"] = sum(1 for r in ok if r["rf_nel"] > (2 if r["kind"] == 3 else 1) and r["kind"] != 3)
     sm["quality"] = quality
+    if blips:
+        sm["blip"] = blips
     return sm
 
 
@@ -438,6 +472,12 @@ def report(sm):
           f"{q['rf_segments']} RF elements")
     print(f"   trials {sm['trials']}: RF missing {sm['rf_dropped']} (sink missing {sm['sink_dropped']}; both {sm['both_missing']}, "
           f"RF only {sm['rf_only_missing']}, sink only {sm['sink_only_missing']}); extra elements {sm['extra_elements']}")
+    if "blip" in sm:
+        b = sm["blip"]
+        print(f"   blip test, RF: probe warm reference {b['warm_ref_ms']:.1f} ms, cold reference {b['cold_ref_ms']:.1f} ms")
+        for h, v in b["by_hold"].items():
+            print(f"     first tap {h:4.0f} ms: pairs {v['pairs']:3d}, RF element from it {v['rf_first_elements']:3d}, "
+                  f"probe lat50 {v['probe_rf_lat50_mean']:.1f} ms, probe cold-like {v['probe_cold_like']} of {v['probe_n']}, probe missing {v['probe_missing']}")
     for tag in ("warm", "cold"):
         print(f"   {tag:4}: RF onset lat {fmt(sm[tag + '_rf_lat50_ms'])} ms | sink onset {fmt(sm[tag + '_sink_lat50_ms'])} | "
               f"RF-sink {fmt(sm[tag + '_rf_minus_sink_lat_ms'])} | RF len-ref {fmt(sm[tag + '_rf_len0_minus_ref_ms'])} | "

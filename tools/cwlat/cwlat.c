@@ -72,6 +72,7 @@ static const char *opt_test = NULL;
 static const char *opt_label = "";
 static const char *opt_csv = NULL;
 static const char *opt_events = NULL;
+static const char *opt_sinkwav = NULL;
 static int opt_trials = 120;
 static int opt_wpm = 22;
 static int opt_freq = 550;
@@ -94,7 +95,7 @@ typedef struct {
 } EVENT;
 
 typedef struct {
-  int    kind;        // 0 straight, 1 dit, 2 dah, 3 squeeze, 4 hang (pairs of dit taps)
+  int    kind;        // 0 straight, 1 dit, 2 dah, 3 squeeze, 4 hang (pairs of dit taps), 5 blip (pairs: blip or tap, then a probe tap)
   double hold;        // ms
   double gap;         // hang test: time between the keyer finishing the previous tap and this tap, ms (0 otherwise)
   int    ev_press;    // index of the first press event
@@ -129,7 +130,8 @@ static int cmp_ev(const void *a, const void *b) {
 static double build_schedule(void) {
   static const double tap_holds[] = {20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140};
   static const double sq_holds[] = {40, 60, 80, 100, 140, 200};
-  int kind = !strcmp(opt_test, "straight") ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : !strcmp(opt_test, "hang") ? 4 : 3;
+  static const double short_holds[] = {5, 10, 15, 20, 25, 30, 35, 40, 50};
+  int kind = !strcmp(opt_test, "straight") || !strcmp(opt_test, "short") ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : !strcmp(opt_test, "hang") ? 4 : !strcmp(opt_test, "blip") ? 5 : 3;
   double press_prev = 0.0, pending_gap = 0.0;
   double t = 0.0;
   tr = calloc(opt_trials, sizeof(TRIAL));
@@ -147,7 +149,11 @@ static double build_schedule(void) {
     T->kind = kind;
     switch (kind) {
     case 0:
-      hold = uni(30.0, 160.0);
+      //
+      // short: straight key holds of 5 to 50 ms, every one after a long pause, so that each lands in the
+      // time the keyer needs to switch from RX to TX
+      //
+      hold = !strcmp(opt_test, "short") ? short_holds[(i * 4) % 9] : uni(30.0, 160.0);
       break;
     case 1:
     case 2:
@@ -156,12 +162,19 @@ static double build_schedule(void) {
     case 4:
       hold = 40.0;
       break;
+    case 5:
+      //
+      // pairs. Even trials: the first of four pair types is a real 60 ms tap (reference: starts TX, so its
+      // probe is warm), the other three are blips of 1, 2 and 3 ms. Odd trials: the probe, a 60 ms tap.
+      //
+      hold = (i % 2) ? 60.0 : (double[]){60.0, 1.0, 2.0, 3.0}[(i / 2) % 4];
+      break;
     default:
       hold = sq_holds[(i * 5) % 6];
       break;
     }
     T->hold = hold;
-    if (kind == 0 || kind == 2) {
+    if (kind == 0 || kind == 2 || kind == 5) {
       e1 = add_event(t, NOTE_CWR, 1);
       e2 = add_event(t + hold / 1000.0, NOTE_CWR, 0);
       last = t + hold / 1000.0;
@@ -187,7 +200,19 @@ static double build_schedule(void) {
     // gap to the next trial: usually short (keyer still hanging in TX), sometimes a long
     // pause after which break-in has to go to TX again
     //
-    if (kind == 4) {
+    if (kind == 5) {
+      //
+      // blip test: the probe comes 150 ms after the press of the blip (inside the hang time if the blip started
+      // TX, long after the cold start is over if it did not); after the probe a long pause, so that the next
+      // pair starts from RX (the keyer's hang time may be as short as 300 ms)
+      //
+      if (i % 2 == 0) {
+        press_prev = t;
+        t = press_prev + 0.150;
+      } else {
+        t = last + 2.5;
+      }
+    } else if (kind == 4) {
       //
       // hang test: even trials follow a long pause (TX has dropped); odd trials come D ms after the keyer
       // has finished the preceding dit (press + dot + gap) - the keyer's hang time counts from there
@@ -205,6 +230,7 @@ static double build_schedule(void) {
       double settle = kind == 0 ? 0.05 : kind == 1 ? 0.25 : kind == 2 ? 0.35 : 0.80;
       double gap = settle + uni(0.0, 0.15);
       if (!opt_ptt && urand() < opt_pause_frac) { gap = uni(0.9, 1.6); }
+      if (!strcmp(opt_test, "short")) { gap = uni(1.2, 1.8); }
       t = last + gap;
     }
   }
@@ -546,7 +572,7 @@ static void analyse(void) {
     n = 0;
     for (int i = 0; i < ntr; i++) if (!R[i].dropped && (g == 0 || (g == 1 && !R[i].cold) || (g == 2 && R[i].cold))) {
         double ref = R[i].kind == 0 ? R[i].hold : R[i].kind == 2 ? 3.0 * dot : dot;
-        if (R[i].kind == 3) { continue; }
+        if (R[i].kind == 3 || R[i].kind == 5) { continue; }
         v[n++] = R[i].len[0] - ref;
       }
     stats_line(R[0].kind == 0 ? "first tone length minus hold (ms)" : "first tone length minus nominal (ms)", v, n);
@@ -556,7 +582,7 @@ static void analyse(void) {
       stats_line("release -> tone off, 50% point (ms)", v, n);
     }
   }
-  if (tr[0].kind != 0 && tr[0].kind != 4) {
+  if (tr[0].kind != 0 && tr[0].kind != 4 && tr[0].kind != 5) {
     printf("-- elements produced per tap, by hold time (keyer repeat point)\n");
     printf("  hold ms | trials | 1 elem | 2 elem | 3+ elem | dropped | mean onset lat (ms)\n");
     double hs[16];
@@ -580,6 +606,37 @@ static void analyse(void) {
         if (R[i].nel == 1) { e1++; } else if (R[i].nel == 2) { e2++; } else { e3++; }
       }
       printf("  %7.0f | %6d | %6d | %6d | %7d | %7d | %8.2f\n", hs[j], t, e1, e2, e3, dr, nl ? sl / nl : 0.0);
+    }
+  }
+  if (tr[0].kind == 5) {
+    //
+    // pair types: even trial 4k+0 and its probe. Hold 60 = real tap (starts TX): its probe is the warm reference and
+    // the tap itself the cold reference. A blip is shorter than the transition into TX; if the keyer starts TX for it
+    // anyway, its probe is warm, if it swallows it the probe is cold (about 20 ms later).
+    //
+    double hs[4] = {60.0, 1.0, 2.0, 3.0};
+    double cold_sum = 0, warm_sum = 0; int cold_n = 0, warm_n = 0;
+    for (int i = 0; i + 1 < ntr; i += 2) {
+      if (tr[i].hold == 60.0) {
+        if (!R[i].dropped) { cold_sum += R[i].lat50; cold_n++; }
+        if (!R[i + 1].dropped) { warm_sum += R[i + 1].lat50; warm_n++; }
+      }
+    }
+    double cold_ref = cold_n ? cold_sum / cold_n : 0.0, warm_ref = warm_n ? warm_sum / warm_n : 0.0;
+    printf("-- blip test: probe tap 150 ms after the press of a first tap (sink latency, 50%% point)\n");
+    printf("  reference: real tap, cold %.1f ms (n=%d); its probe, warm %.1f ms (n=%d); cold-like = probe later than warm+10 ms\n", cold_ref, cold_n, warm_ref, warm_n);
+    printf("  first tap ms | pairs | tap produced tone | probe lat50 mean | min .. max | probe cold-like | probe dropped\n");
+    for (int j = 0; j < 4; j++) {
+      int np = 0, tone = 0, cl = 0, dr = 0, nl = 0; double sm = 0, mn = 1e9, mx = -1e9;
+      for (int i = 0; i + 1 < ntr; i += 2) {
+        if (tr[i].hold != hs[j]) { continue; }
+        np++;
+        if (!R[i].dropped) { tone++; }
+        if (R[i + 1].dropped) { dr++; continue; }
+        nl++; sm += R[i + 1].lat50; if (R[i + 1].lat50 < mn) { mn = R[i + 1].lat50; } if (R[i + 1].lat50 > mx) { mx = R[i + 1].lat50; }
+        if (R[i + 1].lat50 > warm_ref + 10.0) { cl++; }
+      }
+      printf("  %12.0f | %5d | %17d | %16.1f | %6.1f .. %6.1f | %d of %d | %d\n", hs[j], np, tone, nl ? sm / nl : 0.0, nl ? mn : 0.0, nl ? mx : 0.0, cl, nl, dr);
     }
   }
   if (tr[0].kind == 4) {
@@ -715,14 +772,39 @@ static void write_events(void) {
   fclose(f);
 }
 
+
+static void write_sinkwav(void) {
+  if (!opt_sinkwav || nrec == 0) { return; }
+  FILE *f = fopen(opt_sinkwav, "wb");
+  if (!f) { return; }
+  // mono IEEE float WAV, 48 kHz (the capture is the mean of the two channels, as analysed)
+  uint32_t datalen = (uint32_t)(nrec * sizeof(float)), riff = 36 + datalen, fmtlen = 16, rate = 48000, brate = 48000 * 4;
+  uint16_t fmt = 3, ch = 1, align = 4, bits = 32;
+  fwrite("RIFF", 1, 4, f); fwrite(&riff, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f); fwrite(&fmtlen, 4, 1, f);
+  fwrite(&fmt, 2, 1, f); fwrite(&ch, 2, 1, f); fwrite(&rate, 4, 1, f); fwrite(&brate, 4, 1, f);
+  fwrite(&align, 2, 1, f); fwrite(&bits, 2, 1, f); fwrite("data", 1, 4, f); fwrite(&datalen, 4, 1, f);
+  fwrite(rec, sizeof(float), nrec, f);
+  fclose(f);
+  char name[1100];
+  snprintf(name, sizeof(name), "%s.cb.csv", opt_sinkwav);
+  f = fopen(name, "w");
+  if (!f) { return; }
+  fprintf(f, "# first-sample index and CLOCK_MONOTONIC time of each capture callback; utc = mono + offset in the events file\n");
+  fprintf(f, "t_mono_s,first,n\n");
+  for (size_t k = 0; k < ncb; k++) { fprintf(f, "%.6f,%zu,%d\n", cbs[k].t, cbs[k].first, cbs[k].n); }
+  fclose(f);
+}
+
 /* ------------------------------------------------------------------------ main */
 
 static void usage(void) {
-  printf("usage: cwlat --confirm-safe --sink NODE --test straight|dit|dah|squeeze|hang [options]\n"
+  printf("usage: cwlat --confirm-safe --sink NODE --test straight|short|dit|dah|squeeze|hang|blip [options]\n"
          "  --sink NAME       PipeWire sink piHPSDR plays to (its monitor is captured)\n"
          "  --dest C:P        ALSA seq destination, default 32:0 (VirMIDI 4-0)\n"
          "  --test T          straight: CWR held; dit: CWL tap; dah: CWR tap; squeeze: both;\n"
          "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time)\n"
+         "                    short: straight key holds of 5-50 ms, each after a long pause (every one in the RX->TX switch)\n"
+         "                    blip: pairs (tap or 1-3 ms blip, then a probe tap 150 ms later); a probe that is warm shows TX was started\n"
          "  --trials N        default 120\n"
          "  --wpm N           keyer speed set in piHPSDR (for nominal lengths), default 22\n"
          "  --freq HZ         sidetone frequency, default 550\n"
@@ -732,6 +814,7 @@ static void usage(void) {
          "  --cold-ms MS      idle time above which a first element counts as 'cold', default 400\n"
          "  --label TEXT      free text copied to the output\n"
          "  --csv FILE        per-trial results\n"
+         "  --sink-wav FILE   the recorded sink monitor as a mono float32 WAV (48 kHz), with FILE.cb.csv (callback times)\n"
          "  --events FILE     every MIDI event with monotonic and UTC send times (for external captures)\n"
          "  --seed N          random seed\n"
          "  --selftest        analysis check on synthetic data (no radio, no MIDI, no PipeWire)\n"
@@ -742,7 +825,7 @@ int main(int argc, char **argv) {
   static struct option lo[] = {
     {"sink", 1, 0, 's'}, {"dest", 1, 0, 'd'}, {"test", 1, 0, 't'}, {"trials", 1, 0, 'n'}, {"wpm", 1, 0, 'w'},
     {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'},
-    {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"events", 1, 0, 'E'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
+    {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"events", 1, 0, 'E'}, {"sink-wav", 1, 0, 'W'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
     {"help", 0, 0, 'h'}, {0, 0, 0, 0}
   };
   int c;
@@ -761,6 +844,7 @@ int main(int argc, char **argv) {
     case 'l': opt_label = optarg; break;
     case 'o': opt_csv = optarg; break;
     case 'E': opt_events = optarg; break;
+    case 'W': opt_sinkwav = optarg; break;
     case 'S': opt_seed = strtoull(optarg, NULL, 10); break;
     case 'T': opt_selftest = 1; break;
     case 'y': opt_confirm = 1; break;
@@ -768,7 +852,7 @@ int main(int argc, char **argv) {
     }
   }
   rng_state ^= opt_seed * 0x9E3779B97F4A7C15ULL;
-  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze") && strcmp(opt_test, "hang"))) {
+  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze") && strcmp(opt_test, "hang") && strcmp(opt_test, "blip") && strcmp(opt_test, "short"))) {
     usage();
     return 1;
   }
@@ -823,6 +907,7 @@ int main(int argc, char **argv) {
   capture_stop();
   if (atomic_load(&cap_overflow)) { fprintf(stderr, "cwlat: warning: capture buffer overflow, run truncated\n"); }
   if (stop_flag) { fprintf(stderr, "cwlat: interrupted; analysing what was recorded\n"); }
+  write_sinkwav();
   analyse();
   snd_seq_close(seq);
   return 0;

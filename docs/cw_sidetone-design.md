@@ -1,6 +1,8 @@
 # Design: synthesise the local CW sidetone in the PipeWire callback
 
-Status: implemented as a prototype - see README.md in this directory. This is the original design; 4.1 and 4.5 were revised after testing.
+Status: implemented as LC-064 - see [cw_sidetone.md](cw_sidetone.md). This is the design record; 4.1, 4.4 and 4.5 were revised after testing.
+
+Part of the local-change register: [changes.md](changes.md).
 Scope: local sidetone on the PipeWire audio module only (first step).
 
 ## 1. Problem
@@ -9,7 +11,7 @@ Paddle-to-ear delay for the local sidetone is dominated by two audio-side terms,
 the design:
 
 1. The PipeWire graph cycle. Measured: the USB sink ran the graph at 1024 frames (21.3 ms) although
-   `pihpsdr-rx` asked for 256. Forcing the quantum to 64 made the sidetone "much tighter" (operator report).
+   `pihpsdr-rx` asked for 256. Forcing the quantum made the sidetone "much tighter" (operator report). The quantum is upstream's decision and is not changed by this work; the effect of the graph quantum is only measured (see [cw_sidetone-findings.md](cw_sidetone-findings.md)).
 2. The sidetone FIFO `st_buffer` in `src/pipewire.c`. It is padded with zeros to `CW_LAT_TARGET`
    (384 samples) at the RX->TX transition and every tone is queued behind whatever is in it.
 
@@ -32,7 +34,7 @@ state that is known *in advance* (the keyer queues events with their timing). No
 through a producer/consumer FIFO. If the PipeWire callback renders the tone itself, there is no producer to
 be late, so no cushion is needed, and delay falls to at most one callback.
 
-Expected result: FIFO delay 6.7-8 ms -> at most one callback, 1.3 ms at quantum 64. Gain about 5.5-6.5 ms.
+Expected result at design time: FIFO delay 6.7-8 ms -> at most one callback, so a gain of about 5.5-6.5 ms at quantum 64. Measured later: about 8 ms at every quantum tried (64, 128, 256); why that exceeds the estimate by about 2 ms was not traced.
 
 ## 3. Current structure (as read from the code)
 
@@ -82,7 +84,7 @@ the engine's `cw_delay_time` always is, because the engine counts it also while 
 * events older than 200 ms are dropped (TX never came, wrong mode, duplex), so they cannot start a tone later.
 
 Keep the 20 s key-down protection. Tested by `test/sidetone/test_sidetone_idle.c` (assertions; the first two cases
-fail with the previous behaviour, build with `-DUSE_RESET` to see it).
+fail with the previous behaviour, build with `-DUSE_RESET` to see it; LT-038).
 
 ### 4.5 Time base
 Not needed for timing: element lengths and gaps are counted in output samples. The callback entry time is only
@@ -103,8 +105,14 @@ Property `cw_sidetone_synth` (CW menu checkbox "Synth sidetone", PipeWire builds
 
 1. **Sidetone vs RF alignment.** The sidetone would lead RF by the engine and radio latency, a few ms. Many
    radios already sound the sidetone from the FPGA, so this is probably acceptable. Reviewer decision.
-2. **Multiple producers.** `tx_queue_cw_event` is called from several threads. The existing ring is already
-   single-producer in practice; the new ring inherits the same assumption.
+2. **Multiple producers.** `tx_queue_cw_event` is called from several threads: the keyer thread (internal keyer), the GPIO or MIDI
+   thread (external key, `CW_KEYER_KEYDOWN`), the CAT thread and the server thread. The existing ring has no lock and relies on only one
+   source being active at a time (internal keyer, or GPIO/MIDI when the internal keyer is off). **Decision (2026-11-07): the new ring
+   inherits the same assumption and takes no lock**, to stay as close to upstream as possible. Consequences: (a) if two sources ever
+   do overlap, upstream's ring is already unprotected, and the two rings could then disagree, so the side tone and the RF would be
+   out of step (no crash); (b) unlike upstream's TX engine, which resets its ring from the consumer side by writing `cw_ring_inpt`,
+   `sidetone_idle()` writes only the consumer's own index. A mutex around both pushes in `tx_queue_cw_event` would close the race for
+   both rings; that is a change to upstream's key path and is not part of this series.
 3. **Client/server.** `client_sidetone_thread` generates its own sidetone and needs the same treatment or an
    explicit exclusion.
 4. **Late events.** An event whose `due` is in the past renders from the start of the next callback. That is
@@ -130,10 +138,5 @@ Property `cw_sidetone_synth` (CW menu checkbox "Synth sidetone", PipeWire builds
 
 ## 9. Size
 
-About 300-400 lines: `transmitter.c` (queue + suppress), `pipewire.c` (callback), new `sidetone.c/.h`,
-Makefile, one property.
-
-## 10. Current working-tree state
-
-`src/pipewire.c` is modified and uncommitted: `PIPEWIRE_QUANTUM_PLAYBACK` = 64 and the CWDEBUG measurement
-block. Runtime `clock.force-quantum` was set to 64 for testing.
+About 240 lines of source: `transmitter.c` (queue + suppress), `pipewire.c` (callback), new `sidetone.c/.h`,
+`cw_menu.c`, `radio.c/.h`, `audio.h`, Makefile, one property.

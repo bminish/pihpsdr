@@ -1,11 +1,13 @@
 # CW keying latency, jitter and clipping - findings of 2026-11-06
 
+Part of the local-change register: [changes.md](changes.md). The change itself: [cw_sidetone.md](cw_sidetone.md) (LC-064). **One machine, one USB sound card, one radio, one operator's PC:** none of the figures below is a general result.
+
 ## Summary
 * **Where the delay was.** On the test machine the PipeWire graph ran at 1024 frames although pihpsdr asked for 256 (the USB sink was the
   driver); the sidetone then waited 21 ms for a cycle plus the sink's own 512-sample headroom, plus the 6.7-8 ms side tone FIFO in `pipewire.c`.
   Forcing the quantum (`clock.force-quantum`) made the sidetone "much tighter".
 * **What the patch does.** The local side tone is generated inside the PipeWire output callback instead of being queued through the FIFO
-  (`docs/synth-sidetone/README.md`). Key-to-sink delay falls by about **8 ms at every quantum** (warm taps, measured at the sink monitor):
+  (`cw_sidetone.md`). Key-to-sink delay falls by about **8 ms at every quantum** (warm taps, measured at the sink monitor):
   13.2 -> 5.0 ms at 64, 15.0 -> 7.0 at 128, 19.0 -> 10.9 at 256. Element lengths are unchanged (counted in output samples).
 * **RF is not affected by the audio path or quantum:** MIDI press to RF carrier is 22.5 ms (sd 0.6-0.9) in every combination.
   The sidetone therefore leads the RF by 12-18 ms with the patch, but lags it by 4.5 ms on the old path at quantum 256 (estimated at the ear).
@@ -13,25 +15,15 @@
   that time from the front of the element (**20 ± 8 ms shorter, worst 45 ms**). Taps shorter than the switch-over are lost altogether.
 * **Keying shape is clean:** the RF edge is the designed DL1YCF 9 ms ramp to within 0.5 % rms; shortened elements are normal elements that
   start late, not hard-cut; no chirp, ripple 0.3 %. The wideband (key-click) level could not be quantified with these captures (see below).
-* **Recommendation.** Use the synth side tone at quantum 128: at the sink it is 12 ms earlier than the old path at upstream's 256 (7.0 against 19.0 ms) and 8 ms earlier than the old path at 128 (15.0 ms); 128 itself is about 4 ms earlier than 256 on either path, with no audible drop-outs on the test machine (XRUN counts still to be logged in a steady run). Fix the break-in start (clipped first element, lost short taps) in the keyer; that is a larger effect than anything in the audio path.
+* **Quantum.** The playback quantum is upstream's decision (256) and is not changed by LC-064; the quantum rows below are there to show what it does to the timing. Read from the table: the synth path at 256 (10.9 ms at the sink) is as early at the ear (estimated 18.9 ms) as the old path at 128 (19.0 ms).
+* **Break-in costs more than the audio path.** See the cold-start section; that is not changed by LC-064 and is the subject of a separate keyer fix.
 
-Branch `test/sidetone`, patch branch `feature/synth-sidetone`. Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis).
-Setup: pihpsdr (this branch) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
+Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis; LT-038).
+Setup: pihpsdr (the synth side tone as first prototyped, same code as LC-064) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
 MIDI notes through a VirMIDI port (CWL 21 / CWR 20 / PTT 22); the RF is recorded by a GPS-disciplined KiwiSDR
 (IQ, GNSS time-stamps) and the sidetone at the PipeWire sink monitor. 22 wpm, Iambic B and straight key,
 break-in and PTT-held, PipeWire quantum 64 / 128 / 256, old sidetone path and callback-synthesised ("synth") path.
 42 valid runs, about 2 500 keyed elements, 60 KiwiSDR recordings in total (18 earlier + 42; 6 more quarantined).
-
-## Update 2026-11-07
-* **First event after TX start (`sidetone_idle()`).** The callback used to call `sidetone_reset()` on every receive callback; that cleared
-  the delay counter (a key-down from an external keyer, which carries the gap to the previous event as its wait, was delayed by that gap)
-  and dropped a key-down queued before the transmit flag was set (break-in). `sidetone_idle()` keeps the queue for 200 ms and puts the
-  counter in the "long pause" state. `test/sidetone/test_sidetone_idle.c` covers it (assertions; fails with the old behaviour).
-* **Sink versus RF after the fix** (iambic B, break-in, quantum 128, 120 dit/dah trials): sink-only losses 0 (before: 1 of 120).
-  Warm: sink onset 7.1 ms (50 % point), RF 22.6 ms; cold: 27.8 / 43.3 ms; the sidetone leads the RF by a constant 15.5 ms (sd 1.0..1.3).
-* **Taps that give no element at all are a keyer problem**, not a side tone problem: in every such trial RF and sink are both missing.
-  Cause, measurement and fix: `docs/keyer/lost-first-tap.md`. That replaces the sentence above "Taps shorter than the switch-over are
-  lost altogether" (they are lost in two specific places, and the fix recovers them).
 
 ## How the numbers are obtained
 * Kiwi samples are placed on UTC from the GNSS stamps (each stamp = time of the first sample of the following data chunk;

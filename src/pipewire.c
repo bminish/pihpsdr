@@ -62,9 +62,9 @@
 // Upstream uses 256 both for capture and playback; there have been reports that 128 for
 // playback (used earlier) leads to frequent audio drop-outs with HDMI audio on some LINUX boxes.
 // LOCAL SETTING: playback 128 (measured on a USB sound card: no audible drop-outs, side tone about
-// 4 ms earlier than at 256, see docs/synth-sidetone/README.md).
+// 4 ms earlier than at 256, see docs/cw_sidetone.md).
 // Note that PipeWire treats this as a request: the graph quantum is whatever the driver
-// node ends up with, and may have to be forced (docs/synth-sidetone/README.md).
+// node ends up with, and may have to be forced (docs/cw_sidetone.md).
 //
 
 #define PIPEWIRE_QUANTUM_CAPTURE  "256/48000"
@@ -198,7 +198,7 @@ void audio_get_cards() {
 
 //
 // Local CW side tone synthesised in the output callback (see sidetone.c and
-// docs/synth-sidetone/design.md). Used only for the active receiver.
+// docs/cw_sidetone-design.md). Used only for the active receiver.
 //
 #define SYNTH_MAX 4096
 static double synth_buf[SYNTH_MAX];

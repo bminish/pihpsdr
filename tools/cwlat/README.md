@@ -23,7 +23,7 @@ PipeWire sink, with jitter, element lengths, dropped events and double elements.
             --test dit --label "synth iambicB breakin Q64" --csv dit.csv
 
 Tests: `straight` (CWR held, tone length vs hold), `dit` / `dah` (tap sweep 20-140 ms, shows where the
-keyer produces a second element), `squeeze` (both paddles). `--ptt` holds PTT for the run (no break-in
+keyer produces a second element), `squeeze` (both paddles). `hang` and `blip` are described below. `--ptt` holds PTT for the run (no break-in
 transitions); without it, about 20 % of gaps are long pauses so break-in has to go to TX again ("cold").
 
 ## Matrix
@@ -45,7 +45,7 @@ quantum is set by the script with `clock.force-quantum` and restored at the end.
 Pairs of dit taps: the first follows a long pause (cold), the second comes D ms after the keyer has finished the first
 (press + dot + gap), D = 100 ... 1400 ms in steps of 50. The report lists, per D, the second tap's sink latency, whether
 it is cold-like (the radio had dropped out of TX) and whether it produced no element at all. It needs Iambic, break-in on,
-radio in RX, no PTT mode, and the hang time set in pihpsdr. Taps are lost in two places (see `docs/keyer/lost-first-tap.md`):
+radio in RX, no PTT mode, and the hang time set in pihpsdr. Taps are lost in two places (see `docs/cw_keyer_first_tap.md`):
 cold starts, and a window of about 100 ms after the hang time has expired.
 
     ./capture_run.sh --kiwi kiwi.minish.org:8074 --freq 28187 --dir results/<group> --name <path>_<key>_<mode>_Q<q>_hang \
@@ -54,6 +54,26 @@ cold starts, and a window of about 100 ms after the hang time has expired.
 `cwlat_analyze.py` takes path, key, mode, quantum and test from the capture name (`synth_iambicB_breakin_Q128_hang`);
 other names make it stop with an IndexError. RF and sink are both missing for a lost tap, so "RF only" / "sink only"
 in the analysis separate keyer losses from sidetone losses.
+
+## Short straight-key taps (`--test short`)
+Straight key (CWR) holds of 5, 10, 15, 20, 25, 30, 35, 40 and 50 ms, each after a pause of 1.2 to 1.8 s, so that every tap
+arrives while the keyer is switching from RX to TX. Without LC-066 the taps that are over before TX is up give no element. With it
+each gives an element that is late by the switch, as long as the hold (never shorter than one RF ramp), with the usual 5 ms edges.
+The analysis reports tone length against hold. Use 90 trials (10 per hold length).
+`analysis/cwlat_short_bursts.py LABEL=CAPTURE_DIR ...` classifies each tap from the carrier envelope as full amplitude, a burst that never reaches the plateau, or nothing above the noise floor (the standard analysis counts a burst as missing).
+
+## Blip test (`--test blip`)
+Checks that the keyer does not start a transmission for a contact-bounce blip (LC-065 records short taps in paddle modes only).
+Pairs of trials: a first tap, then a 60 ms probe tap 150 ms after the press of the first, then a 2.5 s pause. The first tap is a
+real 60 ms tap (reference), or a blip of 1, 2 or 3 ms. A blip is shorter than the RX to TX transition and gives no element; if
+the keyer started TX for it anyway, the probe is warm (about 20 ms earlier than the cold reference). Straight key (CWR) with
+break-in; compare an unchanged build with the one under test. The sink report lists, per blip length, how many probes were
+cold-like; the RF side is in `cwlat_analyze.py` output (`blip test, RF`) and the trials CSV. Blips are not counted as missing taps.
+
+## Recording of the sink monitor (`--sink-wav FILE`)
+`capture_run.sh` passes it: the recorded sink monitor is saved as mono float32 WAV at 48 kHz with `FILE.cb.csv` (first sample and
+CLOCK_MONOTONIC time of each capture callback), so a tap that is present at RF but absent at the sink can be looked at afterwards
+instead of only counted.
 
 ## Known issue: PTT-mode runs leave pihpsdr's PTT stuck
 Runs with `--ptt` (PTT held by MIDI note 22 while paddle notes are sent) leave pihpsdr's PTT asserted
@@ -71,4 +91,4 @@ tool sends.
 `cwlat_analyze.py` puts the Kiwi IQ on UTC from the GNSS stamps, finds the keyed carrier by correlating power with the times keyed,
 and matches RF elements to the MIDI events: latency, jitter, element length against commanded or nominal (truncation / clipping),
 rise / fall time, missing and extra elements, and the RF-versus-sidetone offset. Quarantined runs (`_invalid*`) are skipped.
-Results are summarised in `docs/synth-sidetone/findings.md`.
+Results are summarised in `docs/cw_sidetone-findings.md`.

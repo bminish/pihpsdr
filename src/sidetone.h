@@ -19,10 +19,14 @@
 #define _SIDETONE_H
 
 //
-// Local CW side tone synthesised in the audio output callback (see docs/synth-sidetone/README.md).
+// Local CW side tone synthesised in the audio output callback instead of being queued
+// through a FIFO, which saves the FIFO's cushion of silence (about 8 msec).
 //
 // The module knows nothing about the radio: frequency and amplitude are passed in by the caller, so it can
-// be tested stand-alone (test/sidetone/test_sidetone.c).
+// be tested stand-alone.
+//
+// The event ring is lock-free with one producer and one consumer, like the CW ring in transmitter.c: it relies
+// on only one key source (keyer thread, GPIO, MIDI, CAT, remote client) being active at a time.
 //
 
 //

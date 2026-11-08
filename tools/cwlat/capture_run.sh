@@ -5,12 +5,13 @@
 # events later is written next to it.
 #
 # usage: capture_run.sh --kiwi HOST:PORT --freq KHZ --dir DIR --name NAME [--label TEXT] -- <cwlat args>
-#   (cwlat args must not contain --events/--csv, they are added here)
+#   (cwlat args must not contain --events/--csv/--sink-wav, they are added here)
 #
 # Output in DIR/NAME/ :
 #   NAME_.wav           KiwiSDR IQ with GNSS time-stamp chunks (kiwirecorder -m iq -w)
 #   NAME.events.csv     every MIDI event: monotonic and UTC send time (cwlat --events)
 #   NAME.trials.csv     cwlat per-trial results (MIDI -> sink monitor)
+#   NAME.sink.wav       the recorded sink monitor (mono float32, 48 kHz) and NAME.sink.wav.cb.csv (callback times)
 #   NAME.cwlat.txt/.err cwlat report / messages
 #   NAME.kiwi.log       kiwirecorder output
 #   NAME.meta.json      start/end UTC, settings, clock-sync status, versions
@@ -58,7 +59,7 @@ if [ ! -f "$OUT/${NAME}_.wav" ] || [ "$(stat -c %s "$OUT/${NAME}_.wav")" -le 150
   echo "capture_run: no Kiwi data after 30 s, not keying"; cleanup; exit 3
 fi
 
-"$HERE/cwlat" "$@" --events "$OUT/$NAME.events.csv" --csv "$OUT/$NAME.trials.csv" > "$OUT/$NAME.cwlat.txt" 2> "$OUT/$NAME.cwlat.err" &
+"$HERE/cwlat" "$@" --events "$OUT/$NAME.events.csv" --sink-wav "$OUT/$NAME.sink.wav" --csv "$OUT/$NAME.trials.csv" > "$OUT/$NAME.cwlat.txt" 2> "$OUT/$NAME.cwlat.err" &
 CP=$!
 wait "$CP"; RC=$?
 CP=""

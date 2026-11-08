@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# The synth side tone work as a patch series against upstream (docs/synth-sidetone/README.md).
+# The synth side tone work as a patch series against upstream (docs/cw_sidetone.md).
 #
 #   tools/synth-sidetone/synth-sidetone-patches.sh export DIR    write the series into DIR (git format-patch)
 #   tools/synth-sidetone/synth-sidetone-patches.sh check [REF]   does it still apply to REF (default: master), compile, and pass the unit test?
