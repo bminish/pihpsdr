@@ -30,6 +30,7 @@
 #include <sched.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <sys/mman.h>
 
@@ -237,6 +238,28 @@ static volatile int tap_left = 0;
 static volatile int tap_right = 0;
 
 //
+// Straight key (the dash paddle in straight key mode): a hold is the element, so a tap that has come and
+// gone before TX is up cannot simply be remembered as a press. Press and release times are kept, and the
+// keyer thread keys down late for the length of the hold. "tap_dash_t1" is set before the key state itself
+// is changed, so a thread that sees the key up sees the release time as well.
+//
+// Nothing is filtered here (debouncing the key is not the keyer's job): if the key went down, the start
+// of the element is not lost. No straight key element is ever shorter than one RF ramp (cw_ramp_width,
+// plus 1 msec; see the STRAIGHT state), so that it always reaches its plateau and is shaped like every
+// other element. A key that is still down when TX comes up is keyed down late and released on time, as
+// before.
+//
+static volatile long long tap_dash_t0 = 0;
+static volatile long long tap_dash_t1 = 0;
+static volatile int tap_dash_hit = 0;
+
+static long long mono_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (long long) ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
+//
 // The request to leave TX is sent by a timer, 50 msec after the hang time has expired. A tap that
 // arrives before the timer fires cancels the request, so that we stay in TX and the element is not
 // delayed by the transition. The state is protected by a mutex, since the timer runs in the GTK thread.
@@ -378,6 +401,17 @@ void keyer_event(int left, int state) {
   // automatic dots, like a paddle). The dash paddle in that mode is the straight key itself, which has no
   // fixed element to send: see the straight key recovery below.
   //
+  if (cw_keyer_mode == KEYER_STRAIGHT && (left ? &kcwl : &kcwr) == kdash) {
+    if (state && tap_recording) {
+      tap_dash_t1 = 0;
+      tap_dash_t0 = mono_ns();
+      atomic_thread_fence(memory_order_seq_cst);
+      tap_dash_hit = 1;
+    } else if (!state && tap_dash_hit && tap_dash_t1 == 0) {
+      tap_dash_t1 = mono_ns();
+    }
+    atomic_thread_fence(memory_order_seq_cst);
+  }
   if (state && tap_recording && (cw_keyer_mode != KEYER_STRAIGHT || (left ? &kcwl : &kcwr) == kdot)) {
     if (left) { tap_left = 1; }
     else { tap_right = 1; }
@@ -487,6 +521,7 @@ static void* keyer_thread(void *arg) {
             int stay = 0;
             tap_left = 0;
             tap_right = 0;
+            tap_dash_hit = 0;
             tap_recording = 1;
             tx_off_request();
             // Wait for MOX really gone. This is necessary since otherwise we may
@@ -538,6 +573,23 @@ static void* keyer_thread(void *arg) {
             gpio_set_cw(1);
 #endif
             key_state = STRAIGHT;
+          } else if (tap_dash_hit) {
+            //
+            // The straight key was pressed and released before we could look. Key down now for the
+            // length of the hold: the STRAIGHT state then finds the key up and queues the key-up
+            // after that time.
+            //
+            atomic_thread_fence(memory_order_seq_cst);
+            long long t0 = tap_dash_t0, t1 = tap_dash_t1;
+            double hold = 1.0E-6 * (double)(t1 - t0);   // msec
+            if (t1 > t0) {
+              tdown = loop_delay.tv_sec + 1.0E-9 * loop_delay.tv_nsec - 0.001 * hold;
+              tx_queue_cw_event(1, 0);  // immediate key-down
+#ifdef GPIO
+              gpio_set_cw(1);
+#endif
+              key_state = STRAIGHT;
+            }
           }
         } else {
           // Paddle
@@ -552,6 +604,7 @@ static void* keyer_thread(void *arg) {
         tap_recording = 0;
         tap_left = 0;
         tap_right = 0;
+        tap_dash_hit = 0;
         if (key_state == CHECK) {
           // wait 1 msec
           loop_delay.tv_nsec += 1000000;
@@ -563,8 +616,13 @@ static void* keyer_thread(void *arg) {
         //
         if (! *kdash) {
           // this does an "almost immediate" key-up. But it is ensured that the key-down lasts as long
-          // as it has really been down
-          tx_queue_cw_event(0, (int)((loop_delay.tv_sec + 1.0E-9 * loop_delay.tv_nsec - tdown) * 48000.0));
+          // as it has really been down, and that every element is shaped: it lasts at least one RF ramp
+          // (plus 1 msec). A key that was released a few msec after TX came up would otherwise give a
+          // pulse that never reaches full amplitude.
+          int down_samples = (int)((loop_delay.tv_sec + 1.0E-9 * loop_delay.tv_nsec - tdown) * 48000.0);
+          int min_samples = (int)((cw_ramp_width + 1.0) * 48.0);
+          if (down_samples < min_samples) { down_samples = min_samples; }
+          tx_queue_cw_event(0, down_samples);
 #ifdef GPIO
           gpio_set_cw(0);
 #endif
