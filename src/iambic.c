@@ -219,11 +219,69 @@ int *kdash;
 int *kmemr;
 int *kmeml;
 static int running = 0;
+
 #ifdef __APPLE__
   static sem_t *cw_event;
 #else
   static sem_t cw_event;
 #endif
+
+//
+// The keyer thread looks at the paddles only when it is not busy, and it is busy while waiting for
+// TX to come up (first element after a pause) or to go down (end of the hang time). A tap that is
+// released again in the meantime would be lost. While "tap_recording" is set, keyer_event() therefore
+// remembers which paddle was hit, and the keyer thread starts an element for it.
+//
+static volatile int tap_recording = 0;
+static volatile int tap_left = 0;
+static volatile int tap_right = 0;
+
+//
+// The request to leave TX is sent by a timer, 50 msec after the hang time has expired. A tap that
+// arrives before the timer fires cancels the request, so that we stay in TX and the element is not
+// delayed by the transition. The state is protected by a mutex, since the timer runs in the GTK thread.
+//
+#define TX_OFF_IDLE      0
+#define TX_OFF_PENDING   1
+#define TX_OFF_CANCELLED 2
+#define TX_OFF_SENT      3
+static pthread_mutex_t tx_off_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int tx_off_state = TX_OFF_IDLE;
+static unsigned int tx_off_serial = 0;
+
+static gboolean tx_off_timer(gpointer data) {
+  int send = 0;
+  pthread_mutex_lock(&tx_off_mutex);
+  // the serial number ensures that a late timer never acts on a newer request
+  if (tx_off_state == TX_OFF_PENDING && tx_off_serial == GPOINTER_TO_UINT(data)) {
+    tx_off_state = TX_OFF_SENT;
+    send = 1;
+  }
+  pthread_mutex_unlock(&tx_off_mutex);
+  if (send) { radio_set_mox(0); }
+  return G_SOURCE_REMOVE;
+}
+
+static void tx_off_request(void) {
+  pthread_mutex_lock(&tx_off_mutex);
+  tx_off_state = TX_OFF_PENDING;
+  tx_off_serial++;
+  guint serial = tx_off_serial;
+  pthread_mutex_unlock(&tx_off_mutex);
+  g_timeout_add(50, tx_off_timer, GUINT_TO_POINTER(serial));
+}
+
+// returns 1 if the request was still pending and has been cancelled, 0 if it has already been sent
+static int tx_off_cancel(void) {
+  int cancelled = 0;
+  pthread_mutex_lock(&tx_off_mutex);
+  if (tx_off_state == TX_OFF_PENDING) {
+    tx_off_state = TX_OFF_CANCELLED;
+    cancelled = 1;
+  }
+  pthread_mutex_unlock(&tx_off_mutex);
+  return cancelled;
+}
 
 #ifdef __APPLE__
 #include "MacOS.h"  // emulate clock_gettime on old MacOS systems
@@ -315,6 +373,15 @@ static int enforce_cw_vox;
 
 void keyer_event(int left, int state) {
   if (!running) { return; }
+  //
+  // Taps are remembered in the paddle modes, and for the dot paddle in straight key / bug mode (it starts
+  // automatic dots, like a paddle). The dash paddle in that mode is the straight key itself, which has no
+  // fixed element to send: see the straight key recovery below.
+  //
+  if (state && tap_recording && (cw_keyer_mode != KEYER_STRAIGHT || (left ? &kcwl : &kcwr) == kdot)) {
+    if (left) { tap_left = 1; }
+    else { tap_right = 1; }
+  }
   if (state) {
     // This is to remember whether the key stroke interrupts a running CAT CW
     // Since in this case we return to RX after vox delay.
@@ -348,16 +415,23 @@ static void* keyer_thread(void *arg) {
   int txmode;
   int moxbefore;
   int cwvox;
+  int restart = 0;
   t_print("%s: running= %d\n", __func__, running);
   while (running) {
     enforce_cw_vox = 0;
+    if (restart) {
+      // a tap arrived while TX was going down: start again from RX
+      restart = 0;
+    } else {
+      tap_recording = 1;
 #ifdef __APPLE__
-    sem_wait(cw_event);
+      sem_wait(cw_event);
 #else
-    sem_wait(&cw_event);
+      sem_wait(&cw_event);
 #endif
+    }
     // swallow any cw_events posted during the last "cw hang" time.
-    if (!kcwl && !kcwr) { continue; }
+    if (!kcwl && !kcwr && !tap_left && !tap_right) { continue; }
     //
     // Normally the keyer will be used in "break-in" mode, that is, we switch to TX
     // automatically here, and after a certain "hang" time we will switch back to RX
@@ -410,14 +484,33 @@ static void* keyer_thread(void *arg) {
         if (cwvox == 0) {
           // we have just reduced cwvox from 1 to 0.
           if (!moxbefore) {
-            g_timeout_add(50, ext_radio_set_mox, GINT_TO_POINTER(0));
+            int stay = 0;
+            tap_left = 0;
+            tap_right = 0;
+            tap_recording = 1;
+            tx_off_request();
             // Wait for MOX really gone. This is necessary since otherwise we may
             // still "see" PTT active upon the next key stroke and therefore fail
             // to go into CW-vox mode. However, only wait up to 250 msec
             // in order not to be
             // "caught" here.
+            // If a tap arrives while the request is still pending, cancel it and stay in TX.
             i = 250;
-            while (mox && i-- > 0) { usleep(1000L); }
+            while (mox && i-- > 0) {
+              usleep(1000L);
+              if ((tap_left || tap_right) && tx_off_cancel()) {
+                stay = 1;
+                break;
+              }
+            }
+            if (stay) {
+              // back to the hang loop, CHECK will start an element for the tap
+              cwvox = (int) cw_keyer_hang_time;
+              key_state = CHECK;
+            } else if (tap_left || tap_right) {
+              // TX was already going down: start again from RX
+              restart = 1;
+            }
           }
         } else {
           key_state = CHECK;
@@ -431,7 +524,8 @@ static void* keyer_thread(void *arg) {
         // we won't enter the code 10 lines above that de-activates MOX.
         if (cwvox > 1) { cwvox--; }
         if (cw_keyer_mode == KEYER_STRAIGHT) {       // Straight/External key or bug
-          if (*kdot) {
+          int dot_tap = (kdot == &kcwl) ? tap_left : tap_right;
+          if (*kdot || dot_tap) {
             // "bug" mode: dot key activates automatic dots
             key_state = PREDOT;
           }
@@ -450,9 +544,14 @@ static void* keyer_thread(void *arg) {
           // If both following if-statements are true, which one should win?
           // I think a "simultaneous squeeze" means a dot-dash sequence, since in
           // a dash-dot sequence there is a larger time window to hit the dot.
-          if (*kdash) { key_state = PREDASH; }
-          if (*kdot) { key_state = PREDOT; }
+          int dot_tap = (kdot == &kcwl) ? tap_left : tap_right;
+          int dash_tap = (kdot == &kcwl) ? tap_right : tap_left;
+          if (*kdash || dash_tap) { key_state = PREDASH; }
+          if (*kdot || dot_tap) { key_state = PREDOT; }
         }
+        tap_recording = 0;
+        tap_left = 0;
+        tap_right = 0;
         if (key_state == CHECK) {
           // wait 1 msec
           loop_delay.tv_nsec += 1000000;
