@@ -164,6 +164,13 @@ CPP_DEFINES += -DMIDI
 CPP_SOURCES += src/mac_midi.c src/midi2.c src/midi3.c src/midi_menu.c
 CPP_SOURCES += src/alsa_midi.c src/midi2.c src/midi3.c src/midi_menu.c
 
+#
+# "make CWTIME=1": timing probe for the break-in sequence (src/cwtime.h)
+#
+ifeq ($(CWTIME), 1)
+CFLAGS += -DCW_TIMING_LOG
+endif
+
 ##############################################################################
 #
 # Add libraries for USB OZY support [optional, requires libusb-1.0]
@@ -492,6 +499,7 @@ src/g2panel_menu.c \
 src/gpio.c \
 src/i2c.c \
 src/iambic.c \
+src/cwtime.c \
 src/main.c \
 src/message.c \
 src/meter.c \
@@ -597,6 +605,7 @@ src/g2panel.o \
 src/g2panel_menu.o \
 src/gpio.o \
 src/iambic.o \
+src/cwtime.o \
 src/i2c.o \
 src/main.o \
 src/message.o \
@@ -1018,7 +1027,8 @@ src/i2c.o: src/actions.h src/band.h src/bandstack.h src/ext.h
 src/i2c.o: src/client_server.h src/diversity_auto.h src/mode.h src/receiver.h
 src/i2c.o: src/transmitter.h src/gpio.h src/i2c.h src/message.h src/radio.h
 src/i2c.o: src/adc.h src/discovered.h src/toolbar.h src/vfo.h
-src/iambic.o: src/ext.h src/client_server.h src/diversity_auto.h src/mode.h
+src/cwtime.o: src/cwtime.h src/message.h
+src/iambic.o: src/cwtime.h src/ext.h src/client_server.h src/diversity_auto.h src/mode.h
 src/iambic.o: src/receiver.h src/transmitter.h src/gpio.h src/iambic.h
 src/iambic.o: src/main.h src/message.h src/new_protocol.h src/MacOS.h
 src/iambic.o: src/buffer.h src/atomic.h src/radio.h src/adc.h
@@ -1133,7 +1143,7 @@ src/rade_correlator.o: src/diversity_auto.h src/message.h src/radio.h
 src/rade_correlator.o: src/adc.h src/discovered.h src/receiver.h
 src/rade_correlator.o: src/transmitter.h src/rade_correlator.h
 src/rade_v2_correlator.o: src/rade_v2_correlator.h
-src/radio.o: src/actions.h src/adc.h src/agc.h src/appearance.h src/css.h
+src/radio.o: src/cwtime.h src/actions.h src/adc.h src/agc.h src/appearance.h src/css.h
 src/radio.o: src/audio.h src/receiver.h src/transmitter.h src/band.h
 src/radio.o: src/bandstack.h src/channel.h src/client_server.h
 src/radio.o: src/diversity_auto.h src/mode.h src/discovered.h src/dxcluster.h

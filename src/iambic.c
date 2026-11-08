@@ -34,6 +34,7 @@
 #include <time.h>
 #include <sys/mman.h>
 
+#include "cwtime.h"
 #include "ext.h"
 #include "gpio.h"
 #include "iambic.h"
@@ -281,7 +282,10 @@ static gboolean tx_off_timer(gpointer data) {
     send = 1;
   }
   pthread_mutex_unlock(&tx_off_mutex);
-  if (send) { radio_set_mox(0); }
+  if (send) {
+    CWT(CWT_OFF_FIRE);
+    radio_set_mox(0);
+  }
   return G_SOURCE_REMOVE;
 }
 
@@ -396,6 +400,7 @@ static int enforce_cw_vox;
 
 void keyer_event(int left, int state) {
   if (!running) { return; }
+  if (state && tap_recording) { CWT(CWT_PRESS); }
   //
   // Taps are remembered in the paddle modes, and for the dot paddle in straight key / bug mode (it starts
   // automatic dots, like a paddle). The dash paddle in that mode is the straight key itself, which has no
@@ -457,6 +462,7 @@ static void* keyer_thread(void *arg) {
       // a tap arrived while TX was going down: start again from RX
       restart = 0;
     } else {
+      CWT_RESET();
       tap_recording = 1;
 #ifdef __APPLE__
       sem_wait(cw_event);
@@ -486,6 +492,7 @@ static void* keyer_thread(void *arg) {
     if (enforce_cw_vox) { moxbefore = 0; }
     cwvox = 0; // if not using CW break-in this will stay at zero
     if (cw_breakin && (txmode == modeCWU || txmode == modeCWL)) {
+      CWT(CWT_MOX_REQ);
       g_idle_add(ext_radio_set_mox, GINT_TO_POINTER(1));
       //
       // Wait for mox, that is, wait for WDSP shutting down the RX and
@@ -496,6 +503,7 @@ static void* keyer_thread(void *arg) {
       //
       i = 200;
       while (!mox && i-- > 0) { usleep(1000L); }
+      CWT(CWT_MOX_SEEN);
       cwvox = (int) cw_keyer_hang_time;
     }
     key_state = CHECK;
@@ -517,6 +525,7 @@ static void* keyer_thread(void *arg) {
         // If CW-vox still hanging, continue "busy-spinning"
         if (cwvox == 0) {
           // we have just reduced cwvox from 1 to 0.
+          CWT(CWT_EXPIRY);
           if (!moxbefore) {
             int stay = 0;
             tap_left = 0;
@@ -538,6 +547,7 @@ static void* keyer_thread(void *arg) {
                 break;
               }
             }
+            CWT(CWT_OFF_SEEN);
             if (stay) {
               // back to the hang loop, CHECK will start an element for the tap
               cwvox = (int) cw_keyer_hang_time;
@@ -545,6 +555,8 @@ static void* keyer_thread(void *arg) {
             } else if (tap_left || tap_right) {
               // TX was already going down: start again from RX
               restart = 1;
+            } else {
+              CWT_REPORT();
             }
           }
         } else {
@@ -640,6 +652,7 @@ static void* keyer_thread(void *arg) {
 #ifdef GPIO
         gpio_set_cw(1);
 #endif
+        CWT(CWT_KEYDOWN);
         tx_queue_cw_event (1, 0);            // immediate key-down
         tx_queue_cw_event (0, dot_samples);  // wait dot length, then key-up
         tx_queue_cw_event (0, dot_samples);  // wait dot length, then key-up
@@ -700,6 +713,7 @@ static void* keyer_thread(void *arg) {
 #ifdef GPIO
         gpio_set_cw(1);
 #endif
+        CWT(CWT_KEYDOWN);
         tx_queue_cw_event (1, 0);              // immediate key-down
         tx_queue_cw_event (0, dash_samples);   // wait dash length, then key-up
         tx_queue_cw_event (0, dot_samples);    // wait dash length, then key-up

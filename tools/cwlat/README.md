@@ -51,6 +51,10 @@ cold starts, and a window of about 100 ms after the hang time has expired.
     ./capture_run.sh --kiwi kiwi.minish.org:8074 --freq 28187 --dir results/<group> --name <path>_<key>_<mode>_Q<q>_hang \
         --label "<text>" -- --confirm-safe --sink <node> --dest 32:0 --wpm 22 --test hang --trials 120 --label "<text>"
 
+The grid of D can be changed with `--hang-from MS --hang-to MS --hang-step MS` (default 100 1400 50, at most 64 values; the
+smallest D values are the warm reference, so start where the keyer is still warm), e.g. `--hang-from 250 --hang-to 500 --hang-step 10
+--trials 104` to resolve the expiry at hang 600.
+
 `cwlat_analyze.py` takes path, key, mode, quantum and test from the capture name (`synth_iambicB_breakin_Q128_hang`);
 other names make it stop with an IndexError. RF and sink are both missing for a lost tap, so "RF only" / "sink only"
 in the analysis separate keyer losses from sidetone losses.

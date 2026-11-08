@@ -47,7 +47,7 @@ Each is its own patch, measured before the next. Estimates are lines of `iambic.
 
 | Phase | What | Fixes (section 2) | Size | Risk | Measured with |
 |---|---|---|---|---|---|
-| 0 | Scaffolding, no behaviour change: a host test of the break-in logic with an injected clock (hang expiry, tap before and after the timer, late timer, owner, hang 0); finer D grid (10 ms) in `cwlat --test hang` around the expiry; a timing log of press, `rxtx()` start, `rxtx()` end, `mox` set | measurement | test code + about 20 | none | the test itself, and a baseline hang run |
+| 0 | Scaffolding, no behaviour change: a host test of the break-in logic with an injected clock (hang expiry, tap before and after the timer, late timer, owner, hang 0); finer D grid (10 ms) in `cwlat --test hang` around the expiry; a timing log of press, `rxtx()` start, `rxtx()` end, `mox` set | measurement | test code + about 20 | none | the test itself, and a baseline hang run **Done 2026-11-08 except the on-air baseline (section 8).** |
 | 1 | **Hang in real milliseconds**: deadline instead of the counter, same start point as today | 1 | about 30 | low in code; **changes every user's effective hang** (a stored 600 means 600 ms instead of about 300), so it is its own announced patch | hang test: warm up to D = hang, loss window moves out; unit test of the arithmetic |
 | 2 | **Session token and owner**: `tx_off_cancel()` when the thread gives up or a session starts; `owner` replaces `moxbefore`; hang 0 defined | 3, 4, 5 | about 60 | low to medium (PTT, VOX and CAT interplay) | unit tests; a provoked late timer (hold the GTK thread in a debug build); PTT held across keying (needs the cwlat PTT sender fixed first, see its README) |
 | 3 | **One loop** with `sem_timedwait` and the edge record, LC-065 and LC-066 reimplemented on it with identical behaviour | 2 | about 250 (rewrite of the loop around the unchanged element states) | **high**: it is the loop every key press goes through | the whole regression set, Iambic A and B, straight, `short`, hang; real paddles before it goes anywhere |
@@ -69,3 +69,30 @@ Order: 0, 1, 2 (then 5), 4 as a separate track, 3 last and only if phases 1 and 
 * The cwlat **PTT sender fault** blocks tests of the owner logic in phase 2 until it is fixed (`tools/cwlat/README.md`).
 * The tests so far are one machine, quantum 128 or 256, 22 wpm, Kiwi at 28187 kHz, no real paddle, no PTT mode: a refactor of the loop must be tested with a real paddle and at other speeds before it is trusted.
 * The radio's own keyer (`cw_keyer_internal = 0`) is not involved; phase 1 makes the shared setting mean the same thing in both.
+
+## 8. Phase 0: what exists now (2026-11-08)
+
+**Host test of the real keyer, `test/breakin/run.sh`** (about 12 s, no radio). It compiles a copy of the real `src/iambic.c` against stub headers (`test/breakin/shim/`) and drives it with a simulated GTK main loop: one thread runs idle and timer callbacks in order, `radio_set_mox()` sets `mox` only after a simulated `rxtx()` of 30 ms (the same order as `radio.c`), and a timer can be delayed. Real time, 40 wpm, hang 300 ms. Eight scenarios, one process each, **characterisation tests**: they state what the code does today, bugs included, and are changed on purpose by the later phases (`HANG_RATIO` for phase 1; the lines marked BUG for phase 2). They are repeatable (three runs, same result). Results of the code as it is:
+
+| Scenario | Result |
+|---|---|
+| S1 cold start, tap of 15 ms (shorter than the 30 ms transition) | element sent (LC-065), key-down 31 ms after the press |
+| S2 hang expiry | TX off requested after 160 ms of 300 set: **ratio 0.53** (the 1 ms sleeps take about 1.07 ms; the counter counts twice per pass) |
+| S3 tap 20 ms after the expiry, before the 50 ms timer | key-down 0.3 ms after the press, no transition, TX off once, after the second element |
+| S4 tap 60 ms after the expiry, drop in progress | key-down 52 ms after the press (drop, then RX to TX), TX goes down, up, down |
+| S5 BUG: timer delayed by 350 ms (busy main loop) | the stale timer drops TX 400 ms after the expiry, in the middle of a later session; a key-down is queued with TX off |
+| S6 BUG: TX to RX transition of 400 ms, tap during it | TX is still on 2.5 s after the last element, one TX-off request over two sessions (the latch) |
+| S7 BUG: hang 0 | TX stays up, no TX-off request |
+| S8 cold start, tap of 100 ms | key-down 31 ms after the press |
+
+Two things the test showed that the notes did not say: the 250 polls of the TX-off wait take about 267 ms, not 250 (a tap at 260 ms after the expiry is still inside the wait and cancels the timer, which is the intended behaviour); and S5 and S6 need the tap after the wait has given up, so both need a main loop held for more than a quarter of a second or a TX to RX transition of that order. Neither was provoked on the radio.
+
+**Finer grid in `cwlat --test hang`**: `--hang-from MS --hang-to MS --hang-step MS` (default 100 1400 50, at most 64 values). For the expiry at hang 600, `--hang-from 250 --hang-to 500 --hang-step 10` with `--trials 104` gives two second taps for each of the 26 values in about seven minutes.
+
+**Timing probe, `make CWTIME=1`** (`src/cwtime.[ch]`, marks in `iambic.c` and `radio.c`; `touch src/cwtime.c src/iambic.c src/radio.c` when switching). Without it `CWT()` is empty and the program is unchanged; with it the first occurrence of each event of a break-in session is stored (no print, no lock in the timing path) and one line is printed after the TX-off wait, when TX is down:
+
+    cwtime: idle-queue 0.4, rxtx 30.8, rxtx-to-mox 0.1, mox-to-keyer 0.9, press-to-keydown 33.2 | expiry-to-timer 50.1, timer-to-rxtx 0.6, rxtx 31.0, rxtx-to-mox 0.1, mox-to-keyer 1.0 (ms, -1: not seen)
+
+(An illustration of the format, not a measurement.) "idle-queue" is the time from the keyer's request to the start of `rxtx()`: the hypothesis of an idle callback waiting behind GTK redraws is true if this is large and varies; "rxtx" is the cost of the RX/TX transition itself. A normal session prints one line per first cold start with a TX-off after it.
+
+**Still to do for phase 0**: the on-air baseline at hang 600: the fine-grid hang test (above) and a `CWTIME=1` run of the same, to see where the 20 to 55 ms of the cold start go and where the loss window starts and ends.

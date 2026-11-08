@@ -82,6 +82,7 @@ static int opt_confirm = 0;
 static int opt_selftest = 0;
 static double opt_pause_frac = 0.2;
 static double opt_cold_ms = 400.0;
+static double opt_hang_from = 100.0, opt_hang_to = 1400.0, opt_hang_step = 50.0;   // hang test: grid of D
 static unsigned long long opt_seed = 12345;
 
 /* --------------------------------------------------------------- the schedule */
@@ -220,7 +221,8 @@ static double build_schedule(void) {
       double two_dots = 2.0 * 1.2 / opt_wpm;          // seconds: dot + inter-element gap
       if (i % 2 == 0) {
         press_prev = t;
-        pending_gap = 100.0 + 50.0 * ((i / 2) % 27);  // 100 .. 1400 ms
+        int nd_ = (int)((opt_hang_to - opt_hang_from) / opt_hang_step + 0.5) + 1;
+        pending_gap = opt_hang_from + opt_hang_step * ((i / 2) % nd_);   // default 100 .. 1400 ms in steps of 50
         t = press_prev + two_dots + pending_gap / 1000.0;
       } else {
         T->gap = pending_gap;
@@ -654,10 +656,11 @@ static void analyse(void) {
     double cold_sum = 0; int cold_n = 0;
     for (int i = 0; i < ntr; i += 2) { if (!R[i].dropped) { cold_sum += R[i].lat50; cold_n++; } }
     double warm_sum = 0; int warm_n = 0;
-    for (int i = 1; i < ntr; i += 2) { if (!R[i].dropped && tr[i].gap <= 200.0) { warm_sum += R[i].lat50; warm_n++; } }
+    double warm_lim = dd[0] + 50.0 > 200.0 ? dd[0] + 50.0 : 200.0;   // the smallest D values are the warm reference
+    for (int i = 1; i < ntr; i += 2) { if (!R[i].dropped && tr[i].gap <= warm_lim) { warm_sum += R[i].lat50; warm_n++; } }
     double cold_ref = cold_n ? cold_sum / cold_n : 0.0, warm_ref = warm_n ? warm_sum / warm_n : 0.0;
     printf("-- hang time: 2nd tap against D (D counts from the end of the previous element and its gap, in ms)\n");
-    printf("  reference: first tap after a long pause (cold) %.1f ms (n=%d), 2nd tap with D<=200 ms (warm) %.1f ms (n=%d)\n", cold_ref, cold_n, warm_ref, warm_n);
+    printf("  reference: first tap after a long pause (cold) %.1f ms (n=%d), 2nd tap with D<=%.0f ms (warm) %.1f ms (n=%d)\n", cold_ref, cold_n, warm_lim, warm_ref, warm_n);
     printf("  D ms | n | mean lat50 (ms) | min .. max | cold-like (lat > warm+10) | dropped\n");
     double est = -1.0;
     for (int j = 0; j < nd; j++) {
@@ -802,7 +805,8 @@ static void usage(void) {
          "  --sink NAME       PipeWire sink piHPSDR plays to (its monitor is captured)\n"
          "  --dest C:P        ALSA seq destination, default 32:0 (VirMIDI 4-0)\n"
          "  --test T          straight: CWR held; dit: CWL tap; dah: CWR tap; squeeze: both;\n"
-         "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time)\n"
+         "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time);\n"
+         "                          --hang-from MS --hang-to MS --hang-step MS change the grid of D (default 100 1400 50, at most 64 values)\n"
          "                    short: straight key holds of 5-50 ms, each after a long pause (every one in the RX->TX switch)\n"
          "                    blip: pairs (tap or 1-3 ms blip, then a probe tap 150 ms later); a probe that is warm shows TX was started\n"
          "  --trials N        default 120\n"
@@ -824,7 +828,7 @@ static void usage(void) {
 int main(int argc, char **argv) {
   static struct option lo[] = {
     {"sink", 1, 0, 's'}, {"dest", 1, 0, 'd'}, {"test", 1, 0, 't'}, {"trials", 1, 0, 'n'}, {"wpm", 1, 0, 'w'},
-    {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'},
+    {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'}, {"hang-from", 1, 0, 'F'}, {"hang-to", 1, 0, 'G'}, {"hang-step", 1, 0, 'H'},
     {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"events", 1, 0, 'E'}, {"sink-wav", 1, 0, 'W'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
     {"help", 0, 0, 'h'}, {0, 0, 0, 0}
   };
@@ -841,6 +845,9 @@ int main(int argc, char **argv) {
     case 'p': opt_ptt = 1; break;
     case 'P': opt_pause_frac = atof(optarg); break;
     case 'C': opt_cold_ms = atof(optarg); break;
+    case 'F': opt_hang_from = atof(optarg); break;
+    case 'G': opt_hang_to = atof(optarg); break;
+    case 'H': opt_hang_step = atof(optarg); break;
     case 'l': opt_label = optarg; break;
     case 'o': opt_csv = optarg; break;
     case 'E': opt_events = optarg; break;

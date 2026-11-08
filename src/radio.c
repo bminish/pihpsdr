@@ -80,6 +80,7 @@
 #ifdef SOAPYSDR
   #include "soapy_protocol.h"
 #endif
+#include "cwtime.h"
 #include "store.h"
 #include "vfo.h"
 #include "waterfall.h"
@@ -1890,6 +1891,7 @@ static void rxtx(int state) {
     t_print("%s: WARNING: rxtx called but no transmitter!", __func__);
     return;
   }
+  CWT(state ? CWT_RXTX_START : CWT_OFF_RXTX_START);
   //
   // The diversity sample stream stops for the whole over, in duplex as
   // well, so tell the auto-phasing analysis - on both edges - that its
@@ -2097,6 +2099,7 @@ static void rxtx(int state) {
 #ifdef GPIO
   gpio_set_ptt(state);
 #endif
+  CWT(state ? CWT_RXTX_END : CWT_OFF_RXTX_END);
 }
 
 void radio_set_ptt_delay(int delay) {
@@ -2259,6 +2262,7 @@ void radio_set_mox(int state) {
     rxtx(state);
   }
   mox  = state;
+  CWT(state ? CWT_MOX_SET : CWT_OFF_MOX_SET);
   //vox  = 0;
   schedule_high_priority();
   schedule_receive_specific();
