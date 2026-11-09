@@ -60,7 +60,10 @@ No code was changed for these, and none is to be changed for now (decision 2026-
 
 ## 4. Not measured
 
-PTT mode (the cwlat PTT fault, 24 of 24 first taps lost in the earlier PTT runs, [cw_sidetone-findings.md](cw_sidetone-findings.md)); a real paddle or key; other speeds, bands, hang times and weights; Iambic A against the unchanged keyer; the time from the last key-up to the carrier going away; the TX drop and the 50 ms timer on their own; the PipeWire-less backends; the radio's own keyer (`cw_keyer_internal = 0`: hang time and `cw_keyer_ptt_delay` are then the radio's, sent in the protocol buffers, never read back).
+**Invalid, not just missing (found 2026-11-09):** every squeeze result so far (the second paddle press was dropped by running status: the tests were single-paddle) and every PTT-mode run (the PTT release and the first paddle press were dropped). See `tools/cwlat/README.md`. They have to be repeated with the corrected cwlat; dit, dah, straight, short, hang and blip are not affected.
+
+
+PTT mode with the straight key (Iambic B in PTT mode was measured on 2026-11-09, no tap lost and no cold-start penalty: [cw_sidetone-findings.md](cw_sidetone-findings.md); the earlier PTT runs, with 24 of 24 first taps lost, were a test-sender fault); a real paddle or key; other speeds, bands, hang times and weights; Iambic A against the unchanged keyer; the time from the last key-up to the carrier going away; the TX drop and the 50 ms timer on their own; the PipeWire-less backends; the radio's own keyer (`cw_keyer_internal = 0`: hang time and `cw_keyer_ptt_delay` are then the radio's, sent in the protocol buffers, never read back).
 
 ## Sources of the measured numbers
 

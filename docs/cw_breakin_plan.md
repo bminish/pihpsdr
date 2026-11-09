@@ -47,7 +47,7 @@ Each is its own patch, measured before the next. Estimates are lines of `iambic.
 
 | Phase | What | Fixes (section 2) | Size | Risk | Measured with |
 |---|---|---|---|---|---|
-| 0 | Scaffolding, no behaviour change: a host test of the break-in logic with an injected clock (hang expiry, tap before and after the timer, late timer, owner, hang 0); finer D grid (10 ms) in `cwlat --test hang` around the expiry; a timing log of press, `rxtx()` start, `rxtx()` end, `mox` set | measurement | test code + about 20 | none | the test itself, and a baseline hang run **Done 2026-11-08 except the on-air baseline (section 8).** |
+| 0 | Scaffolding, no behaviour change: a host test of the break-in logic with an injected clock (hang expiry, tap before and after the timer, late timer, owner, hang 0); finer D grid (10 ms) in `cwlat --test hang` around the expiry; a timing log of press, `rxtx()` start, `rxtx()` end, `mox` set | measurement | test code + about 20 | none | the test itself, and a baseline hang run **Done (section 8, baseline 2026-11-09).** |
 | 1 | **Hang in real milliseconds**: deadline instead of the counter, same start point as today | 1 | about 30 | low in code; **changes every user's effective hang** (a stored 600 means 600 ms instead of about 300), so it is its own announced patch | hang test: warm up to D = hang, loss window moves out; unit test of the arithmetic |
 | 2 | **Session token and owner**: `tx_off_cancel()` when the thread gives up or a session starts; `owner` replaces `moxbefore`; hang 0 defined | 3, 4, 5 | about 60 | low to medium (PTT, VOX and CAT interplay) | unit tests; a provoked late timer (hold the GTK thread in a debug build); PTT held across keying (needs the cwlat PTT sender fixed first, see its README) |
 | 3 | **One loop** with `sem_timedwait` and the edge record, LC-065 and LC-066 reimplemented on it with identical behaviour | 2 | about 250 (rewrite of the loop around the unchanged element states) | **high**: it is the loop every key press goes through | the whole regression set, Iambic A and B, straight, `short`, hang; real paddles before it goes anywhere |
@@ -95,4 +95,31 @@ Two things the test showed that the notes did not say: the 250 polls of the TX-o
 
 (An illustration of the format, not a measurement.) "idle-queue" is the time from the keyer's request to the start of `rxtx()`: the hypothesis of an idle callback waiting behind GTK redraws is true if this is large and varies; "rxtx" is the cost of the RX/TX transition itself. A normal session prints one line per first cold start with a TX-off after it.
 
-**Still to do for phase 0**: the on-air baseline at hang 600: the fine-grid hang test (above) and a `CWTIME=1` run of the same, to see where the 20 to 55 ms of the cold start go and where the loss window starts and ends.
+
+## 9. Phase 0 baseline, 2026-11-09 (the build of section 8 with `CWTIME=1`)
+
+Fine-grid hang test, `devtest/sidetone` at `546739f7` with the probe, Iambic B, hang 600, 22 wpm, break-in, quantum 128, Kiwi on 28187 kHz, D = 250 to 500 ms in 10 ms steps, two second taps per D (104 trials, 71 break-in sessions in the probe log). RF only: the sink side of the run is unusable (the receiver audio on the sink hid the side tone from cwlat; set the AF gain to zero for runs that need the sink).
+
+**No tap lost** (RF missing 0 of 104; LC-065 is in this build). Second tap, RF onset by D (ms after the press, warm reference 22.9):
+
+| D (ms) | 250 to 380 | 390 | 400 to 410 | 420 and later |
+|---|---|---|---|---|
+| second tap | **warm, 21.5 to 24.8** | 22.9 and 84.8 | **58 to 81 (late)** | cold, 37 to 69 (mostly 40 to 50) |
+
+* The expiry: a second tap is warm up to D = 380 ms. The 50 ms timer fires at about D = 385, so the hang expired at about D = 335, which is **0.56 of the 600 set** (the host test gives 0.53 at 300 ms: the counter's 2 counts per pass, plus about 7 % for the real 1 ms sleeps). The step is sharp: from D = 390 the timer has fired and `rxtx(0)` is running.
+* A tap at D = 390 to 410, while the drop is running, is recovered but late: 58 to 85 ms to the RF (the keyer waits for TX to finish dropping, then does a cold start), against 37 to 50 for an ordinary cold start. The window where a tap is late is about 30 ms wide (the 20 ms drop plus the polling); the 100 ms in the notes was the window where taps were lost, before LC-065.
+
+**Probe, 71 sessions** (ms; mean, sd, min, median, max):
+
+| Step | mean | sd | min | median | max |
+|---|---|---|---|---|---|
+| keyer request to `rxtx(1)` start (the idle queue) | 5.4 | 8.4 | 0.0 | 0.1 | 43.8 |
+| `rxtx(1)`, RX to TX | 18.6 | 3.0 | 12.6 | 18.1 | 26.6 |
+| `mox` set to keyer sees it | 0.5 | 0.3 | 0.0 | 0.6 | 1.0 |
+| **press to first key-down** | **24.5** | 8.9 | 13.7 | 22.3 | 66.0 |
+| hang expiry to the TX-off timer firing | 50.1 median | | 50.1 | 50.1 | 526 (see below) |
+| `rxtx(0)`, TX to RX | 21.5 | 3.8 | 15.2 | 21.1 | 30.7 |
+
+* **The cold start is `rxtx()` (18.6 ms, steady) plus the idle queue (5.4 ms mean, 0 to 44 ms).** The idle queue is why the cold start varies: its correlation with press-to-key-down is 0.94, and 25 of 71 sessions waited more than 5 ms (the median waits nothing). The earlier hypothesis (`g_idle_add` behind GTK work) holds, and it is the part that can be removed cheaply (phase 4: a higher priority for the request). The `rxtx()` comment's "30 +/- 10 ms" is 18.6 +/- 3.0 here.
+* **The TX-off timer is not held up**: 54 of 71 fired 50.1 to 52 ms after the expiry, 8 within 62 ms. The 9 values near 500 ms are sessions in which a tap cancelled the timer and the hang expired again later. A stale timer (finding 2) was not provoked in 71 sessions; it stays a code-only finding.
+* `mox` is seen by the keyer 0.5 ms after it is set; the 1 ms poll is not a cost worth changing.

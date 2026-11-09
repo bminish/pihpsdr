@@ -79,14 +79,18 @@ cold-like; the RF side is in `cwlat_analyze.py` output (`blip test, RF`) and the
 CLOCK_MONOTONIC time of each capture callback), so a tap that is present at RF but absent at the sink can be looked at afterwards
 instead of only counted.
 
-## Known issue: PTT-mode runs leave pihpsdr's PTT stuck
-Runs with `--ptt` (PTT held by MIDI note 22 while paddle notes are sent) leave pihpsdr's PTT asserted
-afterwards (seen 2026-11-06). A PTT-only press/release does not, and break-in runs never do. Operators use
-MIDI PTT with CW daily without it sticking, so the fault is in this tool's MIDI output (assumptions about
-the message stream, event spacing, release order, or a race), not in pihpsdr. **Fix this before further
-PTT-mode testing.** Until then clear PTT by hand after each PTT-mode run. Suggested first step: record the
-real controller's bytes (`amidi -p hw:3,0,0 -d`) for a PTT + paddle sequence and compare with what this
-tool sends.
+## The sink must be silent between taps
+cwlat finds the side tone in the sink monitor with a 550 Hz envelope and a threshold at half of the recording's 99.5 % level. Receiver audio on the same sink raises the envelope between taps: on 2026-11-09, with the AF gain at its minimum (which is not a mute: about 4e-3 rms on the sink, against a side tone peak of 1e-2), 10 of 36 cold-start tones were reported as "dropped" although they were in the recording (`--sink-wav` showed them 22 to 38 ms after the press), and the 10 % points are unreliable. A run with a noisy sink shows as "sink only" losses in the analysis (RF present, sink missing) concentrated on the first tap after a pause, because receiver audio is off while TX is up. Mute the receiver audio (not the side tone), or check the sink first: its monitor should be at about -80 dBFS between taps. Since 2026-11-09 the scan resumes 3 ms after the end of a tone instead of where the level falls below 10 %, which removes the worst of it but not all.
+
+## External keyer test (`--test ext`)
+Plays what an external keyer does: PTT on (note 24), the key down on note 23 after a lead of 5, 30 or 100 ms (5: before TX is up), a hold of 40, 60 or 80 ms, key up, PTT off 60 ms later; the next trial comes 120, 250 or 380 ms after the key-up, so the first key-down carries a wait of 120 to 480 ms, below the 500 ms after which `CW_KEYER_KEYDOWN` sends no wait. In piHPSDR map note 23 to "CW Key (Keyer)" (`CWKy`) and note 24 to "PTT (CW Keyer)" (`CWKyPTT`) in the MIDI menu (note 22 stays the footswitch `PTT`). It exercises the path the side tone's idle state (`sidetone_idle()`) is for: the first event after TX start must not wait for its gap again. The first runs on 2026-11-09 left piHPSDR in TX after the PTT note was released; the cause was the sender, not piHPSDR (running status, below), and is fixed but not yet re-run on air. The tone length is compared with the hold (as for the straight key). The PTT events belong to no trial. It is not for PTT-held runs (`--ptt`): its PTT is per trial.
+
+## Running status: the cause of the PTT-mode fault, and what it invalidates (found 2026-11-09)
+The virtual MIDI port turns the sequencer events into a raw byte stream **with running status**: a message with the same status as the one before it is sent without its status byte (`90 18 64` then `17 64`, not `90 17 64`). piHPSDR's parser (`parse_midi_byte()` in `midi2.c`) does not support running status and drops such a message. Real controllers are not affected: USB-MIDI sends a full status with every message. Consequences for cwlat before 2026-11-09:
+* two note-ons in a row lost the second: PTT on then a paddle (**the first tap after PTT was lost**, 24 of 24 in the PTT runs), or CWL then CWR in the **squeeze** test (the dash paddle was never pressed: every squeeze result so far is a single-paddle result);
+* two note-offs in a row lost the second: a PTT release after a paddle release, and the three note-offs of `release_all()` at the end of a run (**PTT left stuck**).
+dit, dah, straight, short, hang and blip alternate on and off and were not affected (the status byte of a note-on and of a note-off differ).
+`midi_send()` and `midisend` now send a Program Change in front of every note, which changes the status, so every note carries its own status byte (checked on a spare virtual port: `C0 00 90 18 64 C0 00 90 17 64 C0 00 80 17 00 ...`); piHPSDR ignores Program Change. **Not yet re-run on the radio:** the squeeze test and the PTT mode have to be repeated before their results are used.
 
 ## Analysis of the KiwiSDR captures
     python3 -I analysis/cwlat_analyze.py run results/<group>/captures/<name> --plot     # one capture

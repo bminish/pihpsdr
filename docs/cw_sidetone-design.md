@@ -80,7 +80,10 @@ the engine's `cw_delay_time` always is, because the engine counts it also while 
   the start of TX that gap delayed the side tone by up to 0.5 s while the RF keyed on time;
 * events queued shortly before the transmit flag is set are kept. In break-in the key event comes some 20 ms before
   RX -> TX is complete; an unconditional reset on every receive callback discarded that first key-down, so the
-  local side tone of the first element was missing. The engine keeps its events in its own ring and plays them;
+  local side tone of the first element was missing. (Correction, 2026-11-09: the TX engine does not keep such events: it empties its
+  ring every 2 ms while not transmitting, and that is right, since key state is queued for transmission only once PTT has started.
+  The side tone is a different thing: it follows the key whether or not PTT is asserted, for zero beating. The iambic path queues
+  its key-down after `mox` is up and is not affected;)
 * events older than 200 ms are dropped (TX never came, wrong mode, duplex), so they cannot start a tone later.
 
 Keep the 20 s key-down protection. Tested by `test/sidetone/test_sidetone_idle.c` (assertions; the first two cases
@@ -140,3 +143,6 @@ Property `cw_sidetone_synth` (CW menu checkbox "Synth sidetone", PipeWire builds
 
 About 240 lines of source: `transmitter.c` (queue + suppress), `pipewire.c` (callback), new `sidetone.c/.h`,
 `cw_menu.c`, `radio.c/.h`, `audio.h`, Makefile, one property.
+
+## Open question (2026-11-09): should the side tone follow the key without PTT?
+The side tone is the key made audible and is never wrong when it sounds with the key down, with or without PTT (zero beating: key down against the receiver audio, nothing transmitted). Today neither path does it: the engine produces the side tone only while transmitting (`xmit` in `tx_add_mic_sample()`), and the synth renders only while `radio_is_transmitting()` (`pw_out_cb()`). If the synth followed the key regardless of PTT, the TX gate and the idle state of `sidetone_idle()` would go: the renderer would run in every callback, `delay_samples` would count all the time (as the engine's `cw_delay_time` does, which is what makes the first event after a pause immediate), and nothing is queued or reset on a TX change. Not implemented; the CW mode, duplex and key-down protection gates stay to be decided.

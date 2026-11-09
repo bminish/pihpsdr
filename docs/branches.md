@@ -13,7 +13,7 @@ nothing is ever pushed there.
 | `feature/diversity` | The same commit as `TEST`. The stable base to start diversity work from or to point others at. Moves only when `TEST` does. | Yes |
 | `feature/diversity-binaural` | `TEST` plus the binaural work: the ear split (a left and a right ear from the two antennas), the shared AGC link, Balance ATT, the Link AGC menu row, and the RADE V2 captures. | **No, highly experimental.** Expect it to be rebased and its history rewritten. |
 | `feature/rade-native` | `TEST` plus the native RADE work (RADE V1 and V2 run inside piHPSDR through `librade`, the Reporter, the log viewer, the air tests) and the RADE V2 diversity reference (LC-064 to LC-068, with its V2 captures T-027 to T-030). Rebased onto `TEST` on 2026-10-30 (128 commits); `librade` is built separately (see `README.md`). Old tip: tag `backup/rade-native-pre-rebase-20261030`. | No, experimental |
-| `test/sidetone` | `test/binaural-rade` plus the CW work of `feature/cw-synth-sidetone`: the synthesised side tone (LC-064), the keyer fixes (LC-065, LC-066), `tools/cwlat` and their documents (`docs/cw_*.md`, start with `cw_timings.md`). | No, experimental |
+| `devtest/sidetone` | `devtest/binaural-rade` plus the CW work of `feature/cw-synth-sidetone`: the synthesised side tone (LC-064), the keyer fixes (LC-065, LC-066), `tools/cwlat` and their documents (`docs/cw_*.md`, start with `cw_timings.md`). | No, experimental |
 | `feature/synth-sidetone` | The side tone as a series of patches on `master` (`tools/synth-sidetone/synth-sidetone-patches.sh`). Not ready for upstream. | Yes, for review |
 | `fix/keyer-lost-first-tap` | One commit on `master`: `iambic.c` no longer loses a short tap that arrives while the keyer waits for TX. Independent of the side tone. | Yes |
 | `fix/diversity-flat-weighting-TEST` | PR #149 to upstream. Leave it alone while the PR is open. | PR branch |
@@ -45,43 +45,42 @@ number on `TEST`, and record the old-to-new map in `test-findings.md`. LC
 numbers do not clash: LC-041 to LC-045 are binaural, LC-064 to LC-068 are
 RADE.
 
-## Archive: `history/`
+## Archive: bundles, not branches
 
-Finished, superseded or abandoned work is kept as `history/<topic>/<name>`.
-Nothing there is maintained and nothing is rebased. Today's contents,
-all under `history/diversity/`:
+Finished, superseded or abandoned work, and the `backup/` tags, are kept in
+bundles in `~/sdr/archive/`, not on `origin` and not in this clone. A branch
+that is done leaves `origin` the same way (bundle, verify, delete).
 
-- `binaural`, `binaural-2`, `binaural-agc-link`, `binaural-ui-test`: earlier binaural lines
-- `auto-diversity`, `auto-bins`, `autobins-renum`: the auto-diversity and bin work (upstream took it)
-- `noise-correlator`, `noise-floor-wip`, `phasing-analysis`, `radeV1-eq`, `radev1-level`, `radeV2-correlator`, `rade-abandoned`: measurement and RADE studies
-- `pr-menu-ref-row`: a PR branch with no PR open
+| Bundle | Holds |
+|---|---|
+| `pihpsdr-history-backups-20261109.bundle` | 16 `history/*` branches (`diversity/*` and `cw/*`: binaural, auto-diversity and bins, noise and RADE studies, the earlier CW side-tone and keyer branches), `archive/binaural-rade` (was `devtest/binaural-rade`, all of it is in `devtest/sidetone`) and 27 `backup/*` tags (the old tips from every rebase before 2026-11-09) |
+| `pihpsdr-history-pipewire-upstream-20261030.bundle` | the 15 old pipewire, upstream-PR and TCI-doc branches (June to September 2026) |
 
-A branch moves into `history/` with `git branch -m <old> history/<topic>/<new>`,
-then a push of the new name, then deleting the old name on `origin`.
-
-## Backups are tags, not branches
-
-Before any rebase or force-push, the old tip is kept as a tag,
-`backup/<branch>-pre-rebase-<date>` (23 now). They are pushed to `origin`,
-so they stay out of the branch list and are not lost. To look at one,
-`git switch --detach backup/TEST-pre-rebase-20261030`.
-
-## Bundled and removed from `origin`
-
-The old pipewire, upstream-PR and TCI-doc branches (15, from June to
-September 2026) are in
-`~/sdr/archive/pihpsdr-history-pipewire-upstream-20261030.bundle`
-and no longer on `origin` or in this clone. To bring them back:
+To look at something, or to bring a branch back:
 
 ```
-git fetch ~/sdr/archive/pihpsdr-history-pipewire-upstream-20261030.bundle \
-    'refs/heads/*:refs/heads/*'
+git bundle list-heads ~/sdr/archive/pihpsdr-history-backups-20261109.bundle
+git fetch ~/sdr/archive/pihpsdr-history-backups-20261109.bundle \
+    'refs/heads/history/diversity/binaural:refs/heads/history/diversity/binaural'
+git switch --detach <tag>   # after fetching 'refs/tags/backup/*:refs/tags/backup/*'
 ```
+
+Tags kept on `origin`: the releases (`v2.3` to `v3.1`, `3.0`, `Test-3.1`),
+`pre-upstream-merge-*` and `noise-floor-eval-20261001`.
+
+## Backups before a rebase
+
+Before any rebase or force-push, tag the old tip as
+`backup/<branch>-pre-rebase-<date>` and push it. When the rebase has
+proved itself, bundle the tags into `~/sdr/archive/` and delete them, so
+the tag list stays short.
 
 ## Rules
 
-- A new experiment starts as `feature/<name>` or `test/<name>`. When it is
-  finished or superseded it moves to `history/`.
+- A new experiment starts as `feature/<name>` or `devtest/<name>`. Nothing called `test` is created in this repository (no `test/` branches or tags: they
+  collide with `TEST` on case-insensitive file systems, macOS and Windows). `devtest/` is for throwaway development code: it is not offered to anyone, may be
+  rebased or rewritten at will, and is not a base for anything that is to last (that is a `feature/` or `fix/` branch). When a branch is finished or superseded it is
+  bundled into `~/sdr/archive/`.
 - Rebase onto `TEST` after `TEST` is re-synced with upstream. Tag the old
   tip first. A force-push to `origin` needs the owner's OK, and goes to
   `origin` only.
