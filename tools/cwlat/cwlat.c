@@ -43,6 +43,8 @@
 #define NOTE_CWR 20      // as in the piHPSDR MIDI table of this installation
 #define NOTE_CWL 21
 #define NOTE_PTT 22
+#define NOTE_KEY 23      // external keyer, used by --test ext: map it to "CW Key (Keyer)" (CW_KEYER_KEYDOWN) in the MIDI menu
+#define NOTE_EXTPTT 24   // ... and this one to "PTT (CW Keyer)" (CW_KEYER_PTT), the PTT of an external keyer (note 22 stays the footswitch PTT)
 
 /* ------------------------------------------------------------------ utilities */
 
@@ -82,6 +84,7 @@ static int opt_confirm = 0;
 static int opt_selftest = 0;
 static double opt_pause_frac = 0.2;
 static double opt_cold_ms = 400.0;
+static double opt_hang_from = 100.0, opt_hang_to = 1400.0, opt_hang_step = 50.0;   // hang test: grid of D
 static unsigned long long opt_seed = 12345;
 
 /* --------------------------------------------------------------- the schedule */
@@ -131,7 +134,11 @@ static double build_schedule(void) {
   static const double tap_holds[] = {20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140};
   static const double sq_holds[] = {40, 60, 80, 100, 140, 200};
   static const double short_holds[] = {5, 10, 15, 20, 25, 30, 35, 40, 50};
-  int kind = !strcmp(opt_test, "straight") || !strcmp(opt_test, "short") ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : !strcmp(opt_test, "hang") ? 4 : !strcmp(opt_test, "blip") ? 5 : 3;
+  static const double ext_holds[] = {40, 60, 80};          // ext: key hold, ms
+  static const double ext_leads[] = {5, 30, 100};          // ext: key-down this long after PTT on (5: before TX is up)
+  static const double ext_gaps[] = {120, 250, 380};        // ext: previous key-up to PTT on (the first wait is gap + lead, below 500 ms)
+  int ext = !strcmp(opt_test, "ext");
+  int kind = !strcmp(opt_test, "straight") || !strcmp(opt_test, "short") || ext ? 0 : !strcmp(opt_test, "dit") ? 1 : !strcmp(opt_test, "dah") ? 2 : !strcmp(opt_test, "hang") ? 4 : !strcmp(opt_test, "blip") ? 5 : 3;
   double press_prev = 0.0, pending_gap = 0.0;
   double t = 0.0;
   tr = calloc(opt_trials, sizeof(TRIAL));
@@ -153,7 +160,7 @@ static double build_schedule(void) {
       // short: straight key holds of 5 to 50 ms, every one after a long pause, so that each lands in the
       // time the keyer needs to switch from RX to TX
       //
-      hold = !strcmp(opt_test, "short") ? short_holds[(i * 4) % 9] : uni(30.0, 160.0);
+      hold = ext ? ext_holds[i % 3] : !strcmp(opt_test, "short") ? short_holds[(i * 4) % 9] : uni(30.0, 160.0);
       break;
     case 1:
     case 2:
@@ -174,7 +181,26 @@ static double build_schedule(void) {
       break;
     }
     T->hold = hold;
-    if (kind == 0 || kind == 2 || kind == 5) {
+    if (ext) {
+      //
+      // external keyer: PTT on, the key down after a lead time, key up, PTT off 60 ms later. The PTT events belong to
+      // no trial (the analysis looks at the key). The next trial comes ext_gaps ms after this key-up, so its first key-down
+      // carries a wait of gap + lead (below 500 ms) in CW_KEYER_KEYDOWN: the case the side tone's idle state is for.
+      //
+      double lead = ext_leads[(i / 3) % 3];
+      cur_trial = -1;
+      add_event(t, NOTE_EXTPTT, 1);
+      cur_trial = i;
+      e1 = add_event(t + lead / 1000.0, NOTE_KEY, 1);
+      e2 = add_event(t + (lead + hold) / 1000.0, NOTE_KEY, 0);
+      cur_trial = -1;
+      add_event(t + (lead + hold + 60.0) / 1000.0, NOTE_EXTPTT, 0);
+      cur_trial = i;
+      last = t + (lead + hold) / 1000.0;
+      T->gap = ext_gaps[(i / 9) % 3];
+      T->ev_press = e1;
+      T->ev_release = e2;
+    } else if (kind == 0 || kind == 2 || kind == 5) {
       e1 = add_event(t, NOTE_CWR, 1);
       e2 = add_event(t + hold / 1000.0, NOTE_CWR, 0);
       last = t + hold / 1000.0;
@@ -220,12 +246,15 @@ static double build_schedule(void) {
       double two_dots = 2.0 * 1.2 / opt_wpm;          // seconds: dot + inter-element gap
       if (i % 2 == 0) {
         press_prev = t;
-        pending_gap = 100.0 + 50.0 * ((i / 2) % 27);  // 100 .. 1400 ms
+        int nd_ = (int)((opt_hang_to - opt_hang_from) / opt_hang_step + 0.5) + 1;
+        pending_gap = opt_hang_from + opt_hang_step * ((i / 2) % nd_);   // default 100 .. 1400 ms in steps of 50
         t = press_prev + two_dots + pending_gap / 1000.0;
       } else {
         T->gap = pending_gap;
         t = last + 2.5;
       }
+    } else if (ext) {
+      t = last + T->gap / 1000.0;
     } else {
       double settle = kind == 0 ? 0.05 : kind == 1 ? 0.25 : kind == 2 ? 0.35 : 0.80;
       double gap = settle + uni(0.0, 0.15);
@@ -300,6 +329,16 @@ static double midi_send(int note, int on) {
   snd_seq_ev_set_source(&e, seq_port);
   snd_seq_ev_set_subs(&e);
   snd_seq_ev_set_direct(&e);
+  //
+  // The virtual MIDI port turns sequencer events into a raw byte stream with RUNNING STATUS: a message with the
+  // same status as the one before it is sent without its status byte. piHPSDR's parser does not support running
+  // status and drops such a message. Two note-ons in a row (PTT and a paddle, or both paddles of a squeeze) or two
+  // note-offs in a row (the end of a run, a PTT release) lost their second message: this was the "PTT stuck" and
+  // "first tap after PTT lost" fault of the PTT runs, and the squeeze test never squeezed. A Program Change in
+  // front of every note changes the status, so the note always carries its own (piHPSDR ignores Program Change).
+  //
+  snd_seq_ev_set_pgmchange(&e, opt_chan, 0);
+  snd_seq_event_output_direct(seq, &e);
   if (on) {
     snd_seq_ev_set_noteon(&e, opt_chan, note, 100);
   } else {
@@ -314,6 +353,8 @@ static void release_all(void) {
   if (!seq) { return; }
   midi_send(NOTE_CWL, 0);
   midi_send(NOTE_CWR, 0);
+  midi_send(NOTE_KEY, 0);
+  midi_send(NOTE_EXTPTT, 0);
   midi_send(NOTE_PTT, 0);
 }
 
@@ -489,7 +530,13 @@ static void find_segments(int *ok) {
         nseg++;
       }
       on = 0;
-      i = j;
+      //
+      // Resume 3 ms after the end of the tone, not where the level falls below 10 %: with receiver audio on
+      // the sink the level may stay above 10 % into the next tone, which would then be skipped (seen on
+      // 2026-11-09 at every cold start, with the AF gain at its minimum, which is not a mute).
+      //
+      i = (size_t) off50 + (size_t) (0.003 * FS);
+      if (i < j && j - (size_t) off50 < (size_t) (0.003 * FS)) { i = j; }
     }
   }
   free(I); free(Q); free(env);
@@ -654,10 +701,11 @@ static void analyse(void) {
     double cold_sum = 0; int cold_n = 0;
     for (int i = 0; i < ntr; i += 2) { if (!R[i].dropped) { cold_sum += R[i].lat50; cold_n++; } }
     double warm_sum = 0; int warm_n = 0;
-    for (int i = 1; i < ntr; i += 2) { if (!R[i].dropped && tr[i].gap <= 200.0) { warm_sum += R[i].lat50; warm_n++; } }
+    double warm_lim = dd[0] + 50.0 > 200.0 ? dd[0] + 50.0 : 200.0;   // the smallest D values are the warm reference
+    for (int i = 1; i < ntr; i += 2) { if (!R[i].dropped && tr[i].gap <= warm_lim) { warm_sum += R[i].lat50; warm_n++; } }
     double cold_ref = cold_n ? cold_sum / cold_n : 0.0, warm_ref = warm_n ? warm_sum / warm_n : 0.0;
     printf("-- hang time: 2nd tap against D (D counts from the end of the previous element and its gap, in ms)\n");
-    printf("  reference: first tap after a long pause (cold) %.1f ms (n=%d), 2nd tap with D<=200 ms (warm) %.1f ms (n=%d)\n", cold_ref, cold_n, warm_ref, warm_n);
+    printf("  reference: first tap after a long pause (cold) %.1f ms (n=%d), 2nd tap with D<=%.0f ms (warm) %.1f ms (n=%d)\n", cold_ref, cold_n, warm_lim, warm_ref, warm_n);
     printf("  D ms | n | mean lat50 (ms) | min .. max | cold-like (lat > warm+10) | dropped\n");
     double est = -1.0;
     for (int j = 0; j < nd; j++) {
@@ -798,12 +846,15 @@ static void write_sinkwav(void) {
 /* ------------------------------------------------------------------------ main */
 
 static void usage(void) {
-  printf("usage: cwlat --confirm-safe --sink NODE --test straight|short|dit|dah|squeeze|hang|blip [options]\n"
+  printf("usage: cwlat --confirm-safe --sink NODE --test straight|short|dit|dah|squeeze|hang|blip|ext [options]\n"
          "  --sink NAME       PipeWire sink piHPSDR plays to (its monitor is captured)\n"
          "  --dest C:P        ALSA seq destination, default 32:0 (VirMIDI 4-0)\n"
          "  --test T          straight: CWR held; dit: CWL tap; dah: CWR tap; squeeze: both;\n"
-         "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time)\n"
+         "                    hang: pairs of dit taps, 2nd tap D=100..1400 ms after the keyer finished the 1st (break-in hang time);\n"
+         "                          --hang-from MS --hang-to MS --hang-step MS change the grid of D (default 100 1400 50, at most 64 values)\n"
          "                    short: straight key holds of 5-50 ms, each after a long pause (every one in the RX->TX switch)\n"
+         "                    ext: an external keyer (needs note 23 mapped to \"CW Key (Keyer)\" and note 24 to \"PTT (CW Keyer)\"): PTT on, key down after a lead of 5/30/100 ms, hold 40/60/80 ms,\n"
+         "                          key up, PTT off; the next trial 120/250/380 ms after the key-up (the first wait of the key-down is below 500 ms)\n"
          "                    blip: pairs (tap or 1-3 ms blip, then a probe tap 150 ms later); a probe that is warm shows TX was started\n"
          "  --trials N        default 120\n"
          "  --wpm N           keyer speed set in piHPSDR (for nominal lengths), default 22\n"
@@ -824,7 +875,7 @@ static void usage(void) {
 int main(int argc, char **argv) {
   static struct option lo[] = {
     {"sink", 1, 0, 's'}, {"dest", 1, 0, 'd'}, {"test", 1, 0, 't'}, {"trials", 1, 0, 'n'}, {"wpm", 1, 0, 'w'},
-    {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'},
+    {"freq", 1, 0, 'f'}, {"chan", 1, 0, 'c'}, {"ptt", 0, 0, 'p'}, {"pause-frac", 1, 0, 'P'}, {"cold-ms", 1, 0, 'C'}, {"hang-from", 1, 0, 'F'}, {"hang-to", 1, 0, 'G'}, {"hang-step", 1, 0, 'H'},
     {"label", 1, 0, 'l'}, {"csv", 1, 0, 'o'}, {"events", 1, 0, 'E'}, {"sink-wav", 1, 0, 'W'}, {"seed", 1, 0, 'S'}, {"selftest", 0, 0, 'T'}, {"confirm-safe", 0, 0, 'y'},
     {"help", 0, 0, 'h'}, {0, 0, 0, 0}
   };
@@ -841,6 +892,9 @@ int main(int argc, char **argv) {
     case 'p': opt_ptt = 1; break;
     case 'P': opt_pause_frac = atof(optarg); break;
     case 'C': opt_cold_ms = atof(optarg); break;
+    case 'F': opt_hang_from = atof(optarg); break;
+    case 'G': opt_hang_to = atof(optarg); break;
+    case 'H': opt_hang_step = atof(optarg); break;
     case 'l': opt_label = optarg; break;
     case 'o': opt_csv = optarg; break;
     case 'E': opt_events = optarg; break;
@@ -852,7 +906,7 @@ int main(int argc, char **argv) {
     }
   }
   rng_state ^= opt_seed * 0x9E3779B97F4A7C15ULL;
-  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze") && strcmp(opt_test, "hang") && strcmp(opt_test, "blip") && strcmp(opt_test, "short"))) {
+  if (!opt_test || (strcmp(opt_test, "straight") && strcmp(opt_test, "dit") && strcmp(opt_test, "dah") && strcmp(opt_test, "squeeze") && strcmp(opt_test, "hang") && strcmp(opt_test, "blip") && strcmp(opt_test, "short") && strcmp(opt_test, "ext"))) {
     usage();
     return 1;
   }
