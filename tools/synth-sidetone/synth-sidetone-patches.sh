@@ -3,9 +3,9 @@
 # The synth side tone work as a patch series against upstream (docs/synth-sidetone/README.md).
 #
 #   tools/synth-sidetone/synth-sidetone-patches.sh export DIR    write the series into DIR (git format-patch)
-#   tools/synth-sidetone/synth-sidetone-patches.sh check [REF]   does it still apply to REF (default: master), compile, and pass the unit test?
+#   tools/synth-sidetone/synth-sidetone-patches.sh check [REF]   does it still apply to REF (default: origin/TEST), compile, and pass the unit test?
 #
-# The series is the branch feature/synth-sidetone on top of master (override with SYNTH_BASE / SYNTH_WORK):
+# The series is the branch feature/synth-sidetone on top of origin/TEST (override with SYNTH_BASE / SYNTH_WORK):
 #   1  the feature   (src/, Makefile)                       applies on its own
 #   2  docs, test and tools                                 cannot conflict
 #   3  optional, local: PipeWire playback quantum 128       one constant
@@ -13,7 +13,7 @@
 #
 set -e
 cd "$(git rev-parse --show-toplevel)"
-BASE=${SYNTH_BASE:-master}
+BASE=${SYNTH_BASE:-origin/TEST}
 WORK=${SYNTH_WORK:-feature/synth-sidetone}
 
 case "$1" in
