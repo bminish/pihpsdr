@@ -18,7 +18,7 @@ Kiwi on 28187 kHz, dummy load, 22 wpm, Iambic B, break-in, hang 600, the same tr
 |---|---|---|---|
 | dit, 60 taps | **5 lost** (holds 20 to 50 ms) | 0 | 0 |
 | dah, 60 taps | **10 lost** (holds 20 to 80 ms) | 0 | 0 |
-| squeeze, 36 | 0 | 0 | 0 |
+| squeeze, 36 | 0 (not a real squeeze, see below) | 0 | 0 |
 | hang test, 120 | **7 lost**, 3 of 3 at D = 350 ms | 0 | 0 |
 
 - Every lost tap is missing at both RF and sink: a keyer loss, not a side tone dropout. A repeat of the base dit run 25 minutes later lost 7 (the same 5 plus 2): the loss is tied to particular taps (the ones released in the RX to TX switch), not random.
@@ -55,9 +55,10 @@ The new flags are plain `volatile int` written from two threads (the key source 
 |---|---|
 | hang test, Iambic B | 0 of 120 lost (unchanged keyer: 9); D = 350 ms taps are now warm; no extra elements; warm and cold timing as before |
 | Iambic B dit / dah / squeeze (same trial schedule as the unchanged run of the same day) | the 15 taps that were lost (5 dit, 10 dah) now give one element each; no other trial changed except three on the repeat point (below) |
-| Iambic A dit / dah / squeeze | 0 lost; dit test 13 extra elements (the legitimate repeats of long holds, as Iambic B); **no unchanged-keyer run to compare** |
+| Iambic A dit / dah / squeeze | dit and dah: 0 lost, dit test 13 extra elements (the legitimate repeats of long holds, as Iambic B); squeeze: see below (the first squeeze run was not a squeeze); **no unchanged-keyer run to compare** |
 | straight key | 1 of 60 lost (a 37 ms warm tap); the unchanged keyer lost 0 of 60 (synth side tone) and 1 of 60 (old path) on 2026-11-06; straight key is covered by LC-066, not by this fix |
 
+- **Squeeze results before 2026-11-09 are not squeezes.** cwlat's virtual MIDI port dropped the second of two note-ons in a row (running status, which piHPSDR's parser does not support), so the dash paddle was never pressed: the squeeze rows above (0 lost) are single-paddle results. Repeated with the corrected sender, Iambic B, break-in, hang 600, 22 wpm, quantum 128, 36 trials, LC-065 and LC-066 in the build: holds of 40 to 100 ms give dit, dah (2 elements at the RF in 23 of 24 trials; the exception is trial 35, the last of the run, with one element of 40.9 ms instead of 54.5 and no dah, which may be an artefact of the run ending: not examined); holds of 140 and 200 ms give dit, dah, dit (3 elements, 12 of 12); no tap lost. **Iambic A**, same conditions (36 squeeze trials): holds of 40 to 100 ms give 1 element (the dit: both paddles are released before the dit ends, and mode A then stops; the dash was already down when the dit started, so it is not a dash hit during the dit), holds of 140 and 200 ms give 2 (dit, dah): in every case exactly one element fewer than Iambic B, the extra element mode B adds after release. All 36 seen at the RF. Iambic A dit and dah: RF missing 0 of 120.
 - The repeat point (a second element when the paddle is still held after dot and gap, 109 ms) is unchanged. Holds of 110 and 140 ms gave one element in the unchanged run and two with the fix in three trials; the outcome there depends on the 0 to 1 ms start-up lag and on the length of the cold start (53 ms against 29 ms in the squeeze trial), and warm taps do not touch the new code.
 - Analysis artefact: in the hang run with the fix, 18 of 120 elements show a "rise" of 53 ms; their carrier plateau is 0.75 to 0.89 of the peak (fading at the Kiwi), and `find_segments()` takes the 90 % point against the recording's peak. Length, onset and fall are normal.
 - These runs were at PipeWire quantum 128 with the synth side tone. The fix does not touch audio; the quantum is upstream's decision (256) and is not part of this change.
@@ -76,12 +77,11 @@ A prototype with four run-time modes (not for merging) was measured with the han
 Mode 3 keeps the end of the first element where the operator put it, but the first element of a cold letter is about 22 ms shorter. Listening files of the four modes (22 wpm, "THIS IS A TEST" and PARIS x 8) were judged by the owner: **mode 3 sounds terrible and is ruled out.** Modes 0 to 2 are the same in timing (the cold letter is late by D as a whole, the gap after it shorter by up to 27 ms); mode 2 only stops the loss of the tap.
 
 ## Not measured, open items
-
-1. **Hang time counts twice as fast.** `CHECK` and `EXITLOOP` both decrement `cwvox`, so the radio drops to RX after about half the set hang time (warm up to D = 300 to 350 ms with 600 set). A separate patch (one decrement per millisecond) would also move the loss window out to the set hang time, and would change the behaviour of every user's existing hang setting. Not part of LC-065.
-2. **The cold start itself** (20 to 55 ms, sd 5 to 7 ms) is not understood. Hypothesis, unmeasured: `g_idle_add(ext_radio_set_mox)` runs at idle priority behind GTK redraws. The first step would be to time press, `mox` set, first RF.
-3. **Straight key** loses an occasional tap in the RX to TX switch (1 of 180 in the A/B run of the unchanged build, taps of about 33 ms); handled by LC-066, [cw_keyer_straight_key.md](cw_keyer_straight_key.md).
-4. Constant RF latency (holding warm elements to equal the cold start) would remove the cold and warm difference; high risk, not pursued.
-5. Not tested: real paddles, Iambic A against the unchanged keyer, PTT mode, non-break-in, other speeds. The TEST build of this branch has not been through the hang test.
+The list for the whole CW work is in the register ([changes.md](changes.md#outstanding-work)). Specific to this change:
+1. **Hang time counts twice as fast** (not part of LC-065): `CHECK` and `EXITLOOP` both decrement `cwvox`, so the radio drops to RX after about 0.56 of the set hang time (warm up to D = 380 ms with 600 set; the expiry at about D = 335). A separate patch (one decrement per millisecond) would also move the loss window out to the set hang time, and would change the behaviour of every user's existing hang setting.
+2. **The cold start** (20 to 55 ms, sd 5 to 7 ms) was timed on 2026-11-09 with a temporary probe (not part of this branch): `rxtx()` 18.6 +/- 3.0 ms, steady, plus the wait of the request in GTK's idle queue (mean 5.4 ms, 0 to 44), which is what makes it vary.
+3. Constant RF latency (holding warm elements to equal the cold start) would remove the cold and warm difference; high risk, not pursued.
+4. Not tested: real paddles, Iambic A against the unchanged keyer, non-break-in, other speeds. (PTT mode: see [findings](cw_sidetone-findings.md#ptt-mode-2026-11-09), no tap lost, no cold-start penalty.) The TEST build of this branch has not been through the hang test.
 
 ## Reproduce
 

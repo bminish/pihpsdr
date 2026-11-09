@@ -43,7 +43,11 @@ How much this matters in use: a straight key element is at least a dot long (55 
 - **Listening note (operator, 2026-11-07, subjective, not a measurement):** the operator listened to the blip runs on the SDR's own receive audio and, within what can reasonably be expected, every one of the shortest side tones also had a matching sound in the SDR audio, and the timing of the multiple blips matched closely by ear between the side tone and the SDR audio; it all sounded right. The operator's decision: blips much shorter than a dit at 20 wpm are not worth more effort, and the blip test is closed as it stands.
 - **Analyser.** The first analysis of a `short` capture found a wrong carrier (5 kHz off): the key-down windows it correlates with are the commanded holds (5 to 50 ms) and the radio's tone starts about 43 ms later, so they miss it. `cwlat_analyze.py` now searches only within 200 Hz of the Kiwi's centre (every run so far was within 10 Hz).
 
+## PTT mode (2026-11-09)
+With PTT held by MIDI there is no RX to TX switch, so nothing here applies to the first element; 60 taps of holds 30 to 160 ms: none lost, carrier +0.64 +/- 0.54 ms longer than the hold, tone +0.87 +/- 0.74 ms ([findings](cw_sidetone-findings.md#ptt-mode-2026-11-09)).
+
 ## Not measured
+- Break-in mode on the current build (quantum 128): the numbers above are at 256 on 2026-11-07.
 - A real straight key or bug (the virtual MIDI port gives clean, bounce-free edges), other keyer speeds and bands, drive levels above 1 %.
 - The effect on a straight key held through the switch for longer than the floor: unchanged by design, but only the 60-tap schedule covers it.
-- The hang time's double decrement and the cold start's 20 to 55 ms: open, see [cw_keyer_first_tap.md](cw_keyer_first_tap.md#not-measured-open-items).
+- The hang time's double decrement and the cold start's 20 to 55 ms: open, see [changes.md](changes.md#outstanding-work).
