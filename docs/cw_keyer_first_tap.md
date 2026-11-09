@@ -1,6 +1,6 @@
 # LC-065: a short paddle tap is no longer lost while the keyer waits for TX
 
-Part of the local-change register: [changes.md](changes.md). Found while measuring [LC-064](cw_sidetone.md), independent of it: the fix is in `src/iambic.c` only and applies to `upstream/TEST` alone. Tool that found it: `tools/cwlat` (LT-038), `--test hang`.
+Index, numbering and open items: [cw.md](cw.md). Found while measuring [LC-064](cw_sidetone.md), independent of it: the fix is in `src/iambic.c` only and applies to `upstream/TEST` alone. Tool that found it: `tools/cwlat` (LT-038), `--test hang`.
 
 **Status: local, not yet offered to dl1ycf.** Measured on one machine at the shipped quantum of 256 against the unchanged TEST build (see "The A/B run of 2026-11-07" below). The first version of the fix was measured on a build that also had LC-064; this version differs only in the straight key / bug mode handling (the dash paddle is LC-066). Open items at the end.
 
@@ -18,7 +18,7 @@ Kiwi on 28187 kHz, dummy load, 22 wpm, Iambic B, break-in, hang 600, the same tr
 |---|---|---|---|
 | dit, 60 taps | **5 lost** (holds 20 to 50 ms) | 0 | 0 |
 | dah, 60 taps | **10 lost** (holds 20 to 80 ms) | 0 | 0 |
-| squeeze, 36 | 0 | 0 | 0 |
+| squeeze, 36 | 0 (not a real squeeze, see below) | 0 | 0 |
 | hang test, 120 | **7 lost**, 3 of 3 at D = 350 ms | 0 | 0 |
 
 - Every lost tap is missing at both RF and sink: a keyer loss, not a side tone dropout. A repeat of the base dit run 25 minutes later lost 7 (the same 5 plus 2): the loss is tied to particular taps (the ones released in the RX to TX switch), not random.
@@ -77,12 +77,11 @@ A prototype with four run-time modes (not for merging) was measured with the han
 Mode 3 keeps the end of the first element where the operator put it, but the first element of a cold letter is about 22 ms shorter. Listening files of the four modes (22 wpm, "THIS IS A TEST" and PARIS x 8) were judged by the owner: **mode 3 sounds terrible and is ruled out.** Modes 0 to 2 are the same in timing (the cold letter is late by D as a whole, the gap after it shorter by up to 27 ms); mode 2 only stops the loss of the tap.
 
 ## Not measured, open items
-
-1. **Hang time counts twice as fast.** `CHECK` and `EXITLOOP` both decrement `cwvox`, so the radio drops to RX after about half the set hang time (warm up to D = 300 to 350 ms with 600 set). A separate patch (one decrement per millisecond) would also move the loss window out to the set hang time, and would change the behaviour of every user's existing hang setting. Not part of LC-065.
-2. **The cold start itself** (20 to 55 ms, sd 5 to 7 ms) is not understood. Hypothesis, unmeasured: `g_idle_add(ext_radio_set_mox)` runs at idle priority behind GTK redraws. The first step would be to time press, `mox` set, first RF.
-3. **Straight key** loses an occasional tap in the RX to TX switch (1 of 180 in the A/B run of the unchanged build, taps of about 33 ms); handled by LC-066, [cw_keyer_straight_key.md](cw_keyer_straight_key.md).
-4. Constant RF latency (holding warm elements to equal the cold start) would remove the cold and warm difference; high risk, not pursued.
-5. Not tested: real paddles, Iambic A against the unchanged keyer, PTT mode, non-break-in, other speeds. The TEST build of this branch has not been through the hang test.
+The list for the whole CW work is in [cw.md](cw.md). Specific to this change:
+1. **Hang time counts twice as fast** (not part of LC-065): `CHECK` and `EXITLOOP` both decrement `cwvox`, so the radio drops to RX after about 0.56 of the set hang time (warm up to D = 380 ms with 600 set; the expiry at about D = 335). A separate patch (one decrement per millisecond) would also move the loss window out to the set hang time, and would change the behaviour of every user's existing hang setting.
+2. **The cold start** (20 to 55 ms, sd 5 to 7 ms) is now decomposed ([cw_breakin_plan.md](cw_breakin_plan.md) section 9): `rxtx()` 18.6 +/- 3.0 ms, steady, plus the wait of the request in GTK's idle queue (mean 5.4 ms, 0 to 44), which is what makes it vary.
+3. Constant RF latency (holding warm elements to equal the cold start) would remove the cold and warm difference; high risk, not pursued.
+4. Not tested: real paddles, Iambic A against the unchanged keyer, non-break-in, other speeds. (PTT mode: see [findings](cw_sidetone-findings.md#ptt-mode-2026-11-09), no tap lost, no cold-start penalty.) The TEST build of this branch has not been through the hang test.
 
 ## Reproduce
 

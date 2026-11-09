@@ -537,8 +537,8 @@ static void* keyer_thread(void *arg) {
             // still "see" PTT active upon the next key stroke and therefore fail
             // to go into CW-vox mode. However, only wait up to 250 msec
             // in order not to be
-            // "caught" here.
-            // If a tap arrives while the request is still pending, cancel it and stay in TX.
+            // "caught" here. A tap that arrives before the request has been sent
+            // cancels it: we stay in TX.
             i = 250;
             while (mox && i-- > 0) {
               usleep(1000L);

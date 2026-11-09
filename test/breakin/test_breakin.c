@@ -6,7 +6,8 @@
  *   - the GTK main loop: one thread that runs g_idle_add / g_timeout_add callbacks in order, one at a time.
  *     A timer can be delayed ("timer_extra_ms", a busy main loop);
  *   - radio_set_mox(): as in radio.c, "mox" changes only after rxtx() has returned, and rxtx() takes
- *     rxtx_ms[state] in the main loop thread (about 30 ms on the real machine);
+ *     rxtx_ms[state] in the main loop thread (30 ms here; measured on the radio: 18.6 +/- 3.0 ms RX to TX,
+ *     21.5 +/- 3.8 ms TX to RX);
  *   - tx_queue_cw_event(): only logged.
  * Time is real (CLOCK_MONOTONIC), 40 wpm and a hang of 300 ms to keep the scenarios short.
  *

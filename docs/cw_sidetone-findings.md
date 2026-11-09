@@ -1,6 +1,6 @@
-# CW keying latency, jitter and clipping - findings of 2026-11-06
+# CW keying latency, jitter and shape - findings, 2026-11-06 to 2026-11-09
 
-Part of the local-change register: [changes.md](changes.md). The change itself: [cw_sidetone.md](cw_sidetone.md) (LC-064). **One machine, one USB sound card, one radio, one operator's PC:** none of the figures below is a general result.
+Index and open items: [cw.md](cw.md). The change itself: [cw_sidetone.md](cw_sidetone.md) (LC-064). **One machine, one USB sound card, one radio, one operator's PC:** none of the figures below is a general result. The quantum sweep and the keying shape are from 2026-11-06; the sink check, PTT mode and the external keyer path are from 2026-11-09 (quantum 128).
 
 ## Summary
 * **Where the delay was.** On the test machine the PipeWire graph ran at 1024 frames although pihpsdr asked for 256 (the USB sink was the
@@ -16,14 +16,14 @@ Part of the local-change register: [changes.md](changes.md). The change itself: 
 * **Keying shape is clean:** the RF edge is the designed DL1YCF 9 ms ramp to within 0.5 % rms; shortened elements are normal elements that
   start late, not hard-cut; no chirp, ripple 0.3 %. The wideband (key-click) level could not be quantified with these captures (see below).
 * **Quantum.** The playback quantum is upstream's decision (256) and is not changed by LC-064; the quantum rows below are there to show what it does to the timing. Read from the table: the synth path at 256 (10.9 ms at the sink) is as early at the ear (estimated 18.9 ms) as the old path at 128 (19.0 ms).
-* **Break-in costs more than the audio path.** See the cold-start section; that is not changed by LC-064 and is the subject of a separate keyer fix.
+* **PTT mode** (PTT held by MIDI): no cold-start penalty, no tap lost, TX releases (2026-11-09). **External keyer path** (`CW_KEYER_KEYDOWN`): the first key-down after TX start sounds 4.8 to 8.1 ms after the key.
 
 Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis; LT-038).
 Setup: pihpsdr (the synth side tone as first prototyped, same code as LC-064) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
 MIDI notes through a VirMIDI port (CWL 21 / CWR 20 / PTT 22); the RF is recorded by a GPS-disciplined KiwiSDR
 (IQ, GNSS time-stamps) and the sidetone at the PipeWire sink monitor. 22 wpm, Iambic B and straight key,
 break-in and PTT-held, PipeWire quantum 64 / 128 / 256, old sidetone path and callback-synthesised ("synth") path.
-42 valid runs, about 2 500 keyed elements, 60 KiwiSDR recordings in total (18 earlier + 42; 6 more quarantined).
+42 valid runs, about 2 500 keyed elements, 60 KiwiSDR recordings in total (18 earlier + 42; 6 more quarantined). The 2026-11-09 runs add Iambic A, PTT mode and the external keyer path at quantum 128 (notes 23 and 24 mapped to `CW Key (Keyer)` and `PTT (CW Keyer)`).
 
 ## How the numbers are obtained
 * Kiwi samples are placed on UTC from the GNSS stamps (each stamp = time of the first sample of the following data chunk;
@@ -80,8 +80,7 @@ Taps held up to 100 ms give one dit (one 98 %, rest 100 %); 110 ms gives a secon
 50 % crossing at 106 ms (nominal dot + gap 109 ms). Independent of path and quantum.
 
 ### Taps that produce no RF element (dropped)
-* PTT held: trial 0, the first tap after PTT is asserted, is lost in **every** PTT run (24 of 24) on both paths, and nothing else
-  is lost in the iambic PTT runs. See "Open items".
+* PTT held (runs of 2026-11-06): the first tap after PTT was lost in every PTT run (24 of 24). **Invalid:** a fault of the test sender (running status, see below); PTT mode was re-measured on 2026-11-09.
 * Break-in iambic: mostly 20 ms taps (7 of 12 20 ms dit taps in the break-in runs), a few 30-90 ms. Straight key break-in: 33-38 ms
   holds mostly, plus 70 and 86 ms. These are taps released while the radio is still switching to TX: lost at RF as well as in the sidetone.
 * Every tap missing at the sink is also missing at RF, except the cases below.
@@ -111,26 +110,26 @@ Checked from the KiwiSDR IQ (passband +-6 kHz) with `tools/cwlat/analysis/cwlat_
 **To close this properly:** re-capture a subset with the Kiwi AGC off and a fixed gain (`kiwirecorder -g`), on a clear frequency or with the interferer
 avoided, and ideally at a realistic drive through an attenuator.
 
-## Open items
-1. **(Resolved 2026-11-09: running status in the test sender, see the update above; PTT mode re-measured.) First tap after PTT always lost; PTT left stuck after PTT-mode runs.** Both only appear when the test sender holds PTT. The operator
-   uses MIDI PTT with CW daily without either. Treated as a fault in the test sender (MIDI stream / timing assumptions) to be fixed before
-   further PTT-mode tests - see `tools/cwlat/README.md`. Whether the lost first tap is the same fault is not known.
-2. **17 taps keyed at RF but absent at the sink** (old / straight / PTT 7, synth / straight / PTT 10, synth / iambic B / break-in 1).
-   The same trial numbers recur across paths and quanta (37, 45 ...), their preceding gaps are 52-90 ms but other taps with equally short
-   gaps were fine. Could be a genuine sidetone dropout or an artefact of cwlat's sink-side detector. Needs cwlat to save the sink recording.
-3. **The 22.5 ms RF latency is not decomposed.** It contains the MIDI thread, the keyer's 1 ms poll, the TX engine, the radio's TX buffering
-   and the Kiwi's own filter delay, plus any PC clock error against GPS. The Kiwi delay and the PC clock offset are not corrected.
-4. Synth path RF onset jitter is slightly higher (sd 0.9 against 0.6 ms). Not understood.
-5. Not measured: Iambic A, other keyer speeds, other bands, a real paddle (the virtual MIDI port skips the controller's USB-MIDI hop).
-
-## Update 2026-11-09: the sink check and the external keyer path
+## The sink check (2026-11-09)
 * **The sink-only losses were the detector, not the side tone.** With receiver audio on the sink (the AF gain minimum is not a mute: about 4e-3 rms against a tone peak of 1e-2) cwlat reported 9 to 48 taps as having no tone at the sink in runs where the radio keyed every tap (RF missing 0). The raw sink recording (`--sink-wav`) showed the tone 22 to 38 ms after the press in every one of them. The envelope of the noise reaches 0.3 to 0.7 of the tone level, trips the 50 % threshold, and the scan then skipped the real tone. Fixed in part (resume 3 ms after a tone, not at 10 %); a silent sink is still needed (`tools/cwlat/README.md`). The 17 "sink only" taps of 2026-11-06 are probably the same artefact.
-* **The idle fix is verified on air for the external keyer path** (`CW_KEYER_KEYDOWN`, note 23, with `PTT (CW Keyer)`, note 24; `cwlat --test ext`, 36 trials, quantum 128): the first key-down after TX start, which carries a wait of 120 to 480 ms (gap to the previous key-up plus the lead), plays at **4.8 to 8.1 ms (mean about 6.5)** at the sink and 22.2 to 23.7 ms at the RF, with tone and carrier lengths equal to the hold (within 0.2 ms), for leads of 30 and 100 ms after PTT. Counted again from the start of TX that wait would have been 120 to 480 ms late.
+
+## The external keyer path (2026-11-09)
+`cwlat --test ext`: PTT note 24 (`PTT (CW Keyer)`), key note 23 (`CW Key (Keyer)`, `CW_KEYER_KEYDOWN`), quantum 128, 36 trials.
+* **The idle fix is verified on air for the external keyer path:** the first key-down after TX start, which carries a wait of 120 to 480 ms (gap to the previous key-up plus the lead), plays at **4.8 to 8.1 ms (mean about 6.5)** at the sink and 22.2 to 23.7 ms at the RF, with tone and carrier lengths equal to the hold (within 0.2 ms), for leads of 30 and 100 ms after PTT. Counted again from the start of TX that wait would have been 120 to 480 ms late.
 * **A key-down before TX is up** (lead 5 ms: the key-down comes 5 ms after the PTT note; TX comes up 18 to 60 ms after it): the side tone sounds in all 12 trials (17 to 41 ms after the key-down, when TX comes up) and the RF carrier is missing in all 12. This is expected and not a fault: the side tone follows the key whether or not PTT is asserted (zero beating: key down against the receiver audio without transmitting), and the TX engine does not queue key state ahead of PTT (it empties its ring every 2 ms while not transmitting); key state matters for transmission only once PTT has started. (An earlier version of this note called it a mismatch and proposed dropping the synth's queued events; that was wrong.) What the code does today is a separate question: the synth renders only while `radio_is_transmitting()`, like the engine, so a key-down without PTT gives no side tone in either path; see the open question in `cw_sidetone-design.md`.
 * A key-down 30 ms after PTT is sometimes before TX is up too (TX comes up 18 to 60 ms after the PTT; one of 12 trials lost at both RF and sink). An external keyer therefore needs a PTT lead of at least about 65 ms (measured TX-up time at most 60 ms; not tested above 100 ms).
+
+## PTT mode (2026-11-09)
 * **PTT mode, measured correctly for the first time** (PTT held by MIDI note 22, the `PTT` action, break-in off, Iambic B, hang 600, 22 wpm, quantum 128; dit 60, dah 60, squeeze 36 trials; the sink is silent in TX, so the sink side is clean): no tap lost at the RF or at the sink (0 of 156), and TX released afterwards. **No cold-start penalty:** the first element after a pause is as fast as any other (RF onset 22.6 ms against 22.3 for the rest; sink 6.5 against 6.4 ms). Dit: sink 6.4 +/- 0.8 ms, RF 22.3 +/- 0.5 ms, RF leads the sink by 15.9 ms; dah: sink 6.4, RF 21.4; squeeze: sink 6.3, RF 22.0; edges 5.0 ms; length error -0.16 to -0.19 ms. The repeat point is between 100 and 110 ms (1 element up to 100 ms, 2 from 110 ms: 15 of 15 as expected). Squeeze: 2 elements for holds of 40 to 100 ms, 3 for 140 and 200 ms, 36 of 36. The only odd trial (the last of the dit run, three 5 ms blips on the sink after a normal dit) is at the end of the run, when the receiver audio returns; the RF shows one element.
 * **PTT mode, straight key** (PTT by note 22, straight key as note 20, holds of 30 to 160 ms, same conditions; 60 trials): no tap lost at the RF or at the sink, TX released afterwards. RF onset 22.8 +/- 0.5 ms, sink 6.7 +/- 0.9 ms (RF 16.1 ms later); key-up to carrier off 23.4 +/- 0.5 ms, to tone off 7.5 +/- 0.8 ms; edges 5.0 ms. The element is slightly longer than the hold: carrier +0.64 +/- 0.54 ms, tone +0.87 +/- 0.74 ms (max 2.75): the keyer looks at the key once a millisecond (`STRAIGHT` state) and the key-up is timed from that look.
-* **Running status.** The cwlat PTT fault and the squeeze test were invalid for one cause (`tools/cwlat/README.md`); PTT runs now release (36 PTT cycles, TX released afterwards).
+
+## Running status (2026-11-09)
+The virtual MIDI port sends running status, which piHPSDR's parser drops; this was the cause of the cwlat PTT fault ("PTT stuck", "first tap after PTT lost") and of the squeeze test never squeezing. Fixed in the sender; squeeze results are in [cw_keyer_first_tap.md](cw_keyer_first_tap.md), PTT mode above. Details: `tools/cwlat/README.md`.
+
+## Open items
+The list for the whole CW work is in [cw.md](cw.md). Specific to the measurements:
+1. **The 22.5 ms RF latency is not decomposed.** It contains the MIDI thread, the keyer's 1 ms poll, the TX engine, the radio's TX buffering and the Kiwi's own filter delay, plus any PC clock error against GPS. The Kiwi delay and the PC clock offset are not corrected.
+2. Not measured: other keyer speeds, other bands, a real paddle (the virtual MIDI port skips the controller's USB-MIDI hop), levels above 1 % drive.
 
 ## Reproducing
     tools/cwlat/run_matrix.sh --sink <sink> --kiwi kiwi.minish.org:8074 --kfreq 28187 ...    # captures

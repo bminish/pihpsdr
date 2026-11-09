@@ -40,9 +40,10 @@ static volatile atomic_int st_outpt = 0;
 static volatile atomic_llong st_queue_ns = 0;   // CLOCK_MONOTONIC time of the latest sidetone_queue()
 
 //
-// Events that are queued while the radio is not yet transmitting (break-in: the key event comes first, the
-// RX -> TX switch takes some 20 msec) must survive until TX is up. Events older than this are stale (TX never
-// came, wrong mode, duplex, ...) and are dropped by sidetone_idle().
+// Events queued while the radio is not transmitting are kept for this long by sidetone_idle(), then dropped,
+// so that events of a TX that never came cannot start a tone later. (The TX engine itself drops such events
+// at once; an external keyer whose key-down arrives before TX is up therefore gets a side tone that is not
+// transmitted.)
 //
 #define ST_STALE_NS 200000000LL
 
@@ -81,11 +82,10 @@ void sidetone_queue(int down, int wait) {
 }
 
 //
-// Put the renderer into the state it has after a long pause: key up, no ramp, and delay_samples at its
-// maximum. The TX engine counts cw_delay_time all the time, also while receiving, so the first event after a
-// pause is executed at once whatever its "wait" is (a key-down from CW_KEYER_KEYDOWN carries the gap to the
-// previous event, up to 0.5 sec). This renderer only runs while transmitting, so the state of a long pause
-// has to be set explicitly, otherwise that wait would be counted again from the start of TX.
+// The state after a long pause: key up, no ramp, delay_samples at its maximum. The TX engine counts its
+// cw_delay_time all the time, so the first event after a pause is executed at once. The renderer is not
+// run while receiving, so the state is set here; otherwise the wait of a key-down from CW_KEYER_KEYDOWN (the
+// gap to the previous event, up to 0.5 sec) would be counted again from the start of TX.
 //
 static void st_pause_state(void) {
   key = 0;
