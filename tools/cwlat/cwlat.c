@@ -954,6 +954,9 @@ int main(int argc, char **argv) {
     while (now() < target && !stop_flag) { }
     ev[i].t_send = midi_send(ev[i].note, ev[i].on);
   }
+  // Let the last element and the radio's TX finish before anything is released: release_all() sends the
+  // PTT note-offs at once, which cut the last element (6 of 6 HL2 runs).
+  if (!stop_flag) { usleep(1000000); }
   release_all();
   off_end = real_minus_mono();
   write_events();
