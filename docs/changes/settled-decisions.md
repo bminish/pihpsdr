@@ -8,7 +8,7 @@ reasoning.
 
 1. **No hang, no timeout, in any reference.**
    - **RADE V1: a new lock replaces an old one.** (RADE V2 does the same
-     with its cyclic prefix, LC-065.) Nothing else ends a
+     with its cyclic prefix, LC-072.) Nothing else ends a
      lock, short of a retune or other context change. While the pilot is
      absent the lock and the weight are held, and the averages age at
      the Averaging time. The resync search (LC-010) takes a new station
