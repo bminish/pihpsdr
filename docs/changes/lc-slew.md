@@ -19,7 +19,7 @@ was. **No new setting**: no menu row, no props key, no change to the settings co
 `CLIENT_SERVER_VERSION`. Only `src/diversity_auto.c`.
 
 **Why RADE is left alone.** The decoder dislikes a quick change of phase, and the RADE weight comes from a correlator with its
-own averaging. V2's per-block slew was swept from 5 to 25 % on the 40 m and 60 m captures and is flat (LC-068). Nothing here
+own averaging. V2's per-block slew was swept from 5 to 25 % on the 40 m and 60 m captures and is flat (LC-075). Nothing here
 argues for changing it.
 
 **Checks.** `run_ref --ref band --mode sum --weighting flat --cohmin 0.20` over seven captures (`235906`, `143952`, `144505`,
@@ -50,5 +50,5 @@ a step, and SNR does not measure that. The change has not been listened to; `211
 bins (6 Hz, blocks near 170 ms) the fraction per block rises to about 0.6, so the slew is nearly gone there, which is the
 intent but a change of behaviour. CW and Carrier were not in the seven captures.
 
-**Commit.** One commit, `src/diversity_auto.c` and these docs. Independent of LC-064 to LC-068, and applies to `TEST` alone
-(the reference test uses `DIV_REF_IS_RADE()`, from LC-064; on `TEST` that reads `== DIV_REF_RADE_V1`).
+**Commit.** One commit, `src/diversity_auto.c` and these docs. Independent of LC-071 to LC-075, and applies to `TEST` alone
+(the reference test uses `DIV_REF_IS_RADE()`, from LC-071; on `TEST` that reads `== DIV_REF_RADE_V1`).

@@ -286,16 +286,16 @@ cuts the lowest carrier at its centre.
 
 <a id="rade-v2"></a>
 
-# RADE V2 (LC-064 to LC-068)
+# RADE V2 (LC-071 to LC-075)
 
 A second RADE reference beside V1, from the cyclic prefix. Built on
 `feature/rade-native` (2026-10-21 and 22), not on `TEST`. The method, the
 evidence and what is not known: [../diversity-radeV2-cp.md](../diversity-radeV2-cp.md).
 Tooling: LT-038.
 
-<a id="lc-064"></a>
+<a id="lc-071"></a>
 
-## LC-064 — One name for "a RADE reference"
+## LC-071 — One name for "a RADE reference"
 
 **Problem.** The engine and the menu test `== DIV_REF_RADE_V1` in about a
 dozen places to mean "the time-domain RADE reference, with no Min coherence
@@ -311,9 +311,9 @@ which call the V1 correlator and nothing else.
 (`test_rade`, `test_props`, `test_modal`, `test_window`, `test_digital`,
 `test_cw`, `test_rates`, `test_modes_live`).
 
-<a id="lc-065"></a>
+<a id="lc-072"></a>
 
-## LC-065 — A RADE V2 correlator from the cyclic prefix
+## LC-072 — A RADE V2 correlator from the cyclic prefix
 
 **Problem.** V2 has no pilot, so the V1 correlator has nothing to correlate
 against. What V2 does have is its prefix: each 160-sample symbol repeats its
@@ -328,7 +328,7 @@ from the bump and is subtracted; the contrast of the matched peak over that
 floor ("dpk") is the statistic. Lock is 4 of the last 5 one-second samples
 above 0.30 with the bump within 20 samples; there is no timeout, and the
 weight is held while the contrast is below 0.20. The weight issued is the unit
-direction `conj(h1/h0)/|h1/h0|` (LC-068 replaced this with the noise-weighted weight), its phase from the prefix-gated cross-term
+direction `conj(h1/h0)/|h1/h0|` (LC-075 replaced this with the noise-weighted weight), its phase from the prefix-gated cross-term
 (which a common-mode interferer is not in), its gain ratio from the arms' own
 prefix correlations. The maximal-ratio weight, each arm's prefix SNR, the tone
 share and each arm's power are published for the log only. Self-contained: no
@@ -346,9 +346,9 @@ source comment and in the V2 document.
 (maximal-ratio) weight at all; detection with a strong tone inside a V2
 signal; the Pi's CPU (counted, not measured).
 
-<a id="lc-066"></a>
+<a id="lc-073"></a>
 
-## LC-066 — `DIV_REF_RADE_V2` in the engine
+## LC-073 — `DIV_REF_RADE_V2` in the engine
 
 **Change.** Reference 5, appended (`DIV_REFS` is 8 and V1 has no slot, so the
 settings command does not change; an older build that meets 5 resets it to
@@ -369,11 +369,11 @@ run, but the test harness stubs `t_print`, so their text has not been seen.
 
 **Open.** Invert and Null are 180 degree steps through the engine's slew; the
 V2 decoder does not like phase steps, and the value of a null on V2 is
-uncertain. Allowed, with the cost noted in the menu text once LC-067 is in.
+uncertain. Allowed, with the cost noted in the menu text once LC-074 is in.
 
-<a id="lc-067"></a>
+<a id="lc-074"></a>
 
-## LC-067 — The menu row and the overlay for RADE V2
+## LC-074 — The menu row and the overlay for RADE V2
 
 **Change.** "RADE V2 prefix (blind)" in the "Measure on" list. Every place in
 `diversity_menu.c` that tested for RADE V1 to hide Min coherence, switch to Sum
@@ -382,17 +382,17 @@ on selection, grey the level control or blank the coherence field uses
 panadapter draws V2's occupied band, 1031 to 1906 Hz (`RADE_V2C_OCC_*`).
 
 **Ownership.** `diversity_menu.c` is dl1ycf's. This commit is separate from
-LC-066 so it can be taken or left; the matter is in
+LC-073 so it can be taken or left; the matter is in
 [../menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md).
 
 **Not checked on screen.** Built and linked; the combo row, the hidden slider
 and the overlay have not been seen running.
 
-<a id="lc-068"></a>
+<a id="lc-075"></a>
 
-## LC-068 — RADE V2: Sum applies the noise-weighted gain
+## LC-075 — RADE V2: Sum applies the noise-weighted gain
 
-**Problem.** LC-065 issues the unit co-phase direction, so Sum adds arm 1 to arm 0 at equal gain. With two antennas that
+**Problem.** LC-072 issues the unit co-phase direction, so Sum adds arm 1 to arm 0 at equal gain. With two antennas that
 differ, equal gain adds the poorer arm's noise (and the SSB it hears) at the strength of the better arm's signal. On
 five 40 m captures (T-027) the radio's own combine scored 0.12 below one antenna alone in decoded |aux| on the weakest
 (sync 43 % against 61 %) and level with it on two others; on two 60 m captures with the other arm the better (T-028), the
