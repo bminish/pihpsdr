@@ -28,7 +28,7 @@ A static helper `filter_abs_edges_changed()` in `src/filter.c` subtracts the sid
 
 ## Status
 
-Built, not yet checked on the radio. To check: in CWU and CWL, turn Filter Cut Low/High, IF Shift and IF Width both ways and confirm the edges follow the direction of the turn and return to their start after equal clicks each way. Also check one SSB mode, to confirm nothing changed there.
+Checked on the radio 2026-11-11: the filter cut, IF shift and IF width fix and the ear split following the edits and squelch both pass, for now. The check was: in CWU and CWL, turn Filter Cut Low/High, IF Shift and IF Width both ways and confirm the edges follow the direction of the turn; one SSB mode to confirm nothing changed there.
 
 ## Related: the ear split did not follow these edits
 
