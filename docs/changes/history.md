@@ -21,11 +21,11 @@ Newest first.
 - 2026-10-29: RADE V2, the start weight before the lock measured offline (T-030): Window's weight until the prefix locks is the leading
   candidate (0.875 against 0.815 for equal gain, ceiling 0.903); weights from a relaxed lock ruled out (false weights on CW and SSB). Parked,
   with the owner, until more captures; no code. Section 12.12 of the V2 note lists what to capture.
-- 2026-10-29: RADE V2, Sum applies the noise-weighted gain (LC-068), on `feature/rade-native`. From the first on-air captures
+- 2026-10-29: RADE V2, Sum applies the noise-weighted gain (LC-075), on `feature/rade-native`. From the first on-air captures
   (T-027, five 40 m captures: the unit weight lost to one antenna alone on the weakest, the tracker's own logged maximal-ratio
   weight did not), designed (V2 note, section 12), built and checked offline, then confirmed on two 60 m captures
   with it live (T-028). Slew, hold threshold and Averaging left as they were after sweeps. Decided with the owner.
-- 2026-10-22: RADE V2 reference (LC-064 to LC-067, LT-038), on
+- 2026-10-22: RADE V2 reference (LC-071 to LC-074, LT-038), on
   `feature/rade-native`. V1 reviewed against rade_c first; then a V2 tracker
   from the cyclic prefix, checked against rade_c's own V2 receiver over all
   171 captures, then the engine hook. Decided with the owner: V1 and V2 are

@@ -44,7 +44,7 @@ decision from both sides before anyone writes code:
 
 ---
 
-## RADE V2 on the reference list (LC-064, LC-066, LC-067): for later
+## RADE V2 on the reference list (LC-071, LC-073, LC-074): for later
 
 Not a request yet. We are adding a RADE V2 reference (cyclic prefix, no pilot)
 beside RADE V1, and it will reach you as a patch once it has been on air. What
@@ -60,7 +60,7 @@ it does to your files, so that nothing is a surprise:
   call `DIV_REF_IS_RADE()`: the level control, the blank coherence field, the
   Sum default on selection, the hidden Min coherence row (twice), and the
   per-reference store and recall. The status line says "RADE V1" or "RADE V2".
-  That is the whole menu diff; it is its own commit (LC-067) so you can take it
+  That is the whole menu diff; it is its own commit (LC-074) so you can take it
   or leave it.
 - **`rx_panadapter.c`.** A case for V2's occupied band (1031 to 1906 Hz),
   beside V1's.
