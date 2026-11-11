@@ -92,7 +92,7 @@ The delay of the side tone, with the synth path, is about 1.5 callbacks plus the
   during the RX->TX switch are lost. Not caused by, and not fixed by, this patch (keyer thread, `iambic.c`).
   **The lost-first-tap fix is a separate branch, `fix/keyer-lost-first-tap`** (one commit on `master`, independent of the side tone):
   `iambic.c` no longer loses a short tap that arrives while the keyer waits for TX. Send it alongside this series; the straight-key
-  start-of-hold fix (`devtest/sidetone`, LC-066) is not on that branch yet.
+  start-of-hold fix (`devtest/everything`, LC-066) is not on that branch yet.
 * 17 taps in the cwlat runs were keyed at RF but absent at the sink (straight key, PTT, both paths): either a real side tone dropout or an
   artefact of cwlat's sink-side detector. Unresolved.
 * Synth-path RF onset jitter measured slightly higher (sd 0.9 against 0.6 ms). Not understood.
@@ -100,7 +100,7 @@ The delay of the side tone, with the synth path, is about 1.5 callbacks plus the
 * Not built or tested: AUDIO=PULSE / PORTAUDIO / ALSA (the `#ifdef PIPEWIRE` guards are compile-checked by the `check` script only), macOS, client/server.
 * Not measured: Iambic A, other speeds and bands, a real paddle (the virtual MIDI port skips the USB-MIDI hop).
 * The PTT-mode runs of cwlat left PTT stuck in piHPSDR. Cause found 2026-11-09: the test sender dropped MIDI running status, which pihpsdr's
-  parser does not handle; fixed in the sender (`devtest/sidetone`, `tools/cwlat`). The PTT-mode results in this branch's findings predate that fix and are invalid.
+  parser does not handle; fixed in the sender (`devtest/everything`, `tools/cwlat`). The PTT-mode results in this branch's findings predate that fix and are invalid.
 
 ## Before this can go upstream
 - [ ] bench checklist above completed, with the box ticked and unticked
