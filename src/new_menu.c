@@ -413,8 +413,12 @@ static gboolean dsp_cb (GtkWidget *widget, GdkEventButton *event, gpointer data)
 }
 
 void start_diversity_menu(void) {
+  int old_menu = active_menu;
   cleanup();
-  diversity_menu(top_window);
+  if (old_menu != DIVERSITY_MENU) {
+    diversity_menu(top_window);
+    active_menu = DIVERSITY_MENU;
+  }
 }
 
 // cppcheck-suppress constParameterCallback
@@ -432,7 +436,15 @@ static gboolean diversity_cb (GtkWidget *widget, GdkEventButton *event, gpointer
 
 #ifdef RADE_NATIVE
 // cppcheck-suppress constParameterCallback
+//
+// The RADE window is not sub_menu and stays until it is closed (it is not closed when another menu opens), but
+// the same request again closes it, as for the other menus. Only the window closes: RADE stays as it is.
+//
 void start_rade_menu(void) {
+  if (rade_native_menu_is_open()) {
+    rade_native_menu_close();
+    return;
+  }
   cleanup();
   rade_native_menu(top_window);
 }
