@@ -19,3 +19,9 @@
 
 #include <gtk/gtk.h>
 extern void diversity_menu(GtkWidget *parent);
+
+//
+// The engine's nudge when a RADE waveform is entered or changed: set the reference and, if tau > 0, Averaging, as the
+// operator's own choice would, and refresh the open menu. Safe with the menu closed.
+//
+extern void diversity_menu_nudge(int ref, double tau);
