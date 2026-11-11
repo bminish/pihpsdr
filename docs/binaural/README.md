@@ -29,6 +29,7 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 | `92dd3bf5`, `2dd0e077` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC) |
 | `e798f1d1` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
 | `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
+| (2026-11-21, from `devtest/everything` `e81d13c2`, `85337413`) | **CW filter edge drift fixed** (every filter cut / IF shift / IF width step in CWU or CWL moved the passband by one sidetone offset, always the same way; `filter.c`), and the second ear **follows RX0's incremental filter edits and squelch** (`rx_split_follow_edges()`), which it used to miss, so the edits acted on arm 0's ear only. See [bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md). Checked on the radio on `devtest/everything` 2026-11-11; not yet on this branch |
 
 ### Reconcile with TEST, 2026-11-21 (upstream `a6894cb5`, consolidated WDSP)
 
