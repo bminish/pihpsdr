@@ -57,6 +57,8 @@ static GtkWidget *phase_fine_scale = NULL;
 static GtkWidget *phase_coarse_scale = NULL;
 
 static GtkWidget *auto_btn = NULL;
+static GtkWidget *tau_scale = NULL;     // the Averaging slider
+static GtkWidget *ref_combo = NULL;     // the "Measure on" combo
 static GtkWidget *win_width_btn = NULL;
 static GtkWidget *win_centre_btn = NULL;
 static GtkWidget *coh_scale = NULL;
@@ -286,6 +288,8 @@ static void cleanup(void) {
     win_centre_btn = NULL;
     win_width_btn = NULL;
     coh_scale = NULL;
+    tau_scale = NULL;
+    ref_combo = NULL;
     active_menu  = NO_MENU;
     radio_save_state();
 #ifdef DIVERSITY_CAPTURE
@@ -1308,6 +1312,43 @@ static void coh_cb(GtkWidget *widget, gpointer data) {
   div_send_settings(DIV_ACTION_NONE);
 }
 
+//
+// The engine's nudge on entering or changing a RADE waveform (diversity_auto_rade_waveform_changed()): the reference
+// (and, once, the Averaging) is set for the operator, who can change either afterwards. The reference goes the way
+// the operator's own choice does - the outgoing reference's window values are filed, the new one's restored - and
+// the open menu's combo and slider follow without calling their handlers. Safe with the menu closed.
+//
+void diversity_menu_nudge(int ref, double tau) {
+  if (ref != div_auto_ref) {
+    store_ref_values(div_auto_ref);
+    div_auto_ref = ref;
+    restore_ref_values(div_auto_ref);
+
+    if (ref_combo != NULL) {
+      g_signal_handlers_block_by_func(ref_combo, G_CALLBACK(ref_changed_cb), NULL);
+      gtk_combo_box_set_active(GTK_COMBO_BOX(ref_combo), div_auto_ref);
+      g_signal_handlers_unblock_by_func(ref_combo, G_CALLBACK(ref_changed_cb), NULL);
+    }
+
+    diversity_auto_restart();               // the correlator front end is built, or torn down, at start
+    diversity_auto_reset();
+  }
+
+  if (tau > 0.0) {
+    div_auto_tau = tau;
+
+    if (tau_scale != NULL) {
+      g_signal_handlers_block_by_func(tau_scale, G_CALLBACK(tau_cb), NULL);
+      gtk_range_set_value(GTK_RANGE(tau_scale), div_tau_to_pos(tau));
+      g_signal_handlers_unblock_by_func(tau_scale, G_CALLBACK(tau_cb), NULL);
+    }
+
+    diversity_auto_retarget();
+  }
+
+  div_send_settings(DIV_ACTION_NONE);
+}
+
 void diversity_menu(GtkWidget *parent) {
   GtkWidget *btn, *lbl;
   dialog = gtk_dialog_new();
@@ -1594,6 +1635,7 @@ void diversity_menu(GtkWidget *parent) {
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(btn), div_ref_labels[i]);
   }
 
+  ref_combo = btn;
   gtk_combo_box_set_active(GTK_COMBO_BOX(btn), div_auto_ref);
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 0, 4, 1);
   g_signal_connect(btn, "changed", G_CALLBACK(ref_changed_cb), NULL);
@@ -1645,6 +1687,7 @@ void diversity_menu(GtkWidget *parent) {
   btn = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, DIV_TAU_STEPS, 1.0);
   gtk_scale_set_digits(GTK_SCALE(btn), 2);
   g_signal_connect(G_OBJECT(btn), "format-value", G_CALLBACK(tau_format_cb), NULL);
+  tau_scale = btn;
   gtk_range_set_value(GTK_RANGE(btn), div_tau_to_pos(div_auto_tau));
   gtk_grid_attach(GTK_GRID(agrid), btn, 2, 3, 6, 1);
   g_signal_connect(G_OBJECT(btn), "value_changed", G_CALLBACK(tau_cb), NULL);

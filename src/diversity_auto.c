@@ -1339,32 +1339,34 @@ static void div_manual_window(const struct div_context *ctx, double *lo, double 
 // reset do both, which costs nothing for the one that is not running.
 //
 //
-// The reference the engine runs. It is the operator's (div_auto_ref, which only the menu writes) except that
-// with a RADE reference chosen and RADE running in piHPSDR, the correlator is the one for the waveform on air:
-// V1 pilot correlation for RADE V1, V2 prefix correlation for RADE V2. div_auto_ref itself is never changed.
+// RADE was entered or switched between V1 and V2 (old_wave and new_wave: 0 off, 1 V1, 2 V2). An aid to operation, not
+// a mandate: the operator may choose Window, Carrier or anything else afterwards, and may want a wideband window
+// while in RADE to null a carrier.
+//   - Entering RADE sets the reference to the correlator for the waveform (diversity_menu_nudge()).
+//   - V1 <-> V2 moves the reference to the other correlator, but only while it is a RADE one; a reference the
+//     operator chose for something else stays.
+//   - Leaving RADE changes nothing.
+//   - On the first entry in a session that started with no diversity settings in the props file, Averaging is set to
+//     1.5 s, a nudge towards good settings. With any settings saved, the operator's Averaging is left alone.
+// Nothing here runs on a client; the radio's change reaches it with the settings.
 //
-int diversity_auto_effective_ref(void) {
-#ifdef RADE_NATIVE
-  if (DIV_REF_IS_RADE(div_auto_ref)) {
-    const int w = rade_native_waveform();
-    if (w == RADE_NATIVE_V1) { return DIV_REF_RADE_V1; }
-    if (w == RADE_NATIVE_V2) { return DIV_REF_RADE_V2; }
-  }
-#endif
-  return div_auto_ref;
-}
+static int div_rade_tau_nudge = 0;           // pending: the props file held no diversity settings at start
 
-//
-// RADE was switched between V1, V2 and off: the correlator has to be the one for the new waveform, and its
-// front end is built at start. Nothing to do unless the loop is running on a RADE reference.
-//
-void diversity_auto_rade_waveform_changed(void) {
-  if (DIV_REF_IS_RADE(div_auto_ref) && div_auto_running) { diversity_auto_restart(); }
+void diversity_auto_rade_waveform_changed(int old_wave, int new_wave) {
+  if (radio_is_remote || new_wave == 0) { return; }
+
+  const int ref = (new_wave == 2) ? DIV_REF_RADE_V2 : DIV_REF_RADE_V1;
+  const int set_ref = (old_wave == 0) ? 1 : (DIV_REF_IS_RADE(div_auto_ref) && div_auto_ref != ref);
+  const double tau = (old_wave == 0 && div_rade_tau_nudge) ? 1.5 : 0.0;
+
+  if (old_wave == 0) { div_rade_tau_nudge = 0; }
+
+  if (set_ref || tau > 0.0) { diversity_menu_nudge(set_ref ? ref : div_auto_ref, tau); }
 }
 
 static int div_rade_start(int ddc_rate) {
-  return (diversity_auto_effective_ref() == DIV_REF_RADE_V2) ? rade_v2c_start(ddc_rate)
-                                                             : rade_corr_start(ddc_rate);
+  return (div_auto_ref == DIV_REF_RADE_V2) ? rade_v2c_start(ddc_rate)
+                                           : rade_corr_start(ddc_rate);
 }
 
 static void div_rade_stop(void) {
@@ -1462,7 +1464,7 @@ static void div_get_context(struct div_context *ctx) {
   ctx->mode           = vfo[0].mode;
   ctx->filter_low     = rx->filter_low;
   ctx->filter_high    = rx->filter_high;
-  ctx->ref            = diversity_auto_effective_ref();
+  ctx->ref            = div_auto_ref;
   ctx->follow         = div_auto_follow_filter;
   ctx->centre         = div_auto_centre;
   ctx->width          = div_auto_width;
@@ -5236,6 +5238,7 @@ void diversity_auto_restore_state(void) {
   int saved_ref = -1;
   GetPropI0("diversity_auto_ref",            saved_ref);
   const int fresh = (saved_ref < 0);
+  div_rade_tau_nudge = fresh;       // see diversity_auto_rade_waveform_changed()
   GetPropI0("diversity_auto_ref",            div_auto_ref);
   GetPropI0("diversity_auto_follow_filter",  div_auto_follow_filter);
   GetPropF0("diversity_auto_centre",         div_auto_centre);

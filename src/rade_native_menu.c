@@ -1037,7 +1037,7 @@ static void retune(int new_wave) {
   int mode = new_wave ? (p.invert ? modeDIGL : modeDIGU) : (p.invert ? modeLSB : modeUSB);
   if (p.dial != rade_dial()) { vfo_id_set_frequency(0, p.dial); }
   if (vfo[0].mode != mode) { vfo_id_mode_changed(0, mode); }
-  if (new_wave != old_wave) { diversity_auto_rade_waveform_changed(); }   // the diversity correlator follows the waveform
+  if (new_wave != old_wave) { diversity_auto_rade_waveform_changed(old_wave, new_wave); }   // diversity: the matching correlator, as an aid
   //
   // Development: the log runs for as long as RADE is on (a run per visit), whatever the Log button said before. Not meant to ship:
   // a release would leave the log to the operator (see docs/rade/logging.md).
