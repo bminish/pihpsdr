@@ -98,7 +98,7 @@ The simulated `rxtx()` takes 30 ms (its code comment); on the radio it is 18.6 +
 
 ## 9. Phase 0 baseline, 2026-11-09 (the build of section 8 with `CWTIME=1`)
 
-Fine-grid hang test, `devtest/sidetone` at `546739f7` with the probe, Iambic B, hang 600, 22 wpm, break-in, quantum 128, Kiwi on 28187 kHz, D = 250 to 500 ms in 10 ms steps, two second taps per D (104 trials, 71 break-in sessions in the probe log). RF only: the sink side of the run is unusable (the receiver audio on the sink hid the side tone from cwlat; set the AF gain to zero for runs that need the sink).
+Fine-grid hang test, `devtest/everything` at `546739f7` with the probe, Iambic B, hang 600, 22 wpm, break-in, quantum 128, Kiwi on 28187 kHz, D = 250 to 500 ms in 10 ms steps, two second taps per D (104 trials, 71 break-in sessions in the probe log). RF only: the sink side of the run is unusable (the receiver audio on the sink hid the side tone from cwlat; set the AF gain to zero for runs that need the sink).
 
 **No tap lost** (RF missing 0 of 104; LC-065 is in this build). Second tap, RF onset by D (ms after the press, warm reference 22.9):
 

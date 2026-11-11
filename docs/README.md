@@ -1,6 +1,6 @@
 # Documentation
 
-Written for `devtest/sidetone`, the active "everything" branch (see [branches.md](branches.md)). Updated 2026-11-11.
+Written for `devtest/everything`, the active "everything" branch (see [branches.md](branches.md)). Updated 2026-11-11.
 
 ## By feature
 

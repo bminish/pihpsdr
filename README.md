@@ -1,4 +1,4 @@
-# piHPSDR, `devtest/sidetone`: the "everything" branch
+# piHPSDR, `devtest/everything`: the "everything" branch
 
 > **This is not a standard piHPSDR build.** It is the currently active development branch of the
 > [bminish/pihpsdr](https://github.com/bminish/pihpsdr) fork of [dl1ycf/pihpsdr](https://github.com/dl1ycf/pihpsdr), carrying all

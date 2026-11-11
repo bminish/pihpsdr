@@ -1,6 +1,6 @@
 # CW keying and side tone: what this branch has, where it is written down
 
-Written 2026-11-09, checked against the code 2026-11-11 (on `devtest/sidetone`; the branch it came from, `feature/cw-synth-sidetone`, is retired, tag `backup/cw-synth-sidetone-20261111`). One machine (USB sound card, Saturn G2, PipeWire), one operator's PC: none of the figures in these documents is a general result.
+Written 2026-11-09, checked against the code 2026-11-11 (on `devtest/everything`; the branch it came from, `feature/cw-synth-sidetone`, is retired, tag `backup/cw-synth-sidetone-20261111`). One machine (USB sound card, Saturn G2, PipeWire), one operator's PC: none of the figures in these documents is a general result.
 
 ## The changes
 

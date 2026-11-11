@@ -1,7 +1,7 @@
 # Binaural diversity: the ear split
 
 The diversity ear split (binaural presentation of the two diversity arms) is the branch `feature/diversity-binaural`
-(`TEST` plus a short series, ported from `history/diversity/binaural`) and is part of `devtest/sidetone`, the active
+(`TEST` plus a short series, ported from `history/diversity/binaural`) and is part of `devtest/everything`, the active
 branch that also carries RADE and the CW work (see [../branches.md](../branches.md)). Updated 2026-11-11. Work here is
 meant to reach `TEST` later, in stages. Entry point for the whole branch: [../../README.md](../../README.md).
 

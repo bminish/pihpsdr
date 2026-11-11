@@ -1,6 +1,6 @@
 # RADE in piHPSDR: what was built, what it touches, why
 
-Branches `feature/rade-native` and `devtest/sidetone` (the active branch with everything; its `README.md` has the build). Build librade first with `tools/rade/build_rade.sh`, then `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
+Branches `feature/rade-native` and `devtest/everything` (the active branch with everything; its `README.md` has the build). Build librade first with `tools/rade/build_rade.sh`, then `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
 Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-18 (Reporter tuning added; log tidy-up; the TX latch tried and removed); the RADE and diversity section below was added 2026-11-11 and the rest has not been re-read since 2026-10-18.
 
 ## What it does
