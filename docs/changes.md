@@ -2,14 +2,14 @@
 
 `TEST` on [bminish/pihpsdr](https://github.com/bminish/pihpsdr) tracks the `TEST` branch of [dl1ycf/pihpsdr](https://github.com/dl1ycf/pihpsdr) and carries a few local changes on top of it, mostly to auto diversity. This file is the front page of the register: what is still local, where the finished work is written up, and where the rules, decisions and open work are.
 
-**Where we are (2026-10-30).** dl1ycf has taken our diversity series into `upstream/TEST` three times: `f05546e3` (2026-10-08, LC-001 to LC-047, one squashed commit), `07ae1f56` (2026-10-15, LC-048 to LC-058) and `30b327e2` (2026-10-27, LC-059 to LC-063, "alignment with BMs auto-div version"). Of the 63 changes in the register, **57 are accepted** and no longer differ from upstream (two of them he made himself), **none is pending**, 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` is `upstream/TEST` (`30b327e2`, 0 behind, resynced 2026-10-30) plus our local layer only: the capture recorder (`make DIVCAP=1`, ours and never going upstream), the test harness and tools, and these docs. Force-pushed to `origin/TEST` on 2026-10-30 with the owner's OK (`c669e307` to `80a75fed`); the old tip is `history/backup/TEST-pre-rebase-20261030`. The next free number is **LC-076**.
+**Where we are (2026-10-30).** dl1ycf has taken our diversity series into `upstream/TEST` three times: `f05546e3` (2026-10-08, LC-001 to LC-047, one squashed commit), `07ae1f56` (2026-10-15, LC-048 to LC-058) and `30b327e2` (2026-10-27, LC-059 to LC-063, "alignment with BMs auto-div version"). Of the 63 changes in the register, **57 are accepted** and no longer differ from upstream (two of them he made himself), **none is pending**, 2 are deferred (LC-003, LC-004) and 1 is dropped (LC-022). LC-041 to LC-043 belong to another branch. `TEST` is `upstream/TEST` (`30b327e2`, 0 behind, resynced 2026-10-30) plus our local layer only: the capture recorder (`make DIVCAP=1`, ours and never going upstream), the test harness and tools, and these docs. Force-pushed to `origin/TEST` on 2026-10-30 with the owner's OK (`c669e307` to `80a75fed`); the old tip is `history/backup/TEST-pre-rebase-20261030`. The next free number is **LC-077**.
 
 ## Outstanding work
 
 Everything else in this file is done; this is what is left. Detail and the closed list: [changes/open-items.md](changes/open-items.md).
 
 - **Needs the owner's OK or decision:** the on-screen check of the LC-059/LC-060 rows; E3, E4 and E5 with dl1ycf (no code yet).
-- **To port from `feature/auto-diversity`** (LC-076 on): 0.5 s default averaging, the Carrier tooltip. The time-based slew is written as LC-069, to be listened to first.
+- **To port from `feature/auto-diversity`** (LC-077 on): 0.5 s default averaging, the Carrier tooltip. The time-based slew is written as LC-069, to be listened to first.
 - **To measure or build:** the noise floor's CW items (Best's SNR, `DIV_CW_MIN_BINS`, 48 and 1536 kHz captures, attenuator calibration); CW floor and 0.2 s on marginal captures; a notch validation capture (LC-013); a RADE V2 correlator; the open 24 Hz cases (Carrier, fast fades, other rates); the functional suite on the Pi; LC-061's seeds on captures.
 - **Client/server (tracked, not fixed):** LC-003, LC-004, the radio dropping a client's settings, no menu refresh from a settings block.
 - **Flagged for dl1ycf:** upstream text that still says ADC0/ADC1; no menu refresh on a mode change (cured by E5).
@@ -18,7 +18,7 @@ Everything else in this file is done; this is what is left. Detail and the close
 
 ### Pending: local, not yet in upstream
 
-None. LC-059 to LC-063 arrived in `30b327e2` (2026-10-27) and moved to [accepted.md](changes/accepted.md); how that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-30-the-third-reconcile). The next change takes **LC-076**.
+None. LC-059 to LC-063 arrived in `30b327e2` (2026-10-27) and moved to [accepted.md](changes/accepted.md); how that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-30-the-third-reconcile). The next change takes **LC-077**.
 
 ### Pending: on `feature/rade-native`, for `TEST` as a patch
 
@@ -27,6 +27,7 @@ RADE V2 as a second RADE reference, side by side with V1 (decided 2026-10-22). B
 | ID | Kind | Summary | Files | Depends on | Status |
 |---|---|---|---|---|---|
 | [LC-070](changes/lc-rade.md#lc-070) | Behaviour | RADE on: a request for a mode other than DIGU or DIGL leaves RADE first; the diversity RADE reference follows the waveform on air (V1 or V2) without changing the menu's setting; a second call of the RADE or Diversity menu closes it (RADE's window stays sticky otherwise) | vfo.c, diversity_auto.c, diversity_auto.h, rx_panadapter.c, new_menu.c, new_menu.h, rade_native_menu.c, rade_native_menu.h | LC-073 | Local (branch) |
+| [LC-076](changes/lc-rade.md#lc-076) | Behaviour | Entering RADE sets the diversity reference to the matching correlator (V1 or V2, and on a V1/V2 switch while on a RADE reference); the operator can choose anything else afterwards. On a first run with no saved diversity settings Averaging is nudged to 1.5 s. Replaces LC-070's effective reference | diversity_auto.c, diversity_auto.h, diversity_menu.c, diversity_menu.h, rade_native_menu.c, rx_panadapter.c | LC-070, LC-073 | Local (branch). `diversity_menu.c` is dl1ycf's |
 | [LC-071](changes/lc-rade.md#lc-071) | Cleanup | `DIV_REF_IS_RADE()` and `DIV_REF_LAST` in place of the tests for RADE V1 that meant "a RADE reference"; the correlator start, stop and reset go through `div_rade_start/stop/reset()`. No behaviour change | diversity_auto.c, diversity_auto.h | — | Local (branch) |
 | [LC-072](changes/lc-rade.md#lc-072) | New | The RADE V2 correlator: detects and locks on the cyclic prefix (lag 128, period 160), issues a weight from the prefix-gated cross-correlation (the unit co-phase direction as built; the noise-weighted weight since LC-075) and publishes per-arm figures for the log. Standalone, nothing calls it | rade_v2_correlator.c, rade_v2_correlator.h, Makefile | — | Local (branch) |
 | [LC-073](changes/lc-rade.md#lc-073) | New | `DIV_REF_RADE_V2` (reference 5) in the engine: the RADE block runs either correlator and copies V2's status into the `rade_corr_*` variables; start follows the reference; log lines for lock, loss and tracking | diversity_auto.c, diversity_auto.h, Makefile | LC-071, LC-072 | Local (branch) |

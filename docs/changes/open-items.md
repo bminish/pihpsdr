@@ -12,7 +12,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
 - [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
 
-**To port from `feature/auto-diversity`** (each gets the next LC, from LC-076)
+**To port from `feature/auto-diversity`** (each gets the next LC, from LC-077)
 
 - [ ] The time-based slew (Finding 48): written as LC-069 (2026-11-03), measured on seven captures, **not listened to**; commit once it has been.
 - [ ] The 0.5 s default averaging.
