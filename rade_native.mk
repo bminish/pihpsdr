@@ -4,12 +4,12 @@
 # PROGRAM, OPTIONS and LIBS are defined and before OBJS is. The Makefile has
 # three lines for it: the include, $(RADE_NATIVE_LIBS) in LIBS and
 # $(RADE_NATIVE_OBJS) in OBJS. Needs librade, which tools/rade/build_rade.sh fetches and builds
-# into third_party/. Off by default: make RADE_NATIVE=ON (or put it in
+# into third_party/. On by default on this branch: make RADE_NATIVE=OFF (or put it in
 # make.config.pihpsdr). See docs/archive/rade/plan.md.
 #
 ##############################################################################
 
-RADE_NATIVE ?= OFF
+RADE_NATIVE ?= ON
 
 # The rules below must not become the default goal: until the Makefile's own first rule is seen, that is the program.
 # (PROGRAM is set further down the Makefile, after this include, so the name is written out;
