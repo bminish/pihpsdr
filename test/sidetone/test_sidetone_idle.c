@@ -25,12 +25,12 @@
 // The audio callback calls sidetone_idle() while the radio is not transmitting and sidetone_render()
 // while it is. The callbacks are simulated here with 128 frames each. The tests check that
 //
-//   T1  a key-down queued before TX is up (break-in: key event first, PTT ~20 msec later)
-//       is NOT lost and starts the tone in the first rendered block,
+//   T1  a key-down queued while not transmitting (an external keyer whose key-down arrives before TX is up)
+//       is kept and starts the tone in the first block rendered after TX is up,
 //   T2  an event with a large "wait" (key-down after a pause shorter than 0.5 sec, see
 //       CW_KEYER_KEYDOWN in actions.c) is executed at once when TX starts, as in the TX engine,
 //   T3  the spacing of the following events is still exactly the requested one,
-//   T4  events that were queued but never played (TX never came) are discarded after a while,
+//   T4  events that were queued but never played (TX never came) are discarded after 200 msec,
 //       so they do not start a tone much later,
 //   T5  the tone is released by sidetone_reset()/sidetone_idle() and nothing is left over.
 //
