@@ -46,6 +46,10 @@
 #include "receiver.h"
 #include "transmitter.h"
 #include "new_protocol.h"
+#ifdef RADE_NATIVE
+#include "rade_native.h"
+#include "rade_native_menu.h"
+#endif
 #include "vfo.h"
 #include "channel.h"
 #include "toolbar.h"
@@ -400,6 +404,15 @@ void vfo_id_mode_changed(int id, int m) {
     send_mode(cl_sock_tcp, id, m);
     return;
   }
+#ifdef RADE_NATIVE
+  //
+  // RADE runs in DIGU or DIGL on RX0. Any other mode asked for leaves RADE first (RADE's own mode changes are
+  // DIGU/DIGL, or come after it has been switched off, so they never get here with RADE on).
+  //
+  if (id == 0 && m != modeDIGU && m != modeDIGL && rade_native_waveform() != 0) {
+    rade_native_leave();
+  }
+#endif
   vfo[id].mode = m;
   if (id < receivers) {
     profiles_load_rxtx_profile(receiver[id]);

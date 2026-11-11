@@ -59,7 +59,8 @@ enum _active_menu {
   NOISE_MENU,
   AGC_MENU,
   VFO_MENU,
-  STORE_MENU
+  STORE_MENU,
+  DIVERSITY_MENU
 };
 
 extern int active_menu;
