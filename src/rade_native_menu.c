@@ -858,6 +858,14 @@ static gboolean close_cb(void) {
   return TRUE;
 }
 
+int rade_native_menu_is_open(void) {
+  return dialog != NULL;
+}
+
+void rade_native_menu_close(void) {
+  cleanup();
+}
+
 //
 // Re-apply the receiver settings that depend on the RADE state: the
 // passband and the panel's binaural flag.
@@ -1029,6 +1037,7 @@ static void retune(int new_wave) {
   int mode = new_wave ? (p.invert ? modeDIGL : modeDIGU) : (p.invert ? modeLSB : modeUSB);
   if (p.dial != rade_dial()) { vfo_id_set_frequency(0, p.dial); }
   if (vfo[0].mode != mode) { vfo_id_mode_changed(0, mode); }
+  if (new_wave != old_wave) { diversity_auto_rade_waveform_changed(); }   // the diversity correlator follows the waveform
   //
   // Development: the log runs for as long as RADE is on (a run per visit), whatever the Log button said before. Not meant to ship:
   // a release would leave the log to the operator (see docs/rade/logging.md).
@@ -1068,6 +1077,22 @@ static void waveform_cb(GtkWidget *widget, gpointer data) {
   updating = 0;
   apply();
   show_edges();
+}
+
+//
+// A mode other than DIGU or DIGL was asked for on RX0 while RADE is on (vfo.c): RADE is left first, as if Off had
+// been chosen in the window, and the caller then sets the mode asked for. With the window open its Off button
+// does the work (so the button follows); with it closed the same steps are taken here.
+//
+void rade_native_leave(void) {
+  if (rade_native_waveform() == 0) { return; }
+  if (dialog != NULL && wave_b[0] != NULL) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(wave_b[0]), TRUE);
+    return;
+  }
+  retune(0);
+  if (!rade_native_tx_enabled()) { tx_apply(0); }
+  apply();
 }
 
 static void invert_cb(GtkWidget *widget, gpointer data) {

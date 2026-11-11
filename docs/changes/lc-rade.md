@@ -435,3 +435,31 @@ summed a dead arm into the good one on the one 80 m capture that never locked (T
 **Commit.** One commit holds the module, the engine's Null branch and, for now, the replay tool and its test; at the cut for
 `TEST` the replay-tool files (`cp_replay.c`, `test_cp_replay.py`) go under LT-038 (rule 8).
 
+
+## LC-070 — RADE and the operator's controls: leave on a mode request, follow the waveform, close on a second call
+
+**Problem.** Three things in operating with RADE on. (1) A request for any mode but DIGU or DIGL (the mode menu, MIDI, CAT)
+left RADE running on a mode it does not belong in: the receive chain kept its RADE passband and panel while the mode said
+SSB. (2) With a RADE reference chosen in the diversity menu, the engine ran the correlator for the reference, not for the
+waveform on air: V1 pilot correlation while RADE V2 was running, or the other way round. (3) The toolbar button and the MIDI
+action for the RADE menu, and for the Diversity menu, only opened the window; the Filter, Noise and AGC menus close on the
+same request again. They did because `start_*_menu()` records `active_menu` and closes when it is already that menu. The
+Diversity menu never recorded it, and the RADE window is deliberately not `sub_menu`, so it could not.
+
+**Change.**
+- `vfo_id_mode_changed()`: on RX0, with RADE on, a mode other than DIGU or DIGL first calls `rade_native_leave()`, which does
+  what choosing Off in the RADE window does (the window's own Off button when it is open, the same steps when it is not), and
+  then the requested mode is set. RADE's own mode changes are DIGU or DIGL, or follow switching it off, so they do not recurse.
+- `diversity_auto_effective_ref()`: `div_auto_ref`, except that with a RADE reference chosen and RADE running, the reference
+  is the one for the waveform (V1 for V1, V2 for V2). The engine start, the block context and the panadapter overlay use it.
+  `div_auto_ref` is never written (the menu owns it); a reference that is not a RADE one is left alone. `retune()` calls
+  `diversity_auto_rade_waveform_changed()` when the waveform changes, which restarts the loop if it runs on a RADE reference,
+  because the correlator front end is built at start.
+- `start_diversity_menu()` takes `DIVERSITY_MENU` in `active_menu` like the Filter menu. `start_rade_menu()` closes the
+  window when it is open (`rade_native_menu_is_open()`, `rade_native_menu_close()`); only the window closes, RADE and the mode
+  stay as they are, and the window stays open until it is closed or called again, as before.
+
+**Checks.** Builds with `RADE_NATIVE=ON` and `DIVCAP=1`, and `diversity_auto.c` compiles without RADE_NATIVE. Not yet tried on
+the radio. Not covered: band and bandstack changes set the mode directly and do not go through `vfo_id_mode_changed()`, so
+RADE stays on across a band change into a non-RADE mode; the Diversity menu's status tag still names the reference the menu
+holds, so it can say V2 while V1 runs (`diversity_menu.c` is dl1ycf's: a note for him).
