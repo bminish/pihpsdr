@@ -1249,6 +1249,26 @@ static void rx_sync_split(const RECEIVER *rx) {
   }
 }
 
+//
+// The incremental filter edits (filter cut, IF shift, IF width, TCI) change
+// the passband edges only and so do not go through rx_filter_changed(). The
+// split's second ear has to follow them, or it keeps listening through the
+// old passband while the first moves. Only the edges and the CW peak are
+// carried, not the whole clone, because this runs on every encoder click.
+//
+void rx_split_follow_edges(const RECEIVER *rx) {
+  ASSERT_SERVER();
+  if (rx->id != 0 || !div_split_active()) { return; }
+  const int mode = vfo[rx->id].mode;
+  receiver[1]->filter_low  = rx->filter_low;
+  receiver[1]->filter_high = rx->filter_high;
+  rx_set_bandpass(receiver[1]);
+  if (mode == modeCWU || mode == modeCWL) {
+    rx_set_cw_peak(receiver[1], vfo[rx->id].cwAudioPeakFilter,
+                   (double)cw_keyer_sidetone_frequency);
+  }
+}
+
 void rx_filter_changed(RECEIVER *rx) {
   ASSERT_SERVER();
   rx_set_filter(rx);
@@ -3079,6 +3099,18 @@ void rx_set_squelch_for(const RECEIVER *rx, int mode) {
   SetRXAAMSQRun(rx->id, am_squelch);
   SetRXAFMSQRun(rx->id, fm_squelch);
   SetRXASSQLRun(rx->id, voice_squelch);
+
+  //
+  // The ear split's second receiver follows this one. Two ears squelching
+  // at different levels is the stereo image opening and closing on one
+  // side only. rx->id == 0 is what stops the recursion: the call below
+  // lands on receiver[1], which does not take this branch.
+  //
+  if (rx->id == 0 && div_split_active()) {
+    receiver[1]->squelch_enable = rx->squelch_enable;
+    receiver[1]->squelch        = rx->squelch;
+    rx_set_squelch_for(receiver[1], mode);
+  }
 }
 
 void rx_set_squelch(const RECEIVER *rx) {

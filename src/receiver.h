@@ -345,6 +345,7 @@ extern void   rx_set_squelch_for(const RECEIVER *rx, int mode);
 // to drive receiver[1] while leaving VFO B to the operator.
 //
 extern void   rx_clone_dsp(RECEIVER *dst, const RECEIVER *src);
+extern void   rx_split_follow_edges(const RECEIVER *rx);
 
 extern void   rx_vfo_changed(RECEIVER *rx);
 extern void   rx_update_zoom(RECEIVER *rx);
