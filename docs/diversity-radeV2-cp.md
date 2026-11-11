@@ -24,7 +24,7 @@
   whichever source is strongest instead.
 - **Built:** `src/rade_v2_correlator.[ch]` (C, standalone, same shape as the V1 API), the
   Python reference it was ported from, a capture replay tool, the engine reference
-  `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-064 to LC-067,
+  `DIV_REF_RADE_V2` beside V1, its menu row and overlay, and the checks (LC-071 to LC-074,
   LT-038; section 8).
 - **On air (2026-10-29, section 11, T-027):** five 40 m captures with the engine's log beside them.
   The prefix weight ties or beats the better antenna and Window on the strong ones, is 0.045 |aux| ahead
@@ -277,14 +277,14 @@ register, [changes.md](changes.md); write-ups in [changes/lc-rade.md](changes/lc
 
 | ID | Commit subject (branch hashes will change at the cut) | Applies alone? |
 |---|---|---|
-| LC-064 | `Diversity: DIV_REF_IS_RADE() and one set of RADE correlator calls, no behaviour change` | yes |
-| LC-065 | the module: `Diversity: RADE V2 cyclic-prefix tracker ...` and the two commits that refine it | yes; nothing calls it |
-| LC-066 | `Diversity: DIV_REF_RADE_V2, the RADE V2 cyclic-prefix reference in the engine` and `... says what it is doing in the log` | needs LC-064, LC-065 |
-| LC-067 | `Diversity menu and overlay: RADE V2 prefix (blind)` | needs LC-066; dl1ycf's file |
+| LC-071 | `Diversity: DIV_REF_IS_RADE() and one set of RADE correlator calls, no behaviour change` | yes |
+| LC-072 | the module: `Diversity: RADE V2 cyclic-prefix tracker ...` and the two commits that refine it | yes; nothing calls it |
+| LC-073 | `Diversity: DIV_REF_RADE_V2, the RADE V2 cyclic-prefix reference in the engine` and `... says what it is doing in the log` | needs LC-071, LC-072 |
+| LC-074 | `Diversity menu and overlay: RADE V2 prefix (blind)` | needs LC-073; dl1ycf's file |
 | LT-038 | the devtools files | never upstream |
 
 None of them carries a `Local-Change:` trailer yet; they are added when the series is cut for
-`TEST`, since the IDs are permanent and the hashes are not. LC-065 is several commits that
+`TEST`, since the IDs are permanent and the hashes are not. LC-072 is several commits that
 become one at the cut (rule 9 of [changes/rules.md](changes/rules.md)).
 
 **Decided 2026-10-22, with the owner:**
@@ -508,7 +508,7 @@ result 3). The weight held is better than one made from a prefix that weak.
 - **The A/B is repeated as opportunities arise**, with a capture and the RADE log of each run.
 
 
-## 12. Design: the noise-weighted gain (LC-068 proposed; built in `5a23387b`, on air 2026-10-29)
+## 12. Design: the noise-weighted gain (LC-075 proposed; built in `5a23387b`, on air 2026-10-29)
 
 Decided 2026-10-29 (section 11.5). This is the design and the checks it rests on; nothing here is in the code.
 
@@ -616,7 +616,7 @@ references; not designed in, because nothing says it is needed.
    engine still gets a weight from `wr/wi`, so this alone already changes Sum and Null).
 2. Engine: Null reads `arm_cos/arm_sin` for V2. (Between 1 and 2 Null would be `-mrc`; they go in as one commit.)
 3. Offline acceptance (12.7, 2 and 3).
-4. On air (12.7, 4). The register entry (LC-068) and the write-up follow the on-air result, not the offline one.
+4. On air (12.7, 4). The register entry (LC-075) and the write-up follow the on-air result, not the offline one.
 
 ### 12.9 Offline acceptance (2026-10-29, after the commit `5a23387b`)
 
@@ -689,7 +689,7 @@ Two 60 m captures with the noise-weighted gain live, and the Averaging sweep ove
   blocks (replay 0.00, 0.21, 0.21 against the engine's 0.09, 0.12, 0.14; the same with either bank). The capture
   began 16 s into the run, so the engine had history the replay lacks, but it persists for the minute. Unexplained;
   it is the unlocked search state, which the locked captures do not exercise. Not resolved here.
-- Still open: the LC-068 register entry, now that the on-air result is in.
+- Still open: the LC-075 register entry, now that the on-air result is in.
 
 ### 12.12 The start weight: measured, parked (2026-10-29)
 
