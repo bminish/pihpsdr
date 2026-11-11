@@ -1,40 +1,43 @@
-<p align="center">
-<img src="release/pihpsdr/piHPSDRv3_logo.png" width="300" height="300">
-</p>
+# piHPSDR - `feature/rade-native`
 
-> # ⚠️ This is the `feature/rade-native` branch: it is **not a standard piHPSDR build**
->
-> It adds native **FreeDV RADE V1 and V2** (receive and transmit, in I/Q, with its own RADE window and Reporter). That needs
-> David Rowe's `librade`, which is **not part of this repository**: it has to be fetched and built first, and the normal
-> build instructions in the Manual do not cover it. Without the steps below you get an ordinary piHPSDR with no RADE.
->
-> **Build** (Linux; this branch has not been tried on MacOS):
->
-> 1. Install what librade's build needs, as well as piHPSDR's own dependencies: `git`, `cmake` (3.16 or newer), a C compiler, and
->    network access (the script clones `github.com/freedv/rade_c` and CMake downloads the Opus source it embeds).
-> 2. Fetch and build librade (several minutes; it follows rade_c's HEAD, `RADE_REV=<commit|tag|branch>` pins a revision):
->    ```
->    tools/rade/build_rade.sh
->    ```
->    This leaves `third_party/rade_c-src` and `third_party/rade_c-build` (both untracked) and prints the librade commit it built
->    (also in `third_party/rade_c-build/librade.rev`). Run it again to update librade, then rebuild piHPSDR with `make clean`
->    and `make RADE_NATIVE=ON`. The script exists on this branch only. The V2 comparison in `docs/diversity-radeV2-cp.md` was
->    measured at rade_c `cc17222`; `RADE_REV=cc17222 tools/rade/build_rade.sh` reproduces that build.
-> 3. Build piHPSDR with RADE switched on, either on the command line or once in `make.config.pihpsdr`:
->    ```
->    make RADE_NATIVE=ON
->    ```
->    ```
->    # make.config.pihpsdr
->    RADE_NATIVE=ON
->    ```
->    `RADE_NATIVE` is off by default; with it off, nothing RADE is compiled. With it on, `make` stops with
->    "RADE_NATIVE=ON needs librade: run tools/rade/build_rade.sh first" if step 2 has not been done.
-> 4. Optional: the **Reporter** (button in the RADE window) is a separate Python program,
->    `python3 tools/rade-reporter/rade_reporter.py`, and needs PyGObject (GTK 3) and `websocket-client`.
->
-> What it does, the design and the test status: [docs/rade/README.md](docs/rade/README.md). RADE V2 is a development
-> waveform and librade itself says on-air use is premature.
+This branch of piHPSDR adds **FreeDV RADE V1 and V2** (digital voice over HF SSB) inside the program: receive and
+transmit, a RADE window for waveform, callsign and levels, a separate Reporter, and diversity reception for RADE V2.
+It is experimental and **not a standard piHPSDR build**. RADE V2 is a development waveform, and librade itself says
+on-air use is premature.
+
+RADE needs David Rowe's **librade** ([freedv/rade_c](https://github.com/freedv/rade_c)). It is not part of this
+repository; a script fetches and builds it.
+
+**Get and compile** (Linux; not tried on MacOS)
+
+1. Install piHPSDR's usual dependencies (see the Manual), plus `git`, `cmake` (3.16 or newer) and a C compiler. The script
+   clones rade_c and CMake downloads the Opus source it embeds, so it needs network access.
+2. Build librade (several minutes):
+   ```
+   tools/rade/build_rade.sh
+   ```
+3. Build piHPSDR. RADE is on by default on this branch:
+   ```
+   make
+   ```
+   `make RADE_NATIVE=OFF` builds without RADE. If librade has not been built, `make` stops and tells you to run step 2.
+
+**Update**
+
+```
+git pull
+tools/rade/build_rade.sh      # fetches rade_c's latest and rebuilds librade
+make clean
+make
+```
+
+The script follows rade_c's latest commit and prints the one it built (also in `third_party/rade_c-build/librade.rev`).
+`RADE_REV=<commit|tag|branch> tools/rade/build_rade.sh` builds a particular revision instead.
+
+**Reporter (optional)**: opened from the RADE window, a separate program (`tools/rade-reporter/rade_reporter.py`) that
+needs PyGObject (GTK 3) and `websocket-client`.
+
+More: [docs/rade/README.md](docs/rade/README.md).
 
 ***
 
