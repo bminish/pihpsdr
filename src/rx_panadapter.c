@@ -329,7 +329,7 @@ void rx_panadapter_update(RECEIVER *rx) {
     const double wman_lo = wzero + div_auto_centre - 0.5 * div_auto_width;
     const double wman_hi = wzero + div_auto_centre + 0.5 * div_auto_width;
 
-    switch (diversity_auto_effective_ref()) {
+    switch (div_auto_ref) {
     case DIV_REF_BAND:
       if (div_auto_follow_filter) {
         wlo = rx->filter_low;

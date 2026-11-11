@@ -354,12 +354,11 @@ extern gboolean diversity_client_set_status(gpointer data);
 extern void diversity_auto_mode_changed(int mode);
 
 //
-// The reference the engine runs: div_auto_ref, except that a RADE reference follows the waveform RADE is
-// running (V1 or V2). The menu's own setting is not changed. diversity_auto_rade_waveform_changed() is called
-// when RADE is switched between V1, V2 and off, and restarts the loop on a RADE reference.
+// RADE was entered or switched between V1 and V2 (rade_native_menu.c): sets the reference to the matching RADE
+// correlator, and Averaging on a first run with no saved settings. An aid, not a mandate; the operator can choose
+// anything afterwards. See the note at the definition.
 //
-extern int  diversity_auto_effective_ref(void);
-extern void diversity_auto_rade_waveform_changed(void);
+extern void diversity_auto_rade_waveform_changed(int old_wave, int new_wave);
 
 //
 // One of the two ADC step attenuators is about to move by delta_db. Feeds

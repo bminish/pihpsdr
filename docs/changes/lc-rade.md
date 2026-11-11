@@ -450,7 +450,7 @@ Diversity menu never recorded it, and the RADE window is deliberately not `sub_m
 - `vfo_id_mode_changed()`: on RX0, with RADE on, a mode other than DIGU or DIGL first calls `rade_native_leave()`, which does
   what choosing Off in the RADE window does (the window's own Off button when it is open, the same steps when it is not), and
   then the requested mode is set. RADE's own mode changes are DIGU or DIGL, or follow switching it off, so they do not recurse.
-- `diversity_auto_effective_ref()`: `div_auto_ref`, except that with a RADE reference chosen and RADE running, the reference
+- (Superseded by LC-076: the reference itself now follows.) `diversity_auto_effective_ref()`: `div_auto_ref`, except that with a RADE reference chosen and RADE running, the reference
   is the one for the waveform (V1 for V1, V2 for V2). The engine start, the block context and the panadapter overlay use it.
   `div_auto_ref` is never written (the menu owns it); a reference that is not a RADE one is left alone. `retune()` calls
   `diversity_auto_rade_waveform_changed()` when the waveform changes, which restarts the loop if it runs on a RADE reference,
@@ -463,3 +463,28 @@ Diversity menu never recorded it, and the RADE window is deliberately not `sub_m
 the radio. Not covered: band and bandstack changes set the mode directly and do not go through `vfo_id_mode_changed()`, so
 RADE stays on across a band change into a non-RADE mode; the Diversity menu's status tag still names the reference the menu
 holds, so it can say V2 while V1 runs (`diversity_menu.c` is dl1ycf's: a note for him).
+
+## LC-076 — Entering RADE sets the diversity reference to match; RADE averaging nudged to 1.5 s on a first run
+
+**Problem.** LC-070 ran the correlator of the waveform on air but left the stored reference alone, so the Diversity menu
+said "RADE V1" while the engine and the panadapter overlay were on V2. The wrong correlator measures nothing, and a menu
+that disagrees with it is worse than one that is wrong in a visible way. Also, nothing put an operator new to RADE near
+useful settings.
+
+**Change.** An aid to operation, not a mandate: the operator can choose Window, Carrier or any reference at any time, and
+may want a wideband window in RADE to null a carrier.
+- `diversity_auto_rade_waveform_changed(old_wave, new_wave)` (from `retune()`): **entering** RADE sets the reference to the
+  correlator for the waveform. **V1 to V2** (or back) moves the reference to the other correlator, but only while it is a
+  RADE one; a reference chosen for something else stays. **Leaving** RADE changes nothing.
+- The reference is set through `diversity_menu_nudge()` in the menu, the way the operator's own choice is (the outgoing
+  reference's window values filed, the new one's restored, the loop restarted on the right correlator), and the open
+  menu's row and slider follow without calling their handlers; a client is sent the settings. `diversity_auto_effective_ref()`
+  of LC-070 is removed: one stored reference, so the menu, status tag, overlay and engine agree.
+- Averaging: **only** when the props file held no diversity settings at start, the first entry into RADE in that session sets
+  Averaging to 1.5 s, to put the operator near good settings. With any settings saved, Averaging is left alone, as it is on
+  later entries. Nothing new is saved.
+- The engine writing the reference and Averaging is an exception to the menu owning them (decided 2026-11-11); it goes
+  through the menu's own function. `diversity_menu.c` is dl1ycf's: a note for him. The objective (Manual, Sum, Null) is not
+  touched, whereas choosing a RADE reference in the menu sets Sum.
+
+**Checks.** Builds with `DIVCAP=1`. Not yet tried on the radio.
