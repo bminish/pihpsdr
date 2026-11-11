@@ -76,9 +76,10 @@ the engine's `cw_delay_time` always is, because the engine counts it also while 
 * the first event after TX starts is executed at once whatever its `wait` is. `CW_KEYER_KEYDOWN` (MIDI/GPIO
   external keyer, straight key) sends the gap to the previous event as `wait` (up to 0.5 s); counted again from
   the start of TX that gap delayed the side tone by up to 0.5 s while the RF keyed on time;
-* events queued shortly before the transmit flag is set are kept. In break-in the key event comes some 20 ms before
-  RX -> TX is complete; an unconditional reset on every receive callback discarded that first key-down, so the
-  local side tone of the first element was missing. The engine keeps its events in its own ring and plays them;
+* events queued while not transmitting are kept for up to 200 ms and played when TX is up: an unconditional reset on
+  every receive callback would discard them. The TX engine itself drops such events at once, so an external keyer
+  whose key-down arrives before TX is up gets a side tone that is not transmitted (corrected 2026-11-11; the
+  earlier text described this as the break-in case, which it is not: the keyer thread waits for TX);
 * events older than 200 ms are dropped (TX never came, wrong mode, duplex), so they cannot start a tone later.
 
 Keep the 20 s key-down protection. Tested by `test/sidetone/test_sidetone_idle.c` (assertions; the first two cases
