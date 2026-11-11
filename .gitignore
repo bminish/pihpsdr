@@ -30,3 +30,7 @@ captures/
 wav/
 *.divc
 src/.divcap-*
+
+# dx cluster runtime data
+dxhistory.db*
+dxspots.csv
