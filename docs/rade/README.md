@@ -1,7 +1,7 @@
 # RADE in piHPSDR: what was built, what it touches, why
 
-Branch `feature/rade-native`. Build with `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
-Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-18 (Reporter tuning added; log tidy-up; the TX latch tried and removed).
+Branches `feature/rade-native` and `devtest/sidetone` (the active branch with everything; its `README.md` has the build). Build librade first with `tools/rade/build_rade.sh`, then `make RADE_NATIVE=ON` (off by default; with it off nothing here is compiled).
+Details live in the documents listed at the end; this page is the map. Last checked against the code 2026-10-18 (Reporter tuning added; log tidy-up; the TX latch tried and removed); the RADE and diversity section below was added 2026-11-11 and the rest has not been re-read since 2026-10-18.
 
 ## What it does
 
@@ -23,6 +23,15 @@ Each stage, rate and level: [signal-paths.md](signal-paths.md).
 **Why this way.** Taking the audio chain's own I/Q keeps AGC, shift, filters, ALC, the panadapter and the radio's
 timing working as they do for any mode, and avoids a sound-card hop that costs delay and a sample-rate mismatch.
 
+## RADE and diversity (added 2026-11-11)
+
+RADE V1 and V2 are also references of the diversity engine (the V1 pilot and V2 cyclic-prefix correlators, LC-071 to LC-075: [../diversity-radeV2-cp.md](../diversity-radeV2-cp.md), [../changes/lc-rade.md](../changes/lc-rade.md)). These behaviours tie the two together:
+
+- **Entering RADE sets the diversity reference** to the matching correlator (V1 or V2; on a V1/V2 switch only while the reference is a RADE one). The operator can choose anything else afterwards, and leaving RADE changes nothing. On a first run with no saved diversity settings, Averaging is set to 1.5 s (LC-076, which replaced LC-070's "effective reference").
+- **A mode other than DIGU/DIGL asked for on RX0 while RADE is on switches RADE off first** (LC-070, `rade_native_leave()` from `vfo_id_mode_changed()`).
+- **RADE switches the binaural ear split off** ([../binaural/README.md](../binaural/README.md)).
+- A second call of the RADE or Diversity menu closes it (the RADE window used to be sticky).
+
 ## Files
 
 | Where | What | Size |
@@ -34,7 +43,7 @@ timing working as they do for any mode, and avoids a sound-card hop that costs d
 | `src/rade_native_log.[ch]` | non-blocking parameter log, one directory per run | core |
 | `src/rade_native_test.[ch]` | test harness (control socket); armed by the operator, limited in power, band and time | core |
 | `src/rade_launch.[ch]` | starts the Reporter / log viewer detached | core |
-| `rade_native.mk` | the build switch, objects, libraries | core |
+| `rade_native.mk` | the build switch (`RADE_NATIVE`, off by default), objects, libraries | core |
 | `tools/rade-reporter/` | FreeDV Reporter client (V1 and V2), a separate Python process reading the state file | extra |
 | `tools/rade/trim_capture.py` | cuts a stretch (or the best N seconds in sync) out of a capture in `rade-captures/`, to keep it as a sample; the originals are left alone | extra |
 | `tools/rade-logview/` | viewer for the parameter logs; `tidy_logs.py` finishes (compresses, removes) runs left unfinished | extra |

@@ -1,6 +1,6 @@
 # LC-066: straight key: the start of a key hold is no longer lost in the RX-to-TX timing hole
 
-Index, numbering and open items: [cw.md](cw.md). Depends on [LC-065](cw_keyer_first_tap.md) (`tap_recording` and the flags it clears). Tool: `cwlat --test short` (LT-038).
+Index, numbering and open items: [cw.md](cw.md). Depends on [LC-065](cw_keyer_first_tap.md) (`tap_recording` and the flags it clears). Tool: `cwlat --test short` (LT-039).
 
 **Status: local; measured against the unchanged build, 2026-11-07 (below).** Not measured: other speeds, other bands, a real key, Iambic or bug mode with this change.
 

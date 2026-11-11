@@ -1,6 +1,6 @@
 # LC-065: a short paddle tap is no longer lost while the keyer waits for TX
 
-Index, numbering and open items: [cw.md](cw.md). Found while measuring [LC-064](cw_sidetone.md), independent of it: the fix is in `src/iambic.c` only and applies to `upstream/TEST` alone. Tool that found it: `tools/cwlat` (LT-038), `--test hang`.
+Index, numbering and open items: [cw.md](cw.md). Found while measuring [LC-064](cw_sidetone.md), independent of it: the fix is in `src/iambic.c` only and applies to `upstream/TEST` alone. Tool that found it: `tools/cwlat` (LT-039), `--test hang`.
 
 **Status: local, not yet offered to dl1ycf.** Measured on one machine at the shipped quantum of 256 against the unchanged TEST build (see "The A/B run of 2026-11-07" below). The first version of the fix was measured on a build that also had LC-064; this version differs only in the straight key / bug mode handling (the dash paddle is LC-066). Open items at the end.
 

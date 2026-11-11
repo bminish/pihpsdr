@@ -18,7 +18,7 @@ Index and open items: [cw.md](cw.md). The change itself: [cw_sidetone.md](cw_sid
 * **Quantum.** The playback quantum is upstream's decision (256) and is not changed by LC-064; the quantum rows below are there to show what it does to the timing. Read from the table: the synth path at 256 (10.9 ms at the sink) is as early at the ear (estimated 18.9 ms) as the old path at 128 (19.0 ms).
 * **PTT mode** (PTT held by MIDI): no cold-start penalty, no tap lost, TX releases (2026-11-09). **External keyer path** (`CW_KEYER_KEYDOWN`): the first key-down after TX start sounds 4.8 to 8.1 ms after the key.
 
-Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis; LT-038).
+Tools: `tools/cwlat/` (test driver, KiwiSDR capture, analysis; LT-039).
 Setup: pihpsdr (the synth side tone as first prototyped, same code as LC-064) -> radio, 1 % drive into a dummy load on 28187 kHz, PA enabled; paddle events injected as
 MIDI notes through a VirMIDI port (CWL 21 / CWR 20 / PTT 22); the RF is recorded by a GPS-disciplined KiwiSDR
 (IQ, GNSS time-stamps) and the sidetone at the PipeWire sink monitor. 22 wpm, Iambic B and straight key,

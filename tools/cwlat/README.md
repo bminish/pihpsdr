@@ -1,4 +1,4 @@
-# cwlat - external CW sidetone latency / jitter measurement (LT-038)
+# cwlat - external CW sidetone latency / jitter measurement (LT-039)
 
 Measures, from outside piHPSDR, the time from a MIDI paddle event to the sidetone entering the
 PipeWire sink, with jitter, element lengths, dropped events and double elements. With a KiwiSDR

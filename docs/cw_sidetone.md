@@ -1,6 +1,6 @@
 # LC-064: synthesised local CW side tone (PipeWire)
 
-Index, numbering and open items: [cw.md](cw.md). Design record: [cw_sidetone-design.md](cw_sidetone-design.md). Measurements: [cw_sidetone-findings.md](cw_sidetone-findings.md). Tools and tests: LT-038 (`tools/cwlat/README.md`).
+Index, numbering and open items: [cw.md](cw.md). Design record: [cw_sidetone-design.md](cw_sidetone-design.md). Measurements: [cw_sidetone-findings.md](cw_sidetone-findings.md). Tools and tests: LT-039 (`tools/cwlat/README.md`).
 
 **Status: local, not yet offered to dl1ycf.** Bench-tested on one machine (one USB sound card, one Saturn G2, PipeWire). Measured against the unchanged TEST build at quantum 256 on 2026-11-07 (below); the runs of 2026-11-09 were at quantum 128, which this branch requests (a local setting). The list at the end says what has to be done before it is a PR. Off by default, so a build without the box ticked behaves as before.
 
@@ -89,7 +89,7 @@ At upstream's quantum the old path sounds the tone slightly after the RF; the sy
 | `src/cw_menu.c` | check box "Synth sidetone" (`#ifdef PIPEWIRE`) |
 | `Makefile` | `sidetone.o` with the PipeWire audio objects |
 
-PipeWire only and server only: a remote client keeps its own side tone thread, and the other audio modules are untouched. Not part of LC-064 and kept as tooling (LT-038): `test/sidetone/` and `tools/cwlat/`.
+PipeWire only and server only: a remote client keeps its own side tone thread, and the other audio modules are untouched. Not part of LC-064 and kept as tooling (LT-039): `test/sidetone/` and `tools/cwlat/`.
 
 ## How it was checked
 

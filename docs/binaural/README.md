@@ -1,9 +1,9 @@
-# Binaural diversity on TEST (`feature/diversity-binaural-2`)
+# Binaural diversity: the ear split
 
-This branch is `TEST` plus the diversity ear split (binaural presentation of
-the two diversity arms), ported from `history/diversity/binaural` (was `feature/diversity-binaural`). It is
-rebased onto `TEST` as a short series on top, the way `TEST` itself follows
-`upstream/TEST`. Work here is meant to reach `TEST` later, in stages.
+The diversity ear split (binaural presentation of the two diversity arms) is the branch `feature/diversity-binaural`
+(`TEST` plus a short series, ported from `history/diversity/binaural`) and is part of `devtest/sidetone`, the active
+branch that also carries RADE and the CW work (see [../branches.md](../branches.md)). Updated 2026-11-11. Work here is
+meant to reach `TEST` later, in stages. Entry point for the whole branch: [../../README.md](../../README.md).
 
 Two rules differ from `TEST` (see `docs/changes/rules.md` and
 `docs/changes/ownership.md` for the rest, which still apply):
@@ -23,12 +23,13 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 | `2ad53789` | The ear split, ported from binaural `2a6bafb6..b0e57819` onto TEST's shapes (manual/auto weights, LC-022 arm swap, LC-030 Level output, parallel RX slew-down, one menu row) |
 | `da0956b1` | The second ear follows RX1's CTUN, RIT and CW BFO shift (binaural carried this inside its CW commit `6027208a`; the port missed it) |
 | `8d27b0cc` | The split's teardown waits for the second ear to stop (TEST's `rx_off()` honours its wait argument; binaural's did not) |
-| `0fd92651` | PipeWire output declared as FL/FR, not MONO/MONO+1 (upstream bug since `184f780b`; affects every stereo use of PipeWire output) |
+| `0fd92651` | PipeWire output declared as FL/FR, not MONO/MONO+1 (upstream bug since `184f780b`; affects every stereo use of PipeWire output). **dl1ycf made the same fix upstream on 2026-11-10 (`8045dff0`)**, so the local copy is only a better comment |
 | `854cc90d` | The ears' input blocks are realigned on the receive thread, not the GTK thread |
 | `8fe6222c`, `4ba041c1` | Tooling: the ear recorder and `ears.py` (below) |
 | `92dd3bf5`, `2dd0e077` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC) |
 | `e798f1d1` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
 | `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
+| (later, 2026-11) | RADE takes precedence over the split: entering RADE switches the split off (`24aa5660`). The split's second ear now **follows RX0's incremental filter edits (cut, IF shift, IF width, TCI) and its squelch**, the two things it used to miss ([bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md)); `rx_split_follow_edges()` in `receiver.c`. Not yet heard on air |
 
 ## Debugging and test suite for the ear split
 

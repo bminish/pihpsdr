@@ -66,4 +66,4 @@ Squeeze results and PTT-mode runs made before 2026-11-09 are invalid (a fault of
 
 ## Sources of the measured numbers
 
-[cw_sidetone.md](cw_sidetone.md) (side tone paths, A/B 2026-11-07), [cw_keyer_first_tap.md](cw_keyer_first_tap.md) (hang test, lost taps, recovered taps, squeeze), [cw_keyer_straight_key.md](cw_keyer_straight_key.md) (floor, `short` test), [cw_sidetone-findings.md](cw_sidetone-findings.md) (quantum sweep, PTT mode, external keyer), [cw_breakin_plan.md](cw_breakin_plan.md) (probe baseline). Tool: `tools/cwlat` (LT-038).
+[cw_sidetone.md](cw_sidetone.md) (side tone paths, A/B 2026-11-07), [cw_keyer_first_tap.md](cw_keyer_first_tap.md) (hang test, lost taps, recovered taps, squeeze), [cw_keyer_straight_key.md](cw_keyer_straight_key.md) (floor, `short` test), [cw_sidetone-findings.md](cw_sidetone-findings.md) (quantum sweep, PTT mode, external keyer), [cw_breakin_plan.md](cw_breakin_plan.md) (probe baseline). Tool: `tools/cwlat` (LT-039).
