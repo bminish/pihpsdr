@@ -408,6 +408,26 @@ void filter_cut_default(int id) {
 }
 
 //
+// filter_edges_changed() takes edges relative to the nominal CW position
+// and adds/subtracts the sidetone frequency itself in CWU/CWL, while
+// rx->filter_low/high hold the *absolute* edges. The incremental handlers
+// below work on the absolute edges, so they must remove the offset again.
+// Otherwise every call shifted the CW filter by one more sidetone offset,
+// in the same direction, whichever way the encoder was turned.
+//
+static void filter_abs_edges_changed(int id, int low, int high) {
+  int mode = vfo[id].mode;
+  if (mode == modeCWU) {
+    low  -= cw_keyer_sidetone_frequency;
+    high -= cw_keyer_sidetone_frequency;
+  } else if (mode == modeCWL) {
+    low  += cw_keyer_sidetone_frequency;
+    high += cw_keyer_sidetone_frequency;
+  }
+  filter_edges_changed(id, low, high);
+}
+
+//
 // The notion of "high" and "low" is referenced to the audio, that is,
 // they have to be reversed for LSB/DIGU.
 //
@@ -457,7 +477,7 @@ void filter_high_changed(int id, int increment) {
     new = high;
     break;
   }
-  filter_edges_changed(rx->id, low, high);
+  filter_abs_edges_changed(rx->id, low, high);
   if (!suppress_popup_sliders) {
     g_idle_add(sliders_filter_high, GINT_TO_POINTER(100000 * id + 50000 + new));
   }
@@ -506,7 +526,7 @@ void filter_low_changed(int id, int increment) {
     new = low;
     break;
   }
-  filter_edges_changed(rx->id, low, high);
+  filter_abs_edges_changed(rx->id, low, high);
   if (!suppress_popup_sliders) {
     g_idle_add(sliders_filter_low, GINT_TO_POINTER(100000 * id + 50000 + new));
   }
@@ -571,7 +591,7 @@ void filter_width_changed(int id, int increment) {
     }
     break;
   }
-  filter_edges_changed(rx->id, low, high);
+  filter_abs_edges_changed(rx->id, low, high);
   if (!suppress_popup_sliders) {
     g_idle_add(sliders_filter_width, GINT_TO_POINTER(100000 * id + 50000 + high - low));
   }
@@ -626,7 +646,7 @@ void filter_shift_changed(int id, int increment) {
   //
   // Apply changed filter settings to the running rx
   //
-  filter_edges_changed(rx->id, low, high);
+  filter_abs_edges_changed(rx->id, low, high);
   shft = sgn * shft;
   if (mode == modeCWU ||  mode == modeCWL) {
     shft -= cw_keyer_sidetone_frequency;
