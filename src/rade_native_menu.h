@@ -23,6 +23,9 @@
 #include <gtk/gtk.h>
 
 void rade_native_menu(GtkWidget *parent);
+int  rade_native_menu_is_open(void);
+void rade_native_menu_close(void);      // the window only: RADE stays as it is
+void rade_native_leave(void);           // leave RADE (a mode other than DIGU/DIGL was asked for); see vfo.c
 
 //
 // radio_restore_state() / radio_save_state(): the RADE settings in the properties file (callsign, Invert, mic trim and
