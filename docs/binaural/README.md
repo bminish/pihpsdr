@@ -29,7 +29,7 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 | `92dd3bf5`, `2dd0e077` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC) |
 | `e798f1d1` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
 | `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
-| (later, 2026-11) | RADE takes precedence over the split: entering RADE switches the split off (`24aa5660`). The split's second ear now **follows RX0's incremental filter edits (cut, IF shift, IF width, TCI) and its squelch**, the two things it used to miss ([bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md)); `rx_split_follow_edges()` in `receiver.c`. Not yet heard on air |
+| (later, 2026-11) | RADE takes precedence over the split: entering RADE switches the split off (`24aa5660`). The split's second ear now **follows RX0's incremental filter edits (cut, IF shift, IF width, TCI) and its squelch**, the two things it used to miss ([bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md)); `rx_split_follow_edges()` in `receiver.c`. Checked on the radio 2026-11-11, passes (for now) |
 
 ## Debugging and test suite for the ear split
 

@@ -9,7 +9,7 @@ Written 2026-11-09, checked against the code 2026-11-11 (on `devtest/sidetone`; 
 | LC-064 | Local CW side tone synthesised in the PipeWire output callback (option, off by default) | [cw_sidetone.md](cw_sidetone.md) |
 | LC-065 | A short paddle tap is no longer lost while the keyer waits for TX | [cw_keyer_first_tap.md](cw_keyer_first_tap.md) |
 | LC-066 | Straight key: the start of a key hold is no longer lost in the RX to TX timing hole | [cw_keyer_straight_key.md](cw_keyer_straight_key.md) |
-| (fix) | A CW filter edge drift: every filter cut / IF shift / IF width step in CWU or CWL moved the passband by one sidetone offset. Fixed in `filter.c`, not yet checked on the radio | [binaural/bug-cw-filter-edge-drift.md](binaural/bug-cw-filter-edge-drift.md) |
+| (fix) | A CW filter edge drift: every filter cut / IF shift / IF width step in CWU or CWL moved the passband by one sidetone offset. Fixed in `filter.c`; checked on the radio 2026-11-11, passes | [binaural/bug-cw-filter-edge-drift.md](binaural/bug-cw-filter-edge-drift.md) |
 | LT-039 | Tools and tests: `tools/cwlat` (measurement, incl. `midisend`), `test/sidetone`, `test/breakin`, the timing probe `src/cwtime.[ch]` | [tools/cwlat/README.md](../tools/cwlat/README.md) |
 
 **Numbering.** LC-064 to LC-066 are this series in the register ([changes.md](changes.md)); the RADE V2 work that once clashed with them was renumbered LC-071 to LC-075 on 2026-11-11 ([changes/lc-rade.md](changes/lc-rade.md)). LT-039 was LT-038 before 2026-11-11, which the RADE V2 tooling holds in the register. The side tone alone, as a patch series on `master`, is the branch `feature/synth-sidetone`; the lost-first-tap fix alone is `fix/keyer-lost-first-tap` ([branches.md](branches.md)).
