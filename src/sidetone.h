@@ -19,15 +19,19 @@
 #define _SIDETONE_H
 
 //
-// Local CW side tone synthesised in the audio output callback (see docs/synth-sidetone/README.md).
+// Local CW side tone, synthesised in the audio output callback instead of being queued through a FIFO
+// (which saves the FIFO's cushion of silence, about 8 msec). See docs/synth-sidetone/README.md.
 //
 // The module knows nothing about the radio: frequency and amplitude are passed in by the caller, so it can
-// be tested stand-alone (test/sidetone/test_sidetone.c).
+// be tested stand-alone.
+//
+// The event ring is lock-free with one producer and one consumer, like the CW ring in transmitter.c: it relies
+// on only one key source (keyer thread, GPIO, MIDI, CAT, remote client) being active at a time.
 //
 
 //
 // Producer side. Same arguments as tx_queue_cw_event(): "wait" is in 1/48000 sec and is counted from the
-// previous event being executed. Callable from the threads that call tx_queue_cw_event().
+// previous event being executed.
 //
 extern void sidetone_queue(int down, int wait);
 
@@ -41,16 +45,16 @@ extern void sidetone_queue(int down, int wait);
 extern void sidetone_render(double *out, int n, int freq, double amp);
 
 //
-// Drop all queued events and release the key.
+// Drop all queued events and release the key (used by the tests).
 //
 extern void sidetone_reset(void);
 
 //
 // To be called from the audio callback instead of sidetone_render() while not transmitting CW.
-// Releases the key and puts the renderer into the state of a long pause, so the first event after TX starts is
-// executed at once whatever its "wait" is (as in the TX engine). Events that were queued shortly before are
-// kept (break-in: the key event comes ~20 msec before the transmit flag); events older than 200 msec are
-// dropped.
+// Releases the key and puts the renderer into the state of a long pause, so that the first event after TX
+// starts is executed at once whatever its "wait" is: the TX engine counts its own delay all the time, and
+// a key-down from an external keyer carries the gap to the previous event (up to 0.5 sec) as its wait.
+// Queued events are kept for 200 msec and dropped after that.
 //
 extern void sidetone_idle(void);
 
