@@ -63,7 +63,7 @@ def select_row(sid_suffix):
             return True
     return False
 
-app.view.set_active_id("v1")
+app.show_chk["v1"].set_active(True); app.show_chk["follow"].set_active(False)
 tick()
 check(wait(lambda: s1.clients and s1.clients[0]["auth"] is not None), "connected as a viewer")
 tick()

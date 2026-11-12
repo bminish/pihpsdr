@@ -216,6 +216,19 @@ def resolve_view(view, pihpsdr):
     return "all"
 
 
+def show_keys(show, pihpsdr):
+    """The reporters the list shows, as ["v1"], ["v2"] or both: what is ticked among Follow (the radio's RADE mode: both while RADE is
+    off or piHPSDR is not running), V1 and V2. A string (the old single choice) is accepted too. Nothing ticked counts as Follow."""
+    if isinstance(show, str):
+        show = {"follow": {"follow": True}, "v1": {"v1": True}, "v2": {"v2": True}, "all": {"v1": True, "v2": True}}.get(show, {"follow": True})
+    keys = set()
+    if show.get("follow") or not (show.get("v1") or show.get("v2")):
+        r = resolve_view("follow", pihpsdr)
+        keys |= {"v1", "v2"} if r == "all" else {r}
+    keys |= {k for k in ("v1", "v2") if show.get(k)}
+    return [k for k in ("v1", "v2") if k in keys]
+
+
 def parse_server(text):
     """'host', 'host:port', 'https://host[:port]/', 'http://host:port' -> (host, port, secure)."""
     t = (text or "").strip()
@@ -269,7 +282,7 @@ class Link:
         self.lock = threading.RLock()
 
     # ---- public
-    def set_target(self, server, role, callsign="", grid="", freq=0, mode="", tx=False, message="", live=False):
+    def set_target(self, server, role, callsign="", grid="", freq=0, mode="", tx=False, message="", live=False, rx_only=False):
         """server: a DEFAULT_SERVERS-style dict with host/port/secure, or None to be disconnected.
         live: a signal is in sync with an SNR - new information that settles the frequency at once."""
         old, reopen = None, False
@@ -281,7 +294,8 @@ class Link:
                 old = self._detach()
             else:
                 key = (server["host"], server["port"], server["secure"], role,
-                       callsign if role == "report" else "", grid if role == "report" else "")
+                       callsign if role == "report" else "", grid if role == "report" else "",
+                       bool(rx_only) if role == "report" else False)       # rx_only is told at connect: a change reconnects, as in freedv-gui
                 self.want = {"freq": int(freq), "mode": mode, "tx": bool(tx), "message": message}
                 if key != self.key:
                     old = self._detach()
@@ -293,7 +307,7 @@ class Link:
         self._finish(old)
         if reopen:
             with self.lock:
-                self._open(server, role, callsign, grid)
+                self._open(server, role, callsign, grid, key[-1])
                 self.key = key
 
     def emit(self, event, data):
@@ -324,6 +338,8 @@ class Link:
         """A transmission that began and ended between two looks: tell the server both, in order, so that its
         'last TX' is right (freedv-gui reports every PTT change)."""
         with self.lock:
+            if self.key and self.key[-1]:
+                return False                    # receive only: never listed as transmitting
             if self.client is not None and self.fully and getattr(self, "role", "view") == "report" and mode:
                 self.pulse = mode               # sent as on, then off, when its turn comes
                 self._push()
@@ -336,11 +352,11 @@ class Link:
         self._finish(old)
 
     # ---- internal
-    def _open(self, server, role, callsign, grid):
+    def _open(self, server, role, callsign, grid, rx_only=False):
         auth = {"protocol_version": 2}
         if role == "report":
             auth.update({"role": "report", "callsign": callsign, "grid_square": grid,
-                         "version": self.software, "rx_only": False,
+                         "version": self.software, "rx_only": bool(rx_only),
                          "os": platform.system().lower() or "linux"})
         else:
             auth["role"] = "view"
@@ -639,6 +655,13 @@ def load_config(path=None):
     c["view"] = "v2" if v == "v3" else (v if v in VIEWS else "follow")  # "v3" was V2's name before it had an address
     if c.get("view_v") != 2:        # Follow became the default: take it up once, then whatever is chosen is remembered
         c["view"], c["view_v"] = "follow", 2
+    sh = c.get("show")
+    if not isinstance(sh, dict):    # the single choice became three checkboxes
+        sh = {"follow": {"follow": True}, "v1": {"v1": True}, "v2": {"v2": True}, "all": {"v1": True, "v2": True}}[c["view"]]
+    c["show"] = {k: bool(sh.get(k)) for k in ("follow", "v1", "v2")}
+    if not any(c["show"].values()):
+        c["show"]["follow"] = True
+    c["rx_only"] = bool(c.get("rx_only", False))
     # reporting is never remembered: every start is "off"
     c.pop("reporting", None)
     f = c.get("freqs") if isinstance(c.get("freqs"), dict) else {}
@@ -683,25 +706,24 @@ def report_gate(pihpsdr):
     return True, ""
 
 
-def plan(cfg, pihpsdr, reporting, callsign, grid, view):
+def plan(cfg, pihpsdr, reporting, callsign, grid, view, rx_only=False):
     """Which servers to be connected to, and in what role.
 
-    view is "v1", "v2" or "all": what the list shows, so those servers are watched. If we are present
+    view is the Show choice (the dict of ticks; see show_keys): what the list shows, so those servers are watched. If we are present
     (decide() says so) the server of the RADE mode piHPSDR has selected is joined as a reporter - added
     if it is not being watched - and it is the only one that is ever sent anything.
 
     Returns (targets, why, report_key, view_keys); targets is {key: (server, role, mode, freq_hz, tx)}.
     """
-    view = resolve_view(view, pihpsdr)
+    vkeys = [k for k in show_keys(view, pihpsdr) if k in cfg["servers"]] or ["v1"]
     srv, role, mode, freq, tx, why = decide(cfg, pihpsdr, reporting, callsign, grid, "v1")
     rkey = next((k for k, v in cfg["servers"].items() if v is srv), None) if role == "report" else None
-    vkeys = ["v1", "v2"] if view == "all" else [view if view in cfg["servers"] else "v1"]
     targets = {}
     for k in vkeys:
         if cfg["servers"][k].get("host"):
             targets[k] = (cfg["servers"][k], "view", "", 0, False)
     if rkey:
-        targets[rkey] = (srv, "report", mode, freq, tx)
+        targets[rkey] = (srv, "report", mode, freq, tx and not rx_only)     # receive only: never listed as transmitting
     return targets, why, rkey, vkeys
 
 

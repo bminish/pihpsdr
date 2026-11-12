@@ -88,6 +88,11 @@ def decisions():
           "show V1 only, radio on V2, present: still reports to V2 (joined though not shown), V1 shown")
     t, why, rk, vk = core.plan(cfg, dict(live, waveform=0), True, "EI6IZ", "IO53hu", "all")
     check(rk is None and all(x[1] == "view" for x in t.values()), "RADE off: reports to neither")
+    t, why, rk, vk = core.plan(cfg, dict(live, waveform=2), True, "EI6IZ", "IO53hu", {"follow": False, "v1": True, "v2": True}, True)
+    check(vk == ["v1", "v2"] and t["v2"][4] is False, "ticks v1+v2 show both; RX only: never listed as transmitting")
+    check(core.show_keys({"follow": True, "v1": True, "v2": False}, dict(live, waveform=2)) == ["v1", "v2"]
+          and core.show_keys({"follow": False, "v1": False, "v2": False}, dict(live, waveform=1)) == ["v1"],
+          "Follow adds the radio's mode to what is ticked; nothing ticked counts as Follow")
     c2 = core.load_config(os.path.join(tempfile.mkdtemp(), "none.json"))
     st = dict(live, waveform=2)
     check(core.resolve_view("follow", st) == "v2" and core.resolve_view("follow", dict(live, waveform=1)) == "v1"

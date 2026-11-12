@@ -59,7 +59,10 @@ def rows():
     return sorted(r[rr.C_CALL] + "@" + r[rr.C_SID] for r in app.store)
 
 def show(v):
-    app.view.set_active_id(v)
+    want = {"follow": {"follow"}, "v1": {"v1"}, "v2": {"v2"}, "all": {"v1", "v2"}}[v]
+    app.cfg["show"] = {k: k in want for k in ("follow", "v1", "v2")}      # set at once: ticking boxes one by one would pass through other states
+    for k, cb in app.show_chk.items():
+        cb.handler_block_by_func(app._on_view_changed); cb.set_active(k in want); cb.handler_unblock_by_func(app._on_view_changed)
     state(2); app._tick(); app.dirty = True; app._fill(); pump(0.2)
 
 print("which reporters are joined, by Show")
