@@ -23,7 +23,7 @@ window; it is a separate program and keeps running when piHPSDR is closed.
   reporter-radev2.k6aq.net (the host freedv-gui's ms-rade-v2 branch uses) as
   `RADEV2`. Both can be changed in *Settings*. RADE off in piHPSDR, or piHPSDR
   gone, takes you off the list at once. Nothing is ever sent to the other reporter.
-- **Show**: V1 only, V2 only, or All. That is only what the list shows (each
+- **Show**: three checkboxes, *follow* (the RADE mode piHPSDR has selected), *v1* and *v2*; what is ticked is shown (at least one stays ticked). That is only what the list shows (each
   shown reporter is watched; the same station on both appears twice). If you are
   present, the reporter for your mode is joined as a reporter even if it is not
   the one shown. The choice is remembered.
@@ -61,7 +61,8 @@ reported with the SNR averaged over the reception's in-sync frames (the average 
 not reported. The RADE window and the received-calls log show "-" rather than 0 in the same cases.
 
 - **Callsign**: not entered here; it is always the one set in piHPSDR's RADE window (shown as "Call ..."). **Reporting** is the former "Report my presence".
-- **Show**: *Follow radio mode* (the default; shows the reporter of the RADE mode piHPSDR has selected, both while RADE is off) , V1 only, V2 only, All. The choice is remembered; Follow was made the default once, when this version first ran.
+- **Show**: three checkboxes, *follow* (the default; the reporter of the RADE mode piHPSDR has selected, both while RADE is off), *v1* and *v2*; the stations of everything ticked are listed, and at least one stays ticked. Remembered (an old single choice becomes the matching ticks).
+- **RX only** (next to Reporting): reports you as Receive Only, as freedv-gui's "Force RX Only reporting": `rx_only` is sent at connect (so changing it while reporting reconnects) and you are never listed as transmitting. Remembered.
 - **Colours**, as freedv-gui: orange while a station transmits; blue only while its status is Receiving and an rx_report with an SNR arrived in the last 20 s (5 s if the report had no call). Your own row is no longer marked.
 - **Traffic to the servers is kept to what is new** (`Link._push`): while the dial is being tuned nothing is sent at all (no frequency, transmit state, message or reception report); the frequency goes out once the dial has stood still for 5 s, or at once when a signal is in sync with an SNR. After that, at most one event of each kind (frequency, transmit, message) per 5 s; reception reports are limited by their own rule: a changed SNR up to once a second, an unchanged one repeated every 20 s only while genuinely in sync with an SNR (a keep-alive, so the station stays shown as receiving), otherwise not at all; what is waiting is merged so the newest goes out when its turn comes (a decoded call goes before a live SNR), and anything identical to what the server already has is not sent.  A transmit on/off still goes out, delayed to the next 5 s slot if it follows another within 5 s. Tests: `pacing()` in `test/rade_reporter/test_reporter.py`.
 

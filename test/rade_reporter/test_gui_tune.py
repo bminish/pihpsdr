@@ -147,7 +147,7 @@ opened = []
 real_popen = subprocess.Popen
 subprocess.Popen = lambda a, **k: opened.append(a[1])
 for view, wave, want in (("v1", 1, 1), ("v2", 2, 1), ("all", 1, 2), ("follow", 0, 2), ("follow", 2, 1)):
-    app.cfg["view"] = view; state(wave); app._tick(); opened.clear(); app._on_web()
+    app.cfg["show"] = {"follow": view == "follow", "v1": view in ("v1", "all"), "v2": view in ("v2", "all")}; state(wave); app._tick(); opened.clear(); app._on_web()
     check(len(opened) == want, "Website with Show %s, RADE %s: %d site(s)" % (view, wave or "off", want), str(opened))
 subprocess.Popen = real_popen
 print("all passed" if not fails else "%d FAILED" % fails)

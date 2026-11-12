@@ -134,6 +134,12 @@ class App(Gtk.Window):
                                       "Always off when this program starts.")
         self.rep_chk.connect("toggled", self._on_report_toggled)
         r1.pack_start(self.rep_chk, False, False, 0)
+        self.rx_chk = Gtk.CheckButton(label="RX only")
+        self.rx_chk.set_tooltip_text("Reports you as Receive Only, as freedv-gui's \"Force RX Only reporting\" does: listed as receiving, "
+                                     "never as transmitting.\nTold to the server when connecting, so changing it while reporting reconnects.")
+        self.rx_chk.set_active(bool(self.cfg.get("rx_only", False)))
+        self.rx_chk.connect("toggled", self._on_rx_only_toggled)
+        r1.pack_start(self.rx_chk, False, False, 0)
         self.call_l = Gtk.Label(label="")
         self.call_l.set_tooltip_text("The callsign set in piHPSDR's RADE window")
         r1.pack_start(self.call_l, False, False, 0)
@@ -177,16 +183,16 @@ class App(Gtk.Window):
         open_below(self.idle)
         r2.pack_start(self.idle, False, False, 0)
         r2.pack_start(Gtk.Label(label="Show"), False, False, 12)
-        self.view = Gtk.ComboBoxText()
-        for k, label in (("follow", "Follow radio mode"), ("v1", "RADE V1 only"), ("v2", "RADE V2 only"), ("all", "All (V1 and V2)")):
-            self.view.append(k, label)
-        self.view.set_active_id(self.cfg.get("view", "follow"))
-        self.view.set_tooltip_text("Which reporter's stations the list shows: Follow radio mode shows the reporter of the RADE mode "
-                                   "piHPSDR has selected (both while RADE is off). Reports are sent only to the reporter "
-                                   "for the RADE mode piHPSDR has selected, whatever is shown.")
-        self.view.connect("changed", self._on_view_changed)
-        open_below(self.view)
-        r2.pack_start(self.view, False, False, 0)
+        self.show_chk = {}
+        tips = {"follow": "The reporter of the RADE mode piHPSDR has selected (both while RADE is off)",
+                "v1": "Always show RADE V1 stations (qso.freedv.org)", "v2": "Always show RADE V2 stations (reporter-radev2.k6aq.net)"}
+        for k, label in (("follow", "follow"), ("v1", "v1"), ("v2", "v2")):
+            cb = Gtk.CheckButton(label=label)
+            cb.set_tooltip_text(tips[k] + ".\nReports are sent only to the reporter for the RADE mode piHPSDR has selected, whatever is shown.")
+            cb.set_active(self.cfg["show"][k])
+            cb.connect("toggled", self._on_view_changed, k)
+            self.show_chk[k] = cb
+            r2.pack_start(cb, False, False, 0)
         st = Gtk.Button(label="Settings")
         st.connect("clicked", self._on_settings)
         r2.pack_end(st, False, False, 0)
@@ -370,8 +376,16 @@ class App(Gtk.Window):
         if col is not None and col >= 0:
             self._remember(sort=[col, 1 if order == Gtk.SortType.DESCENDING else 0])
 
-    def _on_view_changed(self, w):
-        self.cfg["view"] = w.get_active_id() or "follow"
+    def _on_view_changed(self, w, key):
+        self.cfg["show"][key] = w.get_active()
+        if not any(self.cfg["show"].values()):          # something must be shown: Follow comes back
+            self.show_chk["follow"].set_active(True)    # (its handler saves)
+            return
+        core.save_config(self.cfg)
+        self._tick()
+
+    def _on_rx_only_toggled(self, w):
+        self.cfg["rx_only"] = w.get_active()
         core.save_config(self.cfg)
         self._tick()
 
@@ -402,8 +416,7 @@ class App(Gtk.Window):
 
     def _on_web(self, *_):
         """The reporter's website for the mode shown; both sites when both are shown (or RADE is off and Show follows it)."""
-        v = core.resolve_view(self.cfg.get("view", "follow"), self.pihpsdr)
-        keys = list(self.cfg["servers"]) if v == "all" else [v if v in self.cfg["servers"] else (self.report_key or "v1")]
+        keys = [k for k in core.show_keys(self.cfg["show"], self.pihpsdr) if k in self.cfg["servers"]] or [self.report_key or "v1"]
         for k in keys:
             srv = self.cfg["servers"][k]
             url = srv.get("web") or ("https://%s/" % srv["host"] if srv["host"] else "")
@@ -512,7 +525,7 @@ class App(Gtk.Window):
         w = int((p or {}).get("waveform", 0) or 0) if p and p.get("linked") else 0
         if w in (1, 2):
             return w
-        return 2 if self.cfg.get("view") == "v2" else 1
+        return 2 if self.cfg["show"]["v2"] and not self.cfg["show"]["v1"] and not self.cfg["show"]["follow"] else 1
 
     def _on_tree_click(self, tree, ev):
         double = ev.button == 1 and ev.type == Gdk.EventType._2BUTTON_PRESS       # a double click tunes; a single one only selects
@@ -692,7 +705,7 @@ class App(Gtk.Window):
         self.rep_chk.set_sensitive(ok_gate)
         self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\nAlways off when this program starts."
                                       + ("" if ok_gate else "\nDisabled: " + why_gate + "."))
-        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg.get("view", "follow"))
+        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg["show"], self.cfg.get("rx_only", False))
         self.report_key, self.view_keys = rkey, vkeys
         software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
         for k, lk in self.links.items():
@@ -700,7 +713,8 @@ class App(Gtk.Window):
             if k in targets:
                 srv, role, mode, freq, tx = targets[k]
                 lk.set_target(srv, role, call, grid, freq, mode, tx, self.message,
-                              live=bool(p and p.get("rx_sync") and isinstance(p.get("rx_snr"), (int, float))))
+                              live=bool(p and p.get("rx_sync") and isinstance(p.get("rx_snr"), (int, float))),
+                              rx_only=self.cfg.get("rx_only", False))
             else:
                 lk.set_target(None, "view")
         role = "report" if rkey else "view"
