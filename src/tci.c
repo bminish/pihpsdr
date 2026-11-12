@@ -1397,6 +1397,34 @@ static void tci_cmd_trx_count (CLIENT *client, const TCI_CMD *cmd) {
   tci_send_trx_count (client);
 }
 
+//
+// Give up the right to transmit, so that another client can take it.
+// Nothing is done to the radio: the caller has already ended (or is ending) the transmission.
+//
+static void tci_release_tx(CLIENT *client) {
+  if (client->tx_owner) {
+    client->tx_owner = 0;
+    tci_transmitter_owned = 0;
+  }
+}
+
+//
+// A client that goes away (close frame, write error, socket closed) while it owns the TX:
+// drop a pending TX->RX timer, put the radio back to RX if this client had put it TX, release.
+//
+static void tci_drop_tx_owner(CLIENT *client) {
+  if (!client->tx_owner) { return; }
+  if (client->tci_clearmox_timer != 0) {
+    g_source_remove(client->tci_clearmox_timer);
+    client->tci_clearmox_timer = 0;
+  }
+  if (client->last_trx) {
+    g_idle_add(ext_radio_set_mox, GINT_TO_POINTER(0));
+    client->last_trx = 0;
+  }
+  tci_release_tx(client);
+}
+
 static int tci_radio_clear_mox(gpointer data) {
   CLIENT *client = (CLIENT *) data;
   client->tx_audio_enabled = 0;
@@ -1405,6 +1433,10 @@ static int tci_radio_clear_mox(gpointer data) {
   radio_set_mox(0);
   tci_send_mox(client);
   tci_update_audio_global();
+  // The transmission is over (unless a TUNE is still going): relinquish, so that another client can have the TX
+  if (transmitter == NULL || !transmitter->tune) {
+    tci_release_tx(client);
+  }
   //
   // This is not thread-safe.
   // A binary frame may be "in the process" when tx_audio_enabled goes to zero,
@@ -1511,6 +1543,10 @@ static void tci_cmd_tune (CLIENT *client, const TCI_CMD *cmd) {
       int state = tci_bool (cmd->argv[1]);
       radio_set_tune(state);
       t_print ("TCI%d TUNE request=%d\n", client->seq, state);
+      // TUNE ended and no trx transmission of this client going on: relinquish
+      if (!state && !client->last_trx) {
+        tci_release_tx(client);
+      }
     } else {
       tci_send_tune (client);
       tci_send_mox (client);
@@ -2579,10 +2615,7 @@ static int tci_process_ws_payload (gpointer data) {
   case opCLOSE:
     if (rigctl_debug) { t_print ("TCI%d CLOSE rcvd\n", load->client->seq); }
     load->client->running = 0;
-    if (load->client->tx_owner) {
-      load->client->tx_owner = 0;
-      tci_transmitter_owned = 0;
-    }
+    tci_drop_tx_owner(load->client);
     load->client->tx_audio_enabled = 0;
     for (int i = 0; i < TCI_RX_AUDIO_MAX_RECEIVERS; i++) {
       load->client->rx_audio_enabled[i] = 0;
@@ -2754,10 +2787,7 @@ static int tci_lws_write_queued (CLIENT *client) {
   }
   if (rc < 0) {
     client->running = 0;
-    if (client->tx_owner) {
-      client->tx_owner = 0;
-      tci_transmitter_owned = 0;
-    }
+    tci_drop_tx_owner(client);
     client->tx_audio_enabled = 0;
     for (int i = 0; i > TCI_RX_AUDIO_MAX_RECEIVERS; i++) {
       client->rx_audio_enabled[i] = 0;
@@ -2889,22 +2919,7 @@ static int tci_lws_callback (struct lws *wsi, enum lws_callback_reasons reason,
       t_print ("LWS CLOSED client=%d\n", client->seq);
     }
     client->running = 0;
-    if (client->tx_owner) {
-      //
-      // If the last trx command from this client was "go TX", then
-      // put piHPSDR into RX mode
-      //
-      if (client->tci_clearmox_timer != 0) {
-        g_source_remove(client->tci_clearmox_timer);
-        client->tci_clearmox_timer = 0;
-      }
-      if (client->last_trx) {
-        g_idle_add(ext_radio_set_mox, GINT_TO_POINTER(0));
-        client->last_trx = 0;
-      }
-      client->tx_owner = 0;
-      tci_transmitter_owned = 0;
-    }
+    tci_drop_tx_owner(client);
     client->wsi = NULL;
     tci_update_audio_global();
     if (client->tci_timer != 0) {
