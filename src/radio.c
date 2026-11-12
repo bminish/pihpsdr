@@ -349,6 +349,7 @@ int optimize_for_touchscreen = 0;
 int smeter3dB = 0;  // if set, S meter steps are 3dB instead of 6 dB
 
 int duplex = FALSE;
+int mute_all = 0;
 int mute_rx_while_transmitting = FALSE;
 
 double drive_min = 0.0;

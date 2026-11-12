@@ -1530,7 +1530,7 @@ static void rx_process_buffer(RECEIVER *rx) {
     // panel does not have, so an RX2 muted while it had one would be a
     // permanently dead right ear with nothing on screen to say why.
     //
-    if ((rx->mute_radio && !(split && rx->id == 1)) ||
+    if (mute_all || (rx->mute_radio && !(split && rx->id == 1)) ||
         (!split && rx != active_receiver && rx->mute_when_not_active)) {
       left_sample = 0.0;
       right_sample = 0.0;

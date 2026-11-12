@@ -1134,15 +1134,17 @@ int process_action(gpointer data) {
   case MUTE:
     if (a->mode == PRESSED) {
       //
-      // The general mute silences everything: every receiver (both paths in
-      // diversity or with two receivers), driven from the active one's state.
-      // MUTE_RX1 / MUTE_RX2 are there for muting a single receiver.
+      // The general mute silences everything: a flag over all receivers, so one that
+      // comes up later (RX2 when diversity is switched on) is muted too. Unmuting
+      // clears the individual mutes as well, so that the sound is really back.
       //
-      int state = !active_receiver->mute_radio;
-      for (int i = 0; i < receivers; i++) {
-        if (receiver[i] != NULL) { receiver[i]->mute_radio = state; }
+      int state = !(mute_all || active_receiver->mute_radio);
+      mute_all = state;
+      if (!state) {
+        for (int i = 0; i < receivers; i++) {
+          if (receiver[i] != NULL) { receiver[i]->mute_radio = 0; }
+        }
       }
-      active_receiver->mute_radio = state;
     }
     break;
   case MUTE_RX1:

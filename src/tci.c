@@ -860,7 +860,7 @@ static void tci_send_mute (CLIENT *client) {
   char msg[MAXMSGSIZE];
   int state = 0;
   if (active_receiver != NULL) {
-    state = active_receiver->mute_radio ? 1 : 0;
+    state = (mute_all || active_receiver->mute_radio) ? 1 : 0;
   }
   snprintf (msg, MAXMSGSIZE, "mute:%s;", state ? "true" : "false");
   tci_send_text (client, msg);
@@ -1643,11 +1643,13 @@ static void tci_cmd_tune (CLIENT *client, const TCI_CMD *cmd) {
 static void tci_cmd_mute (CLIENT *client, const TCI_CMD *cmd) {
   if (cmd->argc >= 1) {
     int state = tci_bool (cmd->argv[0]) ? 1 : 0;
-    // as the MUTE action: all receivers (both paths in diversity / dual RX)
-    for (int i = 0; i < receivers; i++) {
-      if (receiver[i] != NULL) { receiver[i]->mute_radio = state; }
+    // as the MUTE action: all receivers, including ones that come up later
+    mute_all = state;
+    if (!state) {
+      for (int i = 0; i < receivers; i++) {
+        if (receiver[i] != NULL) { receiver[i]->mute_radio = 0; }
+      }
     }
-    active_receiver->mute_radio = state;
     tci_broadcast_mute_state (state);
   } else {
     tci_send_mute (client);
