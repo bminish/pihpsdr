@@ -28,7 +28,7 @@ cfg = core.load_config()
 cfg["servers"]["v1"].update(host="127.0.0.1", port=mock.port, secure=False)
 cfg["servers"]["v2"].update(host="127.0.0.1", port=mock.port, secure=False)
 cfg.update(callsign="EI6IZ", grid="IO53hu", message="QRV on 40", band="40 m", track=True, track_mode="freq",
-           idle="15 min", view_v=2, view="v2", sort=[11, 1])
+           idle="15 min", view_v=2, view="v2", show={"follow": False, "v1": False, "v2": True}, sort=[11, 1])
 core.save_config(cfg)
 assert core.config_path().startswith(scratch) and core.load_config()["servers"]["v1"]["host"] == "127.0.0.1"
 os.makedirs(os.path.dirname(core.state_path()), exist_ok=True)
@@ -49,7 +49,7 @@ check(app.msg_e.get_text() == "QRV on 40" and app.message == "QRV on 40", "messa
 check(app.band.get_active_text() == "40 m", "band filter is back")
 check(app.track.get_active() and app.t_freq.get_active() and not app.t_band.get_active(), "Track on, by frequency")
 check(app.idle.get_active_text() == "15 min", "idle filter is back")
-check(app.view.get_active_id() == "v2", "the chosen view is back")
+check(app.cfg["show"] == {"follow": False, "v1": False, "v2": True} and app.show_chk["v2"].get_active() and not app.show_chk["follow"].get_active(), "the chosen view is back")
 col, order = app.sort.get_sort_column_id()
 check(col == 11 and order == Gtk.SortType.DESCENDING, "sort column and direction are back")
 check(not hasattr(app, "snr_chk") and not hasattr(app, "call_e"), "no SNR tick and no callsign box")
@@ -101,12 +101,12 @@ def s6():
     # change the sticky settings
     app.msg_e.set_text("QSY 40.5"); app._on_send()
     app.band.set_active(0); app.track.set_active(False); app.t_band.set_active(True)
-    app.view.set_active_id("follow"); app.sort.set_sort_column_id(5, Gtk.SortType.ASCENDING)
+    app.show_chk["follow"].set_active(True); app.show_chk["v2"].set_active(False); app.sort.set_sort_column_id(5, Gtk.SortType.ASCENDING)
 def s7():
     app.rep_chk.set_active(False)
     c = json.load(open(core.config_path()))
     check(c["message"] == "QSY 40.5" and c["band"] == "All" and c["track"] is False and c["track_mode"] == "band"
-          and c["view"] == "follow" and c["sort"] == [5, 0] and "reporting" not in c, "changes are written to the config")
+          and c["show"] == {"follow": True, "v1": False, "v2": False} and c["sort"] == [5, 0] and "reporting" not in c, "changes are written to the config")
     app._quit.__func__  # (the window is closed below)
     Gtk.main_quit()
 for t, f in ((2000, s1), (6000, s2), (14000, s3), (21000, s4), (24000, s5), (29000, s6), (35000, s7)):
@@ -116,7 +116,7 @@ Gtk.main()
 print("a new start")
 app2 = rr.App(show=False)
 check(app2.msg_e.get_text() == "QSY 40.5" and app2.band.get_active_text() == "All" and not app2.track.get_active()
-      and app2.view.get_active_id() == "follow" and app2.sort.get_sort_column_id()[0] == 5 and app2.reporting is False and not app2.rep_chk.get_active(),
+      and app2.show_chk["follow"].get_active() and not app2.show_chk["v2"].get_active() and app2.sort.get_sort_column_id()[0] == 5 and app2.reporting is False and not app2.rep_chk.get_active(),
       "the changes are there next time, and reporting starts off")
 [lk.close() for lk in app2.links.values()]; mock.stop()
 print("FAILED %d" % fails if fails else "all passed")
