@@ -177,6 +177,7 @@ extern int locked;
 
 extern int duplex;
 extern int mute_rx_while_transmitting;
+extern int mute_all;                // the general MUTE: silences every receiver, whichever exist now or come up later (not saved)
 extern int rx_height;
 
 extern int cw_keys_reversed;
