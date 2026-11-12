@@ -1523,6 +1523,10 @@ static void tci_cmd_tune (CLIENT *client, const TCI_CMD *cmd) {
 static void tci_cmd_mute (CLIENT *client, const TCI_CMD *cmd) {
   if (cmd->argc >= 1) {
     int state = tci_bool (cmd->argv[0]) ? 1 : 0;
+    // as the MUTE action: all receivers (both paths in diversity / dual RX)
+    for (int i = 0; i < receivers; i++) {
+      if (receiver[i] != NULL) { receiver[i]->mute_radio = state; }
+    }
     active_receiver->mute_radio = state;
     tci_broadcast_mute_state (state);
   } else {

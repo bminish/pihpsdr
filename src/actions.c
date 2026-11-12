@@ -1133,7 +1133,16 @@ int process_action(gpointer data) {
     break;
   case MUTE:
     if (a->mode == PRESSED) {
-      active_receiver->mute_radio = !active_receiver->mute_radio;
+      //
+      // The general mute silences everything: every receiver (both paths in
+      // diversity or with two receivers), driven from the active one's state.
+      // MUTE_RX1 / MUTE_RX2 are there for muting a single receiver.
+      //
+      int state = !active_receiver->mute_radio;
+      for (int i = 0; i < receivers; i++) {
+        if (receiver[i] != NULL) { receiver[i]->mute_radio = state; }
+      }
+      active_receiver->mute_radio = state;
     }
     break;
   case MUTE_RX1:
