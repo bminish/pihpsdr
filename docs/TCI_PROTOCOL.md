@@ -225,6 +225,9 @@ always replies to the requesting client only.
 | `lock` | 1,2 | `tci_cmd_lock` | `lock:<rx>[,<bool>];` Maps to the single global `locked`. If the value changed: broadcast `lock:0` and `vfo_lock:0,0`/`0,1` to all; otherwise echo. |
 | `vfo_lock` | 1,3 | `tci_cmd_vfo_lock` | `vfo_lock:<rx>,<ch>,<bool>;` or `vfo_lock:<rx>,<bool>;` — same global `locked`; channel is accepted but not independent. |
 | `split_enable` | 1,2 | `tci_cmd_split_enable` | Only `trx=0`. Reports true if the TX VFO is VFO-B. Set calls `radio_set_split()`; reply: none (reporter pushes within 500 ms). |
+| `diversity_enable` | 0,1 | `tci_cmd_div_enable` | `diversity_enable[:<bool>];` Global (no receiver argument). Set goes through `radio_set_diversity()` (releases Hold, restarts the protocol with one receiver). Refused, and the current value re-sent, with one ADC. Set: broadcast all three diversity values. |
+| `diversity_gain` | 0,1 | `tci_cmd_div_gain` | `diversity_gain[:<dB>];` as `man_div_gain`, one decimal, clamped to +-27 by `radio_set_diversity_gain()`. A non-number re-sends the current value to the asker only. |
+| `diversity_phase` | 0,1 | `tci_cmd_div_phase` | `diversity_phase[:<deg>];` as `man_div_phase`, one decimal, wrapped to +-180. Same rules. Change from the UI, MIDI or auto-phasing reaches clients within 500 ms (reporter diff, tenths of a unit); all three are in the init block. |
 | `trx_count` | 0,0 | `tci_cmd_trx_count` | Always `trx_count:1;`. |
 | `tx_frequency` | — | (send only) | `tx_frequency:<hz>;` pushed by the reporter on change (`vfo_get_tx_freq`). Not in the reference. |
 
@@ -512,6 +515,7 @@ Legend: ✅ matches the reference · ⚠️ implemented but deviates · ❌ not 
 | Command | Purpose |
 |---|---|
 | `tx_frequency` | Pushed TX frequency. |
+| `diversity_enable`, `diversity_gain`, `diversity_phase` | Diversity state and manual gain/phase, get/set, pushed on change (init block too). |
 | `rx_sensors` / `rx_channel_sensors` | S-meter push (see `rx_sensors_enable`). |
 | `tx_enable` | Transmitter present (init block). |
 | `cw_macros`, `cw_macros_stop`, `cw_msg`, `callsign_send` | CW text and callsign-aware messages (`cw_msg` incomplete, §4). |
@@ -587,3 +591,13 @@ All from code reading; none of these has been reproduced with a client yet.
    `rx_enable`, `run_cat_ex`, spots, monitor.
 10. **No change notification from the GUI** for anything other than
     frequency, mode/filter, split, MOX and TX frequency (§2).
+
+### Planned extensions (not implemented)
+
+Requested by the shack (`shack/docs/PIHPSDR_TCI_REQUIREMENTS.md`); same conventions as diversity above.
+
+- **`rade_waveform:0,<0|1|2>;`** — RADE off / V1 / V2, from `rade_native_waveform()`; set through `rade_native_configure()` without
+  needing the RADE window open (the file-based menu path clicks the window's buttons). Refused while transmitting. `modulation` is unchanged.
+- **`multi_action`, `multi_status`, `multi_actions_list`** — the multi-function knob's assignment (by the short `descr` string, not the
+  index), its status as `GetMultifunctionStatus()`, and the list of names in the init block. Needs accessors in `actions.c` and a broadcast
+  whoever changes the assignment.

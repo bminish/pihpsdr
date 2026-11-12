@@ -108,6 +108,9 @@ typedef struct _client {
   int last_mb;                  // last VFO-B  mode reported
   int last_split;               // last split state reported
   int last_mox;                 // last mox   state reported
+  int last_div_en;              // last diversity state reported
+  int last_div_gain;            // last diversity gain  reported (tenths of dB)
+  int last_div_phase;           // last diversity phase reported (tenths of degree)
   int count;                    // ping counter
   int rxsensor;                 // enable transmit of S meter data
   int txsensor;                 // enable transmit of drive data
@@ -795,6 +798,49 @@ static void tci_send_split (CLIENT *client) {
   }
 }
 
+//
+// Diversity (global, no receiver argument). Gain in dB, phase in degrees, both sent with one decimal;
+// the "last" fields hold tenths so that the 500 msec diff compares integers.
+//
+static int tci_div_tenths(double v) {
+  return (int) lround(v * 10.0);
+}
+
+static void tci_send_div_enable (CLIENT *client) {
+  char msg[MAXMSGSIZE];
+  snprintf (msg, MAXMSGSIZE, "diversity_enable:%s;", diversity_enabled ? "true" : "false");
+  tci_send_text (client, msg);
+  client->last_div_en = diversity_enabled ? 1 : 0;
+}
+
+static void tci_send_div_gain (CLIENT *client) {
+  char msg[MAXMSGSIZE];
+  snprintf (msg, MAXMSGSIZE, "diversity_gain:%.1f;", man_div_gain);
+  tci_send_text (client, msg);
+  client->last_div_gain = tci_div_tenths(man_div_gain);
+}
+
+static void tci_send_div_phase (CLIENT *client) {
+  char msg[MAXMSGSIZE];
+  snprintf (msg, MAXMSGSIZE, "diversity_phase:%.1f;", man_div_phase);
+  tci_send_text (client, msg);
+  client->last_div_phase = tci_div_tenths(man_div_phase);
+}
+
+static void tci_send_diversity (CLIENT *client) {
+  tci_send_div_enable (client);
+  tci_send_div_gain (client);
+  tci_send_div_phase (client);
+}
+
+static void tci_broadcast_diversity (void) {
+  for (int c = 0; c < TCI_MAX_CLIENTS; c++) {
+    if (tciclient[c].running) {
+      tci_send_diversity (tciclient + c);
+    }
+  }
+}
+
 static void tci_send_tx_enable (CLIENT *client) {
   char msg[MAXMSGSIZE];
   snprintf (msg, MAXMSGSIZE, "tx_enable:0,%s;",
@@ -1328,6 +1374,44 @@ static void tci_cmd_lock (CLIENT *client, const TCI_CMD *cmd) {
 
 static void tci_cmd_vfo_lock (CLIENT *client, const TCI_CMD *cmd) {
   tci_cmd_lock_common (client, cmd, 1);
+}
+
+static void tci_cmd_div_enable (CLIENT *client, const TCI_CMD *cmd) {
+  if (cmd->argc >= 1) {
+    int state = tci_bool (cmd->argv[0]) ? 1 : 0;
+    if (n_adc > 1) {
+      radio_set_diversity (state);
+      tci_broadcast_diversity ();
+      return;
+    }
+  }
+  tci_send_div_enable (client);        // query, or refused (one ADC): the current value
+}
+
+static void tci_cmd_div_gain (CLIENT *client, const TCI_CMD *cmd) {
+  if (cmd->argc >= 1) {
+    char *end = NULL;
+    double v = strtod (cmd->argv[0], &end);
+    if (end != cmd->argv[0] && *end == 0 && v == v) {
+      radio_set_diversity_gain (v);    // clamps to +-27
+      tci_broadcast_diversity ();
+      return;
+    }
+  }
+  tci_send_div_gain (client);          // query, or not a number: the current value
+}
+
+static void tci_cmd_div_phase (CLIENT *client, const TCI_CMD *cmd) {
+  if (cmd->argc >= 1) {
+    char *end = NULL;
+    double v = strtod (cmd->argv[0], &end);
+    if (end != cmd->argv[0] && *end == 0 && v == v && v > -1e6 && v < 1e6) {
+      radio_set_diversity_phase (v);   // wraps to +-180
+      tci_broadcast_diversity ();
+      return;
+    }
+  }
+  tci_send_div_phase (client);
 }
 
 static void tci_cmd_split_enable (CLIENT *client, const TCI_CMD *cmd) {
@@ -2350,6 +2434,9 @@ static const TCI_DISPATCH tci_dispatch[] = {
   { "trx_count",         0,  0, tci_cmd_trx_count },
   { "trx",               0, -1, tci_cmd_trx },
   { "split_enable",      1,  2, tci_cmd_split_enable },
+  { "diversity_enable",  0,  1, tci_cmd_div_enable },
+  { "diversity_gain",    0,  1, tci_cmd_div_gain },
+  { "diversity_phase",   0,  1, tci_cmd_div_phase },
   { "lock",              1,  2, tci_cmd_lock },
   { "vfo_lock",          1,  3, tci_cmd_vfo_lock },
   { "sql_enable",        1,  2, tci_cmd_sql_enable },
@@ -2500,6 +2587,10 @@ static gboolean tci_reporter (gpointer data) {
   if (mx != client->last_mox) {
     tci_send_mox (client);
   }
+  // diversity: changed from the radio side (button, MIDI, auto-phasing)
+  if ((diversity_enabled ? 1 : 0) != client->last_div_en) { tci_send_div_enable (client); }
+  if (tci_div_tenths(man_div_gain) != client->last_div_gain) { tci_send_div_gain (client); }
+  if (tci_div_tenths(man_div_phase) != client->last_div_phase) { tci_send_div_phase (client); }
   if (client->rxsensor && (client->count & 1)) {
     tci_send_rx (client, 0);
     tci_send_rx (client, 1);
@@ -2569,6 +2660,9 @@ static int tci_init_client (int fd) {
       client->last_mb           = -1;
       client->last_split        = -1;
       client->last_mox          = -1;
+      client->last_div_en       = -1;
+      client->last_div_gain     = 1000000;
+      client->last_div_phase    = 1000000;
       client->count             =  0;
       client->rxsensor          =  0;
       client->txsensor          =  0;
@@ -2691,6 +2785,7 @@ static void tci_send_initial_state (CLIENT *client) {
   tci_send_tune_drive (client);
   tci_send_tx_enable (client);
   tci_send_split (client);
+  tci_send_diversity (client);
   tci_send_mox (client);
   tci_send_tune (client);
   tci_send_mute (client);
