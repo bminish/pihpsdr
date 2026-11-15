@@ -301,6 +301,24 @@ enum MIDIevent String2MidiEvent(const char *str) {
   return EVENT_NONE;
 }
 
+//
+// Names of the devices that were active when the state was last restored
+// or saved. A device that is merely absent (unplugged, or not listed) when
+// the state is saved keeps its entry; only unticking it removes it.
+//
+static char *remembered[MAX_MIDI_DEVICES];
+static int n_remembered = 0;
+
+static void remember_name(const char *name) {
+  if (n_remembered >= MAX_MIDI_DEVICES || name == NULL) { return; }
+  remembered[n_remembered++] = g_strdup(name);
+}
+
+static void forget_all(void) {
+  for (int k = 0; k < n_remembered; k++) { g_free(remembered[k]); remembered[k] = NULL; }
+  n_remembered = 0;
+}
+
 void midi_save_state(void) {
   const struct desc *cmd;
   int entry;
@@ -310,11 +328,26 @@ void midi_save_state(void) {
   for (i = 0; i < MAX_MIDI_DEVICES; i++) {
     SetPropS1 ("mididevice[%d].name", i, "NO_MIDI_DEVICE_FOUND");
   }
-  for (i = 0; i < n_midi_devices; i++) {
+  char *keep[MAX_MIDI_DEVICES];
+  int nkeep = 0;
+  for (i = 0; i < n_midi_devices && nkeep < MAX_MIDI_DEVICES; i++) {
     if (midi_devices[i].active) {
-      SetPropS1("mididevice[%d].name", entry, midi_devices[i].name);
-      entry++;
+      keep[nkeep++] = g_strdup(midi_devices[i].name);
     }
+  }
+  // saved devices that are not enumerated right now stay saved
+  for (int k = 0; k < n_remembered && nkeep < MAX_MIDI_DEVICES; k++) {
+    int present = 0;
+    for (i = 0; i < n_midi_devices; i++) {
+      if (strcmp(midi_devices[i].name, remembered[k]) == 0) { present = 1; break; }
+    }
+    if (!present) { keep[nkeep++] = g_strdup(remembered[k]); }
+  }
+  forget_all();
+  for (entry = 0; entry < nkeep; entry++) {
+    SetPropS1("mididevice[%d].name", entry, keep[entry]);
+    remember_name(keep[entry]);
+    g_free(keep[entry]);
   }
   // the value i=128 is for the PitchBend
   for (i = 0; i < 129; i++) {
@@ -372,13 +405,18 @@ void midi_restore_state(void) {
   // set the "active" flag, and the devices will be opened in
   // radio.c when it is appropriate
   //
+  forget_all();
   for (i = 0; i < MAX_MIDI_DEVICES; i++) {
     snprintf(str, sizeof(str), "NO_MIDI_DEVICE_FOUND");
     GetPropS1("mididevice[%d].name", i,  str);
+    if (strcmp(str, "NO_MIDI_DEVICE_FOUND") == 0) { continue; }
+    remember_name(str);
+    // activate only the first not-yet-active entry with this name
     for (j = 0; j < n_midi_devices; j++) {
-      if (strcmp(midi_devices[j].name, str) == 0) {
+      if (!midi_devices[j].active && strcmp(midi_devices[j].name, str) == 0) {
         midi_devices[j].active = 1;
         t_print("%s: MIDI device %s active=%d\n", __func__, str, midi_devices[j].active);
+        break;
       }
     }
   }

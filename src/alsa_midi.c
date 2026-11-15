@@ -47,6 +47,8 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h>
 #include <errno.h>
+#include <string.h>
+#include <strings.h>
 
 MIDI_DEVICE midi_devices[MAX_MIDI_DEVICES];
 int n_midi_devices;
@@ -182,58 +184,54 @@ void close_midi_device(int index) {
   }
 }
 
-void get_midi_devices(void) {
+//
+// Candidate entries found while scanning the sound cards. The scan is
+// done in two passes (real cards first, virtual cards last), so that the
+// MAX_MIDI_DEVICES limit can only ever cut off virtual entries.
+//
+typedef struct {
+  char name[128];
+  char port[64];
+} MIDI_CAND;
+
+static int is_virtual_card(snd_ctl_t *ctl, const char *devnam) {
+  snd_ctl_card_info_t *cinfo;
+  snd_ctl_card_info_alloca(&cinfo);
+  if (snd_ctl_card_info(ctl, cinfo) >= 0) {
+    const char *drv = snd_ctl_card_info_get_driver(cinfo);
+    if (drv != NULL && strcasecmp(drv, "VirMIDI") == 0) { return 1; }
+  }
+  return devnam != NULL && strncmp(devnam, "Virtual Raw MIDI", 16) == 0;
+}
+
+static void scan_cards(int virt_pass, MIDI_CAND *cand, int *ncand, int *dropped) {
   snd_ctl_t *ctl;
   snd_rawmidi_info_t *info;
-  int card, device, subs, sub, ret;
+  int card = -1, device, subs, sub, ret;
   const char *devnam, *subnam;
   char portname[64];
-  n_midi_devices = 0;
-  card = -1;
-  if ((ret = snd_card_next(&card)) < 0) {
-    t_print("%s: cannot determine card number: %s\n", __func__, snd_strerror(ret));
-    return;
-  }
+  if (snd_card_next(&card) < 0) { return; }
   while (card >= 0) {
-    //t_print("%s: Found Sound Card=%d\n", __func__, card);
     snprintf(portname, sizeof(portname), "hw:%d", card);
     if ((ret = snd_ctl_open(&ctl, portname, 0)) < 0) {
       t_print("%s: cannot open control for card %d: %s\n", __func__, card, snd_strerror(ret));
-      if ((ret = snd_card_next(&card)) < 0) {
-        t_print("%s: cannot determine card number: %s\n", __func__, snd_strerror(ret));
-        break;
-      }
+      if (snd_card_next(&card) < 0) { break; }
       continue;
     }
     device = -1;
-    // loop through devices of the card
     for (;;) {
-      if (n_midi_devices >= MAX_MIDI_DEVICES) {
-        break;
-      }
       if ((ret = snd_ctl_rawmidi_next_device(ctl, &device)) < 0) {
         t_print("%s: cannot determine device number: %s\n", __func__, snd_strerror(ret));
         break;
       }
       if (device < 0) { break; }
-      //t_print("%s: Found Device=%d on Card=%d\n", __func__, device, card);
-      // found sub-device
       snd_rawmidi_info_alloca(&info);
       snd_rawmidi_info_set_device(info, device);
       snd_rawmidi_info_set_stream(info, SND_RAWMIDI_STREAM_INPUT);
       ret = snd_ctl_rawmidi_info(ctl, info);
-      if (ret >= 0) {
-        subs = snd_rawmidi_info_get_subdevices_count(info);
-      } else {
-        subs = 0;
-      }
-      //t_print("%s: Number of MIDI input devices: %d\n", __func__, subs);
+      subs = (ret >= 0) ? snd_rawmidi_info_get_subdevices_count(info) : 0;
       if (!subs) { continue; }
-      // subs: number of sub-devices to device on card
       for (sub = 0; sub < subs; ++sub) {
-        if (n_midi_devices >= MAX_MIDI_DEVICES) {
-          break;
-        }
         snd_rawmidi_info_set_stream(info, SND_RAWMIDI_STREAM_INPUT);
         snd_rawmidi_info_set_subdevice(info, sub);
         ret = snd_ctl_rawmidi_info(ctl, info);
@@ -244,15 +242,58 @@ void get_midi_devices(void) {
         }
         devnam = snd_rawmidi_info_get_name(info);
         subnam = snd_rawmidi_info_get_subdevice_name(info);
-        // If there is only one sub-device and it has no name, we  use
-        // devnam for comparison and make a portname of form "hw:x,y",
-        // else we use subnam for comparison and make a portname of form "hw:x,y,z".
+        if (devnam == NULL) { devnam = ""; }
+        if (subnam == NULL) { subnam = ""; }
+        if (is_virtual_card(ctl, devnam) != virt_pass) { break; }
+        // Sub-devices beyond the first without a name are unusable duplicates
+        if (sub > 0 && subnam[0] == '\0') { break; }
+        // If there is only one sub-device and it has no name, we use
+        // devnam and make a portname of form "hw:x,y",
+        // else we use subnam and make a portname of form "hw:x,y,z".
+        const char *name = devnam;
         if (sub == 0 && subnam[0] == '\0') {
           snprintf(portname, sizeof(portname), "hw:%d,%d", card, device);
         } else {
           snprintf(portname, sizeof(portname), "hw:%d,%d,%d", card, device, sub);
-          devnam = subnam;
+          name = subnam;
         }
+        if (name[0] == '\0') { name = portname; }  // never a blank label
+        if (virt_pass) {
+          // one entry per virtual name is enough
+          int dup = 0;
+          for (int k = 0; k < *ncand; k++) {
+            if (strcmp(cand[k].name, name) == 0) { dup = 1; break; }
+          }
+          if (dup) { continue; }
+        }
+        if (*ncand >= MAX_MIDI_DEVICES) {
+          (*dropped)++;
+          continue;
+        }
+        snprintf(cand[*ncand].name, sizeof(cand[*ncand].name), "%s", name);
+        snprintf(cand[*ncand].port, sizeof(cand[*ncand].port), "%s", portname);
+        (*ncand)++;
+      }
+    }
+    snd_ctl_close(ctl);
+    if (snd_card_next(&card) < 0) { break; }
+  }
+}
+
+void get_midi_devices(void) {
+  MIDI_CAND cand[MAX_MIDI_DEVICES];
+  int ncand = 0, dropped = 0;
+  scan_cards(0, cand, &ncand, &dropped);
+  scan_cards(1, cand, &ncand, &dropped);
+  if (dropped > 0) {
+    t_print("%s: WARNING: more than %d MIDI inputs, %d not listed\n", __func__, MAX_MIDI_DEVICES, dropped);
+  }
+  n_midi_devices = 0;
+  for (int c = 0; c < ncand; c++) {
+    const char *devnam = cand[c].name;
+    const char *portname = cand[c].port;
+    {
+      {
         //
         // If the name/port is unchanged at the same position, keep the
         // existing strings and the running thread. If either changes, close
@@ -283,15 +324,6 @@ void get_midi_devices(void) {
         }
         n_midi_devices++;
       }
-    }
-    snd_ctl_close(ctl);
-    if (n_midi_devices >= MAX_MIDI_DEVICES) {
-      break;
-    }
-    // next card
-    if ((ret = snd_card_next(&card)) < 0) {
-      t_print("%s: cannot determine card number: %s\n", __func__, snd_strerror(ret));
-      break;
     }
   }
   for (int i = n_midi_devices; i < MAX_MIDI_DEVICES; i++) {
