@@ -153,6 +153,26 @@ Same PC, sink, Kiwi and settings as the G2 runs (22 wpm, Iambic B or straight ke
 * **External keyer path (`--test ext`, PTT note 24, key note 23, 36 trials, 1 s wait before `release_all()`):** the side tone sounds in all 36 trials. **Lead 5 ms** (key-down before TX is up): RF missing in 12 of 12, as on the G2 (expected, see the external keyer path above). **Lead 30 ms:** RF missing in 2 of 12 (trials 3 and 4, the first of the run; the sink latency there is 17 ms, when TX comes up; the G2 lost 1 of 12); an external keyer needs a PTT lead above 30 ms and about 65 ms to be safe, as before. **Lead 100 ms:** RF in 12 of 12. The first key-down after TX start plays at 5.3 to 7.7 ms at the sink (6.3 mean), as on the G2, with tone and carrier lengths equal to the hold (within 0.2 ms, one 0.7 and one 3.1 ms outlier). **The RF onset of the 22 trials that have RF is 65 to 67 ms in 15, 59 ms in 1, 43 ms in 2 (42.6, 43.4) and 30 to 31 ms in 3 (30.0, 30.7, 31.2):** the stepped early values seen in the break-in dit run (49 and 33 ms), here as 43 and 30; they follow neither the lead (30 or 100 ms) nor the hold (40, 60 or 80 ms). They do not occur in PTT mode with PTT held for the whole run (steady 65.5 +/- 0.2 ms in 216 trials), and the side tone is not involved (sink latency 5.3 to 7.7 ms in these trials). Cause not found; the HL2's TX buffering after each TX start is the first suspect, untested.
 * **Not yet done on the HL2:** the dit repeat (do the early steps, 49 and 33 ms in break-in, 43 and 30 ms here, move between runs?), and what causes them (a P1 capture of the TX IQ stream against the keying, or a G2 run with a long TX-up time).
 
+## 2026-11-21: clicks on the old path when the graph runs at 1024
+
+Reported by ear: pops and clicks on CW break-in with the synth side tone **off**, none with it on. Not measured with `cwlat`;
+established from the PipeWire state and the code, so the mechanism is traced but the size of the effect is not measured.
+
+* **The machine's state.** `clock.force-quantum` was **1024** (runtime metadata, not in any config file; what set it is not known).
+  The graph driver (the Arylic USB sink) ran at 1024 frames, 21.3 ms per cycle, whatever piHPSDR asked for (256). Five
+  `wavviewdx` PortAudio streams on the same sink also lock the quantum, so releasing the force (0) does not by itself bring the
+  graph down: check what the driver actually runs at (`pw-top`, or `quantum` with no argument).
+* **Why the old path clicks there.** `tx_audio_write()` holds the side tone FIFO (`st_buffer`) at 320 to 448 samples
+  (`CW_LAT_LOW` / `CW_LAT_HIGH`, about 8 ms), and the output callback takes `n_frames` samples from it per cycle, filling with
+  silence whatever the FIFO does not have. At 1024 frames per cycle the FIFO cannot cover a cycle, so the tone is gapped at
+  cycle boundaries. Those marks are upstream's, sized for its own 256 (this branch asks for 128 on playback, which a forced quantum overrides); this code path is unchanged from upstream.
+* **Why the synth path does not.** It renders the tone in the callback for the whole `n_frames`; there is no FIFO to run dry.
+* **Not a regression.** Nothing in this series, the keyer fixes or the binaural work touches the old path, and the piHPSDR
+  stream showed no xruns.
+* **What to do.** Run the old path at 256 or less (`pw-metadata -n settings 0 clock.force-quantum 256`, machine-wide, until
+  PipeWire restarts), or use the synth side tone. Whether piHPSDR should cope with large graph quanta on the old path (a
+  FIFO sized from `n_frames`) is open.
+
 ## Open items
 The list for the whole CW work is in [cw.md](cw.md). Specific to the measurements:
 1. **The 22.5 ms RF latency is not decomposed.** It contains the MIDI thread, the keyer's 1 ms poll, the TX engine, the radio's TX buffering and the Kiwi's own filter delay, plus any PC clock error against GPS. The Kiwi delay and the PC clock offset are not corrected.
