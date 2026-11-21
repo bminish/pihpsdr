@@ -31,6 +31,41 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 | `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
 | (later, 2026-11) | RADE takes precedence over the split: entering RADE switches the split off (`24aa5660`). The split's second ear now **follows RX0's incremental filter edits (cut, IF shift, IF width, TCI) and its squelch**, the two things it used to miss ([bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md)); `rx_split_follow_edges()` in `receiver.c`. Checked on the radio 2026-11-11, passes (for now) |
 
+### Reconcile with TEST, 2026-11-21 (upstream `a6894cb5`, consolidated WDSP)
+
+Rebased onto `TEST` `ad08600f` (30 commits; old tip kept as tag
+`backup/feature-diversity-binaural-pre-rebase-20261121`).
+
+- **PipeWire FL/FR commit dropped.** Upstream fixed it the same way in
+  `02dcb49c` ("Corrected channel layout for PipeWire"); the branch now
+  carries upstream's code there.
+- **The consolidated WDSP** (`8c915c71`, `9dd93883`, `b71a9fae`) rewrote
+  `wdsp.h` (every export as `WDSP_API`, sorted), `wdsp/Makefile` (deps on
+  `wdsp_platform.h` in place of `linux_port.h`), `iobuffs.c/.h` and
+  `wcpAGC.h`. The paired AGC is re-expressed on that shape and is still
+  purely additive (489 lines in 7 files, none removed): three `WDSP_API`
+  declarations in `wdsp.h` in its sorted order, `wcpAGCpair.o` in `OBJS`
+  with `wcpAGC.o`'s dependency list.
+- **What was checked against the new WDSP.** `xwcpagc()` in `wcpAGC.c`
+  and `fexchange0()` in `iobuffs.c` are unchanged upstream, so the copy in
+  `wcpAGCpair.c` and the `fexchange0_submit()` / `fexchange0_collect()`
+  split still match them line for line. Upstream's `dexchange()` change
+  (input copied before the output is released) is on the DSP thread's side
+  and keeps the order the split relies on. The struct fields the pair reads
+  (`ch[].exchange`, `iob.pd->exec_bypass`, `csDSP`, `wcpagc`) are
+  unchanged. The new platform layer keeps the semantics the rendezvous
+  uses (`InterlockedIncrement` returns the new value; the 100 ms wait is
+  now a timed condition wait instead of a 1 ms poll).
+- **Upstream's "unused ADC to max attenuation"** (`fb3c6e7e`) counts both
+  ADCs as used while `diversity_enabled` is set, and the split only
+  engages with it set, so ADC2 is not attenuated under the split.
+- **Tests.** WDSP and piHPSDR (`DIVCAP=1`) build with no warnings; the
+  `test/diversity` harness passes (8 of 8). A scratch two-thread check of
+  the pair on the new `libwdsp.a` (not committed; two AGCs as RXA builds
+  them, arm 2 = 0.25 x arm 1, 400 blocks of 1024): linked, the outputs keep
+  exactly that ratio (difference 0) and no rendezvous timed out (0.03 s);
+  unlinked, each levels its own arm (ratio 0.94). Not run on a radio.
+
 ## Debugging and test suite for the ear split
 
 This is the start of the test suite for the audio path of the split. Use it
