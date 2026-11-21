@@ -170,7 +170,7 @@ gboolean rx_button_release_event(GtkWidget *widget, GdkEventButton *event, gpoin
           f += vfo[id0].frequency;
           vfo_id_move_to(id0, f, vfo_snap);
         }
-        if (has_movedy && from == 0) {
+        if (has_movedy && from == 0 && pan_vertical_drag_enable) {
           rx->panadapter_low += dy;
           //
           // Keep value within reasonable bounds
@@ -248,7 +248,7 @@ gboolean rx_motion_notify_event(GtkWidget *widget, GdkEventMotion *event, gpoint
         has_movedx = TRUE;
       }
     }
-    if (dy != 0 && from == 0) {
+    if (dy != 0 && from == 0 && pan_vertical_drag_enable) {
       if (has_movedy || dy < -1 || dy > 1) {
         rx->panadapter_low += dy;
         last_y = y;
@@ -693,9 +693,9 @@ RECEIVER *rx_create_pure_signal_receiver(int id, int sample_rate, int width, int
     //
     // These values (including fps) should match those of the TX display
     //
-    rx->display_detector_mode = DET_PEAK;
+    rx->display_detector_mode = DISP_DET_PEAK;
     rx->display_average_time  = 120.0;
-    rx->display_average_mode  = AVG_LOGRECURSIVE;
+    rx->display_average_mode  = DISP_AVG_LOGRECURSIVE;
     rx_create_analyzer(rx);
     rx_set_detector(rx);
     rx_set_average(rx);
@@ -778,7 +778,7 @@ RECEIVER *rx_create_receiver(int id, int width, int height) {
   rx->low_latency = 0;
   rx->ZBfreq = 0;
   rx->ZBlevel = -200.0;
-  rx->smetermode = SMETER_AVERAGE;
+  rx->smetermode = DISP_SMETER_AVERAGE;
   rx->fps = 10;
   rx->update_timer_id = 0;
   rx->width = width;
@@ -802,8 +802,8 @@ RECEIVER *rx_create_receiver(int id, int width, int height) {
   rx->waterfall_percent = 25;
   rx->display_filled = 1;
   rx->display_gradient = 1;
-  rx->display_detector_mode = DET_AVERAGE;
-  rx->display_average_mode = AVG_LOGRECURSIVE;
+  rx->display_detector_mode = DISP_DET_AVERAGE;
+  rx->display_average_mode = DISP_AVG_LOGRECURSIVE;
   rx->display_average_time = 120.0;
   rx->volume = -20.0;
   rx->tci_volume = -20.0;
@@ -862,7 +862,7 @@ RECEIVER *rx_create_receiver(int id, int width, int height) {
   rx->nr4_noise_scaling_type = 0;
   for (int i = 0; i < 3; i++ ) {
     rx->multi_notch_enable[i] = 0;
-    rx->multi_notch_center[0] = 0.0;
+    rx->multi_notch_center[i] = 0.0;
   }
   rx->agc = AGC_MEDIUM;
   rx->agc_gain = 80.0;
@@ -2165,10 +2165,10 @@ void rx_get_meter(RECEIVER *rx) {
   ASSERT_SERVER();
   double level;
   switch (rx->smetermode) {
-  case SMETER_PEAK:
+  case DISP_SMETER_PEAK:
     level = GetRXAMeter(rx->id, RXA_S_PK);
     break;
-  case SMETER_AVERAGE:
+  case DISP_SMETER_AVERAGE:
   default:
     level = GetRXAMeter(rx->id, RXA_S_AV);
     break;
@@ -2540,17 +2540,17 @@ void rx_set_average(const RECEIVER *rx) {
   SetDisplayAvBackmult(rx->id, 0, display_avb);
   SetDisplayNumAverage(rx->id, 0, display_average);
   switch (rx->display_average_mode) {
-  case AVG_NONE:
+  case DISP_AVG_NONE:
     wdspmode = AVERAGE_MODE_NONE;
     break;
-  case AVG_RECURSIVE:
+  case DISP_AVG_RECURSIVE:
     wdspmode = AVERAGE_MODE_RECURSIVE;
     break;
-  case AVG_LOGRECURSIVE:
+  case DISP_AVG_LOGRECURSIVE:
   default:
     wdspmode = AVERAGE_MODE_LOG_RECURSIVE;
     break;
-  case AVG_TIMEWINDOW:
+  case DISP_AVG_TIMEWINDOW:
     wdspmode = AVERAGE_MODE_TIME_WINDOW;
     break;
   }
@@ -2641,17 +2641,17 @@ void rx_set_detector(const RECEIVER *rx) {
   //
   int wdspmode;
   switch (rx->display_detector_mode) {
-  case DET_PEAK:
+  case DISP_DET_PEAK:
     wdspmode = DETECTOR_MODE_PEAK;
     break;
-  case DET_AVERAGE:
+  case DISP_DET_AVERAGE:
   default:
     wdspmode = DETECTOR_MODE_AVERAGE;
     break;
-  case DET_ROSENFELL:
+  case DISP_DET_ROSENFELL:
     wdspmode = DETECTOR_MODE_ROSENFELL;
     break;
-  case DET_SAMPLEHOLD:
+  case DISP_DET_SAMPLEHOLD:
     wdspmode = DETECTOR_MODE_SAMPLE;
     break;
   }

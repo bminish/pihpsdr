@@ -86,19 +86,19 @@ enum _capture_state {
 // We start at 100 so no confusion with values from "old" props files
 //
 enum _display_enum {
-  SMETER_PEAK     = 100,
-  SMETER_AVERAGE,
-  ALC_PEAK,
-  ALC_AVERAGE,
-  ALC_GAIN,  // no longer used but kept to stabilise enum valus
-  DET_PEAK,
-  DET_AVERAGE,
-  DET_ROSENFELL,
-  DET_SAMPLEHOLD,
-  AVG_NONE,
-  AVG_RECURSIVE,
-  AVG_LOGRECURSIVE,
-  AVG_TIMEWINDOW
+  DISP_SMETER_PEAK     = 100,
+  DISP_SMETER_AVERAGE,
+  DISP_ALC_PEAK,
+  DISP_ALC_AVERAGE,
+  DISP_ALC_GAIN,  // no longer used but kept to stabilise enum valus
+  DISP_DET_PEAK,
+  DISP_DET_AVERAGE,
+  DISP_DET_ROSENFELL,
+  DISP_DET_SAMPLEHOLD,
+  DISP_AVG_NONE,
+  DISP_AVG_RECURSIVE,
+  DISP_AVG_LOGRECURSIVE,
+  DISP_AVG_TIMEWINDOW
 };
 
 // RX and TX frequency calibration (relative, in Hz per 10 MHz)
@@ -203,6 +203,7 @@ extern int TxInhibit;
 
 extern int vfo_encoder_divisor;
 extern int vfo_snap;
+extern int pan_vertical_drag_enable;
 
 extern int protocol;
 extern int device;

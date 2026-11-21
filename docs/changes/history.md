@@ -4,6 +4,21 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-11-21: **`TEST` re-synced onto `upstream/TEST` `a6894cb5`** (from
+  `60e6f8dd`; 16 upstream commits, none of them ours): the consolidated WDSP
+  (`8c915c71`, `9dd93883`, `b71a9fae`: `wdsp.h` exports as `WDSP_API`,
+  `linux_port.[ch]` replaced by `wdsp_platform.h`/`wdsp_platform_posix.c`,
+  thread naming), PipeWire FL/FR channel layout (`02dcb49c`), unused ADCs to
+  maximum attenuation (`fb3c6e7e`, `25e879fe`), the VFO menu overhaul, TCI MOX
+  wait, CAT/TCI long-jump fix and the PURESIGNAL Saturn change. Our layer
+  replayed unchanged as the one tooling commit (tree identical); backup tag
+  `backup/TEST-pre-rebase-20261121`. `feature/synth-sidetone`,
+  `feature/rade-native` and `feature/diversity-binaural` were rebased onto it
+  the same day (backup tags `backup/<branch>-pre-rebase-20261121`); the
+  binaural branch's reconcile with the consolidated WDSP is in its
+  `docs/binaural/README.md`. Details:
+  [upstream-reconcile.md](../archive/diversity/changes/upstream-reconcile.md#2026-11-21-re-sync-onto-a6894cb5-no-lc-taken).
+
 - 2026-10-30: **branches tidied.** The binaural branch is now `feature/diversity-binaural`
   (was `feature/diversity-binaural-3-rebase`). Archived under `history/diversity/`:
   `binaural-2` (was `feature/diversity-binaural-2`), `auto-diversity`

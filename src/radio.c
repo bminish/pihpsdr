@@ -224,6 +224,7 @@ int TxInhibit = 0;
 
 int vfo_encoder_divisor = 1;
 int vfo_snap = 0;
+int pan_vertical_drag_enable = 1;
 
 int protocol;
 int device;
@@ -1012,7 +1013,9 @@ static void radio_create_visual(void) {
 }
 
 void radio_stop_program(void) {
-  t_print("%s: Start shutdown sequence\n", __func__);
+  t_print("%s: Start shutdown sequence...\n", __func__);
+  radio_save_state();
+  t_print("%s: Preferences written to %s\n", __func__, property_path);
 #ifdef GPIO
   gpio_close();
   t_print("%s: GPIO closed\n", __func__);
@@ -1057,8 +1060,6 @@ void radio_stop_program(void) {
       t_print("%s: SATURN code stopped\n", __func__);
     }
   }
-  radio_save_state();
-  t_print("%s: radio state saved\n", __func__);
 }
 
 void radio_exit_program(void) {
@@ -2818,7 +2819,6 @@ void radio_set_tune(int state) {
     radio_calc_drive_level(1);
     tx_set_signal(transmitter, 1, 0, 0);
   } else {
-    t_print("%s state=%d\n", __func__, state);
     tx_set_signal(transmitter, 0, 0, 0);
     if (transmitter->puresignal && !transmitter->ps_oneshot) {
       //
@@ -3502,6 +3502,7 @@ static void radio_restore_state(void) {
   GetPropI0("which_css_font",                                which_css_font);
   GetPropI0("vfo_encoder_divisor",                           vfo_encoder_divisor);
   GetPropI0("vfo_snap",                                      vfo_snap);
+  GetPropI0("pan_vertical_drag_enable",                      pan_vertical_drag_enable);
   GetPropI0("mute_rx_while_transmitting",                    mute_rx_while_transmitting);
   GetPropI0("meter_type",                                    meter_type);
   GetPropI0("extended_meter",                                extended_meter);
@@ -3754,6 +3755,7 @@ void radio_save_state(void) {
   SetPropI0("which_css_font",                                which_css_font);
   SetPropI0("vfo_encoder_divisor",                           vfo_encoder_divisor);
   SetPropI0("vfo_snap",                                      vfo_snap);
+  SetPropI0("pan_vertical_drag_enable",                      pan_vertical_drag_enable);
   SetPropI0("mute_rx_while_transmitting",                    mute_rx_while_transmitting);
   SetPropI0("meter_type",                                    meter_type);
   SetPropI0("extended_meter",                                extended_meter);

@@ -124,6 +124,7 @@ void vfo_save_state(void) {
     SetPropI1("vfo.%d.deviation", i,        vfo[i].deviation);
     SetPropI1("vfo.%d.step", i,             vfo[i].step);
     SetPropI1("vfo.%d.rit_step", i,         vfo[i].rit_step);
+    SetPropI1("vfo.%d.xit_step", i,         vfo[i].xit_step);
   }
 }
 
@@ -160,6 +161,7 @@ void vfo_restore_state(void) {
     vfo[i].deviation         = 2500;
     vfo[i].step              = 100;
     vfo[i].rit_step          = 10;
+    vfo[i].xit_step          = 100;
     GetPropI1("vfo.%d.band", i,             vfo[i].band);
     GetPropI1("vfo.%d.frequency", i,        vfo[i].frequency);
     GetPropI1("vfo.%d.ctun", i,             vfo[i].ctun);
@@ -176,6 +178,7 @@ void vfo_restore_state(void) {
     GetPropI1("vfo.%d.deviation", i,        vfo[i].deviation);
     GetPropI1("vfo.%d.step", i,             vfo[i].step);
     GetPropI1("vfo.%d.rit_step", i,         vfo[i].rit_step);
+    GetPropI1("vfo.%d.xit_step", i,         vfo[i].xit_step);
     // Sanity check: if !ctun, offset must be zero
     if (!vfo[i].ctun) {
       vfo[i].offset = 0;
@@ -183,7 +186,7 @@ void vfo_restore_state(void) {
   }
 }
 
-static inline void vfo_id_adjust_band(int v, long long f) {
+static inline void vfo_id_adjust_band(int v) {
   ASSERT_SERVER();
   //
   // The purpose of this function is be very quick
@@ -203,10 +206,12 @@ static inline void vfo_id_adjust_band(int v, long long f) {
   // As a result, you can "listen" to signals just beyond the band
   // boundaries without doing a band switching.
   //
+  long long f;
   int   b = vfo[v].band;
   const BAND *band;
   const BANDSTACK *bandstack;
   band = band_get_band(b);
+  f = vfo[v].ctun ? vfo[v].ctun_frequency : vfo[v].frequency;
   if ((f + 25000LL) >= band->frequencyMin && (f - 25000LL) <= band->frequencyMax) {
     //
     // This "quick return" will occur in >99 percent of the cases
@@ -227,8 +232,20 @@ static inline void vfo_id_adjust_band(int v, long long f) {
   //       out of a transverter band!
   //
   int new_band = get_band_from_frequency(f);
+  if (new_band == bandGen) {
+    //
+    // Frequencies outside the range of the radio capabilities result
+    // in bandGen
+    //
+    if ((f < radio->frequency_min) || (f > radio->frequency_max)) {
+    vfo[v].frequency = (radio->frequency_min + radio->frequency_max) / 2;
+    vfo[v].ctun_frequency = vfo[v].frequency;
+  }
+  }
   if (b != new_band) {
-    vfo[v].band = get_band_from_frequency(f);
+    band = band_get_band(new_band);
+    vfo[v].band = new_band;
+    vfo[v].lo = band->frequencyLO + band->errorLO;
     bandstack = bandstack_get_bandstack(vfo[v].band);
     vfo[v].bandstack = bandstack->current_entry;
     radio_apply_band_settings(1, v);
@@ -251,7 +268,7 @@ void vfo_xvtr_changed(void) {
         (vfo[0].frequency < vfo[0].lo + radio->frequency_min)) {
       vfo[0].frequency = vfo[0].lo + (radio->frequency_min + radio->frequency_max) / 2;
       vfo[0].ctun = 0;
-      vfo_id_adjust_band(0, vfo[0].frequency);
+      vfo_id_adjust_band(0);
       rx_set_frequency(receiver[0], vfo[0].frequency);
     }
   }
@@ -262,7 +279,7 @@ void vfo_xvtr_changed(void) {
         (vfo[1].frequency < vfo[1].lo + radio->frequency_min)) {
       vfo[1].ctun = 0;
       vfo[1].frequency = vfo[1].lo + (radio->frequency_min + radio->frequency_max) / 2;
-      vfo_id_adjust_band(1, vfo[1].frequency);
+      vfo_id_adjust_band(1);
       if (receivers == 2) {
         rx_set_frequency(receiver[1], vfo[1].frequency);
       }
@@ -328,11 +345,7 @@ void vfo_id_band_changed(int id, int b) {
   // There should be no out-of-band frequencies in the
   // bandstack. But better check twice.
   //
-  if (vfo[id].ctun) {
-    vfo_id_adjust_band(id, vfo[id].ctun_frequency);
-  } else {
-    vfo_id_adjust_band(id, vfo[id].frequency);
-  }
+  vfo_id_adjust_band(id);
   if (transmitter != NULL) {
     transmitter->ctcss_enabled = entry->ctcss_enabled;
     transmitter->ctcss         = entry->ctcss;
@@ -378,11 +391,7 @@ void vfo_id_bandstack_changed(int id, int b) {
   vfo[id].mode = entry->mode;
   vfo[id].filter = entry->filter;
   vfo[id].deviation = entry->deviation;
-  if (vfo[id].ctun) {
-    vfo_id_adjust_band(id, vfo[id].ctun_frequency);
-  } else {
-    vfo_id_adjust_band(id, vfo[id].frequency);
-  }
+  vfo_id_adjust_band(id);
   if (transmitter != NULL) {
     transmitter->ctcss_enabled = entry->ctcss_enabled;
     transmitter->ctcss         = entry->ctcss;
@@ -654,13 +663,12 @@ void vfo_id_step(int id, int st) {
       delta = vfo[id].ctun_frequency;
       vfo[id].ctun_frequency = ROUND(vfo[id].ctun_frequency, st, vfo[id].step);
       delta = vfo[id].ctun_frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].ctun_frequency);
     } else {
       delta = vfo[id].frequency;
       vfo[id].frequency = ROUND(vfo[id].frequency, st, vfo[id].step);
       delta = vfo[id].frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].frequency);
     }
+    vfo_id_adjust_band(id);
     int sid = 1 - id;
     switch (sat_mode) {
     case SAT_NONE:
@@ -669,11 +677,10 @@ void vfo_id_step(int id, int st) {
       // A and B increment and decrement together
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency += delta;
-        vfo_id_adjust_band(sid, vfo[sid].ctun_frequency);
       } else {
         vfo[sid].frequency      += delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -682,11 +689,10 @@ void vfo_id_step(int id, int st) {
       // A increments and B decrements or A decrments and B increments
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].ctun_frequency);
       } else {
         vfo[sid].frequency      -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -697,6 +703,29 @@ void vfo_id_step(int id, int st) {
     }
     g_idle_add(ext_vfo_update, NULL);
   }
+}
+
+void vfo_set_xit_step(int step) {
+  int id = vfo_get_tx_vfo();
+  if (radio_is_remote) {
+    send_xit_step(cl_sock_tcp, id, step);
+    return;
+  }
+  vfo_id_set_xit_step(id, step);
+}
+
+void vfo_id_set_xit_step(int id, int step) {
+  if (radio_is_remote) {
+    send_xit_step(cl_sock_tcp, id, step);
+    return;
+  }
+  vfo[id].xit_step = step;
+  if (id == 0) {
+    int mode = vfo[id].mode;
+    RXTXprofile[mode].tx.xit_step = step;
+    profiles_copy_rxtxprofile(mode);
+  }
+  g_idle_add(ext_vfo_update, NULL);
 }
 
 void vfo_set_rit_step(int step) {
@@ -769,7 +798,6 @@ void vfo_id_move(int id, long long hz, int round) {
         vfo[id].ctun_frequency = ROUND(vfo[id].ctun_frequency, 0, vfo[id].step);
       }
       delta = vfo[id].ctun_frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].ctun_frequency);
     } else {
       delta = vfo[id].frequency;
       // *Subtract* the shift (hz) from the VFO frequency
@@ -778,8 +806,8 @@ void vfo_id_move(int id, long long hz, int round) {
         vfo[id].frequency = ROUND(vfo[id].frequency, 0, vfo[id].step);
       }
       delta = vfo[id].frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].frequency);
     }
+    vfo_id_adjust_band(id);
     int sid = 1 - id;
     switch (sat_mode) {
     case SAT_NONE:
@@ -788,11 +816,10 @@ void vfo_id_move(int id, long long hz, int round) {
       // A and B increment and decrement together
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency += delta;
-        vfo_id_adjust_band(sid, vfo[sid].ctun_frequency);
       } else {
         vfo[sid].frequency      += delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -801,11 +828,10 @@ void vfo_id_move(int id, long long hz, int round) {
       // A increments and B decrements or A decrments and B increments
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].ctun_frequency);
       } else {
         vfo[sid].frequency      -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -832,13 +858,12 @@ void vfo_id_move_to(int id, long long f, int round) {
       delta = vfo[id].ctun_frequency;
       vfo[id].ctun_frequency = f;
       delta = vfo[id].ctun_frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].ctun_frequency);
     } else {
       delta = vfo[id].frequency;
       vfo[id].frequency = f;
       delta = vfo[id].frequency - delta;
-      vfo_id_adjust_band(id, vfo[id].frequency);
     }
+    vfo_id_adjust_band(id);
     int sid = 1 - id;
     switch (sat_mode) {
     case SAT_NONE:
@@ -847,11 +872,10 @@ void vfo_id_move_to(int id, long long f, int round) {
       // A and B increment and decrement together
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency += delta;
-        vfo_id_adjust_band(sid, vfo[id].ctun_frequency);
       } else {
         vfo[sid].frequency      += delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -860,11 +884,10 @@ void vfo_id_move_to(int id, long long f, int round) {
       // A increments and B decrements or A decrements and B increments
       if (vfo[sid].ctun) {
         vfo[sid].ctun_frequency -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].ctun_frequency);
       } else {
         vfo[sid].frequency      -= delta;
-        vfo_id_adjust_band(sid, vfo[sid].frequency);
       }
+      vfo_id_adjust_band(sid);
       if (sid < receivers) {
         rx_frequency_changed(receiver[sid]);
       }
@@ -1805,7 +1828,27 @@ void vfo_id_set_frequency(int v, long long f) {
   // sets the band but does save to or restore from
   // bandstacks.
   //
-  vfo_id_adjust_band(v, f);
+  // We have to update the VFO frequencies *before* calling
+  // vfo_adjust_band, since otherwise the LO freq gets updated
+  // while the VFO freq is not yet.
+  //
+  if (vfo[v].ctun) {
+    vfo[v].ctun_frequency = f;
+  } else {
+    vfo[v].frequency = f;
+  }
+  vfo_id_adjust_band(v);
+  //
+  // This is a frequency "long jump", and the requested frequency
+  // may be outside the frequency range of the radio. In this case,
+  // adjust_band corrects the frequency.
+  //
+  if (vfo[v].ctun) {
+    f = vfo[v].ctun_frequency;
+  } else {
+    f = vfo[v].frequency;
+  }
+  vfo_id_adjust_band(v);
   if (v == VFO_A) { rx_set_frequency(receiver[0], f); }
   if (v == VFO_B) {
     //
@@ -1847,7 +1890,7 @@ void vfo_id_ctun_update(int id, int state) {
     // CTUN turned OFF->ON
     vfo[id].ctun_frequency = vfo[id].frequency;
     vfo[id].offset = 0;
-    vfo_id_adjust_band(id, vfo[id].ctun_frequency);
+    vfo_id_adjust_band(id);
     if (id < receivers) {
       rx_set_frequency(receiver[id], vfo[id].ctun_frequency);
     }
@@ -1869,7 +1912,7 @@ void vfo_id_ctun_update(int id, int state) {
     }
     vfo[id].frequency = vfo[id].ctun_frequency;
     vfo[id].offset = 0;
-    vfo_id_adjust_band(id, vfo[id].frequency);
+    vfo_id_adjust_band(id);
     if (id < receivers) {
       rx_set_frequency(receiver[id], vfo[id].ctun_frequency);
     }

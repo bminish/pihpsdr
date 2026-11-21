@@ -240,3 +240,38 @@ LC-062, LC-063. One thing rode inside a skipped commit: LC-061's
 DIVCAP block, `.gitignore`, `test/`, `docs/`. Nothing in `src/diversity_*.c/.h`
 differs from his tree. The only open points with him are E3 to E5 and the
 doubled `div_auto_mode`.
+
+## 2026-11-21: re-sync onto `a6894cb5` (no LC taken)
+
+`upstream/TEST` moved from `60e6f8dd` to `a6894cb5` (16 commits, 2026-11-10 to
+2026-11-20). None of them is ours and none touches `src/diversity_*`; the
+register is unchanged (57 accepted, none pending).
+
+**What it holds.** The consolidated WDSP (`8c915c71`, `9dd93883`,
+`b71a9fae`): `wdsp.h` declares every export as `WDSP_API` in sorted order,
+`linux_port.[ch]` is replaced by `wdsp_platform.h` and
+`wdsp_platform_posix.c` (timed waits on a CLOCK_MONOTONIC condition variable,
+`InterlockedIncrement` returning the new value), `dexchange()` copies its
+input before releasing the output, and the WDSP threads are named. Also:
+PipeWire output declared as FL/FR (`02dcb49c`, the same fix the binaural
+branch had carried), the step attenuators of unused ADCs set to maximum
+(`fb3c6e7e`, `25e879fe`; diversity counts both ADCs as used), separate RIT
+and XIT steps, the VFO menu overhaul, TCI waiting for the MOX change, the
+CAT/TCI long-jump fix, preferences saved first at shutdown, and the
+PURESIGNAL feedback level on Saturn PCB V3.
+
+**What was done.** Backup tag `backup/TEST-pre-rebase-20261121` (`10f40865`);
+`TEST` rebuilt as `upstream/TEST` plus the one tooling commit, replayed
+without conflict. Our layer is unchanged: `git diff
+backup/TEST-pre-rebase-20261121 TEST -- docs test tools Makefile .gitignore
+src/diversity_capture.c src/diversity_capture.h` is empty (before this
+record was added), and against `upstream/TEST` it is additions only (the
+capture recorder, the Makefile DIVCAP block, `.gitignore`, `test/`, `tools/`,
+`docs/`). `make -C test/diversity run` on the new `TEST` passes (the 5 known gaps of `known_gaps.h` reported, not counted).
+
+**Branches that followed.** `feature/synth-sidetone`, `feature/rade-native`
+and `feature/diversity-binaural` were rebased onto the new `TEST` the same
+day (backup tags `backup/<branch>-pre-rebase-20261121`). The paired AGC on the
+binaural branch (`wdsp/wcpAGCpair.c`) was re-expressed on the consolidated
+WDSP and checked against it (`make -C test/binaural run`); that reconcile is
+written up in the binaural branch's `docs/binaural/README.md`.
