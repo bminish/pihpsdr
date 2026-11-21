@@ -105,7 +105,9 @@ Both enums were reordered to the menu order (done 2026-10-15). Still open, and h
   holds a second change.** Registered 2026-10-05 after the commits were
   pushed to `test/binaural-agc-link`. Reword them at the next rebase:
   `92dd3bf5`, `2dd0e077`, `e798f1d1` (LC-041), `063e30ff` (LC-042),
-  `e9630a2a`, `054813d8` (LC-043). `e798f1d1` also carries the AGC slider's
+  `e9630a2a`, `054813d8` (LC-043). (On `feature/diversity-binaural` as of
+  2026-11-21: `f3c5662f`, `c6e5b1e0`, `76a85798`, `5b1440e7`, `c876ed33`,
+  `88e52875`; LC-077 to LC-081 there have no trailers either.) `e798f1d1` also carries the AGC slider's
   fast path and should be split so that the slider fix is its own LC
   ([lc-engine.md](lc-engine.md#lc-041)).
 

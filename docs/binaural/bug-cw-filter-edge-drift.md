@@ -1,5 +1,7 @@
 # Bug: CW filter edges drift by one sidetone offset per encoder click
 
+On `feature/diversity-binaural` this is LC-077 (`2993ad68`); `devtest/everything` carries it as an unnumbered fix (`e81d13c2`). Not yet re-checked on the radio on this branch.
+
 Found 2026-11-10 while testing the Soomfon CN003 MIDI controller on the multifunction encoder. Written up here because it was found during the binaural diversity work and the ear split's filter follow (below) depends on it.
 
 ## Summary
@@ -28,7 +30,7 @@ A static helper `filter_abs_edges_changed()` in `src/filter.c` subtracts the sid
 
 ## Status
 
-Checked on the radio 2026-11-11: the filter cut, IF shift and IF width fix and the ear split following the edits and squelch both pass, for now. The check was: in CWU and CWL, turn Filter Cut Low/High, IF Shift and IF Width both ways and confirm the edges follow the direction of the turn; one SSB mode to confirm nothing changed there.
+Checked on the radio 2026-11-11, on `devtest/everything`: the filter cut, IF shift and IF width fix and the ear split following the edits and squelch both pass, for now. The check was: in CWU and CWL, turn Filter Cut Low/High, IF Shift and IF Width both ways and confirm the edges follow the direction of the turn; one SSB mode to confirm nothing changed there.
 
 ## Related: the ear split did not follow these edits
 

@@ -182,7 +182,8 @@ findings' open list.
 ## LC-043 — Balance ATT: the hotter arm's attenuator from the noise floor
 
 **Branch.** `test/binaural-agc-link` only. As landed: `e9630a2a`,
-`054813d8`. Depends on LC-025 (the floor); [LC-022] for arm to ADC.
+`054813d8`. Now on `feature/diversity-binaural` (`c876ed33`, `88e52875` as
+of 2026-11-21); LC-079 (`801939d8`) makes it measure in Manual. Depends on LC-025 (the floor); [LC-022] for arm to ADC.
 
 **What it is for.** One press, once, never continuously. The AGC link
 (LC-041) and the combiner's weight (clamped at +20 dB, `DIV_MAX_WEIGHT`)

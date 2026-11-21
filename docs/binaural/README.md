@@ -20,20 +20,21 @@ Two rules differ from `TEST` (see `docs/changes/rules.md` and
 
 | Commit | What |
 |---|---|
-| `2ad53789` | The ear split, ported from binaural `2a6bafb6..b0e57819` onto TEST's shapes (manual/auto weights, LC-022 arm swap, LC-030 Level output, parallel RX slew-down, one menu row) |
-| `da0956b1` | The second ear follows RX1's CTUN, RIT and CW BFO shift (binaural carried this inside its CW commit `6027208a`; the port missed it) |
-| `8d27b0cc` | The split's teardown waits for the second ear to stop (TEST's `rx_off()` honours its wait argument; binaural's did not) |
-| `0fd92651` | PipeWire output declared as FL/FR, not MONO/MONO+1 (upstream bug since `184f780b`; affects every stereo use of PipeWire output). **dl1ycf made the same fix upstream on 2026-11-10 (`8045dff0`)**, so the local copy is only a better comment |
-| `854cc90d` | The ears' input blocks are realigned on the receive thread, not the GTK thread |
-| `8fe6222c`, `4ba041c1` | Tooling: the ear recorder and `ears.py` (below) |
-| `92dd3bf5`, `2dd0e077` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC) |
-| `e798f1d1` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
-| `e9630a2a` | "Balance ATT" button: one press, once, from the noise floor |
+| `ebbf9eae` | The ear split, ported from binaural `2a6bafb6..b0e57819` onto TEST's shapes (manual/auto weights, LC-022 arm swap, LC-030 Level output, parallel RX slew-down, one menu row) |
+| `6f85298e` | The second ear follows RX1's CTUN, RIT and CW BFO shift (binaural carried this inside its CW commit `6027208a`; the port missed it) |
+| `918d8cec` | The split's teardown waits for the second ear to stop (TEST's `rx_off()` honours its wait argument; binaural's did not). The wait never completed until `03e2d2c2` (LC-080): the feed had already stopped |
+| ~~`0fd92651`~~ | PipeWire output declared as FL/FR, not MONO/MONO+1. **Dropped 2026-11-21:** upstream fixed it the same way in `02dcb49c` |
+| `992588f6` | The ears' input blocks are realigned on the receive thread, not the GTK thread |
+| `711933df`, `7c216290` | Tooling: the ear recorder and `ears.py` (below) |
+| `f3c5662f`, `c6e5b1e0` | One AGC gain for both ears under the split, and a menu toggle for it (the paired AGC, LC-041) |
+| `76a85798` | The paired AGC moves into its own file `wdsp/wcpAGCpair.c` (additive: `wcpAGC.c` keeps two one-line hooks); the **stronger** arm sets the gain, not the average; link and unlink ordered so the feeding mode and the WDSP link never disagree (leaving binaural had hung); the AGC slider sends only the gain and applies at most every 50 ms |
+| `c876ed33`, `88e52875` | "Balance ATT" button: one press, once, from the noise floor (LC-043); the floor on every reference |
+| `2993ad68`, `6e204889` (LC-077; from `devtest/everything` `e81d13c2`, `85337413`) | **CW filter edge drift fixed** (every filter cut / IF shift / IF width step in CWU or CWL moved the passband by one sidetone offset, always the same way; `filter.c`), and the second ear **follows RX0's incremental filter edits and squelch** (`rx_split_follow_edges()`), which it used to miss, so the edits acted on arm 0's ear only. See [bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md). Checked on the radio on `devtest/everything` 2026-11-11; not yet on this branch |
+| `c2861024`, `cc634fa7` (LC-078; from `devtest/everything` `1c2bf4e3`, `ee3aa707`) | **The general MUTE silences every receiver**, including one that comes up later: it is a global flag (`mute_all`) honoured in `rx_process_buffer()`, and TCI's mute does the same. Before, MUTE toggled only the active receiver, and under the split the second ear ignores its own mute, so MUTE silenced arm 0's ear only. MUTE_RX1 / MUTE_RX2 unchanged. Not yet checked on the radio on this branch |
+| `801939d8` (LC-079), `03e2d2c2` (LC-080) | **Balance ATT works in Manual**: the analysis thread that measures the floor is started for the measurement (it read a stale floor, or none). **Split teardown keeps feeding the second ear until its channel is off** (`div_split_down()`): it used to stop the feed first, so the switch-off and an `RXASetNC()` each waited out WDSP's 100 ms timeout (~215 ms GTK stall per teardown, measured with the debug counters) and the channel was never flushed. Diversity going off takes the split down before arm 1 stops arriving. Not yet checked on the radio |
+| `6892f3a2`; `1e1093d1` to `673e1dde` (LC-065, LC-064) | Brought in from the CW branches, unchanged: **`fix/keyer-lost-first-tap`** (`6b30ca42`, LC-065: a short paddle tap is no longer lost while the keyer waits for TX) and **`feature/synth-sidetone`** (`ef178099..286cb808`, LC-064: the CW side tone synthesised in the PipeWire output callback, off by default, CW menu "Synth sidetone"; its start-of-TX fix; `test/sidetone`, `tools/cwlat`). **Not** its optional PipeWire playback quantum 128 commit (`6ee27fb2`): this branch keeps upstream's 256. Their write-ups are [../synth-sidetone/README.md](../synth-sidetone/README.md) and the commits; that README still calls the tap fix a separate branch, which here it is not. `docs/changes.md` stays this branch's (the sidetone branch's own version of it was left out) |
+| `5b3925b6` (LC-081) | **Unlinking no longer stalls for the rendezvous timeout**: a linked ear waiting for its partner holds its csDSP, and the unlink held the partner's, so 4 of ~30 unlinks in the first debug-counter run froze the GTK thread and both ears for 87-100 ms; the unlink now lets any waiter go (it runs that block alone) before taking either lock (0.0-0.9 ms over 35 unlinks on the radio, debug build). **Both ears are submitted to WDSP before either spectrum is drawn**, so a panadapter redraw no longer sits between them. `test/binaural` checks an unlink with one ear waiting and 500 toggles under load (old code: 80 and 100 ms, fails). Measured with a local counters build (`debug/binaural-agc-counters`, not pushed), now retired. Not pursued (decided 2026-11-21): the ears' WDSP channels run some whole number of input blocks apart (k x 5.33 ms at 192 kHz), which sets the remaining rendezvous wait; aligning them was judged not worth its risk (it does not change what is heard: each channel's output delay is fixed from its own flush) |
 | (later, 2026-11) | RADE takes precedence over the split: entering RADE switches the split off (`24aa5660`). The split's second ear now **follows RX0's incremental filter edits (cut, IF shift, IF width, TCI) and its squelch**, the two things it used to miss ([bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md)); `rx_split_follow_edges()` in `receiver.c`. Checked on the radio 2026-11-11, passes (for now) |
-| (2026-11-21, from `devtest/everything` `e81d13c2`, `85337413`) | **CW filter edge drift fixed** (every filter cut / IF shift / IF width step in CWU or CWL moved the passband by one sidetone offset, always the same way; `filter.c`), and the second ear **follows RX0's incremental filter edits and squelch** (`rx_split_follow_edges()`), which it used to miss, so the edits acted on arm 0's ear only. See [bug-cw-filter-edge-drift.md](bug-cw-filter-edge-drift.md). Checked on the radio on `devtest/everything` 2026-11-11; not yet on this branch |
-| (2026-11-21) | **Balance ATT works in Manual**: the analysis thread that measures the floor is started for the measurement (it read a stale floor, or none). **Split teardown keeps feeding the second ear until its channel is off** (`div_split_down()`): it used to stop the feed first, so the switch-off and an `RXASetNC()` each waited out WDSP's 100 ms timeout (~215 ms GTK stall per teardown, measured with the debug counters) and the channel was never flushed. Diversity going off takes the split down before arm 1 stops arriving. Not yet checked on the radio |
-| (2026-11-21, CW) | Brought in from the CW branches, unchanged: **`fix/keyer-lost-first-tap`** (`6b30ca42`, LC-065: a short paddle tap is no longer lost while the keyer waits for TX) and **`feature/synth-sidetone`** (`ef178099..286cb808`, LC-064: the CW side tone synthesised in the PipeWire output callback, off by default, CW menu "Synth sidetone"; its start-of-TX fix; `test/sidetone`, `tools/cwlat`). **Not** its optional PipeWire playback quantum 128 commit (`6ee27fb2`): this branch keeps upstream's 256. Their write-ups are [../synth-sidetone/README.md](../synth-sidetone/README.md) and the commits; that README still calls the tap fix a separate branch, which here it is not. `docs/changes.md` stays this branch's (the sidetone branch's own version of it was left out) |
-| (2026-11-21, AGC link) | **Unlinking no longer stalls for the rendezvous timeout**: a linked ear waiting for its partner holds its csDSP, and the unlink held the partner's, so 4 of ~30 unlinks in the first debug-counter run froze the GTK thread and both ears for 87-100 ms; the unlink now lets any waiter go (it runs that block alone) before taking either lock (0.0-0.9 ms over 35 unlinks on the radio, debug build). **Both ears are submitted to WDSP before either spectrum is drawn**, so a panadapter redraw no longer sits between them. `test/binaural` checks an unlink with one ear waiting and 500 toggles under load (old code: 80 and 100 ms, fails). Measured with a local counters build (`debug/binaural-agc-counters`, not pushed), now retired. Still open: the ears' WDSP channels run some whole number of input blocks apart (k x 5.33 ms at 192 kHz), which sets the remaining rendezvous wait |
 
 ### Reconcile with TEST, 2026-11-21 (upstream `a6894cb5`, consolidated WDSP)
 
@@ -132,8 +133,10 @@ through the split offline; TCI's pair is not recorded.
 ## The AGC link and Balance ATT: state
 
 Registered 2026-10-05 as LC-041 (the paired AGC), LC-042 (the menu
-placement and alignment) and LC-043 (Balance ATT); see the register. The
-commits carry no trailers yet (open-items.md).
+placement and alignment) and LC-043 (Balance ATT); 2026-11-21 LC-079
+(Balance ATT in Manual), LC-080 (split teardown order) and LC-081 (unlink
+and submit order). See the register in `docs/changes.md`. None of the
+commits carries a `Local-Change:` trailer yet (open-items.md).
 
 - **Paired AGC.** The state machine runs once per sample on the larger of
   the two arms' peaks and back-averages, and the one gain goes to both
@@ -142,9 +145,13 @@ commits carry no trailers yet (open-items.md).
   channel whose partner is not running (off, slewing down, bypassed) runs
   alone at once; otherwise it would wait out the 100 ms timeout on every
   block and overflow the input. The ears must be fed in pairs while the
-  AGCs are linked, which is what `rx_link_agc()` orders.
+  AGCs are linked, which is what `rx_link_agc()` orders. An unlink lets a
+  waiting ear go before it takes either channel's lock, so it never waits
+  for the timeout (LC-081); both ears are submitted before either spectrum
+  is drawn.
 - **Balance ATT** (Diversity menu, under the ATT sliders). Asks the
-  engine for the noise floor for 4 s, reads it, and puts the difference
+  engine for the noise floor for 4 s (in Manual it first starts the
+  analysis thread for the measurement and the check, LC-079), reads it, and puts the difference
   on the hotter arm's ADC (arm to ADC through `div_arm_swapped()`),
   capped at 31 dB, then re-reads after 5 s and reports the residual.
   Floor only: the overload flag is not used, since impulse noise trips it

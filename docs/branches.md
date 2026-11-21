@@ -1,7 +1,7 @@
 # Branches
 
 What each branch in this fork (`origin`, `bminish/pihpsdr`) is for, and
-where old work goes. Written 2026-10-30, updated 2026-11-11. Upstream is `dl1ycf/pihpsdr`;
+where old work goes. Written 2026-10-30, updated 2026-11-21. Upstream is `dl1ycf/pihpsdr`;
 nothing is ever pushed there.
 
 ## Live branches
@@ -42,9 +42,10 @@ is ambiguous there. Suggested fix, to be done at the first merge of the two
 branches: keep `TEST`'s numbers, renumber the binaural captures T-024 to
 T-035 and the RADE ones T-027 to T-030 into one sequence after the highest
 number on `TEST`, and record the old-to-new map in `test-findings.md`. LC
-numbers do not clash since 2026-11-11: LC-041 to LC-045 are binaural, LC-064 to
-LC-066 are the CW series, LC-071 to LC-075 are RADE V2 (renumbered from
-LC-064 to LC-068), LC-070 and LC-076 RADE/diversity.
+numbers are shared and do not clash: LC-041 to LC-043 are binaural (LC-044
+and LC-045 are accepted `TEST` changes), LC-064 to LC-066 the CW series,
+LC-069 to LC-076 RADE, LC-077 to LC-081 binaural (2026-11-21). The next
+free number is LC-082.
 
 ## Archive: bundles, not branches
 
