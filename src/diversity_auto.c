@@ -4284,16 +4284,24 @@ void diversity_auto_gap(void) {
 static int div_capture_manual = 0;
 #endif
 
+//
+// Set while Balance ATT has the analysis thread running in Manual, where
+// nothing else would start it and the floor it reads would otherwise be
+// whatever an automatic mode last left (or none). See
+// diversity_auto_measure_start().
+//
+static int div_measure_manual = 0;
+
 void diversity_auto_start(void) {
   if (div_auto_running) { return; }
 
 #ifdef DIVERSITY_CAPTURE
 
-  if (div_auto_mode == DIV_MANUAL && !div_capture_manual) { return; }
+  if (div_auto_mode == DIV_MANUAL && !div_capture_manual && !div_measure_manual) { return; }
 
 #else
 
-  if (div_auto_mode == DIV_MANUAL) { return; }
+  if (div_auto_mode == DIV_MANUAL && !div_measure_manual) { return; }
 
 #endif
 
@@ -4401,6 +4409,15 @@ int diversity_auto_capture_start(void) {
   // the loop running changes nothing that is heard. Each block records
   // the manual weight as the live one, since that is what was applied.
   //
+  if (div_measure_manual) {
+    //
+    // Already running for Balance ATT: the capture takes it over, so the
+    // end of the measurement does not stop the thread under the capture.
+    //
+    div_measure_manual = 0;
+    div_capture_manual = 1;
+  }
+
   if (!div_auto_running && diversity_enabled && div_auto_mode == DIV_MANUAL) {
     div_capture_manual = 1;
     diversity_auto_start();
@@ -4438,6 +4455,8 @@ void diversity_auto_stop(void) {
   // there is nothing to tear down and a worker of NULL to not join.
   //
   if (radio_is_remote) { return; }
+
+  div_measure_manual = 0;
 
   if (!div_auto_running) { return; }
 
@@ -4488,6 +4507,33 @@ void diversity_auto_stop(void) {
   //
   div_auto_coherence = 0.0;
   div_auto_holding = 1;
+}
+
+//
+// Balance ATT in Manual. The analysis thread is what measures the noise
+// floor, and in Manual it is not running, so start it for the measurement
+// alone. As for a Manual capture: the sample path combines with the manual
+// weight and never reads the loop's, so nothing heard changes. Starting it
+// also clears the floor, so the reading is of the band as it is now, not
+// one left over from an automatic mode. In the automatic modes the thread
+// is running already and this does nothing.
+//
+void diversity_auto_measure_start(void) {
+  if (radio_is_remote || div_auto_running) { return; }
+
+  if (!diversity_enabled || div_auto_mode != DIV_MANUAL) { return; }
+
+  div_measure_manual = 1;
+  diversity_auto_start();
+
+  if (!div_auto_running) { div_measure_manual = 0; }
+}
+
+//
+// The end of the measurement: stop the thread if it was started for it.
+//
+void diversity_auto_measure_stop(void) {
+  if (div_measure_manual) { diversity_auto_stop(); }
 }
 
 void diversity_auto_restart(void) {

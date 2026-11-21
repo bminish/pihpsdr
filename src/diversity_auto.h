@@ -233,6 +233,12 @@ extern int diversity_auto_noise_floor(double *n0, double *n1);
 // compute one (RADE V1). A no-op for the others, which keep it current.
 //
 extern void diversity_auto_noise_floor_demand(double seconds);
+//
+// Balance ATT in Manual: run the analysis thread (which measures the floor)
+// for the length of the measurement. No-ops in the automatic modes.
+//
+extern void diversity_auto_measure_start(void);
+extern void diversity_auto_measure_stop(void);
 
 //
 // MVDR for a two-element array: w = R^-1 h, normalised so arm 0 carries
