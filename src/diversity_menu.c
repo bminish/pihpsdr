@@ -267,6 +267,7 @@ static void cleanup(void) {
     if (att_cal_timer != 0) {
       g_source_remove(att_cal_timer);
       att_cal_timer = 0;
+      diversity_auto_measure_stop();
     }
     att_scale[0] = att_scale[1] = NULL;
     att_cal_status = NULL;
@@ -455,11 +456,13 @@ static void att_cal_say(const char *fmt, ...) {
 static gboolean att_cal_check(gpointer data) {
   att_cal_timer = 0;
   double n0, n1;
+  int ok = diversity_auto_noise_floor(&n0, &n1);
+  diversity_auto_measure_stop();                       // the run ends here, whatever happens
   if (radio_is_transmitting()) {
     att_cal_say("Stopped: transmitting.");
     return FALSE;
   }
-  if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
+  if (!ok || !(n0 > 0.0) || !(n1 > 0.0)) {
     att_cal_say("Set. No floor to check it against yet.");
     return FALSE;
   }
@@ -477,14 +480,17 @@ static gboolean att_cal_apply(gpointer data) {
   double n0, n1;
   att_cal_timer = 0;
   if (radio_is_transmitting()) {
+    diversity_auto_measure_stop();
     att_cal_say("Stopped: transmitting.");
     return FALSE;
   }
   if (!diversity_enabled) {
+    diversity_auto_measure_stop();
     att_cal_say("Diversity is off: there is no floor to measure.");
     return FALSE;
   }
   if (!diversity_auto_noise_floor(&n0, &n1) || !(n0 > 0.0) || !(n1 > 0.0)) {
+    diversity_auto_measure_stop();
     att_cal_say("No noise floor. Needs a clear spot outside the filter, with diversity running.");
     return FALSE;
   }
@@ -493,6 +499,7 @@ static gboolean att_cal_apply(gpointer data) {
   const int hot_adc = (hot_arm == 0) ? receiver[0]->adc : 1 - receiver[0]->adc;
   const int excess = (int)lround(fabs(d));
   if (excess < 1) {
+    diversity_auto_measure_stop();
     att_cal_say("Already balanced: arms within %.1f dB.", fabs(d));
     return FALSE;
   }
@@ -501,6 +508,7 @@ static gboolean att_cal_apply(gpointer data) {
   const int capped = (new_att > 31);
   if (capped) { new_att = 31; }
   if (new_att == old_att) {
+    diversity_auto_measure_stop();
     att_cal_say("ADC%d is %.1f dB hotter but is already at 31 dB.", hot_adc + 1, fabs(d));
     return FALSE;
   }
@@ -531,6 +539,10 @@ static void att_cal_cb(GtkWidget *widget, gpointer data) {
   // for this window only. The other references keep theirs current and
   // simply have it settle. Either way the reading is a few seconds old.
   //
+  // In Manual nothing is measuring the floor: run the analysis thread for
+  // this measurement (and the check after it), and stop it at the end.
+  //
+  diversity_auto_measure_start();
   diversity_auto_noise_floor_demand(ATT_CAL_MEASURE_S);
   att_cal_say("Measuring the noise floor...");
   att_cal_timer = g_timeout_add((guint)(1000.0 * (ATT_CAL_MEASURE_S + 0.5)), att_cal_apply, NULL);
