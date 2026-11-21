@@ -108,6 +108,26 @@ Checked from the KiwiSDR IQ (passband +-6 kHz) with `tools/cwlat/analysis/cwlat_
 **To close this properly:** re-capture a subset with the Kiwi AGC off and a fixed gain (`kiwirecorder -g`), on a clear frequency or with the interferer
 avoided, and ideally at a realistic drive through an attenuator.
 
+## 2026-11-21: clicks on the old path when the graph runs at 1024
+
+Reported by ear: pops and clicks on CW break-in with the synth side tone **off**, none with it on. Not measured with `cwlat`;
+established from the PipeWire state and the code, so the mechanism is traced but the size of the effect is not measured.
+
+* **The machine's state.** `clock.force-quantum` was **1024** (runtime metadata, not in any config file; what set it is not known).
+  The graph driver (the Arylic USB sink) ran at 1024 frames, 21.3 ms per cycle, whatever piHPSDR asked for (256). Five
+  `wavviewdx` PortAudio streams on the same sink also lock the quantum, so releasing the force (0) does not by itself bring the
+  graph down: check what the driver actually runs at (`pw-top`, or `quantum` with no argument).
+* **Why the old path clicks there.** `tx_audio_write()` holds the side tone FIFO (`st_buffer`) at 320 to 448 samples
+  (`CW_LAT_LOW` / `CW_LAT_HIGH`, about 8 ms), and the output callback takes `n_frames` samples from it per cycle, filling with
+  silence whatever the FIFO does not have. At 1024 frames per cycle the FIFO cannot cover a cycle, so the tone is gapped at
+  cycle boundaries. Those marks are upstream's, sized for its own 256; this code path is unchanged from upstream.
+* **Why the synth path does not.** It renders the tone in the callback for the whole `n_frames`; there is no FIFO to run dry.
+* **Not a regression.** Nothing in this series, the keyer fixes or the binaural work touches the old path, and the piHPSDR
+  stream showed no xruns.
+* **What to do.** Run the old path at 256 or less (`pw-metadata -n settings 0 clock.force-quantum 256`, machine-wide, until
+  PipeWire restarts), or use the synth side tone. Whether piHPSDR should cope with large graph quanta on the old path (a
+  FIFO sized from `n_frames`) is open.
+
 ## Open items
 1. **First tap after PTT always lost; PTT left stuck after PTT-mode runs.** Both only appear when the test sender holds PTT. The operator
    uses MIDI PTT with CW daily without either. Treated as a fault in the test sender (MIDI stream / timing assumptions) to be fixed before
