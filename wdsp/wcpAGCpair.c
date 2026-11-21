@@ -17,7 +17,9 @@ typedef struct _agcpair
 {
 	WCPAGC m[2];
 	int chan[2];					// the two channels, to ask whether the partner is running
-	volatile long arrived;
+	volatile long arrived;			// 0 nobody waiting, 1 + slot: that slot is waiting
+	volatile long breaking;			// SetRXAAGCLink(.., 0) is taking the link away
+	volatile long broken[2];		// that slot's waiter was let go by the unlink, not run
 	HANDLE done[2];
 } agcpair;
 
@@ -290,6 +292,7 @@ int xwcpagc_paired (WCPAGC a)
 {
 	agcpair *p = (agcpair *)a->pair;
 	int slot = a->slot;
+	long me = 1 + slot, other = 2 - slot;
 	//
 	// A partner that is switched off, slewing down or bypassed will not come
 	// to the rendezvous, and waiting for it costs AGCPAIR_TIMEOUT_MS on every
@@ -298,26 +301,43 @@ int xwcpagc_paired (WCPAGC a)
 	// running. (Still racy against a channel stopping this instant; that
 	// costs one timeout, not one per block.)
 	//
+	if (__atomic_load_n (&p->breaking, __ATOMIC_SEQ_CST))
+		return 0;
 	{
 		int o = p->chan[1 - slot];
 		if (!_InterlockedAnd (&ch[o].exchange, 1) || _InterlockedAnd (&ch[o].iob.pd->exec_bypass, 1))
 			return 0;
 	}
-	if (InterlockedIncrement (&p->arrived) == 1)
+	for (;;)
 	{
-		// first here: wait for the partner
-		if (WaitForSingleObject (p->done[slot], AGCPAIR_TIMEOUT_MS) == WAIT_OBJECT_0)
+		// second here: the partner is waiting; take it and run both
+		if (__sync_bool_compare_and_swap (&p->arrived, other, 0))
+		{
+			xwcpagc_pair (p->m[0], p->m[1]);
+			ReleaseSemaphore (p->done[1 - slot], 1, 0);
 			return 1;
-		if (__sync_bool_compare_and_swap (&p->arrived, 1, 0))
-			return 0;					// nobody came
-		// the partner arrived at this moment and is running both
-		WaitForSingleObject (p->done[slot], INFINITE);
-		return 1;
+		}
+		// first here: register as waiting
+		if (__sync_bool_compare_and_swap (&p->arrived, 0, me))
+			break;
+		// the partner's wait ended between the two looks; look again
 	}
-	// second here: run both
-	xwcpagc_pair (p->m[0], p->m[1]);
-	p->arrived = 0;
-	ReleaseSemaphore (p->done[1 - slot], 1, 0);
+	//
+	// The unlink sets breaking and then takes any waiter. Either it saw us
+	// registered, or we see breaking here (both sides use full barriers).
+	//
+	if (__atomic_load_n (&p->breaking, __ATOMIC_SEQ_CST) &&
+	    __sync_bool_compare_and_swap (&p->arrived, me, 0))
+		return 0;
+	if (WaitForSingleObject (p->done[slot], AGCPAIR_TIMEOUT_MS) != WAIT_OBJECT_0)
+	{
+		if (__sync_bool_compare_and_swap (&p->arrived, me, 0))
+			return 0;					// nobody came
+		// taken at this moment, by the partner or by the unlink: its release follows
+		WaitForSingleObject (p->done[slot], INFINITE);
+	}
+	if (__atomic_exchange_n (&p->broken[slot], 0, __ATOMIC_SEQ_CST))
+		return 0;						// let go by the unlink: run alone
 	return 1;
 }
 
@@ -343,13 +363,28 @@ void wcpagc_pair_detach (WCPAGC a)
 //
 // Both channels' csDSP are held, so neither is inside xwcpagc() while the
 // pointers change. A channel waiting there for a partner holds its csDSP,
-// so this may wait up to AGCPAIR_TIMEOUT_MS for it.
+// and the partner cannot come while this holds the partner's csDSP, so
+// before taking either lock the unlink lets any waiter go (it runs that
+// block alone) and keeps new arrivals out. Without that, every unlink that
+// caught a waiter stalled both channels and the caller for the whole
+// AGCPAIR_TIMEOUT_MS.
 //
 PORT void
 SetRXAAGCLink (int channel_a, int channel_b, int on)
 {
 	WCPAGC a, b;
 	if (channel_a == channel_b) return;
+	if (!on && agc_pair.done[0] != NULL)
+	{
+		int s;
+		__atomic_store_n (&agc_pair.breaking, 1, __ATOMIC_SEQ_CST);
+		for (s = 0; s < 2; s++)
+			if (__sync_bool_compare_and_swap (&agc_pair.arrived, 1 + s, 0))
+			{
+				__atomic_store_n (&agc_pair.broken[s], 1, __ATOMIC_SEQ_CST);
+				ReleaseSemaphore (agc_pair.done[s], 1, 0);
+			}
+	}
 	EnterCriticalSection (&ch[channel_a].csDSP);
 	EnterCriticalSection (&ch[channel_b].csDSP);
 	a = rxa[channel_a].agc.p;
@@ -362,6 +397,9 @@ SetRXAAGCLink (int channel_a, int channel_b, int on)
 			agc_pair.done[1] = CreateSemaphore (0, 0, 1000, 0);
 		}
 		agc_pair.arrived = 0;
+		agc_pair.breaking = 0;
+		agc_pair.broken[0] = 0;
+		agc_pair.broken[1] = 0;
 		agc_pair.m[0] = a;
 		agc_pair.m[1] = b;
 		agc_pair.chan[0] = channel_a;
@@ -383,6 +421,7 @@ SetRXAAGCLink (int channel_a, int channel_b, int on)
 		b->pair = NULL;
 		agc_pair.m[0] = NULL;
 		agc_pair.m[1] = NULL;
+		agc_pair.breaking = 0;			// nobody can enter now: both pair pointers are NULL
 	}
 	LeaveCriticalSection (&ch[channel_b].csDSP);
 	LeaveCriticalSection (&ch[channel_a].csDSP);
