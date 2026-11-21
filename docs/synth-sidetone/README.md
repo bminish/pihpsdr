@@ -1,5 +1,11 @@
 # Synth side tone - a patch for piHPSDR
 
+> **On `feature/diversity-binaural`:** this branch carries the series without
+> its optional quantum-128 commit (`6ee27fb2`): PipeWire playback stays at
+> upstream's 256 here. The lost-first-tap fix, described below as a separate
+> branch, is also on this branch (LC-065, `6892f3a2`). See
+> `docs/binaural/README.md`.
+
 **Status: working prototype, bench-tested on one machine, not ready for upstream.** The aim is to get it there; the list at the end says what is missing.
 
 The patch makes piHPSDR generate the *local* CW side tone inside the PipeWire output callback instead of queueing it through a FIFO.

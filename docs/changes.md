@@ -20,6 +20,23 @@ Everything else in this file is done; this is what is left. Detail and the close
 
 None. LC-059 to LC-063 arrived in `30b327e2` (2026-10-27) and moved to [accepted.md](changes/accepted.md); how that was checked: [upstream-reconcile.md](changes/upstream-reconcile.md#2026-10-30-the-third-reconcile). The next change takes **LC-082** (numbering is shared with the experimental branches, see above).
 
+### On this branch (`feature/diversity-binaural`), not on `TEST`
+
+Numbering is shared across the branches (see above). None of these commits carries a `Local-Change:` trailer yet. Hashes as of 2026-11-21. The branch's own account, with the evidence: [binaural/README.md](binaural/README.md).
+
+| ID | Kind | Summary | Commits | Write-up | Status |
+|---|---|---|---|---|---|
+| [LC-041](changes/lc-engine.md#lc-041) | New | The ear split's two AGCs share one gain, set by the stronger arm (`wdsp/wcpAGCpair.c`, additive) | `f3c5662f`, `c6e5b1e0`, `76a85798` | lc-engine.md | Local (branch) |
+| LC-042 | UI | Link AGC beside Level output; the rows below align with the top | `5b1440e7` | [lc-menu.md](changes/lc-menu.md) | Local (branch) |
+| [LC-043](changes/lc-noise-floor.md#lc-043) | New | Balance ATT: the hotter arm's attenuator from the noise floor | `c876ed33`, `88e52875` | lc-noise-floor.md | Local (branch) |
+| LC-064 | New | The local CW side tone synthesised in the PipeWire output callback, off by default (from `feature/synth-sidetone`, without its quantum-128 commit) | `1e1093d1` to `673e1dde` | [synth-sidetone/README.md](synth-sidetone/README.md) | Local (branch); its own branch is the review copy |
+| LC-065 | Fix | A short paddle tap is no longer lost while the keyer waits for TX (from `fix/keyer-lost-first-tap`) | `6892f3a2` | commit message | Local (branch) |
+| LC-077 | Fix | CW filter edits (cut, IF shift, IF width) no longer add the side tone offset again on every step; the split's second ear follows those edits and squelch | `2993ad68`, `6e204889` | [binaural/bug-cw-filter-edge-drift.md](binaural/bug-cw-filter-edge-drift.md) | Checked on the radio on `devtest/everything` (2026-11-11), not yet here |
+| LC-078 | Fix | The general MUTE is a global flag over every receiver, including one that comes up later (the second ear); TCI's mute the same | `c2861024`, `cc634fa7` | [binaural/README.md](binaural/README.md) | Not checked on the radio |
+| LC-079 | Fix | Balance ATT measures in Manual: the analysis thread is started for the measurement (it read a stale floor, or none) | `801939d8` | [binaural/README.md](binaural/README.md) | Not checked on the radio |
+| LC-080 | Fix | The split's teardown switches the second ear off while it is still fed (no more 100 ms WDSP timeouts, ~215 ms GTK stall, unflushed channel); diversity off takes the split down first | `03e2d2c2` | [binaural/README.md](binaural/README.md) | Not checked on the radio |
+| LC-081 | Fix | Unlinking the AGCs lets a waiting ear go instead of stalling for the rendezvous timeout; both ears submitted before either spectrum is drawn | `5b3925b6` | [binaural/README.md](binaural/README.md) | Unlink measured on the radio (debug build); `test/binaural` |
+
 ### Deferred and dropped
 
 | ID | Kind | Summary | Files | Depends on | Status |

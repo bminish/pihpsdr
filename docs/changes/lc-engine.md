@@ -234,7 +234,9 @@ tip; the suite passes. For dl1ycf: see
 **Branch.** `test/binaural-agc-link` only: it needs the ear split, which is
 not on `TEST`. As landed (trailers to be added at the next rebase, see
 [open-items.md](open-items.md#flagged-for-a-later-patch)): `92dd3bf5`,
-`2dd0e077`, `e798f1d1`.
+`2dd0e077`, `e798f1d1`. Now on `feature/diversity-binaural`
+(`test/binaural-agc-link` is in `history/`): `f3c5662f`, `c6e5b1e0`,
+`76a85798` as of 2026-11-21; LC-081 (`5b3925b6`) fixes its unlink.
 
 **Problem.** Under the ear split RX1 and RX2 are two WDSP channels, each
 with its own AGC, so the ears' gains move independently. Per-symbol

@@ -272,7 +272,8 @@ Written up for dl1ycf in [menu-notes-dl1ycf.md](../archive/menu-notes-dl1ycf-to-
 
 ## LC-042 — Link AGC beside Level output; the rows below align with the top
 
-**Branch.** `test/binaural-agc-link` only. As landed: `063e30ff`.
+**Branch.** `test/binaural-agc-link` only. As landed: `063e30ff`. Now on
+`feature/diversity-binaural` (`5b1440e7` as of 2026-11-21).
 
 **Why.** LC-041's tick had a row to itself under Audio, which cost a row
 and read "AGC: Linked across ears". Beside Level output, on the first row,
