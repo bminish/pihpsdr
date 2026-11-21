@@ -1722,6 +1722,13 @@ static void rx_full_buffer_paired(RECEIVER *rx) {
     return;
   }
 
+  //
+  // Both ears go into WDSP back to back, and only then is either shown.
+  // Spectrum0() takes the panel's display_mutex, which the GTK thread holds
+  // for a whole panadapter and waterfall redraw; between the two submits it
+  // kept the first ear's DSP thread waiting at the AGC rendezvous, holding
+  // its csDSP, for the rest of that redraw.
+  //
   int sub[2];
   for (int i = 0; i < 2; i++) {
     RECEIVER *r = receiver[i];
@@ -1736,6 +1743,9 @@ static void rx_full_buffer_paired(RECEIVER *rx) {
       break;
     }
     sub[i] = fexchange0_submit(r->id, buf[i]);
+  }
+  for (int i = 0; i < 2; i++) {
+    RECEIVER *r = receiver[i];
     if (r->displaying) {
       g_mutex_lock(&r->display_mutex);
       Spectrum0(1, r->id, 0, 0, buf[i]);
