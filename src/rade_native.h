@@ -133,6 +133,8 @@ typedef struct {
   int           sync;
   float         snr_db;      // librade's estimate, dB in 3 kHz
   float         foff_hz;     // librade's frequency offset
+  int           mistune;     // V2, no lock: +1 the signal is too high (offset beyond librade's +-31 Hz), -1 too low, 0 neither
+                             // or not known; same sign as foff_hz. Always 0 for V1 and while in sync.
   unsigned long blocks;      // rade_rx() calls
   unsigned long underruns;   // 48 kHz speech samples not available in time
   unsigned long overruns;    // 8 kHz input samples dropped
