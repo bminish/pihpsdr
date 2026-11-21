@@ -2411,8 +2411,8 @@ void radio_calc_div_params(void) {
 // The sample rate is in the test for a plainer reason: RX1 is fed from
 // RX0's stream, so a rate mismatch would be a buffer mismatch.
 //
-static int div_split_recheck(void) {
-  return div_split != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
+static int div_split_recheck(int mode) {
+  return mode != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
          RECEIVERS > 1 && receivers < 2 && receiver[0] != NULL && receiver[1] != NULL &&
          receiver[0]->sample_rate == receiver[1]->sample_rate;
 }
@@ -2473,6 +2473,66 @@ void radio_set_agc_link(int on) {
   if (!radio_is_remote && div_split_on) { rx_link_agc(div_agc_link); }
 }
 
+//
+// Take the split down. Stop it only if nothing else wants it: the split
+// stands down when RX2 is brought up, and RX2 is this same receiver - now
+// on screen, running, and being listened to in its own right. Switching it
+// off on the way past would silence the panel that had just appeared. The
+// sink is left open either way: it was not opened here.
+//
+// The order matters. WDSP switches a channel off by slewing it down and
+// flushing it, and both happen only as blocks pass through it; a channel
+// that is no longer fed never finishes, and SetChannelState() waits out its
+// 100 ms timeout and gives up with the buffers unflushed. So the second
+// ear is switched off first, while div_split_on and div_split still feed
+// it, and only then is the feed taken away. (Changing div_split first, as
+// this did, stopped the feed at once: the switch-off and the RXASetNC()
+// inside rx_set_fft_params() each timed out, about 215 ms of GTK thread
+// on every teardown, and the wait for the slew-down never really waited.)
+//
+// Its own settings go back afterwards, on the stopped channel, where the
+// setters cost nothing - or, if RX2 is taking it over, on a channel the
+// protocol now feeds raw. rx_restore_state() reads every field from the
+// props, which is the point: this is deliberately not the mirror image of
+// rx_clone_dsp()'s field list. That list can fall behind as fields are
+// added and the worst that happens is an ear that stops following.
+// Falling behind here would leave the operator's own settings overwritten,
+// so it is done by the function that already knows all of them. The
+// setters afterwards are the sequence rx_create_receiver() runs after its
+// own restore, for the same reason: the restore puts values in the struct
+// and nothing else.
+//
+// Diversity going off has to call this before diversity_enabled is
+// cleared: after that the protocol no longer hands over arm 1 at all
+// (radio_set_diversity()).
+//
+static void div_split_down(void) {
+  if (!div_split_on) { return; }
+
+  rx_link_agc(0);
+
+  //
+  // Waiting, so the slew-down is complete before anything can bring the
+  // channel back up. On TEST rx_off() honours its wait argument again,
+  // and a channel switched off without waiting and then straight back on
+  // - diversity off and on, or the split changed - came back dead.
+  //
+  if (receivers < 2) { rx_off(receiver[1], 1); }
+
+  div_split_on = 0;
+
+  rx_restore_state(receiver[1]);
+  rx_set_mode(receiver[1]);
+  rx_set_filter(receiver[1]);
+  rx_set_offset(receiver[1]);
+  rx_set_agc(receiver[1]);
+  rx_set_noise(receiver[1]);
+  rx_set_notch(receiver[1]);
+  rx_set_fft_params(receiver[1]);
+  rx_set_af_gain(receiver[1]);
+  rx_set_squelch(receiver[1]);
+}
+
 void div_split_set(int mode) {
   //
   // A quiet no-op on a client rather than ASSERT_SERVER(): this is reached
@@ -2497,8 +2557,6 @@ void div_split_set(int mode) {
   if (rade_native_waveform() != 0) { mode = DIV_SPLIT_OFF; }
 #endif
 
-  div_split = mode;
-
   //
   // Match the two rates before asking whether the split can run, because
   // div_split_active() tests them. Left until afterwards, a mismatch
@@ -2509,13 +2567,26 @@ void div_split_set(int mode) {
   // radio_change_sample_rate() walks receivers, not RECEIVERS, so it is
   // left behind by every rate change made while it has no panel.
   //
-  if (div_split != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
+  if (mode != DIV_SPLIT_OFF && diversity_enabled && !radio_is_remote &&
       RECEIVERS > 1 && receivers < 2 && receiver[0] != NULL && receiver[1] != NULL &&
       receiver[0]->sample_rate != receiver[1]->sample_rate) {
     rx_change_sample_rate(receiver[1], receiver[0]->sample_rate);
   }
 
-  const int want = div_split_recheck();
+  const int want = div_split_recheck(mode);
+
+  if (!want && div_split_on) {
+    //
+    // Taken down with the presentation still the one it was, so that the
+    // second ear goes on being fed until its channel is off. See
+    // div_split_down().
+    //
+    div_split_down();
+    div_split = mode;
+    return;
+  }
+
+  div_split = mode;
 
   if (want && div_split_on) {
     //
@@ -2561,50 +2632,6 @@ void div_split_set(int mode) {
     rx_on(receiver[1]);
     rx_link_agc(div_agc_link);
     div_split_on = 1;
-  } else if (div_split_on) {
-    //
-    // Stop it only if nothing else wants it. The split stands down when
-    // RX2 is brought up, and RX2 is this same receiver - now on screen,
-    // running, and being listened to in its own right. Switching it off
-    // on the way past would silence the panel that had just appeared.
-    //
-    // The sink is left open either way: it was not opened here.
-    //
-    //
-    // Give it its own settings back, before it is stopped.
-    //
-    // rx_restore_state() reads every field from the props, which is the
-    // point: this is deliberately not the mirror image of rx_clone_dsp()'s
-    // field list. That list can fall behind as fields are added and the
-    // worst that happens is an ear that stops following. Falling behind
-    // here would leave the operator's own settings overwritten, so it is
-    // done by the function that already knows all of them.
-    //
-    // The setters afterwards are the sequence rx_create_receiver() runs
-    // after its own restore, for the same reason: the restore puts values
-    // in the struct and nothing else.
-    //
-    rx_link_agc(0);
-    rx_restore_state(receiver[1]);
-    rx_set_mode(receiver[1]);
-    rx_set_filter(receiver[1]);
-    rx_set_offset(receiver[1]);
-    rx_set_agc(receiver[1]);
-    rx_set_noise(receiver[1]);
-    rx_set_notch(receiver[1]);
-    rx_set_fft_params(receiver[1]);
-    rx_set_af_gain(receiver[1]);
-    rx_set_squelch(receiver[1]);
-
-    //
-    // Waiting, so the slew-down is complete before anything can bring the
-    // channel back up. On TEST rx_off() honours its wait argument again,
-    // and a channel switched off without waiting and then straight back on
-    // - diversity off and on, or the split changed - came back dead.
-    //
-    if (receivers < 2) { rx_off(receiver[1], 1); }
-
-    div_split_on = 0;
   }
 }
 
@@ -2653,6 +2680,13 @@ void radio_set_diversity(int state) {
     send_diversity(cl_sock_tcp, state, man_div_gain, man_div_phase);
   } else {
     if (toggled) { diversity_auto_set_hold(0); }
+
+    //
+    // The split goes down while arm 1 is still being delivered, so that
+    // the second ear's channel can finish switching off. See
+    // div_split_down().
+    //
+    if (!state) { div_split_down(); }
 
     //
     // If we have only one receiver, then changing diversity
