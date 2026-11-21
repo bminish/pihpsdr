@@ -59,9 +59,10 @@ Rebased onto `TEST` `ad08600f` (30 commits; old tip kept as tag
   ADCs as used while `diversity_enabled` is set, and the split only
   engages with it set, so ADC2 is not attenuated under the split.
 - **Tests.** WDSP and piHPSDR (`DIVCAP=1`) build with no warnings; the
-  `test/diversity` harness passes (8 of 8). A scratch two-thread check of
-  the pair on the new `libwdsp.a` (not committed; two AGCs as RXA builds
-  them, arm 2 = 0.25 x arm 1, 400 blocks of 1024): linked, the outputs keep
+  `test/diversity` harness passes (8 of 8). A two-thread check of the pair
+  on the new `libwdsp.a` (`make -C test/binaural run`, `test_agcpair.c`; run
+  it after any WDSP update. Two AGCs as RXA builds them, arm 2 = 0.25 x
+  arm 1, 400 blocks of 1024): linked, the outputs keep
   exactly that ratio (difference 0) and no rendezvous timed out (0.03 s);
   unlinked, each levels its own arm (ratio 0.94). Not run on a radio.
 
