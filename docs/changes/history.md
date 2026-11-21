@@ -4,6 +4,19 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-11-21: **`devtest/everything` brought up to date by merging, not rebasing.**
+  `origin/TEST` (`a6894cb5`) merged in (`57c87d8e`; the old tip kept as tag
+  `backup/devtest-everything-pre-merge-20261121`): the paired AGC on the
+  consolidated WDSP taken from `feature/diversity-binaural`'s reconcile, the
+  38 old-layout docs the merge re-created dropped in favour of
+  `docs/archive/diversity`. Then cherry-picked: from the binaural branch
+  LC-079 to LC-081 and its test and docs commits (in `div_split_set()` the
+  RADE guard was kept above LC-080's new order); from `feature/rade-native`
+  the V2 tuning indicator and LC-076's test stub; the synth-sidetone finding
+  on the old path at quantum 1024. librade rebuilt at 23c3746. Builds with
+  `RADE_NATIVE=ON`; `test/diversity`, `test/binaural` and `test/rade_native`
+  pass (the last needs a fixture, see open-items).
+
 - 2026-11-21: **`TEST` re-synced onto `upstream/TEST` `a6894cb5`** (from
   `60e6f8dd`; 16 upstream commits, none of them ours): the consolidated WDSP
   (`8c915c71`, `9dd93883`, `b71a9fae`: `wdsp.h` exports as `WDSP_API`,
@@ -55,7 +68,7 @@ Newest first.
   non-LC commits replayed on `TEST-rebase-20261030`, plus LT-037 for the
   `test_modal` checks that rode in LC-061's commit. The register has no pending
   change; the next number is LC-064. The suite passes. Force-pushed to `origin/TEST` with the owner's OK (`c669e307` to `80a75fed`). Full record:
-  [upstream-reconcile.md](upstream-reconcile.md#2026-10-30-the-third-reconcile).
+  [upstream-reconcile.md](../archive/diversity/changes/upstream-reconcile.md#2026-10-30-the-third-reconcile).
 
 - 2026-10-29: RADE V2, the start weight before the lock measured offline (T-030): Window's weight until the prefix locks is the leading
   candidate (0.875 against 0.815 for equal gain, ceiling 0.903); weights from a relaxed lock ruled out (false weights on CW and SSB). Parked,
@@ -93,7 +106,7 @@ Newest first.
   `open-items.md`, and what is done is marked closed.
 
 - 2026-10-15: LC-061, a fresh install seeds AM, SAM and DSB on Carrier and
-  the digital modes on FSK/Digital ([lc-settings.md](lc-settings.md#lc-061)).
+  the digital modes on FSK/Digital ([lc-settings.md](../archive/diversity/changes/lc-settings.md#lc-061)).
   Local, pushed to `origin/TEST` (`2f6e1f01`).
 
 - 2026-10-09: LT-027, the "Level output" tick put back in `make DIVCAP=1`
@@ -114,7 +127,7 @@ Newest first.
 
 - 2026-10-08: the Pi 5 rerun done on the CM5 (LT-026): no regression, no
   dropped blocks, no bottleneck; findings in
-  [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md). The
+  [../bench/pi5-rerun-20261008.md](../archive/diversity/bench/pi5-rerun-20261008.md). The
   functional suite did not run there (the Pi lacks `libopus-dev`; added to
   the bundle's dependency check). The comparison script's first verdict,
   four "regressions", was all noise (two on code that had not changed, two
@@ -138,11 +151,11 @@ Newest first.
   Makefile DIVCAP block added to his tree without the module). Tree change
   is exactly his `src/` lines; backup tag
   `backup/TEST-pre-copyright-sync-20261008`. See
-  [upstream-reconcile.md](upstream-reconcile.md#follow-up-commit-f9803763-2026-10-08).
+  [upstream-reconcile.md](../archive/diversity/changes/upstream-reconcile.md#follow-up-commit-f9803763-2026-10-08).
 
 - 2026-10-08: `test/auto-bins` pulled in (LC-050 to LC-054 here, LC-048 to
   LC-052 on the branch, renumbered because LC-048 and LC-049 were taken
-  by the reconcile). See [upstream-reconcile.md](upstream-reconcile.md).
+  by the reconcile). See [upstream-reconcile.md](../archive/diversity/changes/upstream-reconcile.md).
 
 - 2026-10-08: **upstream took the series.** `f05546e3` ("Aligned with BM's
   auto diversity repository") is one squashed commit with our source;
@@ -153,7 +166,7 @@ Newest first.
   therefore Upstream. `TEST` rebuilt on `upstream/TEST` by replaying the
   78 tooling and docs commits, not the 47 LC commits; backup tag
   `backup/TEST-pre-rebase-20261008`. LC-048 added (two stale comments) and LC-049 (the reference-only code cut). DIVCAP kept whole until `main`; PR #150 closed.
-  Record, with the open decisions: [upstream-reconcile.md](upstream-reconcile.md).
+  Record, with the open decisions: [upstream-reconcile.md](../archive/diversity/changes/upstream-reconcile.md).
 - 2026-10-08: T-022, captures with interferers (local noise on the MW band,
   an EMC source nulled by a window offset, an AM station beside another, at
   96, 192 and 768 kHz). On a stationary interferer Null depth does not depend

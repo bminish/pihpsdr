@@ -10,7 +10,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 
 - [ ] `div_auto_mode` is sent twice (`DIVERSITY_COMMAND` and `DIV_SETTINGS.mode`): one source of truth, his files. Raised in the LC-063 note; his tree still sends it both ways, so it stays flagged.
 - [ ] LC-059/LC-060 not checked on screen: each menu row against the running objective and reference.
-- [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](ownership.md#review-e1-to-e8).
+- [ ] To discuss with dl1ycf, no code yet: E3 (live copy versus per-reference slots), E4 (Hold), E5 (per-mode settings into `profiles.c`). [menu-notes-dl1ycf.md](../menu-notes-dl1ycf.md#still-to-discuss-no-code-yet), [ownership.md](../archive/diversity/changes/ownership.md#review-e1-to-e8).
 
 **To port from `feature/auto-diversity`** (each gets the next LC, from LC-077)
 
@@ -20,7 +20,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 
 **To measure or build**
 
-- [ ] The noise floor (LC-025 on): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; the attenuator calibration ([noise-floor-refactor.md](../noise-floor-refactor.md), [feature-att-calibration.md](../feature-att-calibration.md)).
+- [ ] The noise floor (LC-025 on): Best's CW SNR from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; the attenuator calibration ([noise-floor-refactor.md](../archive/diversity/noise-floor-refactor.md), [feature-att-calibration.md](../archive/diversity/feature-att-calibration.md)).
 - [ ] CW, on marginal captures: whether the LC-012 floor binds (it does on strong ones, by 0.07 dB); re-sweep LC-019's 0.2 s.
 - [ ] LC-013 (notches): a capture with a steady interferer inside a weaker station's passband. None so far; the mechanism is confirmed on air only.
 - [ ] RADE V2 (LC-071 to LC-074, on `feature/rade-native`, not `TEST`): built; **the operator's on-air evaluation is the next step**, then cutting the series for `TEST`. What it needs and what is open:
@@ -39,6 +39,16 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 - [ ] Pi, only if wanted: vectorise RADE V1's decimator (3.0x faster, 0.7 % of a core at 192 kHz); FFTW wisdom for dl1ycf.
 - [ ] LC-061's two seeds are chosen by what the modes carry, not by a sweep; a capture set per mode would back or change them.
 
+**`devtest/everything` after the 2026-11-21 merge of `TEST` (`a6894cb5`) and the day's branch work**
+
+- [ ] On the radio, on this branch: LC-079 (Balance ATT in Manual), LC-080 (split teardown order; still a timeout if torn down while transmitting, and the first bring-up of a session ~140 ms is unchanged), LC-081 (unlink), and the split under RADE after LC-080 (the RADE guard in `div_split_set()` was kept; entering RADE must still take the split down).
+- [ ] The consolidated WDSP on air: upstream's rewrite (`8c915c71`, `9dd93883`, `b71a9fae`) is now under the paired AGC here. `test/binaural` passes; nothing listened to yet.
+- [ ] RADE V2 tuning indicator (`8ed758b3`): untested in the window and on air, not evaluated; Invert and LSB not checked. Give it an LC number on `feature/rade-native` if it stays.
+- [ ] librade is now 23c3746 here (was c8a3dc1): V1 acquisition, pilot EQ and SNR, V2 timing and wrong-k all changed upstream. Compare RADE measurements across 2026-11-21 with care; re-check V1 and V2 decode on air.
+- [ ] `make -C test/rade_native check` fails in a fresh clone: `test_timing.py` needs `rade_decode_iq` (not a prerequisite of `check`) and an untracked fixture `out/v2_bpf.iq.f32` (copied here from the bm-pihpsdr clone). Make `check` build or skip them.
+- [ ] Old (FIFO) side tone path clicks when the PipeWire graph is forced to 1024 frames ([cw_sidetone-findings.md](../cw_sidetone-findings.md)): whether to size the FIFO from `n_frames`.
+- [ ] T-026 to T-035 number clash between the binaural and RADE capture histories ([branches.md](../branches.md)): deferred on 2026-11-21; renumber on the feature branches first so it propagates.
+
 **Client/server: tracked, not fixed (decided 2026-10-01; take upstream there)**
 
 - [ ] The radio ignores a client's auto-diversity settings; LC-003 (client settings block starts from the settings in force) is now done in the receiver by LC-063, but its menu half and LC-004 (a client's Min coherence move) stay deferred; no menu refresh from a settings block. Detail below.
@@ -56,7 +66,7 @@ Outstanding work comes first (as of 2026-10-30), then what is closed. Nothing he
 - [x] LC-048 to LC-058 accepted into `upstream/TEST` (`07ae1f56`); the leftovers in `diversity_auto.h` were LC-058.
 - [x] The empty-band stand-down: decided against (2026-10-14, T-026, settled decision 5).
 - [x] The 24/12/6 Hz Resolution menu: ported as LC-051, replaced by Auto (LC-052, LC-053).
-- [x] Pi 5 rerun (2026-10-08): no regression, no dropped blocks, no bottleneck; worst row RADE V1 on one sideband at 1536 kHz, 13 % of one core of four ([findings](../bench/pi5-rerun-20261008.md)). No code change.
+- [x] Pi 5 rerun (2026-10-08): no regression, no dropped blocks, no bottleneck; worst row RADE V1 on one sideband at 1536 kHz, 13 % of one core of four ([findings](../archive/diversity/bench/pi5-rerun-20261008.md)). No code change.
 - [x] The noise floor's selection (LC-033).
 - [x] E1 (LC-031) and E2 (LC-032) of the ownership review.
 - [x] Not carried, by decision: the 6 Hz default bins. We keep upstream's 12 Hz; the Averaging slider is the control an operator uses most, and 6 Hz doubles the FFT length and block duration.
@@ -109,7 +119,7 @@ Both enums were reordered to the menu order (done 2026-10-15). Still open, and h
   2026-11-21: `f3c5662f`, `c6e5b1e0`, `76a85798`, `5b1440e7`, `c876ed33`,
   `88e52875`; LC-077 to LC-081 there have no trailers either.) `e798f1d1` also carries the AGC slider's
   fast path and should be split so that the slider fix is its own LC
-  ([lc-engine.md](lc-engine.md#lc-041)).
+  ([lc-engine.md](../archive/diversity/changes/lc-engine.md#lc-041)).
 
 - **Upstream text still says ADC0/ADC1** (for dl1ycf, not changed
   here):
@@ -130,7 +140,7 @@ Both enums were reordered to the menu order (done 2026-10-15). Still open, and h
   showing the old group's controls, and a moved control then writes the
   displayed (old) value. Rare, since the mode seldom changes with the
   menu open. Taken from upstream for now (decided 2026-10-01). The
-  intended cure is E5 in [ownership.md](ownership.md#review-e1-to-e8): the per-group settings move
+  intended cure is E5 in [ownership.md](../archive/diversity/changes/ownership.md#review-e1-to-e8): the per-group settings move
   into `profiles.c`.
 - Done: the `f5a0ce9c` leftovers in `diversity_auto.h` (LC-058, in his tree).
 
@@ -139,7 +149,7 @@ Both enums were reordered to the menu order (done 2026-10-15). Still open, and h
 The list is at the top of this file; the evidence behind it:
 
 - The validation scenario for LC-013 (notches): no capture checked so far
-  has a steady interferer inside a weaker station's passband. See "What the capture set offers so far" under [LC-013](lc-gate.md#lc-013).
+  has a steady interferer inside a weaker station's passband. See "What the capture set offers so far" under [LC-013](../archive/diversity/changes/lc-gate.md#lc-013).
 - A RADE V2 correlator. There is no V2 reference on `TEST` yet. Three V2
   captures (two stations, 40 m, heavy multipath, both decoding at about
   0 to 8 dB) are logged as T-008 in `docs/test-findings.md` as the
@@ -147,10 +157,10 @@ The list is at the top of this file; the evidence behind it:
   under strong SSB interference, the case for discriminating against an
   unwanted signal.
 - **The noise floor (LC-025 and after): still open** (from
-  [noise-floor-refactor.md](../noise-floor-refactor.md)): Best's CW SNR
+  [noise-floor-refactor.md](../archive/diversity/noise-floor-refactor.md)): Best's CW SNR
   from the floor; `DIV_CW_MIN_BINS`; captures at 48 and 1536 kHz; and the
   attenuator calibration
-  ([feature-att-calibration.md](../feature-att-calibration.md)).
+  ([feature-att-calibration.md](../archive/diversity/feature-att-calibration.md)).
 - CW, from porting LC-017 to LC-019:
   - **The LC-012 floor binds on CW.** Three tone bins at CW's averaging
     put it at its 0.5 cap, so it, not the 0.10 setting, is the gate.
@@ -174,13 +184,13 @@ The list is at the top of this file; the evidence behind it:
 
 **Rerun result: no regression, no dropped blocks, no bottleneck** (worst
 row: RADE V1 on a single sideband at 1536 kHz, 13 % of one core of four).
-Write-up: [../bench/pi5-rerun-20261008.md](../bench/pi5-rerun-20261008.md).
+Write-up: [../bench/pi5-rerun-20261008.md](../archive/diversity/bench/pi5-rerun-20261008.md).
 Open from it: the functional suite has still to be run on the Pi (it
 needs `libopus-dev`, now in the bundle's check). RADE V1 on an AM passband
 is an outlier and stays as it is. What follows is the 2026-10-02 text.
 
 Measured on a CM5 with the LT-020 bundle. The analysis is in
-[../bench/pi5-analysis.md](../bench/pi5-analysis.md). **The Pi 5 coped:**
+[../bench/pi5-analysis.md](../archive/diversity/bench/pi5-analysis.md). **The Pi 5 coped:**
 at 192 kHz and below every reference cost under 1 % of one core, except
 RADE V1 (up to about 6 % searching on an SSB passband). That analysis also
 quoted RADE V1 on an AM passband (9 %, 15 % at 1536 kHz); that is a real

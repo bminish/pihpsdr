@@ -7,7 +7,7 @@
 
 ## What is in it
 
-`TEST` (upstream's `TEST` branch plus our auto-diversity series) with, on top:
+`TEST` (upstream's `TEST` branch plus our auto-diversity series; at upstream `a6894cb5` since 2026-11-21, merged in rather than rebased) with, on top:
 
 | Feature | What | Where it is written up |
 |---|---|---|
@@ -35,7 +35,7 @@ steps 1 to 3 below. Without them you get a working piHPSDR with the diversity, b
    ```
    This leaves `third_party/rade_c-src` and `third_party/rade_c-build` (both untracked) and prints the librade commit it built
    (also in `third_party/rade_c-build/librade.rev`). Run it again to update librade, then `make clean` and rebuild piHPSDR.
-   The RADE V2 comparison in `docs/diversity-radeV2-cp.md` was measured at rade_c `cc17222`;
+   This branch is built and tested against rade_c **`23c3746`** (2026-11-21; needed for the V2 tuning indicator, `rade_mistune()`), so use `RADE_REV=23c3746` for the same build. The RADE V2 comparison in `docs/diversity-radeV2-cp.md` was measured at rade_c `cc17222`;
    `RADE_REV=cc17222 tools/rade/build_rade.sh` reproduces that build.
 3. **Build piHPSDR with RADE switched on**, either on the command line or once in `make.config.pihpsdr` (not tracked):
    ```
