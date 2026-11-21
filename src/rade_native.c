@@ -288,6 +288,7 @@ static void *worker(void *arg) {
     if (vrx) { snprintf(E.st.rx_call, sizeof E.st.rx_call, "%s", vrx->holding ? "" : v2_cur); }
     E.st.snr_db = rade_snrdB_3k_est(r);
     E.st.foff_hz = rade_freq_offset(r);
+    E.st.mistune = rade_mistune(r);
     if (E.st.sync) {
       // a new reception (sync back after 1.5 s without) starts the average afresh; an estimate with no lock is never used
       E.snr_ema = E.snr_n == 0 ? E.st.snr_db : 0.9f * E.snr_ema + 0.1f * E.st.snr_db;

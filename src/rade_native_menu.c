@@ -1107,8 +1107,14 @@ static int update_cb(gpointer arg) {
     snprintf(text, sizeof text, "-");
   } else {
     // fixed width, the fields in the same places whatever they hold; with no lock the SNR and the offset are not measurements: dashes
+    // V2's tuning indicator (librade's rade_mistune()): a signal 31 to about 94 Hz off is seen but cannot be locked; the
+    // offset field says which way to move the dial. Its sign is the offset's, so it maps to the dial as Track's does.
+    int tune = st.sync ? 0 : st.mistune * vfo_mode_sign();
     if (st.sync) {
       snprintf(text, sizeof text, "SYNC    %6.1f dB %+7.1f Hz  u%-3lu o%-3lu", st.snr_db, st.foff_hz, st.underruns, st.overruns);
+    } else if (tune != 0) {
+      snprintf(text, sizeof text, "NO SYNC    --.- dB  %s  u%-3lu o%-3lu", tune > 0 ? "TUNE UP  " : "TUNE DOWN", st.underruns,
+               st.overruns);
     } else {
       snprintf(text, sizeof text, "NO SYNC    --.- dB    --.- Hz  u%-3lu o%-3lu", st.underruns, st.overruns);
     }
@@ -1186,6 +1192,9 @@ void rade_native_menu(GtkWidget *parent) {
   status_label = gtk_label_new("-");
   gtk_widget_set_halign(status_label, GTK_ALIGN_START);
   fixed_label(status_label, 48, 1);
+  gtk_widget_set_tooltip_text(status_label, "Lock, SNR (dB in 3 kHz) and frequency offset; u and o count speech underruns and input overruns.\n"
+                                            "V2 only: TUNE UP or TUNE DOWN in place of the offset means a RADE V2 signal is there but "
+                                            "too far off frequency to lock (roughly 31 to 94 Hz): move the dial that way.");
   gtk_grid_attach(GTK_GRID(grid), status_label, 0, row, 5, 1);
   track_b = gtk_check_button_new_with_label("RIT");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(track_b), track_on);
