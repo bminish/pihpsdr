@@ -4,6 +4,12 @@ Part of the local-change register: [changes.md](../changes.md).
 
 Newest first.
 
+- 2026-11-23: **RADE V2 test report reviewed** against our measurements
+  ([rade/v2-test-report-review.md](../rade/v2-test-report-review.md)). No
+  sensitivity to recover (`loss_check.sh` with librade 23c3746: V2 delta
+  0.0000); the report's +44 Hz false sync is fixed by librade 23c3746.
+  Proposals listed in open-items, nothing changed.
+
 - 2026-11-21: **`devtest/everything` brought up to date by merging, not rebasing.**
   `origin/TEST` (`a6894cb5`) merged in (`57c87d8e`; the old tip kept as tag
   `backup/devtest-everything-pre-merge-20261121`): the paired AGC on the
