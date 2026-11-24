@@ -72,7 +72,7 @@ endif
 
 # Get git commit version and date
 GIT_DATE := $(firstword $(shell git --no-pager show --date=short --format="%ai" --name-only))
-GIT_VERSION := $(shell git describe --abbrev=0 --tags --always --dirty)
+GIT_VERSION := $(shell git describe --abbrev=0 --tags --always --dirty --exclude 'backup/*')
 GIT_COMMIT := $(shell git log --pretty=format:"%h"  -1)
 
 #

@@ -333,7 +333,7 @@ def link_flow():
     cfg["servers"]["v2"].update(host="127.0.0.1", port=s2.port, secure=False)
     roster = core.Roster()
     states = []
-    link = core.Link(roster, lambda n, d: None, lambda st, m: states.append(st), "pihpsdr-rade test")
+    link = core.Link(roster, lambda n, d: None, lambda st, m: states.append(st), core.software_name("test"))
     live = {"linked": True, "waveform": 1, "dial_hz": 7053000, "tx": False}
 
     def go(p, reporting=True, view="v1"):
@@ -352,11 +352,12 @@ def link_flow():
     time.sleep(0.4)
     check(s1.clients[0]["events"] == [], "watching emits nothing")
 
+    check(core.software_name("") == core.software_name(None) == "pihpsdr-RADE", "no version known: pihpsdr-RADE")
     go(live, reporting=True)
     check(wait(lambda: len(s1.clients) == 2 and s1.clients[1]["auth"] is not None), "reporting on: reconnects as reporter")
     a = s1.clients[1]["auth"]
     check(a.get("role") == "report" and a.get("callsign") == "EI6IZ" and a.get("grid_square") == "IO53hu"
-          and a.get("rx_only") is False and a.get("protocol_version") == 2 and a.get("version") == "pihpsdr-rade test",
+          and a.get("rx_only") is False and a.get("protocol_version") == 2 and a.get("version") == "pihpsdr-test-RADE",
           "reporter identity: " + json.dumps(a))
     ev = s1.clients[1]["events"]
     check(wait(lambda: len(ev) >= 2), "sends its state once the server says connection_successful")
@@ -414,7 +415,7 @@ def live():
     print("real reporter, watching only")
     roster = core.Roster()
     st = []
-    link = core.Link(roster, lambda n, d: None, lambda s, m: st.append(s), "pihpsdr-rade test")
+    link = core.Link(roster, lambda n, d: None, lambda s, m: st.append(s), core.software_name("test"))
     link.set_target(core.DEFAULT_SERVERS["v1"], "view")
     ok = wait(lambda: len(roster.snapshot()) > 0, 15)
     check(ok, "qso.freedv.org lists stations (%d)" % len(roster.snapshot()))

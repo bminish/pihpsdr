@@ -707,7 +707,7 @@ class App(Gtk.Window):
                                       + ("" if ok_gate else "\nDisabled: " + why_gate + "."))
         targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg["show"], self.cfg.get("rx_only", False))
         self.report_key, self.view_keys = rkey, vkeys
-        software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
+        software = core.software_name((p or {}).get("version"))
         for k, lk in self.links.items():
             lk.software = software
             if k in targets:

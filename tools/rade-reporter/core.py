@@ -248,6 +248,12 @@ def parse_server(text):
 
 # ------------------------------------------------------------------------- link
 
+def software_name(version):
+    """What we call ourselves to the server: pihpsdr-<version>-RADE, <version> being piHPSDR's own (from the state file)."""
+    v = str(version or "").strip()
+    return "pihpsdr-%s-RADE" % v if v else "pihpsdr-RADE"
+
+
 class Link:
     """One connection to one server, either watching or reporting; reconnects by itself.
 
