@@ -558,6 +558,7 @@ src/vfo.c \
 src/vfo_menu.c \
 src/vox_menu.c \
 src/waterfall.c \
+src/wavelength.c \
 src/xvtr_menu.c
 
 ##############################################################################
@@ -665,7 +666,8 @@ src/vfo.o \
 src/vfo_menu.o \
 src/vox_menu.o \
 src/xvtr_menu.o \
-src/waterfall.o
+src/waterfall.o \
+src/wavelength.o
 
 ifdef divcap   # DIVCAP
 #
@@ -1300,7 +1302,10 @@ src/vfo.o: src/property.h src/radio.h src/adc.h src/new_protocol.h
 src/vfo.o: src/MacOS.h src/buffer.h src/atomic.h src/vfo.h src/channel.h
 src/vfo.o: src/toolbar.h src/actions.h src/rigctl.h src/client_server.h
 src/vfo.o: src/diversity_auto.h src/ext.h src/message.h src/sliders.h
-src/vfo.o: src/theme.h
+src/vfo.o: src/theme.h src/wavelength.h
+src/wavelength.o: src/wavelength.h
+src/theme_menu.o: src/wavelength.h
+src/radio.o: src/wavelength.h
 src/vfo_menu.o: src/band.h src/bandstack.h src/ext.h src/client_server.h
 src/vfo_menu.o: src/diversity_auto.h src/mode.h src/receiver.h
 src/vfo_menu.o: src/transmitter.h src/filter.h src/new_menu.h src/radio.h

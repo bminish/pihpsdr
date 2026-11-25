@@ -26,6 +26,7 @@
 #include "new_menu.h"
 #include "radio.h"
 #include "theme.h"
+#include "wavelength.h"
 
 static GtkWidget *dialog       = NULL;
 
@@ -53,6 +54,11 @@ static void dark_cb(GtkWidget *widget, gpointer data) {
 static void theme_combo_cb(GtkWidget *widget, gpointer data) {
   active_theme_index = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
   theme_set();
+}
+
+static void dial_combo_cb(GtkWidget *widget, gpointer data) {
+  vfo_dial_units = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
+  g_idle_add(ext_vfo_update, NULL);
 }
 
 //
@@ -128,6 +134,20 @@ void theme_menu(GtkWidget *parent) {
   gtk_widget_set_hexpand(combo, TRUE);
   my_combo_attach(GTK_GRID(grid), combo, 1, row, 2, 1);
   g_signal_connect(combo, "changed", G_CALLBACK(theme_combo_cb), NULL);
+  // VFO dial: frequency or wavelength
+  row++;
+  label = gtk_label_new("VFO Dial");
+  gtk_widget_set_name(label, "boldlabel");
+  gtk_widget_set_halign(label, GTK_ALIGN_END);
+  gtk_grid_attach(GTK_GRID(grid), label, 0, row, 1, 1);
+  combo = gtk_combo_box_text_new();       // in the order of the DIAL_... enum
+  gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo), NULL, "Frequency");
+  gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo), NULL, "Feet");
+  gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo), NULL, "Metres");
+  gtk_combo_box_set_active(GTK_COMBO_BOX(combo), vfo_dial_units);
+  gtk_widget_set_hexpand(combo, TRUE);
+  my_combo_attach(GTK_GRID(grid), combo, 1, row, 2, 1);
+  g_signal_connect(combo, "changed", G_CALLBACK(dial_combo_cb), NULL);
   gtk_container_add(GTK_CONTAINER(content), grid);
   sub_menu = dialog;
   gtk_widget_show_all(dialog);

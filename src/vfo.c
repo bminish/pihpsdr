@@ -61,6 +61,7 @@
 #include "message.h"
 #include "sliders.h"
 #include "theme.h"
+#include "wavelength.h"
 
 static int my_width;
 static int my_height;
@@ -935,6 +936,79 @@ static gboolean vfo_draw_cb (GtkWidget *widget,
 }
 
 //
+// Draw one dial, ending at x = right. The "A:" or "B:" has just been drawn.
+//
+static void vfo_draw_dial(cairo_t *cr, const VFO_BAR_LAYOUT *vfl, long long f, int right, int y) {
+  double left, dummy;
+  cairo_get_current_point(cr, &left, &dummy);
+  switch (vfo_dial_units) {
+  case DIAL_FEET: {
+    WAVELENGTH wl;
+    if (wavelength_from_hz(f, &wl)) {
+      wavelength_draw(cr, left + 4.0, right - 6, y, vfl->size3, &wl);
+    }
+  }
+  break;
+  case DIAL_METRES:
+    if (f > 0) {
+      wavelength_draw_metres(cr, left + 4.0, right - 6, y, vfl->size3, vfl->size2, wavelength_um(f));
+    }
+    break;
+  default: {
+    char text[32];
+    cairo_text_extents_t extents;
+    int f_m = f / 1000000LL;                      // MHz part
+    int f_k = (f - 1000000LL * f_m) / 1000;       // kHz part
+    int f_h = (f - 1000000LL * f_m - 1000 * f_k); // Hz  part
+    int pos = right;
+    //
+    // Draw the "Hz" with three figures at the end of the dial,
+    //
+    cairo_set_font_size(cr, vfl->size2);
+    snprintf(text, sizeof(text), "%03d", f_h);
+    cairo_text_extents(cr, text, &extents);
+    pos -= (extents.width + 6);
+    cairo_move_to(cr, pos, y);
+    cairo_show_text(cr, text);
+    //
+    // Draw the kHz before that
+    //
+    cairo_set_font_size(cr, vfl->size3);
+    snprintf(text, sizeof(text), "%0d.%03d", f_m, f_k);
+    cairo_text_extents(cr, text, &extents);
+    pos -= (extents.width + (vfl->size2 / 3));
+    cairo_move_to(cr, pos, y);
+    cairo_show_text(cr, text);
+  }
+  break;
+  }
+}
+
+//
+// RIT/XIT: the offset in Hz or, with a wavelength on the dial, the change of wavelength
+// in mils or millimetres. The sign is then that of the wavelength: a positive offset (Hz)
+// shortens the wave. That text is made smaller if it does not fit.
+//
+static void vfo_offset_text(cairo_t *cr, char *text, size_t len, const char *name, long long hz, long long offset, int size) {
+  cairo_text_extents_t extents;
+  if (vfo_dial_units != DIAL_FEET && vfo_dial_units != DIAL_METRES) {
+    snprintf(text, len, offset < 0 ? "%s%lld" : "%s %lld", name, offset);
+    return;
+  }
+  int metric = (vfo_dial_units == DIAL_METRES);
+  double v = metric ? 1000.0 * wavelength_shift_m(hz, offset) : wavelength_shift_mils(hz, offset);
+  int dec = metric ? 3 : 2;
+  if (fabs(v) >= 9.995) { dec = 1; }
+  if (fabs(v) >= 99.95) { dec = 0; }
+  if (fabs(v) < (metric ? 0.0005 : 0.005)) { v = 0.0; }    // no "-0.00"
+  snprintf(text, len, "%s %.*f %s", name, dec, v, metric ? "mm" : "mils");
+  cairo_text_extents(cr, text, &extents);
+  if (extents.x_advance > 5.3 * size) {
+    cairo_set_font_size(cr, size * 5.3 * size / extents.x_advance);
+  }
+}
+
+//
 // This function re-draws the VFO bar.
 // Lot of elements are programmed, whose size and position
 // is determined by the current vfo layout
@@ -942,7 +1016,6 @@ static gboolean vfo_draw_cb (GtkWidget *widget,
 //
 void vfo_update(void) {
   char wid[6];
-  cairo_text_extents_t extents;
   if (!vfo_surface) { return; }
   int id = active_receiver->id;
   int m = vfo[id].mode;
@@ -1111,9 +1184,6 @@ void vfo_update(void) {
   }
 #endif
   int oob = 0;
-  int f_m; // MHz part
-  int f_k; // kHz part
-  int f_h; // Hz  part
   if (transmitter != NULL) { oob = transmitter->out_of_band; }
   // -----------------------------------------------------------
   //
@@ -1131,9 +1201,6 @@ void vfo_update(void) {
     } else {
       cairo_set_source_rgba(cr, COLOUR_OK);
     }
-    f_m = af / 1000000LL;
-    f_k = (af - 1000000LL * f_m) / 1000;
-    f_h = (af - 1000000LL * f_m - 1000 * f_k);
     cairo_set_font_size(cr, vfl->size2);
     cairo_show_text(cr, "A:");
     cairo_set_font_size(cr, vfl->size3);
@@ -1143,25 +1210,7 @@ void vfo_update(void) {
       snprintf(temp_text, sizeof(temp_text), "%s", vfo[0].entered_frequency);
       cairo_show_text(cr, temp_text);
     } else {
-      //
-      // Draw the "Hz" with three figures at the end of the dial,
-      //
-      int pos = vfl->vfo_a_r;
-      cairo_set_font_size(cr, vfl->size2);
-      snprintf(temp_text, sizeof(temp_text), "%03d", f_h);
-      cairo_text_extents(cr, temp_text, &extents);
-      pos -= (extents.width + 6);
-      cairo_move_to(cr, pos, vfl->vfo_a_y);
-      cairo_show_text(cr, temp_text);
-      //
-      // Draw the kHz before that
-      //
-      cairo_set_font_size(cr, vfl->size3);
-      snprintf(temp_text, sizeof(temp_text), "%0d.%03d", f_m, f_k);
-      cairo_text_extents(cr, temp_text, &extents);
-      pos -= (extents.width + (vfl->size2 / 3));
-      cairo_move_to(cr, pos, vfl->vfo_a_y);
-      cairo_show_text(cr, temp_text);
+      vfo_draw_dial(cr, vfl, af, vfl->vfo_a_r, vfl->vfo_a_y);
     }
   }
   // -----------------------------------------------------------
@@ -1180,9 +1229,6 @@ void vfo_update(void) {
     } else {
       cairo_set_source_rgba(cr, COLOUR_OK);
     }
-    f_m = bf / 1000000LL;
-    f_k = (bf - 1000000LL * f_m) / 1000;
-    f_h = (bf - 1000000LL * f_m - 1000 * f_k);
     cairo_set_font_size(cr, vfl->size2);
     cairo_show_text(cr, "B:");
     cairo_set_font_size(cr, vfl->size3);
@@ -1192,25 +1238,7 @@ void vfo_update(void) {
       snprintf(temp_text, sizeof(temp_text), "%s", vfo[1].entered_frequency);
       cairo_show_text(cr, temp_text);
     } else {
-      //
-      // Draw the "Hz" with three figures at the end of the dial,
-      //
-      int pos = vfl->vfo_b_r;
-      cairo_set_font_size(cr, vfl->size2);
-      snprintf(temp_text, sizeof(temp_text), "%03d", f_h);
-      cairo_text_extents(cr, temp_text, &extents);
-      pos -= (extents.width + 6);
-      cairo_move_to(cr, pos, vfl->vfo_b_y);
-      cairo_show_text(cr, temp_text);
-      //
-      // Draw the kHz before that
-      //
-      cairo_set_font_size(cr, vfl->size3);
-      snprintf(temp_text, sizeof(temp_text), "%0d.%03d", f_m, f_k);
-      cairo_text_extents(cr, temp_text, &extents);
-      pos -= (extents.width + (vfl->size2 / 3));
-      cairo_move_to(cr, pos, vfl->vfo_b_y);
-      cairo_show_text(cr, temp_text);
+      vfo_draw_dial(cr, vfl, bf, vfl->vfo_b_r, vfl->vfo_b_y);
     }
   }
   //
@@ -1257,14 +1285,11 @@ void vfo_update(void) {
     } else {
       cairo_set_source_rgba(cr, COLOUR_ATTN);
     }
-    int val = vfo[id].rit;
-    if (val < 0) {
-      snprintf(temp_text, sizeof(temp_text), "RIT%d", val);
-    } else {
-      snprintf(temp_text, sizeof(temp_text), "RIT %d", val);
-    }
+    long long dial = vfo[id].ctun ? vfo[id].ctun_frequency : vfo[id].frequency;
+    vfo_offset_text(cr, temp_text, sizeof(temp_text), "RIT", dial, vfo[id].rit, vfl->size1);
     cairo_move_to(cr, vfl->rit_x, vfl->rit_y);
     cairo_show_text(cr, temp_text);
+    cairo_set_font_size(cr, vfl->size1);
   }
   // -----------------------------------------------------------
   //
@@ -1277,14 +1302,11 @@ void vfo_update(void) {
     } else {
       cairo_set_source_rgba(cr, COLOUR_ATTN);
     }
-    int val = vfo[txvfo].xit;
-    if (val < 0) {
-      snprintf(temp_text, sizeof(temp_text), "XIT%d", val);
-    } else {
-      snprintf(temp_text, sizeof(temp_text), "XIT %d", val);
-    }
+    long long dial = vfo[txvfo].ctun ? vfo[txvfo].ctun_frequency : vfo[txvfo].frequency;
+    vfo_offset_text(cr, temp_text, sizeof(temp_text), "XIT", dial, vfo[txvfo].xit, vfl->size1);
     cairo_move_to(cr, vfl->xit_x, vfl->xit_y);
     cairo_show_text(cr, temp_text);
+    cairo_set_font_size(cr, vfl->size1);
   }
   // -----------------------------------------------------------
   //

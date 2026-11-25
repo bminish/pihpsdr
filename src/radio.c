@@ -72,6 +72,7 @@
 #endif
 #include "test_menu.h"
 #include "theme.h"
+#include "wavelength.h"
 #include "toolbar.h"
 #include "transmitter.h"
 #include "tts.h"
@@ -3532,6 +3533,8 @@ static void radio_restore_state(void) {
   GetPropI0("optimize_touchscreen",                          optimize_for_touchscreen);
   GetPropI0("smeter3dB",                                     smeter3dB);
   GetPropI0("active_theme_index",                            active_theme_index);
+  GetPropI0("vfo_dial_units",                                vfo_dial_units);
+  if (vfo_dial_units < 0 || vfo_dial_units >= DIAL_UNITS) { vfo_dial_units = DIAL_FEET; }
   GetPropI0("gtk_dark_theme",                                gtk_dark_theme);
   GetPropI0("which_css_font",                                which_css_font);
   GetPropI0("vfo_encoder_divisor",                           vfo_encoder_divisor);
@@ -3785,6 +3788,7 @@ void radio_save_state(void) {
   SetPropI0("optimize_touchscreen",                          optimize_for_touchscreen);
   SetPropI0("smeter3dB",                                     smeter3dB);
   SetPropI0("active_theme_index",                            active_theme_index);
+  SetPropI0("vfo_dial_units",                                vfo_dial_units);
   SetPropI0("gtk_dark_theme",                                gtk_dark_theme);
   SetPropI0("which_css_font",                                which_css_font);
   SetPropI0("vfo_encoder_divisor",                           vfo_encoder_divisor);
