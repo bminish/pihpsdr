@@ -84,6 +84,58 @@ def band_of(freq_hz):
     return "Other"
 
 
+# ------------------------------------------------------------- wavelength (devtest/Joker)
+# piHPSDR's Theme menu > VFO Dial: 0 frequency, 1 feet and inches, 2 metres (state.json "dial_units")
+DIAL_FREQUENCY, DIAL_FEET, DIAL_METRES = 0, 1, 2
+C_M_PER_S = 299792458
+V1_LSB = ((1800e3, 2000e3), (3500e3, 4000e3), (7000e3, 7300e3))     # RADE V1 runs on LSB on 160, 80 and 40 m
+
+
+def centre_hz(freq_hz, mode):
+    """The centre of a RADE signal from the frequency a station reports: V1 is 1.5 kHz below on 160/80/40 m (LSB)
+    and 1.5 kHz above elsewhere; V2 is 1.5 kHz above on every band. Other modes are taken as reported."""
+    if mode == "RADEV1":
+        return freq_hz - 1500 if any(lo <= freq_hz <= hi for lo, hi in V1_LSB) else freq_hz + 1500
+    if mode == "RADEV2":
+        return freq_hz + 1500
+    return freq_hz
+
+
+def feet_inches(hz):
+    """Wavelength to the nearest 1/144 inch as (feet, inches, numerator, denominator), the fraction in lowest
+    terms (0/1 for none); the same arithmetic as piHPSDR's dial (src/wavelength.c)."""
+    d = 254 * hz
+    units = (C_M_PER_S * 10000 * 144 + d // 2) // d
+    feet, units = divmod(units, 12 * 144)
+    inches, num = divmod(units, 144)
+    g = math.gcd(num, 144) if num else 144
+    return feet, inches, num // g, 144 // g if num else 1
+
+
+def wavelength_text(hz, units):
+    """A frequency as the dial shows it: MHz, feet and inches, or metres to the micrometre. '' for no frequency."""
+    hz = int(round(hz or 0))
+    if hz <= 0:
+        return ""
+    if units == DIAL_FEET:
+        ft, inch, num, den = feet_inches(hz)
+        parts = ["%d\u2032" % ft] if ft else []
+        tail = ("%d" % inch if inch or not num else "") + ((" " if inch else "") + "%d\u2044%d" % (num, den) if num else "")
+        return " ".join(parts + [tail + "\u2033"])
+    if units == DIAL_METRES:
+        um = (C_M_PER_S * 1000000 + hz // 2) // hz
+        return "%d.%03d %03d m" % (um // 1000000, um // 1000 % 1000, um % 1000)
+    return "%.4f" % (hz / 1e6)
+
+
+def dial_units(pihpsdr):
+    try:
+        u = int((pihpsdr or {}).get("dial_units", DIAL_FREQUENCY))
+    except (TypeError, ValueError):
+        return DIAL_FREQUENCY
+    return u if u in (DIAL_FEET, DIAL_METRES) else DIAL_FREQUENCY
+
+
 # ------------------------------------------------------------------- stations
 
 class Station:
@@ -249,9 +301,9 @@ def parse_server(text):
 # ------------------------------------------------------------------------- link
 
 def software_name(version):
-    """What we call ourselves to the server: pihpsdr-<version>-RADE, <version> being piHPSDR's own (from the state file)."""
-    v = str(version or "").strip()
-    return "pihpsdr-%s-RADE" % v if v else "pihpsdr-RADE"
+    """What we call ourselves to the server. On devtest/Joker it is always the Imperial edition, whatever piHPSDR's
+    own version (elsewhere: pihpsdr-<version>-RADE)."""
+    return "pihpsdr-Imperial-edition"
 
 
 class Link:

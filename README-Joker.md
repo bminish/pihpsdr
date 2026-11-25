@@ -15,6 +15,9 @@ shortens the wave, so a positive offset in Hz reads as negative mils.
 A legacy display mode in MHz may be selected in the Theme menu (**VFO Dial**: *Frequency*). A *Metres* setting,
 in base-10 decimals with RIT and XIT in millimetres, is provided for those who must.
 
+The RADE Reporter shows stations by the wavelength at the centre of their signal, in the same units as the dial,
+and announces this station to the FreeDV Reporter as `pihpsdr-Imperial-edition`.
+
 The typeface is Latin Modern Roman Dunhill. If it is not installed, Old Standard, Century Schoolbook or the
 system serif is used instead.
 

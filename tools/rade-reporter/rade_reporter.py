@@ -731,9 +731,15 @@ class App(Gtk.Window):
             self.dirty = False
             self._last_fill = now_t
             self._fill()
-        link = ("piHPSDR: RADE %s%s, %.4f MHz%s" % (
+        units = core.dial_units(p)
+        if units != getattr(self, "_units", None):
+            self._units = units
+            self._titles()
+            self._fill()
+        link = ("piHPSDR: RADE %s%s, %s%s" % (
             {0: "off", 1: "V1", 2: "V2"}.get(int(p.get("waveform", 0)), "?"),
-            "", p.get("dial_hz", 0) / 1e6, ", transmitting" if p.get("tx") else "")
+            "", "%.4f MHz" % (p.get("dial_hz", 0) / 1e6) if units == core.DIAL_FREQUENCY
+            else core.wavelength_text(p.get("centre_hz") or p.get("dial_hz", 0), units), ", transmitting" if p.get("tx") else "")
             if p and p.get("linked") else "piHPSDR: not running")
         parts = []
         for k in self.links:
@@ -815,6 +821,7 @@ class App(Gtk.Window):
         now = time.time()
         mygrid = self.grid_e.get_text().strip()
         self._dial = (self.pihpsdr or {}).get("dial_hz", 0)
+        units = core.dial_units(self.pihpsdr)
         rows = {r[C_SID]: r.iter for r in self.store}
         seen = set()
         structural = False
@@ -828,7 +835,8 @@ class App(Gtk.Window):
             bg = "#ffe7c2" if s.transmitting else ("#d6ecff" if s.receiving_now(now) else None)
             snr = "" if s.rx_snr is None else ("%+d" % round(s.rx_snr))
             vals = [s.callsign, s.grid, "%d" % dbg[0] if dbg else "", "%d" % dbg[1] if dbg else "",
-                    s.version, "%.4f" % (s.freq / 1e6) if s.freq else "", s.mode, s.status,
+                    s.version, core.wavelength_text(s.freq if units == core.DIAL_FREQUENCY else core.centre_hz(s.freq, s.mode), units)
+                    if s.freq else "", s.mode, s.status,
                     s.message, hhmm(s.last_tx), s.rx_call, snr, age_text(now - ts) if ts else "",
                     sid, bg, dbg[0] if dbg else -1.0, dbg[1] if dbg else -1.0,
                     s.freq / 1e6 if s.freq else 0.0, s.rx_snr if s.rx_snr is not None else -99.0,
@@ -891,7 +899,8 @@ class App(Gtk.Window):
     def _titles(self):
         """A heading carries a star while its filter is on."""
         self.labels["km"].set_text("km *" if any(self._dist) else "km")
-        self.labels["MHz"].set_text("MHz *" if any(self._frng) else "MHz")
+        name = {core.DIAL_FEET: "\u03bb ft in", core.DIAL_METRES: "\u03bb m"}.get(core.dial_units(self.pihpsdr), "MHz")
+        self.labels["MHz"].set_text(name + " *" if any(self._frng) else name)
 
     def _set_dist(self, lo, hi):
         self._dist = (max(0.0, float(lo)), max(0.0, float(hi)))

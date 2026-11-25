@@ -38,6 +38,10 @@ def wait(pred, secs=5.0):
     return False
 
 
+def C_IN(hz):
+    return 299792458 / hz / 0.0254
+
+
 def places():
     print("places and bands")
     d = core.distance_bearing("IO53HU", "JN58")
@@ -47,6 +51,27 @@ def places():
           and not core.grid_valid("IO5"), "grid validation")
     check(core.band_of(7053000) == "40 m" and core.band_of(14236000) == "20 m" and core.band_of(1000) == "Other",
           "band_of")
+    check(core.centre_hz(3643000, "RADEV1") == 3641500 and core.centre_hz(7177000, "RADEV1") == 7175500
+          and core.centre_hz(1840000, "RADEV1") == 1838500, "centre: V1 1.5 kHz down on 160/80/40 m")
+    check(core.centre_hz(14236000, "RADEV1") == 14237500 and core.centre_hz(5363000, "RADEV1") == 5364500,
+          "centre: V1 1.5 kHz up elsewhere")
+    check(core.centre_hz(3643000, "RADEV2") == 3644500 and core.centre_hz(14236000, "RADEV2") == 14237500,
+          "centre: V2 1.5 kHz up on every band")
+    check(core.centre_hz(7100000, "LSB") == 7100000, "centre: other modes as reported")
+    check(core.wavelength_text(3637000, core.DIAL_FEET) == "270\u2032 5 31\u2044144\u2033"
+          and core.wavelength_text(14236000, core.DIAL_FEET) == "69\u2032 1 1\u204412\u2033"
+          and core.wavelength_text(10489750000, core.DIAL_FEET) == "1 1\u20448\u2033", "feet and inches, as the dial (src/wavelength.c)")
+    check(core.wavelength_text(14236000, core.DIAL_METRES) == "21.058 757 m", "metres, to the micrometre")
+    check(core.wavelength_text(14236000, core.DIAL_FREQUENCY) == "14.2360" and core.wavelength_text(0, core.DIAL_FEET) == "",
+          "MHz, and nothing for no frequency")
+    check(core.dial_units({"dial_units": 2}) == 2 and core.dial_units({}) == 0 and core.dial_units(None) == 0
+          and core.dial_units({"dial_units": 7}) == 0, "dial_units from state.json, MHz when unknown")
+    bad = 0
+    for hz in range(100000, 60000000, 99991):
+        ft, inch, num, den = core.feet_inches(hz)
+        if abs(ft * 12 + inch + num / den - C_IN(hz)) > 0.5 / 144 + 1e-9 or inch > 11 or (num and num >= den):
+            bad += 1
+    check(bad == 0, "feet and inches within 1/288 inch, 100 kHz - 60 MHz (%d bad)" % bad)
     check(core.parse_server("https://qso.freedv.org/") == ("qso.freedv.org", 443, True), "parse https")
     check(core.parse_server("http://h:8080") == ("h", 8080, False), "parse http:port")
     check(core.parse_server("example.org") == ("example.org", 443, True), "parse bare host")
@@ -352,12 +377,13 @@ def link_flow():
     time.sleep(0.4)
     check(s1.clients[0]["events"] == [], "watching emits nothing")
 
-    check(core.software_name("") == core.software_name(None) == "pihpsdr-RADE", "no version known: pihpsdr-RADE")
+    check(core.software_name("") == core.software_name(None) == core.software_name("Test-3.1") == "pihpsdr-Imperial-edition",
+          "always the Imperial edition")
     go(live, reporting=True)
     check(wait(lambda: len(s1.clients) == 2 and s1.clients[1]["auth"] is not None), "reporting on: reconnects as reporter")
     a = s1.clients[1]["auth"]
     check(a.get("role") == "report" and a.get("callsign") == "EI6IZ" and a.get("grid_square") == "IO53hu"
-          and a.get("rx_only") is False and a.get("protocol_version") == 2 and a.get("version") == "pihpsdr-test-RADE",
+          and a.get("rx_only") is False and a.get("protocol_version") == 2 and a.get("version") == "pihpsdr-Imperial-edition",
           "reporter identity: " + json.dumps(a))
     ev = s1.clients[1]["events"]
     check(wait(lambda: len(ev) >= 2), "sends its state once the server says connection_successful")
