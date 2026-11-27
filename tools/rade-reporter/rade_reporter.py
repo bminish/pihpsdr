@@ -140,6 +140,12 @@ class App(Gtk.Window):
         self.rx_chk.set_active(bool(self.cfg.get("rx_only", False)))
         self.rx_chk.connect("toggled", self._on_rx_only_toggled)
         r1.pack_start(self.rx_chk, False, False, 0)
+        self.inv_chk = Gtk.CheckButton(label="Report inverted")
+        self.inv_chk.set_tooltip_text("While piHPSDR's Invert is on (RADE V1 or V2 on the other sideband from usual) nothing is reported "
+                                      "unless this is ticked.\nAlways off when this program starts.")
+        self.inv_chk.set_active(False)
+        self.inv_chk.connect("toggled", lambda w: self._tick())
+        r1.pack_start(self.inv_chk, False, False, 0)
         self.call_l = Gtk.Label(label="")
         self.call_l.set_tooltip_text("The callsign set in piHPSDR's RADE window")
         r1.pack_start(self.call_l, False, False, 0)
@@ -705,7 +711,8 @@ class App(Gtk.Window):
         self.rep_chk.set_sensitive(ok_gate)
         self.rep_chk.set_tooltip_text("Lists you on the FreeDV Reporter, in the RADE mode piHPSDR has selected.\nAlways off when this program starts."
                                       + ("" if ok_gate else "\nDisabled: " + why_gate + "."))
-        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg["show"], self.cfg.get("rx_only", False))
+        targets, why, rkey, vkeys = core.plan(self.cfg, p, self.reporting, call, grid, self.cfg["show"], self.cfg.get("rx_only", False),
+                                                      allow_inverted=self.inv_chk.get_active())
         self.report_key, self.view_keys = rkey, vkeys
         software = "pihpsdr-rade %s" % ((p or {}).get("version") or "").strip()
         for k, lk in self.links.items():
