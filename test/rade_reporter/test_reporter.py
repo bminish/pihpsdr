@@ -95,6 +95,17 @@ def decisions():
     d = core.decide(cfg, dict(live, waveform=2), True, "EI6IZ", "IO53hu", "v1")
     check(d[1] == "report" and d[2] == "RADEV2" and d[0]["host"] == "reporter-radev2.k6aq.net",
           "V2 on: reported as RADEV2 on reporter-radev2.k6aq.net (the freedv-gui V2 host)")
+    for w in (1, 2):
+        d = core.decide(cfg, dict(live, waveform=w, invert=1), True, "EI6IZ", "IO53hu", "v1")
+        check(d[1] == "view" and "Invert" in d[5], "V%d inverted: not reported, says why (%s)" % (w, d[5]))
+        d = core.decide(cfg, dict(live, waveform=w, invert=1), True, "EI6IZ", "IO53hu", "v1", True)
+        check(d[1] == "report", "V%d inverted with Report inverted ticked: reported" % w)
+        t, why, rk, vk = core.plan(cfg, dict(live, waveform=w, invert=1), True, "EI6IZ", "IO53hu", "all")
+        check(rk is None and all(x[1] == "view" for x in t.values()), "V%d inverted: plan() joins nothing as a reporter" % w)
+        t, why, rk, vk = core.plan(cfg, dict(live, waveform=w, invert=1), True, "EI6IZ", "IO53hu", "all", allow_inverted=True)
+        check(rk == "v%d" % w, "V%d inverted, allowed: plan() reports on v%d" % (w, w))
+    d = core.decide(cfg, dict(live, invert=0), True, "EI6IZ", "IO53hu", "v1")
+    check(d[1] == "report", "invert 0 (or a piHPSDR that does not send it): reported as before")
     # plan(): what is shown is separate from where reports go
     t, why, rk, vk = core.plan(cfg, dict(live, waveform=2), False, "EI6IZ", "IO53hu", "v1")
     check(list(t) == ["v1"] and t["v1"][1] == "view" and rk is None, "show V1 only, not reporting: V1 watched, V2 not connected")

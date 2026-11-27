@@ -764,7 +764,7 @@ def report_gate(pihpsdr):
     return True, ""
 
 
-def plan(cfg, pihpsdr, reporting, callsign, grid, view, rx_only=False):
+def plan(cfg, pihpsdr, reporting, callsign, grid, view, rx_only=False, allow_inverted=False):
     """Which servers to be connected to, and in what role.
 
     view is the Show choice (the dict of ticks; see show_keys): what the list shows, so those servers are watched. If we are present
@@ -774,7 +774,7 @@ def plan(cfg, pihpsdr, reporting, callsign, grid, view, rx_only=False):
     Returns (targets, why, report_key, view_keys); targets is {key: (server, role, mode, freq_hz, tx)}.
     """
     vkeys = [k for k in show_keys(view, pihpsdr) if k in cfg["servers"]] or ["v1"]
-    srv, role, mode, freq, tx, why = decide(cfg, pihpsdr, reporting, callsign, grid, "v1")
+    srv, role, mode, freq, tx, why = decide(cfg, pihpsdr, reporting, callsign, grid, "v1", allow_inverted)
     rkey = next((k for k, v in cfg["servers"].items() if v is srv), None) if role == "report" else None
     targets = {}
     for k in vkeys:
@@ -785,8 +785,11 @@ def plan(cfg, pihpsdr, reporting, callsign, grid, view, rx_only=False):
     return targets, why, rkey, vkeys
 
 
-def decide(cfg, pihpsdr, reporting, callsign, grid, view_key):
+def decide(cfg, pihpsdr, reporting, callsign, grid, view_key, allow_inverted=False):
     """What the link should be doing, given everything.
+
+    While the operator's Invert is on in piHPSDR (state.json "invert"; V1 or V2 on the other sideband from usual)
+    nothing is reported unless allow_inverted (the Reporter's "Report inverted", off every time it starts).
 
     Returns (server dict or None, role, mode, freq_hz, tx, why). Presence is only
     ever reported for the RADE mode piHPSDR has selected, while piHPSDR is
@@ -809,6 +812,8 @@ def decide(cfg, pihpsdr, reporting, callsign, grid, view_key):
             why = "not reporting: no callsign"
         elif not grid_valid(grid):
             why = "not reporting: grid square missing or not valid"
+        elif pihpsdr.get("invert") and not allow_inverted:
+            why = "not reporting: Invert is on in piHPSDR (tick Report inverted to report anyway)"
         else:
             srv = cfg["servers"][key]
             return (srv, "report", srv["mode"], int(pihpsdr.get("dial_hz", 0)),
